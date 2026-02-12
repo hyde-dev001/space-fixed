@@ -24,6 +24,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
             'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
             
+            // Pricing Approvals
+            'view-pricing-approvals', 'approve-repair-pricing', 'approve-shoe-pricing',
+            'view-repair-pricing', 'view-shoe-pricing', 'manage-service-pricing',
+            
             // HR
             'view-employees', 'create-employees', 'edit-employees', 'delete-employees', 'approve-employee-changes',
             'view-attendance', 'create-attendance', 'edit-attendance', 'approve-timeoff',
@@ -81,10 +85,13 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
             // Pricing Management (Repair & Shoe Pricing)
             'view-pricing', 'edit-pricing', 'manage-service-pricing',
+            // Pricing Approvals
+            'view-pricing-approvals', 'approve-repair-pricing', 'approve-shoe-pricing',
+            'view-repair-pricing', 'view-shoe-pricing',
             // General
             'view-dashboard',
         ]);
-        $this->command->info('✓ Finance role: ' . $finance->permissions->count() . ' permissions (Full Finance module + Payroll Approval)');
+        $this->command->info('✓ Finance role: ' . $finance->permissions->count() . ' permissions (Full Finance module + Payroll Approval + Pricing Approvals)');
 
         // 3. HR Role - Full HR Module Access
         $hr = Role::firstOrCreate(['name' => 'HR', 'guard_name' => 'user']);
@@ -94,7 +101,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Attendance & Leave
             'view-attendance', 'create-attendance', 'edit-attendance', 'approve-timeoff',
             // Payroll
-            'view-payroll', 'process-payroll', 'approve-payroll', 'generate-payslip',
+            'view-payroll', 'process-payroll', 'generate-payslip',
             // Reports & Audit
             'view-hr-reports', 'export-hr-reports', 'view-hr-audit-logs',
             // General

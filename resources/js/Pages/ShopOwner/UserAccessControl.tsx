@@ -339,6 +339,37 @@ const UserAccessControl: React.FC = () => {
     });
   };
 
+  const addAllPermissions = () => {
+    if (!availablePermissions) return;
+    const allPermissions = [
+      ...(availablePermissions.grouped.finance || []),
+      ...(availablePermissions.grouped.hr || []),
+      ...(availablePermissions.grouped.crm || []),
+      ...(availablePermissions.grouped.manager || []),
+      ...(availablePermissions.grouped.staff || []),
+    ];
+    const newPermissions = Array.from(new Set([...selectedPermissions, ...allPermissions]));
+    setSelectedPermissions(newPermissions);
+  };
+
+  const clearAllPermissions = () => {
+    setSelectedPermissions([]);
+  };
+
+  const addRolePermissions = (roleKey: string) => {
+    if (!availablePermissions || !availablePermissions.grouped[roleKey]) return;
+    const rolePermissions = availablePermissions.grouped[roleKey];
+    const newPermissions = Array.from(new Set([...selectedPermissions, ...rolePermissions]));
+    setSelectedPermissions(newPermissions);
+  };
+
+  const clearRolePermissions = (roleKey: string) => {
+    if (!availablePermissions || !availablePermissions.grouped[roleKey]) return;
+    const rolePermissions = availablePermissions.grouped[roleKey];
+    const newPermissions = selectedPermissions.filter(p => !rolePermissions.includes(p));
+    setSelectedPermissions(newPermissions);
+  };
+
   // Computed values
   const filteredEmployees = useMemo(() => {
     return employees.filter((employee) => {
@@ -1723,7 +1754,20 @@ const UserAccessControl: React.FC = () => {
                         Grant additional permissions beyond those provided by the role
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={addAllPermissions}
+                        className="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                      >
+                        Add All
+                      </button>
+                      <button
+                        onClick={clearAllPermissions}
+                        className="text-xs px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                      >
+                        Clear All
+                      </button>
+                      <span className="text-gray-300 dark:text-gray-600">|</span>
                       <button
                         onClick={expandAllCategories}
                         className="text-xs text-gray-700 dark:text-gray-300 hover:underline"
@@ -1763,6 +1807,24 @@ const UserAccessControl: React.FC = () => {
                             <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
                               {availablePermissions.grouped.finance.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.finance.length}
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('finance');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('finance');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                              Clear
+                            </button>
                           </div>
                         </div>
                       </button>
@@ -1820,6 +1882,24 @@ const UserAccessControl: React.FC = () => {
                             <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
                               {availablePermissions.grouped.hr.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.hr.length}
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('hr');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('hr');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                              Clear
+                            </button>
                           </div>
                         </div>
                       </button>
@@ -1877,6 +1957,24 @@ const UserAccessControl: React.FC = () => {
                             <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
                               {availablePermissions.grouped.crm.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.crm.length}
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('crm');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('crm');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                              Clear
+                            </button>
                           </div>
                         </div>
                       </button>
@@ -1934,6 +2032,24 @@ const UserAccessControl: React.FC = () => {
                             <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
                               {availablePermissions.grouped.manager.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.manager.length}
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('manager');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('manager');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                              Clear
+                            </button>
                           </div>
                         </div>
                       </button>
@@ -1991,6 +2107,24 @@ const UserAccessControl: React.FC = () => {
                             <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
                               {availablePermissions.grouped.staff.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.staff.length}
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('staff');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('staff');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                              Clear
+                            </button>
                           </div>
                         </div>
                       </button>

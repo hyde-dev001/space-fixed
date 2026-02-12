@@ -300,13 +300,13 @@ class UserAccessControlController extends Controller
         ];
 
         foreach ($allPermissions as $permission) {
-            if (str_contains($permission, 'expense') || str_contains($permission, 'invoice') || str_contains($permission, 'finance') || str_contains($permission, 'budget') || str_contains($permission, 'approve-payroll')) {
+            if (str_contains($permission, 'expense') || str_contains($permission, 'invoice') || str_contains($permission, 'finance') || str_contains($permission, 'budget') || str_contains($permission, 'approve-payroll') || str_contains($permission, 'pricing') || str_contains($permission, 'revenue') || str_contains($permission, 'reconcile')) {
                 $grouped['finance'][] = $permission;
-            } elseif (str_contains($permission, 'employee') || str_contains($permission, 'attendance') || str_contains($permission, 'payroll') || str_contains($permission, 'hr') || str_contains($permission, 'timeoff') || str_contains($permission, 'generate-payslip') || str_contains($permission, 'view-payroll')) {
+            } elseif (str_contains($permission, 'employee') || str_contains($permission, 'attendance') || str_contains($permission, 'payroll') || str_contains($permission, 'hr') || str_contains($permission, 'timeoff') || str_contains($permission, 'generate-payslip') || str_contains($permission, 'view-payroll') || str_contains($permission, 'process-payroll')) {
                 $grouped['hr'][] = $permission;
             } elseif (str_contains($permission, 'customer') || str_contains($permission, 'lead') || str_contains($permission, 'opportunity') || str_contains($permission, 'crm')) {
                 $grouped['crm'][] = $permission;
-            } elseif (str_contains($permission, 'user') || str_contains($permission, 'role') || str_contains($permission, 'product') || str_contains($permission, 'inventory') || str_contains($permission, 'pricing') || str_contains($permission, 'audit') || str_contains($permission, 'system') || str_contains($permission, 'shop')) {
+            } elseif (str_contains($permission, 'user') || str_contains($permission, 'role') || str_contains($permission, 'product') || str_contains($permission, 'inventory') || str_contains($permission, 'audit') || str_contains($permission, 'system') || str_contains($permission, 'shop')) {
                 $grouped['manager'][] = $permission;
             } elseif (str_contains($permission, 'job-order') || str_contains($permission, 'dashboard')) {
                 $grouped['staff'][] = $permission;

@@ -57,6 +57,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
         Route::delete('/{id}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
         Route::post('/{id}/suspend', [EmployeeController::class, 'suspend'])->name('hr.employees.suspend');
         Route::post('/{id}/activate', [EmployeeController::class, 'activate'])->name('hr.employees.activate');
+        Route::post('/{userId}/roles/sync', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'syncAdditionalRoles'])->name('hr.employees.roles.sync');
     });
 
     // ============================================
