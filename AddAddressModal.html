@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <style>
+        #map {
+            height: 300px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .toggle-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 20px 0;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 28px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 28px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #ff69b4;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+        }
+    </style>
+</head>
+<body>
+    <div class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add New Address</h2>
+            
+            <form id="addressForm">
+                <label>Full Name</label>
+                <input type="text" id="fullName" placeholder="Full Name" required>
+                
+                <label>Phone Number</label>
+                <input type="tel" id="phoneNumber" placeholder="Phone Number" required>
+                
+                <label>Address</label>
+                <div id="map"></div>
+                <input type="text" id="fullAddress" placeholder="Full Address" required>
+                
+                <div class="toggle-wrapper">
+                    <label>Set as default</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setDefault">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <button type="button" id="cancelBtn">Cancel</button>
+                <button type="submit" id="saveBtn">Save Address</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script>
+        let map;
+        let marker;
+
+        function initMap() {
+            map = L.map('map').setView([14.5995, 120.9842], 13); // Default to Manila, PH
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            map.on('click', function(e) {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                
+                if (marker) {
+                    map.removeLayer(marker);
+                }
+                
+                marker = L.marker([lat, lng]).addTo(map);
+                document.getElementById('fullAddress').value = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initMap);
+
+        document.getElementById('saveBtn').addEventListener('click', function(e) {
+            e.preventDefault();
+            const data = {
+                fullName: document.getElementById('fullName').value,
+                phoneNumber: document.getElementById('phoneNumber').value,
+                address: document.getElementById('fullAddress').value,
+                setDefault: document.getElementById('setDefault').checked
+            };
+            console.log('Address saved:', data);
+            // Send to backend
+        });
+    </script>
+</body>
+</html>
