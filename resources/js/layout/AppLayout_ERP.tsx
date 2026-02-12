@@ -6,9 +6,10 @@ import { ReactNode } from "react";
 
 interface AppLayoutERPProps {
   children: ReactNode;
+  hideHeader?: boolean;
 }
 
-const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
+const LayoutContent: React.FC<{ children: ReactNode; hideHeader?: boolean }> = ({ children, hideHeader }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
@@ -22,7 +23,7 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
           isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
         } ${isMobileOpen ? "ml-0" : ""}`}
       >
-        <AppHeader_ERP />
+        {!hideHeader && <AppHeader_ERP />}
         <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
           {children}
         </div>
@@ -31,10 +32,10 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
   );
 };
 
-const AppLayoutERP: React.FC<AppLayoutERPProps> = ({ children }) => {
+const AppLayoutERP: React.FC<AppLayoutERPProps> = ({ children, hideHeader }) => {
   return (
     <SidebarProvider>
-      <LayoutContent>{children}</LayoutContent>
+      <LayoutContent hideHeader={hideHeader}>{children}</LayoutContent>
     </SidebarProvider>
   );
 };

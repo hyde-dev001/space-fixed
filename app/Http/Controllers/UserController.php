@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Employee;
+use App\Enums\EmployeeStatus;
+use App\Enums\ShopOwnerStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
@@ -176,17 +178,21 @@ class UserController extends Controller
             $user = User::where('email', $credentials['email'])->first();
 
             if ($user && Hash::check($credentials['password'], $user->password)) {
+                // Check user status (stored as string in database)
                 if ($user->status !== 'active') {
                     throw ValidationException::withMessages([
                         'email' => ['Your account has been suspended. Please contact support.'],
                     ]);
                 }
 
-                $employee = Employee::where('email', $user->email)->first();
-                if ($employee && $employee->status === 'suspended') {
-                    throw ValidationException::withMessages([
-                        'email' => ['Your account has been suspended. Please contact support.'],
-                    ]);
+                // For employees/staff, also check employee table status
+                if ($user->shop_owner_id) {
+                    $employee = Employee::where('email', $user->email)->first();
+                    if ($employee && $employee->status === 'suspended') {
+                        throw ValidationException::withMessages([
+                            'email' => ['Your account has been suspended. Please contact support.'],
+                        ]);
+                    }
                 }
 
                 Auth::guard('user')->login($user, $request->filled('remember'));
@@ -284,7 +290,7 @@ class UserController extends Controller
                 ]);
             }
 
-            if ($shopOwner->status !== 'approved') {
+            if ($shopOwner->status !== ShopOwnerStatus::APPROVED) {
                 throw ValidationException::withMessages([
                     'email' => ['Your account is inactive. Please contact support.'],
                 ]);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PriceChangeRequest;
 use App\Models\Product;
+use App\Enums\PriceChangeStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -298,7 +299,7 @@ class PriceChangeRequestController extends Controller
             ], 400);
         }
 
-        if ($priceChangeRequest->status !== 'pending') {
+        if ($priceChangeRequest->status !== PriceChangeStatus::PENDING) {
             return response()->json([
                 'success' => false,
                 'message' => 'This request cannot be approved at this time',
@@ -306,7 +307,7 @@ class PriceChangeRequestController extends Controller
         }
 
         $priceChangeRequest->update([
-            'status' => 'finance_approved',
+            'status' => PriceChangeStatus::FINANCE_APPROVED,
             'finance_reviewed_by' => Auth::id(),
             'finance_reviewed_at' => now(),
             'finance_notes' => $request->notes,
@@ -383,15 +384,15 @@ class PriceChangeRequestController extends Controller
             ], 400);
         }
 
-        if ($priceChangeRequest->status !== 'pending') {
+        if ($priceChangeRequest->status !== PriceChangeStatus::PENDING) {
             return response()->json([
                 'success' => false,
-                'message' => 'This request cannot be rejected at this time',
+                'message' => 'Only pending requests can be rejected',
             ], 400);
         }
 
         $priceChangeRequest->update([
-            'status' => 'finance_rejected',
+            'status' => PriceChangeStatus::FINANCE_REJECTED,
             'finance_reviewed_by' => Auth::id(),
             'finance_reviewed_at' => now(),
             'finance_rejection_reason' => $request->reason,
@@ -434,15 +435,15 @@ class PriceChangeRequestController extends Controller
         }
 
         // Check if needs finance approval first
-        if ($priceChangeRequest->status !== 'finance_approved') {
+        if ($priceChangeRequest->status !== PriceChangeStatus::FINANCE_APPROVED) {
             $statusMessages = [
-                'pending' => 'This request is still pending Finance review',
-                'finance_rejected' => 'This request was rejected by Finance',
+                PriceChangeStatus::PENDING->value => 'This request is still pending Finance review',
+                PriceChangeStatus::FINANCE_REJECTED->value => 'This request was rejected by Finance',
             ];
             
             return response()->json([
                 'success' => false,
-                'message' => $statusMessages[$priceChangeRequest->status] ?? 'This request cannot be approved at this time',
+                'message' => $statusMessages[$priceChangeRequest->status->value] ?? 'This request cannot be approved at this time',
                 'needs_finance_approval' => true,
             ], 400);
         }

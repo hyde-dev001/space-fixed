@@ -41,7 +41,7 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
             return response()->json(['error' => 'Invalid amount'], 400);
         }
 
-        $apiKey = env('PAYMONGO_SECRET_KEY');
+        $apiKey = 'sk_test_ZxQwuLRuxwAnuH5eyWLsSqBh';
         
         $response = \Illuminate\Support\Facades\Http::withHeaders([
             'Content-Type' => 'application/json',
@@ -201,6 +201,48 @@ Route::get('/orders/{id}/details', [\App\Http\Controllers\UserSide\CheckoutContr
 Route::prefix('staff')->middleware(['web', 'auth:user'])->group(function () {
     Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index']);
     Route::get('/customers/stats', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'stats']);
+});
+
+/**
+ * Media Library Routes - Image Management
+ */
+Route::middleware(['web', 'auth:user'])->prefix('media')->group(function () {
+    // Product images
+    Route::post('products/{product}/main-image', [\App\Http\Controllers\MediaLibraryController::class, 'uploadProductMainImage']);
+    Route::post('products/{product}/additional-images', [\App\Http\Controllers\MediaLibraryController::class, 'uploadProductAdditionalImages']);
+    Route::get('products/{product}/images', [\App\Http\Controllers\MediaLibraryController::class, 'getProductImages']);
+    
+    // Color variant images
+    Route::post('variants/{variant}/images', [\App\Http\Controllers\MediaLibraryController::class, 'uploadVariantImages']);
+    Route::get('variants/{variant}/images', [\App\Http\Controllers\MediaLibraryController::class, 'getVariantImages']);
+    
+    // General operations
+    Route::delete('files/{mediaId}', [\App\Http\Controllers\MediaLibraryController::class, 'deleteMedia']);
+    Route::post('products/{product}/reorder', [\App\Http\Controllers\MediaLibraryController::class, 'reorderImages']);
+    Route::get('files/{mediaId}/download', [\App\Http\Controllers\MediaLibraryController::class, 'downloadMedia']);
+});
+
+/**
+ * Customer Conversation Routes - Customer-side chat with shops
+ */
+Route::prefix('customer/conversations')->middleware(['web', 'auth:user'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\API\Customer\ConversationController::class, 'index']);
+    Route::get('/shops', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getContactedShops']);
+    Route::post('/get-or-create', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getOrCreate']);
+    Route::get('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getMessages']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'sendMessage']);
+});
+
+/**
+ * CRM Conversation Routes - Shop staff managing customer conversations
+ */
+Route::prefix('crm/conversations')->middleware(['web', 'auth:user'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\API\CRM\ConversationController::class, 'index']);
+    Route::get('/{conversation}', [\App\Http\Controllers\API\CRM\ConversationController::class, 'show']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\CRM\ConversationController::class, 'sendMessage']);
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\CRM\ConversationController::class, 'transfer']);
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updateStatus']);
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updatePriority']);
 });
 
 /**

@@ -478,15 +478,18 @@ const ShopProfile: React.FC = () => {
         credentials: 'include',
         headers: {
           'X-CSRF-TOKEN': csrfToken || '',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: formData,
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to upload photo');
+        const text = await response.text();
+        console.error('Response:', text);
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
+
+      const data = await response.json();
 
       // Update the local state with the new photo URL
       setProfilePhoto(`/storage/${data.profile_photo}`);

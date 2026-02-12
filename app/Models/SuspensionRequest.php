@@ -26,6 +26,7 @@ class SuspensionRequest extends Model
     protected $casts = [
         'manager_reviewed_at' => 'datetime',
         'owner_reviewed_at' => 'datetime',
+        'status' => \App\Enums\SuspensionStatus::class,
     ];
 
     public function employee(): BelongsTo

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
+use App\Enums\EmployeeStatus;
 
 /**
  * Employee Model
@@ -72,6 +73,7 @@ class Employee extends Model
         'other_allowances' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'status' => EmployeeStatus::class,
     ];
 
     /**
@@ -103,7 +105,7 @@ class Employee extends Model
      */
     public function scopeActive($query)
     {
-        return $query->where('status', 'active');
+        return $query->where('status', EmployeeStatus::ACTIVE);
     }
 
     /**

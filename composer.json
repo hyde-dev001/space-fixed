@@ -12,6 +12,8 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
         "spatie/laravel-activitylog": "^4.11",
+        "spatie/laravel-enum": "^3.2",
+        "spatie/laravel-medialibrary": "^11.18",
         "spatie/laravel-permission": "^6.24",
         "spatie/laravel-query-builder": "^6.4",
         "spatie/opening-hours": "^4.2",

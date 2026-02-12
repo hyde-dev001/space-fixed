@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ERP\HR;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\SuspensionRequest;
+use App\Enums\SuspensionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -72,7 +73,7 @@ class SuspensionRequestController extends Controller
         $employee = Employee::findOrFail($validated['employee_id']);
 
         $hasPending = SuspensionRequest::where('employee_id', $employee->id)
-            ->whereIn('status', ['pending_manager', 'pending_owner'])
+            ->whereIn('status', [SuspensionStatus::PENDING_MANAGER, SuspensionStatus::PENDING_OWNER])
             ->exists();
 
         if ($hasPending) {
@@ -86,7 +87,7 @@ class SuspensionRequestController extends Controller
             'requested_by' => Auth::id(),
             'reason' => $validated['reason'],
             'evidence' => $validated['evidence'] ?? null,
-            'status' => 'pending_manager',
+            'status' => SuspensionStatus::PENDING_MANAGER,
             'manager_status' => 'pending',
             'owner_status' => 'pending',
         ]);

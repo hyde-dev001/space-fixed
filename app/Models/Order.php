@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Enums\OrderStatus;
 
 class Order extends Model
 {
@@ -40,6 +41,7 @@ class Order extends Model
     ];
 
     protected $casts = [
+        'status' => OrderStatus::class,
         'total' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'quantity' => 'integer',

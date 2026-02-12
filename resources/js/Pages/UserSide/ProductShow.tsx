@@ -1021,7 +1021,7 @@ const ProductShow: React.FC = () => {
           </div>
 
           {/* Reviews and Ratings Section - Verified Buyer System */}
-          <div className="mt-16">
+          <div className="mt-16" id="reviews">
             <div className="border-t pt-12">
               <div className="flex items-center justify-between mb-8">
                 <div>

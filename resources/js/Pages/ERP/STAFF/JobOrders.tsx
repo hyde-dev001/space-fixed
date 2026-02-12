@@ -26,7 +26,7 @@ type Order = {
   shippingAddress: string;
   total: string;
   paymentStatus: string;
-  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
+  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
   eta?: string;
   orderedAt: string;
   processedAt?: string;
@@ -330,11 +330,12 @@ export default function JobOrdersPage() {
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
     const cancelled = orders.filter(o => o.status === "cancelled").length;
+    const refund = orders.filter(o => o.status === "refund").length;
     // Only include non-cancelled orders in revenue calculation
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled")
       .reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
-    return { total, pending, processing, shipped, delivered, cancelled, totalRevenue };
+    return { total, pending, processing, shipped, delivered, cancelled, refund, totalRevenue };
   }, [orders]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -358,6 +359,7 @@ export default function JobOrdersPage() {
       "shipped": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
       "delivered": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       "cancelled": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      "refund": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
@@ -704,6 +706,16 @@ export default function JobOrdersPage() {
                   }`}
                 >
                   Cancel ({stats.cancelled})
+                </button>
+                <button
+                  onClick={() => setSelectedTab("refund")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "refund"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  Refund ({stats.refund})
                 </button>
               </div>
 

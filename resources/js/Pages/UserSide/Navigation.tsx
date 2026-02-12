@@ -117,6 +117,12 @@ const Navigation: React.FC = () => {
   };
 
   const cleanUrl = url.split('?')[0]; // Remove query params
+  const queryString = url.split('?')[1]; // Extract query string
+  
+  // Extract category from query params
+  const categoryMatch = queryString?.match(/category=([^&]+)/);
+  const currentCategory = categoryMatch ? categoryMatch[1] : null;
+
   let currentRoute = urlToRouteMap[url] || urlToRouteMap[cleanUrl];
   // Treat product detail pages (e.g. /products/product-02) as the `products` route
   if (!currentRoute && cleanUrl.startsWith('/products')) {
@@ -127,7 +133,14 @@ const Navigation: React.FC = () => {
     currentRoute = 'repair';
   }
   if (currentRoute) {
-    activeIndex = navItems.findIndex(item => item.route === currentRoute);
+    // Special handling for products route with category
+    if (currentRoute === 'products' && currentCategory) {
+      activeIndex = navItems.findIndex(
+        item => item.route === currentRoute && item.params?.category === currentCategory
+      );
+    } else {
+      activeIndex = navItems.findIndex(item => item.route === currentRoute);
+    }
   } else if (url.includes('shop-owner') && url.includes('register')) {
     // Special case for shop owner registration pages
     activeIndex = navItems.findIndex(item => item.route === 'services');
@@ -221,7 +234,7 @@ const Navigation: React.FC = () => {
                     className="relative flex items-center h-full"
                   >
                     <Link
-                      href={route(item.route)}
+                      href={route(item.route, item.params)}
                       aria-current={activeIndex === index ? "page" : undefined}
                       className={`text-sm uppercase tracking-wider leading-none transition-all duration-300 ease-in-out pb-2 inline-flex items-center ${
                         activeIndex === index
@@ -556,20 +569,22 @@ const Navigation: React.FC = () => {
               )}
             </div>
 
-            {/* Messages Icon */}
-            <Link href={route('message', { shopId: user?.shop_id || 1 })} className="relative inline-flex items-center justify-center h-10 w-10 text-black hover:opacity-70 transition-opacity" aria-label="Messages">
-              <svg className="w-6 h-6 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z"
-                />
-              </svg>
-              {/* Notification badge: show only if there are unread messages */}
-              {/* Replace 6 with a dynamic unread count if available, or remove if not needed */}
-              {/* Example: {unreadCount > 0 && ( ...badge... )} */}
-            </Link>
+            {/* Messages Icon - Only visible for authenticated customers */}
+            {isAuthenticated && (
+              <Link href="/messages" className="relative inline-flex items-center justify-center h-10 w-10 text-black hover:opacity-70 transition-opacity" aria-label="Messages">
+                <svg className="w-6 h-6 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z"
+                  />
+                </svg>
+                {/* Notification badge: show only if there are unread messages */}
+                {/* Replace 6 with a dynamic unread count if available, or remove if not needed */}
+                {/* Example: {unreadCount > 0 && ( ...badge... )} */}
+              </Link>
+            )}
 
             {/* Shopping Cart Icon */}
             <Link id="cart-icon" href="/checkout" className="relative inline-flex items-center justify-center h-10 w-10 text-black hover:opacity-70 transition-opacity" aria-label="Shopping cart">

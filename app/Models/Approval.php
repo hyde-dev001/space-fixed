@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Enums\ApprovalStatus;
 
 class Approval extends Model
 {
@@ -32,7 +33,8 @@ class Approval extends Model
         'amount' => 'decimal:2',
         'reviewed_at' => 'datetime',
         'current_level' => 'integer',
-        'total_levels' => 'integer'
+        'total_levels' => 'integer',
+        'status' => ApprovalStatus::class
     ];
 
     /**
@@ -88,7 +90,7 @@ class Approval extends Model
      */
     public function scopePending($query)
     {
-        return $query->where('status', 'pending');
+        return $query->where('status', ApprovalStatus::PENDING);
     }
 
     /**
@@ -96,7 +98,7 @@ class Approval extends Model
      */
     public function scopeApproved($query)
     {
-        return $query->where('status', 'approved');
+        return $query->where('status', ApprovalStatus::APPROVED);
     }
 
     /**
@@ -104,6 +106,6 @@ class Approval extends Model
      */
     public function scopeRejected($query)
     {
-        return $query->where('status', 'rejected');
+        return $query->where('status', ApprovalStatus::REJECTED);
     }
 }

@@ -182,7 +182,7 @@ const financeItems: NavItem[] = [
     name: "Pricing Approvals",
     subItems: [
       {
-        name: "Repair Pricing",
+        name: "Repair Pricing Approval",
         route: "finance.index",
         params: { section: "repair-pricing" },
         icon: (
@@ -192,7 +192,7 @@ const financeItems: NavItem[] = [
         ),
       },
       {
-        name: "Shoe Pricing",
+        name: "Shoe Pricing Approval",
         route: "finance.index",
         params: { section: "shoe-pricing" },
         icon: (
@@ -213,6 +213,17 @@ const financeItems: NavItem[] = [
     name: "Expenses",
     route: "finance.index",
     params: { section: "expense-tracking" },
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+      </svg>
+    ),
+    name: "Refund Approval",
+    route: "finance.index",
+    params: { section: "refund-approvals" },
+    extraPaths: ["/finance?refund-approvals", "/finance?section=refund-approvals"],
   },
   {
     icon: (

@@ -6,10 +6,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class ProductColorVariant extends Model
+class ProductColorVariant extends Model implements HasMedia
 {
-    use HasFactory;
+    use HasFactory, InteractsWithMedia;
 
     protected $fillable = [
         'product_id',
@@ -24,6 +26,27 @@ class ProductColorVariant extends Model
         'is_active' => 'boolean',
         'sort_order' => 'integer',
     ];
+
+    /**
+     * Register media collections for color variant images
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('color_images');
+        $this->addMediaCollection('color_thumbnail')
+            ->singleFile();
+    }
+
+    public function registerMediaConversions($media = null): void
+    {
+        $this->addMediaConversion('thumb')
+            ->width(200)
+            ->height(200);
+        
+        $this->addMediaConversion('preview')
+            ->width(600)
+            ->height(600);
+    }
 
     /**
      * Get the product that owns this color variant.

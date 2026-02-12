@@ -29,6 +29,7 @@ class PriceChangeRequest extends Model
         'proposed_price' => 'decimal:2',
         'finance_reviewed_at' => 'datetime',
         'owner_reviewed_at' => 'datetime',
+        'status' => \App\Enums\PriceChangeStatus::class,
     ];
 
     // Relationships

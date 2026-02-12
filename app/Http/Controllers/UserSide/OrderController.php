@@ -4,6 +4,7 @@ namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Enums\OrderStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -86,14 +87,14 @@ class OrderController extends Controller
             ->firstOrFail();
 
         // Only allow confirmation if order is shipped
-        if (!in_array($order->status, ['shipped', 'to_ship'])) {
+        if (!in_array($order->status, [OrderStatus::SHIPPED])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Can only confirm orders that have been shipped',
             ], 400);
         }
 
-        $order->status = 'delivered';
+        $order->status = OrderStatus::DELIVERED;
         $order->save();
 
         return response()->json([
@@ -127,7 +128,7 @@ class OrderController extends Controller
                 ->firstOrFail();
 
             // Only allow cancellation of pending/processing orders
-            if (!in_array($order->status, ['pending', 'processing'])) {
+            if (!in_array($order->status, [OrderStatus::PENDING, OrderStatus::PROCESSING])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot cancel orders that are already shipped or completed',
@@ -155,7 +156,7 @@ class OrderController extends Controller
                 }
             }
 
-            $order->status = 'cancelled';
+            $order->status = OrderStatus::CANCELLED;
             $order->save();
 
             \Illuminate\Support\Facades\DB::commit();

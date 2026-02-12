@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\OrderItem;
+use App\Enums\OrderStatus;
+use App\Enums\ApprovalStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -99,22 +101,22 @@ class DashboardController extends Controller
 
         // Pending Orders
         $pendingOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'pending')
+            ->where('status', OrderStatus::PENDING)
             ->count();
 
         // Processing Orders
         $processingOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'processing')
+            ->where('status', OrderStatus::PROCESSING)
             ->count();
 
         // Shipped Orders
         $shippedOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'shipped')
+            ->where('status', OrderStatus::SHIPPED)
             ->count();
 
         // Completed Orders
         $completedOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'completed')
+            ->where('status', OrderStatus::COMPLETED)
             ->count();
 
         // Top Selling Products (last 30 days)

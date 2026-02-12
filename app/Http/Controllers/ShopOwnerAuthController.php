@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ShopOwner;
+use App\Enums\ShopOwnerStatus;
 use App\Models\ShopDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -200,7 +201,7 @@ class ShopOwnerAuthController extends Controller
                 ]);
             }
 
-            if ($shopOwner->status !== 'approved') {
+            if ($shopOwner->status !== ShopOwnerStatus::APPROVED) {
                 throw ValidationException::withMessages([
                     'email' => ['Your account is inactive. Please contact support.'],
                 ]);

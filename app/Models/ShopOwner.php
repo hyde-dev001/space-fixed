@@ -7,6 +7,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\OpeningHours\OpeningHours;
+use App\Enums\ShopOwnerStatus;
 
 /**
  * ShopOwner Model
@@ -92,6 +93,7 @@ class ShopOwner extends Authenticatable
         'operating_hours' => 'array',  // Auto JSON encode/decode
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'status' => \App\Enums\ShopOwnerStatus::class,
     ];
 
     /**
@@ -116,7 +118,7 @@ class ShopOwner extends Authenticatable
      */
     public function scopePending($query)
     {
-        return $query->where('status', 'pending');
+        return $query->where('status', ShopOwnerStatus::PENDING);
     }
 
     /**
@@ -129,7 +131,7 @@ class ShopOwner extends Authenticatable
      */
     public function scopeApproved($query)
     {
-        return $query->where('status', 'approved');
+        return $query->where('status', ShopOwnerStatus::APPROVED);
     }
 
     /**

@@ -65,7 +65,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
             {/* Message Button */}
             <div className="absolute top-6 right-6">
               <Link
-                href="/shop/message"
+                href={`/message/${shop.id}`}
                 className="inline-block bg-white text-black border border-black px-4 py-1 rounded text-sm font-medium hover:bg-gray-50 transition-colors"
               >
                 Message

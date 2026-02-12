@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Enums\OrderStatus;
 
 class ProductReview extends Model
 {
@@ -85,7 +86,7 @@ class ProductReview extends Model
             ->whereHas('items', function ($query) use ($productId) {
                 $query->where('product_id', $productId);
             })
-            ->whereIn('status', ['completed', 'delivered'])
+            ->whereIn('status', [OrderStatus::COMPLETED, OrderStatus::DELIVERED])
             ->first();
 
         if (!$purchasedOrder) {
@@ -94,7 +95,7 @@ class ProductReview extends Model
                 ->whereHas('items', function ($query) use ($productId) {
                     $query->where('product_id', $productId);
                 })
-                ->whereIn('status', ['pending', 'processing', 'shipped'])
+                ->whereIn('status', [OrderStatus::PENDING, OrderStatus::PROCESSING, OrderStatus::SHIPPED])
                 ->first();
 
             if ($pendingOrder) {

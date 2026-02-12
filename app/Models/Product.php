@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Product extends Model
+class Product extends Model implements HasMedia
 {
-    use SoftDeletes, LogsActivity;
+    use SoftDeletes, LogsActivity, InteractsWithMedia;
 
     protected $fillable = [
         'shop_owner_id',
@@ -58,50 +60,89 @@ class Product extends Model
     ];
 
     /**
-     * Get the main image URL
+     * Register media collections and conversions
      */
-    public function getMainImageUrlAttribute(): ?string
+    public function registerMediaCollections(): void
     {
-        if (!$this->main_image) {
-            return null;
-        }
+        $this->addMediaCollection('main_image')
+            ->singleFile();
+        
+        $this->addMediaCollection('additional_images');
+    }
 
-        // If already a full URL, return as is
-        if (filter_var($this->main_image, FILTER_VALIDATE_URL)) {
-            return $this->main_image;
-        }
-
-        // If it already starts with /storage/, return as asset
-        if (str_starts_with($this->main_image, '/storage/')) {
-            return asset(ltrim($this->main_image, '/'));
-        }
-
-        // Otherwise, assume it's just the filename and prepend storage/products/
-        return asset('storage/products/' . $this->main_image);
+    public function registerMediaConversions($media = null): void
+    {
+        $this->addMediaConversion('thumb')
+            ->width(150)
+            ->height(150)
+            ->sharpen(0, 0.5, 1);
+        
+        $this->addMediaConversion('medium')
+            ->width(500)
+            ->height(500);
+        
+        $this->addMediaConversion('large')
+            ->width(1000)
+            ->height(1000);
     }
 
     /**
-     * Get all image URLs (main + additional)
+     * Get the main image URL from Media Library
+     */
+    public function getMainImageUrlAttribute(): ?string
+    {
+        $mainImage = $this->getFirstMedia('main_image');
+        if (!$mainImage) {
+            // Fallback to old system for backwards compatibility
+            if (!$this->main_image) {
+                return null;
+            }
+            if (filter_var($this->main_image, FILTER_VALIDATE_URL)) {
+                return $this->main_image;
+            }
+            if (str_starts_with($this->main_image, '/storage/')) {
+                return asset(ltrim($this->main_image, '/'));
+            }
+            return asset('storage/products/' . $this->main_image);
+        }
+        return $mainImage->getUrl();
+    }
+
+    /**
+     * Get main image thumbnail URL
+     */
+    public function getMainImageThumbAttribute(): ?string
+    {
+        $mainImage = $this->getFirstMedia('main_image');
+        return $mainImage?->getUrl('thumb');
+    }
+
+    /**
+     * Get all image URLs (main + additional) from Media Library
      */
     public function getImageUrlsAttribute(): array
     {
         $images = [];
 
-        // Add main image
-        if ($this->main_image_url) {
-            $images[] = $this->main_image_url;
+        // Add main image from media library
+        $mainImage = $this->getFirstMedia('main_image');
+        if ($mainImage) {
+            $images[] = ['url' => $mainImage->getUrl(), 'type' => 'main'];
+        } elseif ($this->main_image_url) {
+            // Fallback to old system
+            $images[] = ['url' => $this->main_image_url, 'type' => 'main'];
         }
 
-        // Add additional images
-        if ($this->additional_images && is_array($this->additional_images)) {
+        // Add additional images from media library
+        foreach ($this->getMedia('additional_images') as $image) {
+            $images[] = ['url' => $image->getUrl(), 'type' => 'additional'];
+        }
+
+        // Fallback to old system if no media files
+        if (empty($images) && $this->additional_images && is_array($this->additional_images)) {
             foreach ($this->additional_images as $image) {
-                // If already a full URL, use as is
-                if (filter_var($image, FILTER_VALIDATE_URL)) {
-                    $images[] = $image;
-                } else {
-                    // Convert relative path to full URL
-                    $images[] = asset('storage/products/' . $image);
-                }
+                $url = filter_var($image, FILTER_VALIDATE_URL) ? $image : asset('storage/products/' . $image);
+                $images[] = ['url' => $url, 'type' => 'additional'];
             }
         }
 

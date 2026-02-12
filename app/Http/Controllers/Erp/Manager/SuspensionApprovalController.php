@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ERP\Manager;
 
 use App\Http\Controllers\Controller;
 use App\Models\SuspensionRequest;
+use App\Enums\SuspensionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -16,11 +17,11 @@ class SuspensionApprovalController extends Controller
         $query = SuspensionRequest::with(['employee', 'requester', 'manager']);
 
         if ($statusFilter === 'pending') {
-            $query->where('status', 'pending_manager');
+            $query->where('status', SuspensionStatus::PENDING_MANAGER);
         } elseif ($statusFilter === 'approved') {
-            $query->whereIn('status', ['pending_owner', 'approved', 'rejected_owner']);
+            $query->whereIn('status', [SuspensionStatus::PENDING_OWNER, SuspensionStatus::APPROVED, SuspensionStatus::REJECTED_OWNER]);
         } elseif ($statusFilter === 'rejected') {
-            $query->where('status', 'rejected_manager');
+            $query->where('status', SuspensionStatus::REJECTED_MANAGER);
         }
 
         $requests = $query->latest()->get()->map(function (SuspensionRequest $req) {
@@ -70,7 +71,7 @@ class SuspensionApprovalController extends Controller
 
         $req = SuspensionRequest::with('employee')->findOrFail($id);
 
-        if ($req->status !== 'pending_manager') {
+        if ($req->status !== SuspensionStatus::PENDING_MANAGER) {
             return response()->json(['message' => 'This request is not pending manager review.'], 422);
         }
 
@@ -80,10 +81,10 @@ class SuspensionApprovalController extends Controller
 
         if ($validated['action'] === 'approve') {
             $req->manager_status = 'approved';
-            $req->status = 'pending_owner';
+            $req->status = SuspensionStatus::PENDING_OWNER;
         } else {
             $req->manager_status = 'rejected';
-            $req->status = 'rejected_manager';
+            $req->status = SuspensionStatus::REJECTED_MANAGER;
         }
 
         $req->save();
@@ -95,11 +96,11 @@ class SuspensionApprovalController extends Controller
         ]);
     }
 
-    private function mapStatusForManager(string $status): string
+    private function mapStatusForManager(SuspensionStatus $status): string
     {
         return match ($status) {
-            'pending_manager' => 'pending',
-            'rejected_manager' => 'rejected',
+            SuspensionStatus::PENDING_MANAGER => 'pending',
+            SuspensionStatus::REJECTED_MANAGER => 'rejected',
             default => 'approved',
         };
     }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Enums\TrainingStatus;
 
 class TrainingEnrollment extends Model
 {
@@ -35,6 +36,7 @@ class TrainingEnrollment extends Model
         'completion_date' => 'date',
         'assessment_score' => 'decimal:2',
         'passed' => 'boolean',
+        'status' => \App\Enums\TrainingStatus::class,
     ];
 
     /**
@@ -117,7 +119,7 @@ class TrainingEnrollment extends Model
      */
     public function scopeActive($query)
     {
-        return $query->whereIn('status', ['enrolled', 'in_progress']);
+        return $query->whereIn('status', [TrainingStatus::PENDING, TrainingStatus::IN_PROGRESS]);
     }
 
     /**
@@ -125,7 +127,7 @@ class TrainingEnrollment extends Model
      */
     public function scopeCompleted($query)
     {
-        return $query->where('status', 'completed');
+        return $query->where('status', TrainingStatus::COMPLETED);
     }
 
     /**

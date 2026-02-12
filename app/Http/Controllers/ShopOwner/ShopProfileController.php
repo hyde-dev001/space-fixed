@@ -109,13 +109,20 @@ class ShopProfileController extends Controller
      */
     public function uploadPhoto(Request $request)
     {
-        $shopOwner = Auth::guard('shop_owner')->user();
-
-        $request->validate([
-            'profile_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
-        ]);
-
         try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if (!$shopOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
+            $validated = $request->validate([
+                'profile_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240',
+            ]);
+
             // Delete old photo if exists
             if ($shopOwner->profile_photo && Storage::disk('public')->exists($shopOwner->profile_photo)) {
                 Storage::disk('public')->delete($shopOwner->profile_photo);
@@ -127,12 +134,28 @@ class ShopProfileController extends Controller
             // Update shop owner record
             $shopOwner->update(['profile_photo' => $path]);
 
+            \Log::info('Profile photo uploaded', [
+                'shop_owner_id' => $shopOwner->id,
+                'path' => $path,
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Profile photo uploaded successfully',
-                'profile_photo' => Storage::url($path),
+                'profile_photo' => $path,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error uploading photo', ['errors' => $e->errors()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
+            \Log::error('Error uploading profile photo', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload photo: ' . $e->getMessage(),

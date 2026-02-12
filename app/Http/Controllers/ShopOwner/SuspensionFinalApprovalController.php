@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\SuspensionRequest;
 use App\Models\Employee;
+use App\Enums\SuspensionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -29,9 +30,9 @@ class SuspensionFinalApprovalController extends Controller
             // Filter by owner status if provided
             if ($request->has('status') && $request->status !== 'all') {
                 $statusMapping = [
-                    'pending' => 'pending_owner',
-                    'approved' => 'approved',
-                    'rejected' => 'rejected_owner'
+                    'pending' => SuspensionStatus::PENDING_OWNER,
+                    'approved' => SuspensionStatus::APPROVED,
+                    'rejected' => SuspensionStatus::REJECTED_OWNER
                 ];
                 
                 $dbStatus = $statusMapping[$request->status] ?? $request->status;
@@ -53,14 +54,8 @@ class SuspensionFinalApprovalController extends Controller
 
             // Transform the data
             $transformedData = $suspensionRequests->map(function ($request) {
-                // Map database status to frontend status
-                $frontendStatus = match($request->status) {
-                    'pending_owner' => 'pending',
-                    'approved' => 'approved',
-                    'rejected_owner' => 'rejected',
-                    'rejected_manager' => 'rejected',
-                    default => 'pending'
-                };
+                // Use SuspensionStatus enum's toFrontend() method for mapping
+                $frontendStatus = $request->status->toFrontend();
 
                 return [
                     'id' => $request->id,
@@ -104,14 +99,8 @@ class SuspensionFinalApprovalController extends Controller
             $request = SuspensionRequest::with(['employee', 'requester', 'manager', 'owner'])
                 ->findOrFail($id);
 
-            // Map database status to frontend status
-            $frontendStatus = match($request->status) {
-                'pending_owner' => 'pending',
-                'approved' => 'approved',
-                'rejected_owner' => 'rejected',
-                'rejected_manager' => 'rejected',
-                default => 'pending'
-            };
+            // Use SuspensionStatus enum's toFrontend() method for mapping
+            $frontendStatus = $request->status->toFrontend();
 
             return response()->json([
                 'success' => true,
@@ -157,7 +146,7 @@ class SuspensionFinalApprovalController extends Controller
             $suspensionRequest = SuspensionRequest::with('employee')->findOrFail($id);
 
             // Check if already reviewed by owner
-            if (in_array($suspensionRequest->status, ['approved', 'rejected_owner'])) {
+            if (in_array($suspensionRequest->status, [SuspensionStatus::APPROVED, SuspensionStatus::REJECTED_OWNER])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This request has already been reviewed',
@@ -176,7 +165,7 @@ class SuspensionFinalApprovalController extends Controller
             $note = $request->input('note');
 
             // Update suspension request with proper status
-            $newStatus = $action === 'approve' ? 'approved' : 'rejected_owner';
+            $newStatus = $action === 'approve' ? SuspensionStatus::APPROVED : SuspensionStatus::REJECTED_OWNER;
             
             $suspensionRequest->update([
                 'status' => $newStatus,

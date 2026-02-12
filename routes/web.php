@@ -66,17 +66,19 @@ Route::get('/repair-shop/{id}', function () {
     return Inertia::render('UserSide/repairShow');
 })->name('repair.show');
 // Message / Chat with shop owner
-Route::get('/message/{shopId}', function ($shopId) {
+Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
     return Inertia::render('UserSide/message', [
-        'shopOwner' => [
-            'id' => $shopId,
-            // Minimal placeholder data; frontend can fetch real details if needed
-            'name' => 'Shop Owner',
-            'avatar' => '/images/shop/shop1.jpg',
-            'online' => false,
-        ],
+        'shopOwnerId' => $shopOwnerId ? (int)$shopOwnerId : null,
     ]);
-})->name('message');
+})->middleware('auth:user')->name('message');
+
+// Messages / Conversations listing page
+Route::get('/messages', function () {
+    return Inertia::render('UserSide/message', [
+        'shops' => [], // Frontend will fetch shop list
+    ]);
+})->middleware('auth:user')->name('messages');
+
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
 Route::get('/services', [LandingPageController::class, 'services'])->name('services');
 Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
@@ -203,6 +205,10 @@ Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
     Route::get('/suspend-accounts', function () {
         return Inertia::render('ShopOwner/suspendAccount');
     })->name('suspend-accounts');
+
+    Route::get('/refund-approvals', function () {
+        return Inertia::render('ShopOwner/refundApproval');
+    })->name('refund-approvals');
 });
 
 // Shop Owner Protected Routes
@@ -230,6 +236,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::get('/price-approvals', function () {
         return Inertia::render('ShopOwner/PriceApprovals');
     })->name('price-approvals');
+
+    Route::get('/refund-approvals', function () {
+        return Inertia::render('ShopOwner/refundApproval');
+    })->name('refund-approvals');
 
     Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
     Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');

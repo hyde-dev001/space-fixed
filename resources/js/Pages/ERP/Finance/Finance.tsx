@@ -14,6 +14,7 @@ import CreateInvoice from "../Finance/createInvoice";
 import RepairPriceApproval from "../Finance/repairPriceApproval";
 import ShoePriceApproval from "../Finance/shoePriceApproval";
 import PayslipApproval from "../Finance/payslipApproval";
+import RefundApproval from "../Finance/refundApproval";
 import ErrorModal from "../../../components/common/ErrorModal";
 
 // Simplified for SMEs - only essential features
@@ -23,7 +24,8 @@ type Section =
   | "expense-tracking"
   | "repair-pricing"
   | "shoe-pricing"
-  | "payslip-approvals";
+  | "payslip-approvals"
+  | "refund-approvals";
 
 export default function FinancePage() {
   const { auth, url } = usePage().props as any;
@@ -40,7 +42,7 @@ export default function FinancePage() {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const value = urlParams.get("section") || "invoice-generation";
-      if (["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "payslip-approvals"].includes(value)) return value as Section;
+      if (["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "payslip-approvals", "refund-approvals"].includes(value)) return value as Section;
       return "invoice-generation";
     }
     return "invoice-generation";
@@ -53,6 +55,7 @@ export default function FinancePage() {
     if (section === "repair-pricing") return "Repair Price Approval - Solespace ERP";
     if (section === "shoe-pricing") return "Shoe Price Approval - Solespace ERP";
     if (section === "payslip-approvals") return "Payslip Approvals - Solespace ERP";
+    if (section === "refund-approvals") return "Refund Approvals - Solespace ERP";
     return "Finance - Solespace ERP";
   }, [section]);
 
@@ -147,6 +150,9 @@ export default function FinancePage() {
             );
           }
           return <PayslipApproval />;
+
+        case "refund-approvals":
+          return <RefundApproval />;
           
         default:
           return <Invoice />;
