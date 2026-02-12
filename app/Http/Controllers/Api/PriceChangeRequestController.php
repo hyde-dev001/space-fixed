@@ -51,6 +51,7 @@ class PriceChangeRequestController extends Controller
         ]);
 
         $product = Product::findOrFail($productId);
+        $actor = Auth::guard('user')->user() ?? Auth::user();
         
         // Get shop owner id from product
         $shopOwnerId = $product->shop_owner_id ?? auth()->user()->shop_owner_id;
@@ -63,6 +64,14 @@ class PriceChangeRequestController extends Controller
                 ->first();
 
             if ($existingRequest) {
+                $oldValues = [
+                    'product_name' => $existingRequest->product_name,
+                    'current_price' => $existingRequest->current_price,
+                    'proposed_price' => $existingRequest->proposed_price,
+                    'reason' => $existingRequest->reason,
+                    'status' => $existingRequest->status,
+                ];
+
                 // Update existing request instead of creating new one
                 $existingRequest->update([
                     'product_name' => $request->product_name,
@@ -77,6 +86,24 @@ class PriceChangeRequestController extends Controller
                     'owner_reviewed_at' => null,
                     'created_at' => now(), // Update timestamp
                 ]);
+
+                activity()
+                    ->causedBy($actor)
+                    ->performedOn($existingRequest)
+                    ->event('updated')
+                    ->withProperties([
+                        'old' => $oldValues,
+                        'attributes' => [
+                            'product_name' => $request->product_name,
+                            'current_price' => $request->current_price,
+                            'proposed_price' => $request->proposed_price,
+                            'reason' => $request->reason,
+                            'status' => 'pending',
+                        ],
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                    ])
+                    ->log('Price change request updated');
 
                 DB::commit();
 
@@ -99,6 +126,24 @@ class PriceChangeRequestController extends Controller
                 'shop_owner_id' => $shopOwnerId,
                 'status' => 'pending',
             ]);
+
+            activity()
+                ->causedBy($actor)
+                ->performedOn($priceChangeRequest)
+                ->event('created')
+                ->withProperties([
+                    'attributes' => [
+                        'product_id' => $productId,
+                        'product_name' => $request->product_name,
+                        'current_price' => $request->current_price,
+                        'proposed_price' => $request->proposed_price,
+                        'reason' => $request->reason,
+                        'status' => 'pending',
+                    ],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ])
+                ->log('Price change request submitted');
 
             DB::commit();
 
@@ -213,6 +258,12 @@ class PriceChangeRequestController extends Controller
         ]);
 
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+        $actor = Auth::guard('user')->user() ?? Auth::user();
+        $oldValues = [
+            'status' => $priceChangeRequest->status,
+            'finance_reviewed_by' => $priceChangeRequest->finance_reviewed_by,
+            'finance_notes' => $priceChangeRequest->finance_notes,
+        ];
 
         // Check if already finalized
         if ($priceChangeRequest->status === 'finance_approved') {
@@ -260,6 +311,22 @@ class PriceChangeRequestController extends Controller
             'finance_reviewed_at' => now(),
             'finance_notes' => $request->notes,
         ]);
+
+        activity()
+            ->causedBy($actor)
+            ->performedOn($priceChangeRequest)
+            ->event('updated')
+            ->withProperties([
+                'old' => $oldValues,
+                'attributes' => [
+                    'status' => 'finance_approved',
+                    'finance_reviewed_by' => Auth::id(),
+                    'finance_notes' => $request->notes,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ])
+            ->log('Finance approved price change request');
 
         $shopOwnerId = $priceChangeRequest->shop_owner_id;
         $metrics = $this->calculateMetrics($shopOwnerId, 'finance');
@@ -519,5 +586,68 @@ class PriceChangeRequestController extends Controller
             'success' => true,
             'requests' => $requests,
         ]);
+    }
+
+    /**
+     * Cancel a price change request (staff only)
+     */
+    public function cancelRequest($id)
+    {
+        $user = Auth::user();
+        $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+
+        // Verify the request belongs to this user
+        if ($priceChangeRequest->requested_by !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized - You can only cancel your own requests',
+            ], 403);
+        }
+
+        // Can only cancel pending requests
+        if ($priceChangeRequest->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel - request is already being reviewed or completed',
+            ], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Delete the request
+            $priceChangeRequest->delete();
+
+            // Log the cancellation
+            activity()
+                ->causedBy($user)
+                ->performedOn($priceChangeRequest)
+                ->event('deleted')
+                ->withProperties([
+                    'attributes' => [
+                        'product_name' => $priceChangeRequest->product_name,
+                        'current_price' => $priceChangeRequest->current_price,
+                        'proposed_price' => $priceChangeRequest->proposed_price,
+                        'reason' => $priceChangeRequest->reason,
+                    ],
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                ])
+                ->log('Price change request cancelled by staff');
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Price change request cancelled successfully',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error cancelling price change request: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to cancel request',
+            ], 500);
+        }
     }
 }

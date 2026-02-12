@@ -25,12 +25,12 @@ use App\Http\Controllers\ERP\HR\EmployeeController;
 use App\Http\Controllers\ERP\HR\AttendanceController;
 use App\Http\Controllers\ERP\HR\LeaveController;
 use App\Http\Controllers\ERP\HR\PayrollController;
-use App\Http\Controllers\ERP\HR\PerformanceController;
+// use App\Http\Controllers\ERP\HR\PerformanceController; // TODO: Implement this controller
 use App\Http\Controllers\ERP\HR\DepartmentController;
 use App\Http\Controllers\ERP\HR\DocumentController;
 use App\Http\Controllers\ERP\HR\AuditLogController as HRAuditLogController;
 use App\Http\Controllers\ERP\HR\NotificationController;
-use App\Http\Controllers\ERP\HR\TrainingController;
+// use App\Http\Controllers\ERP\HR\TrainingController; // TODO: Implement this controller
 use App\Http\Controllers\ERP\HR\HRAnalyticsController;
 use App\Http\Controllers\ERP\HR\SuspensionRequestController;
 
@@ -156,15 +156,16 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
     // ============================================
     // PERFORMANCE REVIEWS
     // ============================================
-    Route::prefix('performance-reviews')->group(function () {
-        Route::get('/', [PerformanceController::class, 'index'])->name('hr.performance.index');
-        Route::post('/', [PerformanceController::class, 'store'])->name('hr.performance.store');
-        Route::get('/employee/{employeeId}', [PerformanceController::class, 'getByEmployee'])->name('hr.performance.by_employee');
-        Route::get('/{id}', [PerformanceController::class, 'show'])->name('hr.performance.show');
-        Route::put('/{id}', [PerformanceController::class, 'update'])->name('hr.performance.update');
-        Route::delete('/{id}', [PerformanceController::class, 'destroy'])->name('hr.performance.destroy');
-        Route::post('/{id}/submit', [PerformanceController::class, 'submit'])->name('hr.performance.submit');
-    });
+    // TODO: Implement PerformanceController
+    // Route::prefix('performance-reviews')->group(function () {
+    //     Route::get('/', [PerformanceController::class, 'index'])->name('hr.performance.index');
+    //     Route::post('/', [PerformanceController::class, 'store'])->name('hr.performance.store');
+    //     Route::get('/employee/{employeeId}', [PerformanceController::class, 'getByEmployee'])->name('hr.performance.by_employee');
+    //     Route::get('/{id}', [PerformanceController::class, 'show'])->name('hr.performance.show');
+    //     Route::put('/{id}', [PerformanceController::class, 'update'])->name('hr.performance.update');
+    //     Route::delete('/{id}', [PerformanceController::class, 'destroy'])->name('hr.performance.destroy');
+    //     Route::post('/{id}/submit', [PerformanceController::class, 'submit'])->name('hr.performance.submit');
+    // });
 
     // ============================================
     // DEPARTMENTS
@@ -228,32 +229,33 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
     // ============================================
     // TRAINING MANAGEMENT
     // ============================================
-    Route::prefix('training')->group(function () {
-        // Training Programs
-        Route::get('/programs', [TrainingController::class, 'index'])->name('hr.training.programs.index');
-        Route::post('/programs', [TrainingController::class, 'store'])->name('hr.training.programs.store');
-        Route::get('/programs/{id}', [TrainingController::class, 'show'])->name('hr.training.programs.show');
-        Route::put('/programs/{id}', [TrainingController::class, 'update'])->name('hr.training.programs.update');
-        Route::delete('/programs/{id}', [TrainingController::class, 'destroy'])->name('hr.training.programs.destroy');
-
-        // Training Sessions
-        Route::get('/sessions', [TrainingController::class, 'sessions'])->name('hr.training.sessions.index');
-        Route::post('/sessions', [TrainingController::class, 'storeSession'])->name('hr.training.sessions.store');
-        Route::put('/sessions/{id}', [TrainingController::class, 'updateSession'])->name('hr.training.sessions.update');
-        Route::delete('/sessions/{id}', [TrainingController::class, 'destroySession'])->name('hr.training.sessions.destroy');
-
-        // Enrollments
-        Route::get('/enrollments', [TrainingController::class, 'enrollments'])->name('hr.training.enrollments.index');
-        Route::post('/enroll', [TrainingController::class, 'enroll'])->name('hr.training.enroll');
-        Route::put('/enrollments/{id}', [TrainingController::class, 'updateEnrollment'])->name('hr.training.enrollments.update');
-        Route::post('/enrollments/{id}/complete', [TrainingController::class, 'completeEnrollment'])->name('hr.training.enrollments.complete');
-
-        // Certifications
-        Route::get('/certifications', [TrainingController::class, 'certifications'])->name('hr.training.certifications.index');
-
-        // Statistics
-        Route::get('/statistics', [TrainingController::class, 'statistics'])->name('hr.training.statistics');
-    });
+    // TODO: Implement TrainingController
+    // Route::prefix('training')->group(function () {
+    //     // Training Programs
+    //     Route::get('/programs', [TrainingController::class, 'index'])->name('hr.training.programs.index');
+    //     Route::post('/programs', [TrainingController::class, 'store'])->name('hr.training.programs.store');
+    //     Route::get('/programs/{id}', [TrainingController::class, 'show'])->name('hr.training.programs.show');
+    //     Route::put('/programs/{id}', [TrainingController::class, 'update'])->name('hr.training.programs.update');
+    //     Route::delete('/programs/{id}', [TrainingController::class, 'destroy'])->name('hr.training.programs.destroy');
+    //
+    //     // Training Sessions
+    //     Route::get('/sessions', [TrainingController::class, 'sessions'])->name('hr.training.sessions.index');
+    //     Route::post('/sessions', [TrainingController::class, 'storeSession'])->name('hr.training.sessions.store');
+    //     Route::put('/sessions/{id}', [TrainingController::class, 'updateSession'])->name('hr.training.sessions.update');
+    //     Route::delete('/sessions/{id}', [TrainingController::class, 'destroySession'])->name('hr.training.sessions.destroy');
+    //
+    //     // Enrollments
+    //     Route::get('/enrollments', [TrainingController::class, 'enrollments'])->name('hr.training.enrollments.index');
+    //     Route::post('/enroll', [TrainingController::class, 'enroll'])->name('hr.training.enroll');
+    //     Route::put('/enrollments/{id}', [TrainingController::class, 'updateEnrollment'])->name('hr.training.enrollments.update');
+    //     Route::post('/enrollments/{id}/complete', [TrainingController::class, 'completeEnrollment'])->name('hr.training.enrollments.complete');
+    //
+    //     // Certifications
+    //     Route::get('/certifications', [TrainingController::class, 'certifications'])->name('hr.training.certifications.index');
+    //
+    //     // Statistics
+    //     Route::get('/statistics', [TrainingController::class, 'statistics'])->name('hr.training.statistics');
+    // });
 
     // ============================================
     // PERMISSION MANAGEMENT

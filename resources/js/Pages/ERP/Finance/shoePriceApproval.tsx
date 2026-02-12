@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
@@ -226,6 +226,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function ShoePriceApproval() {
+  const { auth } = usePage().props as any;
+  const userRole = auth?.user?.role;
+  
   const [requests, setRequests] = useState<PriceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -235,13 +238,21 @@ export default function ShoePriceApproval() {
   const [statusFilter, setStatusFilter] = useState("pending");
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending"); // New: View toggle
 
+  useEffect(() => {
+    fetchRequests();
+  }, [statusFilter]);
+
   // Check permissions on mount
   useEffect(() => {
-    if (!hasPermission('view-pricing') && !hasPermission('edit-pricing') && !hasPermission('manage-service-pricing')) {
+    // Allow access for Manager (full access) and Finance role
+    const hasRoleAccess = userRole === 'Manager' || userRole === 'Finance';
+    const hasPermissionAccess = hasPermission(auth, 'view-pricing') || hasPermission(auth, 'edit-pricing') || hasPermission(auth, 'manage-service-pricing') || hasPermission(auth, 'manage-pricing');
+    
+    if (!hasRoleAccess && !hasPermissionAccess) {
       Swal.fire({
         icon: 'error',
         title: 'Access Denied',
-        text: 'You do not have permission to access pricing approvals.',
+        text: 'You do not have permission to access pricing approvals. This page is restricted to Finance and Manager roles.',
         confirmButtonColor: '#000000',
       }).then(() => {
         window.history.back();

@@ -56,7 +56,7 @@ export default function Register() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = (): { isValid: boolean; errors: FormErrors } => {
     const newErrors: FormErrors = {};
 
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
@@ -78,7 +78,7 @@ export default function Register() {
     if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions';
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
   };
 
   const handleNext = () => {
@@ -143,9 +143,67 @@ export default function Register() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!validateForm()) return;
+  const handleRegisterClick = async () => {
+    console.log('Register button clicked. Current step:', currentStep);
+    
+    // Ensure we're on the last step
+    if (currentStep !== 3) {
+      console.log('Not on step 3, cannot register');
+      return;
+    }
+    
+    console.log('Form submission started');
+    console.log('Form data:', {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email,
+      phone: formData.phone,
+      age: formData.age,
+      address: formData.address,
+      validId: formData.validId?.name,
+      termsAccepted: formData.termsAccepted,
+    });
+    
+    const validation = validateForm();
+    if (!validation.isValid) {
+      console.log('Validation failed:', validation.errors);
+      
+      // Get list of fields with errors
+      const errorFields = Object.keys(validation.errors).map(key => {
+        const fieldNames: Record<string, string> = {
+          firstName: 'First Name',
+          lastName: 'Last Name',
+          email: 'Email',
+          phone: 'Phone Number',
+          age: 'Age',
+          address: 'Address',
+          password: 'Password',
+          confirmPassword: 'Confirm Password',
+          validId: 'Valid ID',
+          termsAccepted: 'Terms and Conditions'
+        };
+        return fieldNames[key] || key;
+      });
+      
+      // Find which step has errors
+      let errorStep = 1;
+      if (validation.errors.age || validation.errors.address || validation.errors.password || validation.errors.confirmPassword) {
+        errorStep = 2;
+      } else if (validation.errors.validId || validation.errors.termsAccepted) {
+        errorStep = 3;
+      }
+      
+      Swal.fire({
+        icon: 'error',
+        title: 'Cannot Submit',
+        html: `<p>Please complete the following on step ${errorStep}:</p><ul style="text-align: left; margin-top: 10px;">${errorFields.map(field => `<li><strong>${field}</strong></li>`).join('')}</ul>`,
+        confirmButtonColor: '#000000',
+      });
+      
+      // Navigate to the step with errors
+      setCurrentStep(errorStep);
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -159,6 +217,8 @@ export default function Register() {
       payload.append('password', formData.password);
       payload.append('password_confirmation', formData.confirmPassword);
       if (formData.validId) payload.append('valid_id', formData.validId);
+
+      console.log('Payload prepared, sending request...');
 
       await router.post('/user/register', payload, {
         forceFormData: true,
@@ -177,15 +237,20 @@ export default function Register() {
           });
         },
         onError: (backendErrors) => {
+          console.log('Registration errors received:', backendErrors);
           const mapped: Record<string, string> = {};
           Object.entries(backendErrors || {}).forEach(([key, val]) => {
             mapped[key] = Array.isArray(val) ? val[0] : String(val);
           });
+          console.log('Mapped errors:', mapped);
           setErrors(mapped);
+          
+          // Show specific error messages if available
+          const errorMessages = Object.values(mapped).join('\n');
           Swal.fire({
             icon: 'error',
             title: 'Registration failed',
-            text: 'Please review the form and try again.',
+            text: errorMessages || 'Please review the form and try again.',
           });
         },
       });
@@ -199,6 +264,12 @@ export default function Register() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    // Prevent any accidental form submission via Enter key
+    return false;
   };
 
   return (
@@ -421,7 +492,8 @@ export default function Register() {
                   </button>
                 ) : (
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={handleRegisterClick}
                     disabled={isLoading}
                     className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
                   >

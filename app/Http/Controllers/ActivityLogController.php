@@ -171,7 +171,7 @@ class ActivityLogController extends Controller
     }
     
     /**
-     * Finance sees: Expenses, Invoices, Payments, Approvals
+     * Finance sees: Expenses, Invoices, Payments, Approvals, Price Change Requests
      */
     private function getFinanceLogs($user, Request $request)
     {
@@ -184,6 +184,7 @@ class ActivityLogController extends Controller
                 'App\\Models\\Finance\\Payment',
                 'App\\Models\\Finance\\Revenue',
                 'App\\Models\\Finance\\BankAccount',
+                'App\\Models\\PriceChangeRequest',
             ])
             ->where(function($q) use ($shopOwnerId) {
                 // Filter by causers from this shop (shop owner or their users)

@@ -278,6 +278,16 @@ const crmItems: NavItem[] = [
     name: "Customers",
     route: "crm.customers",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 21H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h18"></path>
+        <path d="M23 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L1 7"></path>
+      </svg>
+    ),
+    name: "Customer Support",
+    route: "crm.customer-support",
+  },
 ];
 
 const scmItems: NavItem[] = [];
@@ -396,6 +406,15 @@ const repairItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      </svg>
+    ),
+    name: "Upload Services",
+    route: "erp.staff.upload-services",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
         <line x1="7" y1="7" x2="7.01" y2="7"></line>
       </svg>
@@ -467,6 +486,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.dashboard": "/erp/staff/dashboard",
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
+    "erp.staff.upload-services": "/erp/staff/upload-services",
     "erp.staff.repair-status": "/erp/staff/repair-status",
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
@@ -492,6 +512,7 @@ const AppSidebar_ERP: React.FC = () => {
     "crm.opportunities": "/crm/opportunities",
     "crm.leads": "/crm/leads",
     "crm.customers": "/crm/customers",
+    "crm.customer-support": "/crm/customer-support",
     // Manager section routes
     "erp.manager.dashboard": "/erp/manager/dashboard",
     "erp.manager.reports": "/erp/manager/reports",
@@ -506,6 +527,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.dashboard": "/erp/staff/dashboard",
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
+    "erp.staff.upload-services": "/erp/staff/upload-services",
     "erp.staff.repair-status": "/erp/staff/repair-status",
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
@@ -758,6 +780,11 @@ const AppSidebar_ERP: React.FC = () => {
                permissions.includes('edit-job-orders') || permissions.includes('complete-job-orders');
       }
       
+      // Upload Services - accessible to all staff and managers
+      if (item.route === "erp.staff.upload-services") {
+        return true;
+      }
+      
       // Repair Pricing - requires pricing or service pricing permissions
       if (item.route === "erp.manager.pricing-services") {
         return permissions.includes('view-pricing') || permissions.includes('edit-pricing') || 
@@ -989,7 +1016,10 @@ const AppSidebar_ERP: React.FC = () => {
                 {renderMenuItems(
                   role === "MANAGER"
                     ? getFilteredRepairItems()
-                    : getFilteredRepairItems().filter((item) => item.route === "erp.staff.job-orders-repair"),
+                    : getFilteredRepairItems().filter((item) => 
+                        item.route === "erp.staff.job-orders-repair" || 
+                        item.route === "erp.staff.upload-services"
+                      ),
                   "repair"
                 )}
               </div>

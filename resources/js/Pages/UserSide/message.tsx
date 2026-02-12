@@ -5,10 +5,9 @@ import Navigation from './Navigation';
 interface Message {
   id: number;
   sender: 'customer' | 'shop_owner';
-  content?: string;
-  image?: string;
+  content: string;
   timestamp: string;
-  type: 'text' | 'image';
+  images?: string[];
 }
 
 interface Chat {
@@ -86,6 +85,8 @@ const Message: React.FC<Props> = ({ shopOwner }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,36 +110,48 @@ const Message: React.FC<Props> = ({ shopOwner }) => {
   );
 
   const handleSendMessage = () => {
-    if (inputValue.trim()) {
+    if ((inputValue.trim() || selectedImages.length > 0) && selectedChat) {
+      // Convert images to URLs (in real app, you'd upload to server first)
+      const imageUrls = selectedImages.map((file) => URL.createObjectURL(file));
+
       const newMessage: Message = {
         id: messages.length + 1,
         sender: 'customer',
         content: inputValue,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type: 'text',
+        images: imageUrls.length > 0 ? imageUrls : undefined,
       };
       setMessages([...messages, newMessage]);
       setInputValue('');
+      setSelectedImages([]);
       setIsTyping(false);
     }
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const newMessage: Message = {
-          id: messages.length + 1,
-          sender: 'customer',
-          image: e.target?.result as string,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: 'image',
-        };
-        setMessages([...messages, newMessage]);
-      };
-      reader.readAsDataURL(file);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      const imageFiles = Array.from(files).filter((file) =>
+        file.type.startsWith('image/')
+      );
+
+      if (imageFiles.length > 0) {
+        setSelectedImages((prev) => [...prev, ...imageFiles]);
+      }
+
+      // Reset the input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -260,36 +273,50 @@ const Message: React.FC<Props> = ({ shopOwner }) => {
                 key={message.id}
                 className={`flex flex-col ${message.sender === 'customer' ? 'items-end' : 'items-start'}`}
               >
-                <div
-                  className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                    message.type === 'image'
-                      ? 'p-0 bg-transparent'
-                      : message.sender === 'customer'
-                      ? 'bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
-                      : 'bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
-                  }`}
-                >
-                  {message.type === 'text' ? (
+                {message.images && message.images.length > 0 ? (
+                  <div>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {message.images.map((img, idx) => (
+                        <img
+                          key={idx}
+                          src={img}
+                          alt={`Attachment ${idx + 1}`}
+                          className="rounded-lg max-w-[150px] max-h-[150px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => setFullscreenImage(img)}
+                        />
+                      ))}
+                    </div>
+                    {message.content && (
+                      <div
+                        className={`${
+                          message.sender === 'customer'
+                            ? 'bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm'
+                            : 'bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm'
+                        }`}
+                      >
+                        <p className="break-words text-sm leading-relaxed">
+                          {message.content}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className={`max-w-xs lg:max-w-md xl:max-w-lg ${
+                      message.sender === 'customer'
+                        ? 'bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
+                        : 'bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
+                    }`}
+                  >
                     <p className="break-words text-sm leading-relaxed">
                       {message.content}
                     </p>
-                  ) : (
-                    <div className="overflow-hidden rounded-lg shadow-sm">
-                      <img
-                        src={message.image}
-                        alt="Shared"
-                        className="w-full block max-h-64 object-cover"
-                      />
-                      <div className="px-3 py-2 bg-white">
-                        <p className="text-xs text-gray-500">Preview image</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* Timestamp outside the bubble */}
                 <div className={`mt-2 ${message.sender === 'customer' ? 'text-right' : 'text-left'}`}>
-                  <span className={`text-xs ${message.type === 'image' ? 'text-gray-500' : message.sender === 'customer' ? 'text-gray-400' : 'text-gray-500'}`} style={{ fontSize: '11px' }}>
+                  <span className={`text-xs ${message.sender === 'customer' ? 'text-gray-400' : 'text-gray-500'}`} style={{ fontSize: '11px' }}>
                     {message.timestamp}
                   </span>
                 </div>
@@ -300,24 +327,44 @@ const Message: React.FC<Props> = ({ shopOwner }) => {
 
           {/* Input Area */}
           <div className="border-t border-gray-200 bg-white px-6 py-4 rounded-b-2xl">
+            {/* Image Previews */}
+            {selectedImages.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {selectedImages.map((file, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={URL.createObjectURL(file)}
+                      alt={`Preview ${index + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                    />
+                    <button
+                      onClick={() => removeImage(index)}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Remove image"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
-              {/* Attachment Button */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*"
+                multiple
+                className="hidden"
+              />
+              <button 
+                onClick={handleUploadClick}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+                title="Upload images"
               >
-                <svg
-                  className="w-5 h-5 text-gray-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 19l9 2-9-18-9 18 9-2m0 0v-8m0 8l-6-4m6 4l6-4"
-                  />
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
                 </svg>
               </button>
 
@@ -339,11 +386,11 @@ const Message: React.FC<Props> = ({ shopOwner }) => {
               {/* Send Button */}
               <button
                 onClick={handleSendMessage}
-                disabled={!inputValue.trim()}
+                disabled={!inputValue.trim() && selectedImages.length === 0}
                 className={`p-2 rounded-full transition-colors flex-shrink-0 ${
-                  inputValue.trim()
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  inputValue.trim() || selectedImages.length > 0
+                    ? 'text-gray-600 hover:text-gray-800'
+                    : 'text-gray-300 cursor-not-allowed'
                 }`}
               >
                 <svg
@@ -354,21 +401,35 @@ const Message: React.FC<Props> = ({ shopOwner }) => {
                   <path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.9702544,11.6889879 L4.13399899,1.16640469 C3.34915502,0.9015399 2.40734225,0.9015399 1.77946707,1.4742449 C0.994623095,2.0469499 0.837654326,3.1368016 1.15159189,3.9222884 L3.03521743,10.3632814 C3.03521743,10.5203788 3.19218622,10.6774762 3.50612381,10.6774762 L16.6915026,11.4629631 C16.6915026,11.4629631 17.1624089,11.4629631 17.1624089,12.0356681 C17.1624089,12.4744748 16.6915026,12.4744748 16.6915026,12.4744748 Z" />
                 </svg>
               </button>
-
-              {/* Hidden File Input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
             </div>
           </div>
           </div>
           )}
         </div>
       </main>
+
+      {/* Fullscreen Image Modal */}
+      {fullscreenImage && (
+        <div 
+          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          onClick={() => setFullscreenImage(null)}
+        >
+          <button
+            onClick={() => setFullscreenImage(null)}
+            className="absolute top-6 right-6 bg-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition-colors shadow-lg"
+            title="Close"
+          >
+            <svg className="w-6 h-6 text-gray-800" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+            </svg>
+          </button>
+          <img
+            src={fullscreenImage}
+            alt="Fullscreen view"
+            className="max-w-[90vw] max-h-[90vh] object-contain"
+          />
+        </div>
+      )}
     </div>
   );
 };

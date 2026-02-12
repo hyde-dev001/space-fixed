@@ -28,7 +28,7 @@ return new class extends Migration
             $table->timestamp('manager_reviewed_at')->nullable();
             
             // Shop Owner review (final approval)
-            $table->foreignId('owner_id')->nullable()->constrained('users')->onDelete('set null');
+            $table->foreignId('owner_id')->nullable()->constrained('shop_owners')->onDelete('set null');
             $table->enum('owner_status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->text('owner_note')->nullable();
             $table->timestamp('owner_reviewed_at')->nullable();

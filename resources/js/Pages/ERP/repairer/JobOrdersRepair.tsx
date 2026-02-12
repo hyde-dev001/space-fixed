@@ -12,7 +12,7 @@ type RepairOrder = {
   item: string;
   service: string;
   total: string;
-  status: "pending" | "in-progress" | "completed" | "ready-for-pickup";
+  status: "received" | "pending" | "in-progress" | "completed" | "ready-for-pickup";
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -196,16 +196,18 @@ export default function JobOrdersRepair() {
   // Calculate statistics
   const stats = useMemo(() => {
     const total = orders.length;
+    const received = orders.filter(o => o.status === "received").length;
     const pending = orders.filter(o => o.status === "pending").length;
     const inProgress = orders.filter(o => o.status === "in-progress").length;
     const completed = orders.filter(o => o.status === "completed").length;
     const readyForPickup = orders.filter(o => o.status === "ready-for-pickup").length;
     const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
-    return { total, pending, inProgress, completed, readyForPickup, totalRevenue };
+    return { total, received, pending, inProgress, completed, readyForPickup, totalRevenue };
   }, [orders]);
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
+      "received": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
       "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
       "in-progress": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       "completed": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
@@ -363,6 +365,16 @@ export default function JobOrdersRepair() {
                   All Services
                 </button>
                 <button
+                  onClick={() => setSelectedTab("received")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "received"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  Received
+                </button>
+                <button
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
@@ -462,7 +474,7 @@ export default function JobOrdersRepair() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status === "in-progress" ? "In Progress" : order.status === "ready-for-pickup" ? "Ready for Pickup" : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                          {order.status === "in-progress" ? "In Progress" : order.status === "ready-for-pickup" ? "Ready for Pickup" : order.status === "received" ? "Received" : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">

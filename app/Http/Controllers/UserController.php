@@ -95,7 +95,12 @@ class UserController extends Controller
 
             \Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $user->email]);
 
-            // Return success response
+            // Check if it's an Inertia request
+            if ($request->header('X-Inertia')) {
+                return redirect()->route('login')->with('success', 'Registration successful! You can now login.');
+            }
+
+            // Return success response for API calls
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
@@ -111,7 +116,15 @@ class UserController extends Controller
 
             return redirect()->route('login')->with('success', 'Registration successful! You can now login.');
         } catch (ValidationException $e) {
-            \Log::warning('User registration validation failed', ['errors' => $e->errors()]);
+            \Log::warning('User registration validation failed', [
+                'errors' => $e->errors(),
+                'input' => $request->except(['password', 'password_confirmation', 'valid_id'])
+            ]);
+
+            // For Inertia requests, let Laravel handle validation normally
+            if ($request->header('X-Inertia')) {
+                throw $e; // This will automatically redirect back with errors for Inertia
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -125,13 +138,20 @@ class UserController extends Controller
         } catch (\Exception $e) {
             \Log::error('Error registering user', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'input' => $request->except(['password', 'password_confirmation', 'valid_id'])
             ]);
+
+            // For Inertia requests
+            if ($request->header('X-Inertia')) {
+                return back()->withErrors(['message' => 'Registration failed. Please try again.'])->withInput();
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Registration failed. Please try again.',
+                    'error' => $e->getMessage(),
                 ], 500);
             }
 

@@ -269,11 +269,6 @@ const UserAccessControl: React.FC = () => {
   const [accountAction, setAccountAction] = useState<'activate' | 'suspend'>('activate');
   const [accountReason, setAccountReason] = useState('');
   const [isSubmittingEmployee, setIsSubmittingEmployee] = useState(false);
-  // Employee suspend modal state
-  const [isEmployeeSuspendModalOpen, setIsEmployeeSuspendModalOpen] = useState(false);
-  const [employeeToSuspend, setEmployeeToSuspend] = useState<Employee | null>(null);
-  const [selectedEmployeeSuspensionReason, setSelectedEmployeeSuspensionReason] = useState('');
-  const [otherEmployeeReasonText, setOtherEmployeeReasonText] = useState('');
 
   // Permission Management State (Phase 6)
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
@@ -724,105 +719,7 @@ const UserAccessControl: React.FC = () => {
     }
   };
 
-  const handleToggleEmployeeStatus = async (employee: Employee) => {
-    // If employee is active, open suspend modal to collect reason (temporary suspend)
-    if (employee.status === 'active') {
-      setEmployeeToSuspend(employee);
-      setSelectedEmployeeSuspensionReason('');
-      setOtherEmployeeReasonText('');
-      setIsEmployeeSuspendModalOpen(true);
-      return;
-    }
 
-    // If currently inactive, confirm activation
-    const result = await Swal.fire({
-      title: `Activate Employee`,
-      text: `Are you sure you want to activate ${employee.name}?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#6c757d',
-      confirmButtonText: `Yes, activate`
-    });
-
-    if (!result.isConfirmed) return;
-
-    // Call server to activate using fetch and update local state on success
-    try {
-      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const res = await fetch(`/shop-owner/employees/${employee.id}/activate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrf || ''
-        },
-        body: JSON.stringify({})
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw err;
-      }
-
-      await res.json();
-      setEmployees(employees.map(e => e.id === employee.id ? { ...e, status: 'active' } : e));
-      Swal.fire({ icon: 'success', title: 'Activated!', text: 'Employee activated successfully.', timer: 1500, showConfirmButton: false });
-    } catch (err) {
-      console.error(err);
-      Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to activate employee. Please try again.' });
-    }
-  };
-
-  const confirmEmployeeSuspend = () => {
-    if (!employeeToSuspend) return;
-
-    let reason = '';
-    if (selectedEmployeeSuspensionReason === 'Other') {
-      reason = otherEmployeeReasonText.trim();
-      if (!reason) {
-        Swal.fire({ icon: 'error', title: 'Error', text: 'Please specify the reason for suspension', confirmButtonColor: '#ef4444' });
-        return;
-      }
-    } else {
-      reason = selectedEmployeeSuspensionReason;
-    }
-
-    if (!reason) {
-      Swal.fire({ icon: 'error', title: 'Error', text: 'Please select a reason for suspension', confirmButtonColor: '#ef4444' });
-      return;
-    }
-
-    // Call server to suspend using fetch so we can handle JSON and update local state immediately
-    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    fetch(`/shop-owner/employees/${employeeToSuspend.id}/suspend`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-CSRF-TOKEN': csrf || ''
-      },
-      body: JSON.stringify({ suspension_reason: reason })
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw err;
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setEmployees(employees.map(e => e.id === employeeToSuspend.id ? { ...e, status: 'inactive' } : e));
-        setIsEmployeeSuspendModalOpen(false);
-        setEmployeeToSuspend(null);
-        setSelectedEmployeeSuspensionReason('');
-        setOtherEmployeeReasonText('');
-        Swal.fire({ title: 'Suspended!', text: 'Employee has been suspended temporarily.', icon: 'success', confirmButtonColor: '#10b981' });
-      })
-      .catch(() => {
-        Swal.fire({ title: 'Error', text: 'Failed to suspend employee. Please try again.', icon: 'error', confirmButtonColor: '#ef4444' });
-      });
-  };
 
   const handleDeleteRole = async (roleId: number) => {
     const result = await Swal.fire({
@@ -1186,17 +1083,6 @@ const UserAccessControl: React.FC = () => {
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
-                            </button>
-                            <button
-                              onClick={() => handleToggleEmployeeStatus(employee)}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md ${employee.status === 'active' ? 'text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300' : 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'} transition-colors`}
-                              title={employee.status === 'active' ? 'Suspend Employee' : 'Activate Employee'}
-                            >
-                              {employee.status === 'active' ? (
-                                <AlertIcon className="h-5 w-5" />
-                              ) : (
-                                <CheckCircleIcon className="h-5 w-5" />
-                              )}
                             </button>
                             {/* Delete button removed per request */}
                           </div>
@@ -1608,53 +1494,6 @@ const UserAccessControl: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </Modal>
-
-          {/* Employee Suspend Modal */}
-          <Modal isOpen={isEmployeeSuspendModalOpen} onClose={() => { setIsEmployeeSuspendModalOpen(false); setEmployeeToSuspend(null); setSelectedEmployeeSuspensionReason(''); setOtherEmployeeReasonText(''); }}>
-            <div className="p-6">
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Suspend Employee</h3>
-              <div className="mb-4">
-                <p className="text-gray-700 dark:text-gray-300">Are you sure you want to temporarily suspend <strong className="text-gray-900 dark:text-white">{employeeToSuspend?.name}</strong>? This will be a temporary suspension and can be reversed by activating the account.</p>
-              </div>
-
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Select reason for suspension:</label>
-                <div className="space-y-2">
-                  {[
-                    'Policy Violation',
-                    'Fraudulent Activity',
-                    'Customer Complaints',
-                    'Inappropriate Conduct',
-                    'Other'
-                  ].map((reason) => (
-                    <label key={reason} className="flex items-start cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
-                      <input type="checkbox" checked={selectedEmployeeSuspensionReason === reason} onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedEmployeeSuspensionReason(reason);
-                          if (reason !== 'Other') setOtherEmployeeReasonText('');
-                        } else {
-                          setSelectedEmployeeSuspensionReason('');
-                          setOtherEmployeeReasonText('');
-                        }
-                      }} className="mt-1 mr-3 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded" />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">{reason === 'Other' ? <span className="font-medium">{reason} (please specify)</span> : reason}</span>
-                    </label>
-                  ))}
-                </div>
-
-                {selectedEmployeeSuspensionReason === 'Other' && (
-                  <div>
-                    <textarea value={otherEmployeeReasonText} onChange={(e) => setOtherEmployeeReasonText(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white" placeholder="Enter other reason..." />
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6 flex justify-end gap-3">
-                <Button variant="outline" onClick={() => { setIsEmployeeSuspendModalOpen(false); setEmployeeToSuspend(null); setSelectedEmployeeSuspensionReason(''); setOtherEmployeeReasonText(''); }}>Cancel</Button>
-                <Button onClick={confirmEmployeeSuspend}>Yes, suspend (temporary)</Button>
               </div>
             </div>
           </Modal>

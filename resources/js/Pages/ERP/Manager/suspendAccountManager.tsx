@@ -211,16 +211,6 @@ const SuspendAccount: React.FC = () => {
   };
 
   const confirmApprove = async () => {
-    if (!approvalNote.trim()) {
-      Swal.fire({
-        title: "Error",
-        text: "Please provide a reason for approval",
-        icon: "error",
-        confirmButtonColor: "#ef4444",
-      });
-      return;
-    }
-
     if (!selectedRequest) return;
 
     try {

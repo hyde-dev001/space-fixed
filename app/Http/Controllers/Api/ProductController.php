@@ -309,6 +309,24 @@ class ProductController extends Controller
                 'status' => 'pending',
             ]);
 
+            activity()
+                ->causedBy($user)
+                ->performedOn($priceChangeRequest)
+                ->event('created')
+                ->withProperties([
+                    'attributes' => [
+                        'product_id' => $validated['product_id'],
+                        'product_name' => $validated['product_name'],
+                        'current_price' => $validated['current_price'],
+                        'proposed_price' => $validated['proposed_price'],
+                        'reason' => $validated['reason'],
+                        'status' => 'pending',
+                    ],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ])
+                ->log('Price change request submitted');
+
             return response()->json([
                 'success' => true,
                 'message' => 'Price change request submitted successfully',

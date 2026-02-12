@@ -279,6 +279,7 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
 // Staff Price Change Requests (session-based auth)
 Route::middleware('auth:user')->prefix('api/price-change-requests')->group(function () {
     Route::get('/my-pending', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'myPending']);
+    Route::post('/{id}/cancel', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'cancelRequest']);
 });
 
 // CSRF Token endpoint for API requests
@@ -641,6 +642,12 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:view-cu
         }
         return Inertia::render('ERP/CRM/Customers');
     })->name('customers');
+    Route::get('/customer-support', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/CRM/customerSupport');
+    })->name('customer-support');
 });
 
 // MANAGER routes (only MANAGER can access)
@@ -724,6 +731,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         }
         return Inertia::render('ERP/repairer/JobOrdersRepair');
     })->middleware('permission:view-job-orders')->name('job-orders-repair');
+    
+    Route::get('/upload-services', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/repairer/uploadService');
+    })->name('upload-services');
     
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
