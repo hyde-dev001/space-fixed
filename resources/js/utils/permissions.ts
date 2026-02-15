@@ -26,8 +26,8 @@ export interface AuthData {
 export const hasPermission = (auth: AuthData | undefined, permission: string): boolean => {
   if (!auth) return false;
   
-  // Shop owners and super admins have all permissions
-  if (auth.shop_owner || auth.super_admin) return true;
+  // Shop owners have all permissions for their shop
+  if (auth.shop_owner) return true;
   
   const permissions = auth.permissions || [];
   return permissions.includes(permission);
@@ -39,8 +39,8 @@ export const hasPermission = (auth: AuthData | undefined, permission: string): b
 export const hasAnyPermission = (auth: AuthData | undefined, permissionList: string[]): boolean => {
   if (!auth) return false;
   
-  // Shop owners and super admins have all permissions
-  if (auth.shop_owner || auth.super_admin) return true;
+  // Shop owners have all permissions for their shop
+  if (auth.shop_owner) return true;
   
   const permissions = auth.permissions || [];
   return permissionList.some(perm => permissions.includes(perm));
@@ -52,8 +52,8 @@ export const hasAnyPermission = (auth: AuthData | undefined, permissionList: str
 export const hasAllPermissions = (auth: AuthData | undefined, permissionList: string[]): boolean => {
   if (!auth) return false;
   
-  // Shop owners and super admins have all permissions
-  if (auth.shop_owner || auth.super_admin) return true;
+  // Shop owners have all permissions for their shop
+  if (auth.shop_owner) return true;
   
   const permissions = auth.permissions || [];
   return permissionList.every(perm => permissions.includes(perm));

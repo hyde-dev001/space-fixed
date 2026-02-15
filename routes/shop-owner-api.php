@@ -17,6 +17,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
+use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
 
 /**
@@ -41,6 +42,16 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/all', [PriceChangeRequestController::class, 'ownerAll'])->name('shop_owner.price-changes.all');
         Route::post('/{id}/approve', [PriceChangeRequestController::class, 'ownerApprove'])->name('shop_owner.price-changes.approve');
         Route::post('/{id}/reject', [PriceChangeRequestController::class, 'ownerReject'])->name('shop_owner.price-changes.reject');
+    });
+
+    // ============================================
+    // REPAIR SERVICE PRICE APPROVALS (Shop Owner Final Approval)
+    // ============================================
+    Route::prefix('repair-price-changes')->group(function () {
+        Route::get('/pending', [RepairServiceController::class, 'ownerPending'])->name('shop_owner.repair-price-changes.pending');
+        Route::get('/all', [RepairServiceController::class, 'ownerAll'])->name('shop_owner.repair-price-changes.all');
+        Route::post('/{id}/approve', [RepairServiceController::class, 'ownerApprove'])->name('shop_owner.repair-price-changes.approve');
+        Route::post('/{id}/reject', [RepairServiceController::class, 'ownerReject'])->name('shop_owner.repair-price-changes.reject');
     });
 
     // ============================================

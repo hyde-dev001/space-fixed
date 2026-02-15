@@ -61,12 +61,18 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch all conversations on mount
   useEffect(() => {
     const fetchConversations = async () => {
+      console.log('=== Starting to fetch conversations ===');
+      console.log('Auth user:', auth?.user);
+      
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        console.log('CSRF Token:', csrfToken ? 'Present' : 'Missing');
+        
         const response = await fetch('/api/customer/conversations', {
           method: 'GET',
           headers: {
@@ -78,32 +84,60 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           credentials: 'include',
         });
         
+        console.log('Response status:', response.status);
+        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+        
         if (!response.ok) {
-          console.error('Failed to fetch conversations:', response.status, response.statusText);
+          const errorText = await response.text();
+          console.error('Failed to fetch conversations:', response.status, response.statusText, errorText);
           if (response.status === 401) {
+            console.log('Unauthorized - redirecting to login');
             router.visit('/user/login');
           }
+          setIsLoading(false);
           return;
         }
         
         const data = await response.json();
-        setConversations(data);
+        console.log('=== Raw API Response ===');
+        console.log('Data:', data);
+        console.log('Data type:', Array.isArray(data) ? 'Array' : typeof data);
+        console.log('Data length:', Array.isArray(data) ? data.length : 'N/A');
+        
+        // Handle both array and object with data property
+        const conversationsList = Array.isArray(data) ? data : (data.data || []);
+        setConversations(conversationsList);
         
         // If no initial conversation but shopOwnerId was provided, create/fetch that conversation
         if (!selectedConversation && shopOwnerId) {
-          const existingConv = data.find((c: Conversation) => c.shop_owner_id === shopOwnerId);
+          const existingConv = conversationsList.find((c: Conversation) => c.shop_owner_id === shopOwnerId);
           if (existingConv) {
+            console.log('Found existing conversation for shop owner:', existingConv);
             setSelectedConversation(existingConv);
             fetchMessages(existingConv.id);
           } else {
+            console.log('Creating new conversation for shop owner:', shopOwnerId);
             // Create new conversation
             createConversation(shopOwnerId);
           }
-        } else if (selectedConversation) {
-          fetchMessages(selectedConversation.id);
-        } else if (data.length > 0) {
-          setSelectedConversation(data[0]);
-          fetchMessages(data[0].id);
+        } else if (initialConversation && conversationsList.length > 0) {
+          // If initial conversation was provided, try to find it in the fetched list
+          const foundConv = conversationsList.find((c: Conversation) => c.id === initialConversation.id);
+          if (foundConv) {
+            console.log('Found initial conversation in list:', foundConv);
+            setSelectedConversation(foundConv);
+            fetchMessages(foundConv.id);
+          } else {
+            console.log('Initial conversation not found, using it anyway');
+            fetchMessages(initialConversation.id);
+          }
+        } else if (conversationsList.length > 0) {
+          // Auto-select first conversation if no specific one was requested
+          console.log('Auto-selecting first conversation:', conversationsList[0]);
+          setSelectedConversation(conversationsList[0]);
+          fetchMessages(conversationsList[0].id);
+        } else {
+          console.log('No conversations available');
         }
       } catch (error) {
         console.error('Failed to fetch conversations:', error);
@@ -113,9 +147,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     };
 
     fetchConversations();
-  }, []);
+  }, []);  // Keep empty dependency array to run only once on mount
 
-  const fetchMessages = async (conversationId: number) => {
+  const fetchMessages = async (conversationId: number, silent: boolean = false) => {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
       const response = await fetch(`/api/customer/conversations/${conversationId}/messages`, {
@@ -130,7 +164,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       });
       
       if (!response.ok) {
-        console.error('Failed to fetch messages:', response.status);
+        if (!silent) {
+          console.error('Failed to fetch messages:', response.status, response.statusText);
+        }
         if (response.status === 401) {
           router.visit('/user/login');
         }
@@ -138,9 +174,17 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       }
       
       const data = await response.json();
-      setMessages(data);
+      if (!silent) {
+        console.log('Fetched messages for conversation', conversationId, ':', data);
+      }
+      
+      // Handle both array and object with data property
+      const messagesList = Array.isArray(data) ? data : (data.data || []);
+      setMessages(messagesList);
     } catch (error) {
-      console.error('Failed to fetch messages:', error);
+      if (!silent) {
+        console.error('Failed to fetch messages:', error);
+      }
     }
   };
 
@@ -168,8 +212,22 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       }
       
       const conversation = await response.json();
-      setConversations((prev) => [conversation, ...prev]);
-      setSelectedConversation(conversation);
+      
+      // Format the conversation data to match the expected structure
+      const formattedConversation = {
+        ...conversation,
+        shopOwner: conversation.shopOwner || conversation.shop_owner ? {
+          id: conversation.shopOwner?.id || conversation.shop_owner?.id,
+          business_name: conversation.shopOwner?.business_name || conversation.shop_owner?.business_name || 'Unknown Shop',
+          location: conversation.shopOwner?.business_address || conversation.shop_owner?.business_address || conversation.shopOwner?.location || conversation.shop_owner?.location || '',
+          profile_photo: conversation.shopOwner?.profile_photo || conversation.shop_owner?.profile_photo || '',
+          email: conversation.shopOwner?.email || conversation.shop_owner?.email || '',
+          phone: conversation.shopOwner?.phone || conversation.shop_owner?.phone || '',
+        } : undefined,
+      };
+      
+      setConversations((prev) => [formattedConversation, ...prev]);
+      setSelectedConversation(formattedConversation);
       setMessages([]);
     } catch (error) {
       console.error('Failed to create conversation:', error);
@@ -267,6 +325,31 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, selectedConversation]);
 
+  // Set up polling for real-time message updates
+  useEffect(() => {
+    // Clear any existing interval
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
+    // Only poll if a conversation is selected
+    if (selectedConversation) {
+      // Poll every 3 seconds for new messages
+      pollingIntervalRef.current = setInterval(() => {
+        fetchMessages(selectedConversation.id, true); // silent = true to avoid console spam
+      }, 3000);
+    }
+
+    // Cleanup on unmount or when conversation changes
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [selectedConversation]);
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Head title="Messages - Solespace" />
@@ -349,7 +432,6 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                           </span>
                         </div>
                         <p className="text-xs text-gray-500">{conversation.shopOwner?.location || 'Location not available'}</p>
-                        <p className="text-xs text-gray-600 truncate mt-1">{conversation.status}</p>
                       </div>
                     </div>
                   </div>

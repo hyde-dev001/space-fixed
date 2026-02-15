@@ -89,13 +89,32 @@ class ConversationController extends Controller
             [
                 'status' => 'open',
                 'priority' => 'medium',
+                'assigned_to_type' => 'crm', // Default to CRM department
                 'last_message_at' => now(),
             ]
         );
 
         $conversation->load(['shopOwner', 'messages.sender']);
 
-        return response()->json($conversation);
+        // Format response to ensure consistency
+        return response()->json([
+            'id' => $conversation->id,
+            'shop_owner_id' => $conversation->shop_owner_id,
+            'customer_id' => $conversation->customer_id,
+            'status' => $conversation->status,
+            'priority' => $conversation->priority,
+            'assigned_to_type' => $conversation->assigned_to_type,
+            'last_message_at' => $conversation->last_message_at,
+            'shopOwner' => $conversation->shopOwner ? [
+                'id' => $conversation->shopOwner->id,
+                'business_name' => $conversation->shopOwner->business_name,
+                'location' => $conversation->shopOwner->business_address,
+                'profile_photo' => $conversation->shopOwner->profile_photo,
+                'email' => $conversation->shopOwner->email,
+                'phone' => $conversation->shopOwner->phone,
+            ] : null,
+            'messages' => $conversation->messages,
+        ]);
     }
 
     /**

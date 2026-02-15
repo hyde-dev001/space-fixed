@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
+use App\Http\Controllers\Api\RepairServiceController;
 
 /**
  * Finance Module Routes - Audit Logs (requires view-finance-audit-logs permission)
@@ -85,6 +86,18 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-e
         // Finance approval actions
         Route::post('/{id}/approve', [PriceChangeRequestController::class, 'financeApprove'])->name('finance.price-changes.approve');
         Route::post('/{id}/reject', [PriceChangeRequestController::class, 'financeReject'])->name('finance.price-changes.reject');
+    });
+
+    // ============================================
+    // REPAIR SERVICE PRICE CHANGE REQUESTS
+    // ============================================
+    Route::prefix('repair-price-changes')->group(function () {
+        // View all repair service price change requests
+        Route::get('/', [RepairServiceController::class, 'financePending'])->name('finance.repair-price-changes.index');
+        
+        // Finance approval actions
+        Route::post('/{id}/approve', [RepairServiceController::class, 'financeApprove'])->name('finance.repair-price-changes.approve');
+        Route::post('/{id}/reject', [RepairServiceController::class, 'financeReject'])->name('finance.repair-price-changes.reject');
     });
 });
 

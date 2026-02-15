@@ -75,6 +75,7 @@ class HandleInertiaRequests extends Middleware
                     'name' => Auth::guard('user')->user()->name,
                     'email' => Auth::guard('user')->user()->email,
                     'role' => Auth::guard('user')->user()->role ?? null,
+                    'shop_owner_id' => Auth::guard('user')->user()->shop_owner_id ?? null,
                     'force_password_change' => (bool) (Auth::guard('user')->user()->force_password_change ?? false),
                 ] : null,
                 

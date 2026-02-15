@@ -467,6 +467,7 @@ const UserAccessControl: React.FC = () => {
       'Finance': 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300',
       'HR': 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
       'CRM': 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
+      'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
     };
     return styles[role] || 'bg-gray-50 border-gray-200';
@@ -477,21 +478,26 @@ const UserAccessControl: React.FC = () => {
       'Manager': {
         title: '👔 Full System Access',
         description: 'Complete access to all modules: HR, Finance, CRM, Products, Reports, Settings',
-        permissions: 66
+        permissions: 84
       },
       'Finance': {
         title: '💰 Finance Department',
         description: 'Manage invoices, expenses, financial reports, approvals, and accounting',
-        permissions: 16
+        permissions: 27
       },
       'HR': {
         title: '👥 Human Resources Department',
         description: 'Manage employees, attendance, leave, payroll, and HR reports',
-        permissions: 14
+        permissions: 16
       },
       'CRM': {
         title: '🤝 Customer Relationship Management',
-        description: 'Manage customers, leads, opportunities, and sales pipeline',
+        description: 'Manage customers, leads, opportunities, sales, and customer support conversations',
+        permissions: 21
+      },
+      'Repairer': {
+        title: '🔧 Technical Support & Repairs',
+        description: 'Handle technical support conversations, repair services, and job orders',
         permissions: 13
       },
       'Staff': {
@@ -1416,6 +1422,7 @@ const UserAccessControl: React.FC = () => {
                             <option value="Finance">Finance - Invoices, Expenses, Reports</option>
                             <option value="HR">Human Resources - Employees, Payroll, Attendance</option>
                             <option value="CRM">CRM - Customers, Leads, Sales</option>
+                            <option value="Repairer">Repairer - Technical Support & Repairs</option>
                             <option value="Staff">Staff - Basic Access (Customizable)</option>
                           </select>
                         </div>

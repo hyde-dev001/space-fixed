@@ -21,10 +21,9 @@ const Navigation: React.FC = () => {
   const { auth } = page.props as any;
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
+  // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
   const user = auth?.user;
-  const userRole = user?.role?.toUpperCase();
-  const isERPStaff = userRole && ['HR', 'FINANCE_STAFF', 'FINANCE_MANAGER', 'FINANCE', 'CRM', 'MANAGER', 'STAFF'].includes(userRole);
-  const isAuthenticated = Boolean(user && !isERPStaff);
+  const isAuthenticated = Boolean(user && !user.shop_owner_id);
 
   // Shoe categories for dropdown
   const shoeCategories = [
@@ -540,14 +539,21 @@ const Navigation: React.FC = () => {
                         className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        My Orders
+                        Orders
                       </Link>
                       <Link
                         href="/my-repairs"
                         className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        My Repairs
+                        Repair
+                      </Link>
+                      <Link
+                        href="/customer-profile"
+                        className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                        onClick={() => setUserDropdownOpen(false)}
+                      >
+                        Edit Profile
                       </Link>
                       <button
                         className="block w-full text-left px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors"

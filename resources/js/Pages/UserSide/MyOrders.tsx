@@ -22,7 +22,9 @@ type Order = {
   payment_status?: string;
   total_amount: number;
   created_at: string;
+  shop_id?: number | null;
   shop_name: string;
+  shop_address?: string | null;
   items_count: number;
   items: OrderItem[];
   shipping_address?: string;
@@ -175,20 +177,12 @@ const MyOrders: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
-      case 'processing':
-        return 'bg-blue-50 text-blue-700 border border-blue-200';
-      case 'shipped':
-      case 'to_ship':
-        return 'bg-purple-50 text-purple-700 border border-purple-200';
-      case 'completed':
       case 'delivered':
-        return 'bg-green-50 text-green-700 border border-green-200';
+        return 'text-green-700';
       case 'cancelled':
-        return 'bg-red-50 text-red-700 border border-red-200';
+        return 'text-red-700';
       default:
-        return 'bg-gray-50 text-gray-700 border border-gray-200';
+        return 'text-black';
     }
   };
 
@@ -384,12 +378,12 @@ const MyOrders: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Head title="My Orders" />
+      <Head title="My Purchases" />
       <Navigation />
 
       <main className="flex-1">
         <div className="max-w-6xl mx-auto py-16 px-6">
-          <h1 className="text-4xl font-bold mb-12 text-black">My Orders</h1>
+          <h1 className="text-4xl font-bold mb-12 text-black">My Purchases</h1>
 
           {/* Tabs */}
           <div className="flex gap-8 mb-12 border-b border-gray-200">
@@ -586,8 +580,20 @@ const MyOrders: React.FC = () => {
                     <div className="mt-8 pt-6 border-t border-gray-200">
                       <div className="flex justify-between items-center">
                         <div>
-                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop</p>
-                          <p className="font-semibold text-black">{order.shop_name}</p>
+                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
+                          {order.shop_id ? (
+                            <Link
+                              href={`/shop-profile/${order.shop_id}`}
+                              className="font-semibold text-black underline"
+                            >
+                              {order.shop_name}
+                            </Link>
+                          ) : (
+                            <p className="font-semibold text-black">{order.shop_name}</p>
+                          )}
+                          {order.shop_address && (
+                            <p className="text-sm text-gray-500">{order.shop_address}</p>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Order Total</p>
@@ -597,7 +603,7 @@ const MyOrders: React.FC = () => {
                     </div>
 
                     {/* Order Actions */}
-                    <div className="mt-6 flex justify-end gap-4">
+                    <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
                       {order.status === 'pending' && (
                         <button
                           onClick={() => {
@@ -606,7 +612,7 @@ const MyOrders: React.FC = () => {
                             setCancelNote('');
                             setShowCancelModal(true);
                           }}
-                          className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors"
+                          className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
                         >
                           CANCEL ORDER
                         </button>
@@ -614,7 +620,7 @@ const MyOrders: React.FC = () => {
                       {(order.status === 'shipped' || order.status === 'to_ship') && (
                         <button
                           onClick={() => confirmDelivery(order.id)}
-                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors"
+                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
                         >
                           CONFIRM RECEIVED
                         </button>
@@ -631,7 +637,7 @@ const MyOrders: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors"
+                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
                           >
                             REFUND
                           </button>
@@ -644,16 +650,16 @@ const MyOrders: React.FC = () => {
                                 }
                               }
                             }}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors"
+                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
                           >
-                            RATE
+                            REVIEW
                           </button>
                         </>
                       )}
                       {order.status === 'completed' && (
                         <Link
                           href={`/products`}
-                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors inline-block"
+                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors inline-block rounded-md"
                         >
                           ORDER AGAIN
                         </Link>

@@ -56,6 +56,7 @@ const TrendingUpIcon = ({ className }: { className?: string }) => (
 
 interface PriceRequest {
   id: number;
+  type: 'shoe' | 'repair';
   item: string;
   currentPrice: string;
   requestedPrice: string;
@@ -137,6 +138,7 @@ function PriceApprovalContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("finance_approved");
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending"); // New: View toggle
+  const [typeFilter, setTypeFilter] = useState<"all" | "shoe" | "repair">("all"); // Type filter
 
   // Fetch price change requests from API
   useEffect(() => {
@@ -149,23 +151,43 @@ function PriceApprovalContent() {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       // Fetch ALL owner-relevant requests (not just pending) for accurate metrics
-      const response = await fetch('/api/shop-owner/price-changes/all', {
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrfToken || '',
-        },
-      });
+      // Fetch both shoe price changes AND repair service price changes
+      const [shoeResponse, repairResponse] = await Promise.all([
+        fetch('/api/shop-owner/price-changes/all', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+          },
+        }),
+        fetch('/api/shop-owner/repair-price-changes/all', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+          },
+        })
+      ]);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        console.error('API Error Response:', errorData);
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      if (!shoeResponse.ok) {
+        const errorData = await shoeResponse.json().catch(() => ({ message: 'Unknown error' }));
+        console.error('Shoe API Error Response:', errorData);
+        throw new Error(errorData.message || `HTTP ${shoeResponse.status}: ${shoeResponse.statusText}`);
       }
 
-      const result = await response.json();
-      const apiRequests = result.data.map((item: any) => ({
+      if (!repairResponse.ok) {
+        const errorData = await repairResponse.json().catch(() => ({ message: 'Unknown error' }));
+        console.error('Repair API Error Response:', errorData);
+        throw new Error(errorData.message || `HTTP ${repairResponse.status}: ${repairResponse.statusText}`);
+      }
+
+      const shoeResult = await shoeResponse.json();
+      const repairResult = await repairResponse.json();
+      
+      // Map shoe price changes
+      const shoeRequests = shoeResult.data.map((item: any) => ({
         id: item.id,
+        type: 'shoe',
         item: item.product_name,
         currentPrice: `₱${parseFloat(item.current_price).toLocaleString()}`,
         requestedPrice: `₱${parseFloat(item.proposed_price).toLocaleString()}`,
@@ -181,8 +203,33 @@ function PriceApprovalContent() {
         ownerReviewedBy: item.owner_reviewer?.name || null,
         ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
       }));
+
+      // Map repair service price changes
+      const repairRequests = repairResult.data.map((item: any) => ({
+        id: item.id,
+        type: 'repair',
+        item: item.name,
+        currentPrice: item.old_price ? `₱${parseFloat(item.old_price).toLocaleString()}` : 'N/A',
+        requestedPrice: `₱${parseFloat(item.price).toLocaleString()}`,
+        requestedBy: item.creator?.name || 'Unknown',
+        requestDate: new Date(item.created_at).toISOString().split('T')[0],
+        reason: item.reason || 'Price update for repair service',
+        status: item.mapped_status || item.status,
+        image: '/images/repair-service-placeholder.jpg',
+        financeReviewedBy: item.financeReviewer?.name || null,
+        financeReviewedAt: item.finance_reviewed_at ? new Date(item.finance_reviewed_at).toISOString().split('T')[0] : null,
+        financeNotes: item.finance_notes,
+        rejectionReason: item.rejection_reason,
+        ownerReviewedBy: item.ownerReviewer?.name || null,
+        ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
+      }));
       
-      setRequests(apiRequests);
+      // Combine both arrays and sort by date (most recent first)
+      const combinedRequests = [...shoeRequests, ...repairRequests].sort((a, b) => 
+        new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime()
+      );
+      
+      setRequests(combinedRequests);
     } catch (error: any) {
       console.error('Error fetching price change requests:', error);
       const errorMessage = error.message || 'Failed to load price change requests';
@@ -201,7 +248,7 @@ function PriceApprovalContent() {
     }
   };
 
-  // Filter data based on view mode
+  // Filter data based on view mode and type
   const filteredData = requests.filter((item) => {
     const matchesSearch = item.item.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          item.requestedBy.toLowerCase().includes(searchQuery.toLowerCase());
@@ -214,7 +261,10 @@ function PriceApprovalContent() {
       matchesViewMode = item.status === 'owner_approved'; // Recently approved
     }
     
-    return matchesSearch && matchesViewMode;
+    // Apply type filter
+    const matchesType = typeFilter === 'all' || item.type === typeFilter;
+    
+    return matchesSearch && matchesViewMode && matchesType;
   });
 
   const itemsPerPage = 5;
@@ -244,6 +294,7 @@ function PriceApprovalContent() {
       title: "Final Approval - Apply Price Change",
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
+          <p style="margin-bottom: 0.5rem;"><strong>Type:</strong> ${request.type === 'shoe' ? 'Shoe Product' : 'Repair Service'}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Item:</strong> ${request.item}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Current Price:</strong> ${request.currentPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
@@ -254,7 +305,7 @@ function PriceApprovalContent() {
             ${request.financeNotes ? `<p style="margin-bottom: 0.5rem;"><strong>Finance Notes:</strong> ${request.financeNotes}</p>` : ''}
           ` : ''}
           <p style="margin-top: 1rem; color: #10b981; font-size: 0.875rem; font-weight: 600;">
-            ✓ This will immediately apply the price change to the product.
+            ✓ This will immediately apply the price change to the ${request.type === 'shoe' ? 'product' : 'service'}.
           </p>
         </div>
       `,
@@ -269,7 +320,11 @@ function PriceApprovalContent() {
     if (result.isConfirmed) {
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        const response = await fetch(`/api/shop-owner/price-changes/${request.id}/approve`, {
+        const endpoint = request.type === 'shoe' 
+          ? `/api/shop-owner/price-changes/${request.id}/approve`
+          : `/api/shop-owner/repair-price-changes/${request.id}/approve`;
+          
+        const response = await fetch(endpoint, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -317,6 +372,7 @@ function PriceApprovalContent() {
       title: "Reject Price Change",
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
+          <p style="margin-bottom: 0.5rem;"><strong>Type:</strong> ${request.type === 'shoe' ? 'Shoe Product' : 'Repair Service'}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Item:</strong> ${request.item}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Current Price:</strong> ${request.currentPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
@@ -352,7 +408,11 @@ function PriceApprovalContent() {
     if (reason) {
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        const response = await fetch(`/api/shop-owner/price-changes/${request.id}/reject`, {
+        const endpoint = request.type === 'shoe' 
+          ? `/api/shop-owner/price-changes/${request.id}/reject`
+          : `/api/shop-owner/repair-price-changes/${request.id}/reject`;
+          
+        const response = await fetch(endpoint, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -406,28 +466,72 @@ function PriceApprovalContent() {
             <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Final Price Approval</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">Review Finance-approved price changes and give final approval</p>
           </div>
-          {/* View Toggle */}
-          <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-            <button
-              onClick={() => setViewMode('pending')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'pending'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Pending Review
-            </button>
-            <button
-              onClick={() => setViewMode('recent')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'recent'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Recently Approved
-            </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Type Filter */}
+            <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+              <button
+                onClick={() => {
+                  setTypeFilter('all');
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  typeFilter === 'all'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All Items
+              </button>
+              <button
+                onClick={() => {
+                  setTypeFilter('shoe');
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  typeFilter === 'shoe'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Shoe Products
+              </button>
+              <button
+                onClick={() => {
+                  setTypeFilter('repair');
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  typeFilter === 'repair'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Repair Services
+              </button>
+            </div>
+            {/* View Toggle */}
+            <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+              <button
+                onClick={() => setViewMode('pending')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'pending'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Pending Review
+              </button>
+              <button
+                onClick={() => setViewMode('recent')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'recent'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Recently Approved
+              </button>
+            </div>
           </div>
         </div>
 
@@ -514,11 +618,22 @@ function PriceApprovalContent() {
                       <tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="py-4">
                           <div className="flex items-center gap-3">
-                            <div className="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
-                              <img src={request.image} alt={request.item} className="h-full w-full object-cover" />
-                            </div>
+                            {request.type === 'shoe' && (
+                              <div className="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                                <img src={request.image} alt={request.item} className="h-full w-full object-cover" />
+                              </div>
+                            )}
                             <div>
                               <p className="font-medium text-gray-900 dark:text-white">{request.item}</p>
+                              {typeFilter === 'all' && (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                  request.type === 'shoe' 
+                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                }`}>
+                                  {request.type === 'shoe' ? 'Shoe Product' : 'Repair Service'}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -670,6 +785,13 @@ function PriceApprovalContent() {
                     <img src={selectedRequest.image} alt={selectedRequest.item} className="h-full w-full object-cover" />
                   </div>
                   <div>
+                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium mb-2 ${
+                      selectedRequest.type === 'shoe' 
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                        : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                    }`}>
+                      {selectedRequest.type === 'shoe' ? 'Shoe Product' : 'Repair Service'}
+                    </span>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Item</p>
                     <p className="text-xl font-bold text-gray-900 dark:text-white">{selectedRequest.item}</p>
                   </div>

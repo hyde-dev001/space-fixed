@@ -39,6 +39,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-leads', 'create-leads', 'edit-leads', 'convert-leads', 'assign-leads',
             'view-opportunities', 'create-opportunities', 'edit-opportunities', 'close-opportunities',
             'view-crm-reports', 'export-crm-reports', 'view-crm-audit-logs',
+            // CRM Conversations
+            'view-crm-conversations', 'send-crm-messages', 'transfer-crm-conversations', 'update-crm-conversation-status',
+            
+            // Repairer
+            'view-repairer-conversations', 'send-repairer-messages', 'transfer-repairer-conversations', 'update-repairer-conversation-status',
+            'view-repair-services', 'manage-repair-services',
             
             // Management
             'view-all-users', 'create-users', 'edit-users', 'delete-users', 'assign-roles',
@@ -118,14 +124,32 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-leads', 'create-leads', 'edit-leads', 'convert-leads', 'assign-leads',
             // Opportunities
             'view-opportunities', 'create-opportunities', 'edit-opportunities', 'close-opportunities',
+            // CRM Conversations (Customer Support)
+            'view-crm-conversations', 'send-crm-messages', 'transfer-crm-conversations', 'update-crm-conversation-status',
             // Reports & Audit
             'view-crm-reports', 'export-crm-reports', 'view-crm-audit-logs',
             // General
             'view-dashboard',
         ]);
-        $this->command->info('✓ CRM role: ' . $crm->permissions->count() . ' permissions (Full CRM module)');
+        $this->command->info('✓ CRM role: ' . $crm->permissions->count() . ' permissions (Full CRM module + Customer Support)');
 
-        // 5. Staff Role - Basic Access (configurable)
+        // 5. Repairer Role - Technical Support & Repair Management
+        $repairer = Role::firstOrCreate(['name' => 'Repairer', 'guard_name' => 'user']);
+        $repairer->syncPermissions([
+            // Repairer Conversations (Technical Support)
+            'view-repairer-conversations', 'send-repairer-messages', 'transfer-repairer-conversations', 'update-repairer-conversation-status',
+            // Repair Services
+            'view-repair-services', 'manage-repair-services',
+            // Pricing (View only)
+            'view-repair-pricing', 'view-shoe-pricing',
+            // Job Orders
+            'view-job-orders', 'create-job-orders', 'edit-job-orders', 'complete-job-orders',
+            // General
+            'view-dashboard',
+        ]);
+        $this->command->info('✓ Repairer role: ' . $repairer->permissions->count() . ' permissions (Technical Support + Repair Management)');
+
+        // 6. Staff Role - Basic Access (configurable)
         $staff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'user']);
         $staff->syncPermissions([
             'view-dashboard',
@@ -160,7 +184,8 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('  2. Finance (' . $finance->permissions->count() . ' perms) - Full Finance module');
         $this->command->info('  3. HR (' . $hr->permissions->count() . ' perms) - Full HR module');
         $this->command->info('  4. CRM (' . $crm->permissions->count() . ' perms) - Full CRM module');
-        $this->command->info('  5. Staff (' . $staff->permissions->count() . ' perms) - Basic + HR can add more');
+        $this->command->info('  5. Repairer (' . $repairer->permissions->count() . ' perms) - Technical Support & Repairs');
+        $this->command->info('  6. Staff (' . $staff->permissions->count() . ' perms) - Basic + HR can add more');
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');

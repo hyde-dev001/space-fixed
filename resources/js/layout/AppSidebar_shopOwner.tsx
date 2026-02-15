@@ -110,6 +110,16 @@ const navItems: NavItem[] = [
     route: "shopOwner.refund-approvals",
     path: "/shopOwner/refund-approvals",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+    ),
+    name: "Repair Reject Approval",
+    route: "shopOwner.repair-reject-approval",
+    path: "/shop-owner/repair-reject-approval",
+  },
 ];
 
 const othersItems: NavItem[] = [

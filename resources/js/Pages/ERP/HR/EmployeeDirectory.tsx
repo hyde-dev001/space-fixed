@@ -1930,6 +1930,7 @@ export const EmployeeManagement: React.FC<{
                             <option value="Finance">Finance - Invoices, Expenses, Reports</option>
                             <option value="HR">Human Resources - Employees, Payroll, Attendance</option>
                             <option value="CRM">CRM - Customers, Leads, Sales</option>
+                            <option value="Repairer">Repairer - Technical Support & Repairs</option>
                             <option value="Staff">Staff - Basic Access (Customizable)</option>
                           </select>
                         </div>

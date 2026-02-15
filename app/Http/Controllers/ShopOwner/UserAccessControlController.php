@@ -176,6 +176,7 @@ class UserAccessControlController extends Controller
                     'Finance' => 'Finance',
                     'HR' => 'HR',
                     'CRM' => 'CRM',
+                    'Repairer' => 'Repairer',
                     'Staff' => 'Staff',
                 ];
                 

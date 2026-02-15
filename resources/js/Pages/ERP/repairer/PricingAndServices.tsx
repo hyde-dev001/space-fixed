@@ -1,8 +1,10 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
+import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { hasPermission } from "../../../utils/permissions";
 
 const initialServicePrices = [
   { name: "Basic Cleaning", category: "Care", price: "₱180", duration: "20 min", status: "Active" },
@@ -151,6 +153,9 @@ interface ServiceItem {
 }
 
 export default function ERPPricingAndServices() {
+  const { auth } = usePage().props as any;
+  const userRole = auth?.user?.role;
+  
   const [currentPage, setCurrentPage] = useState(1);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -158,9 +163,62 @@ export default function ERPPricingAndServices() {
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
   const [editFormData, setEditFormData] = useState({ price: "", reason: "" });
   const [addFormData, setAddFormData] = useState({ name: "", category: "Care", price: "", duration: "" });
-  const [servicePrices, setServicePrices] = useState(initialServicePrices);
+  const [servicePrices, setServicePrices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+
+  // Fetch services from backend
+  const fetchServices = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('/api/repair-services');
+      if (response.data.success) {
+        // Format services for display
+        const formattedServices = response.data.data.map((service: any) => ({
+          name: service.name,
+          category: service.category,
+          price: `₱${parseFloat(service.price).toFixed(0)}`,
+          duration: service.duration,
+          status: service.status,
+          rejectionReason: service.rejection_reason,
+          id: service.id,
+        }));
+        setServicePrices(formattedServices);
+      }
+    } catch (error) {
+      console.error('Error fetching services:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to load services',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load services on component mount
+  useEffect(() => {
+    // Check authorization - Shop staff/managers/repairers or users with edit-products permission
+    // Note: Super admin does NOT have access - this is shop-level operation only
+    const hasRoleAccess = userRole === "STAFF" || userRole === "MANAGER" || userRole === "REPAIRER";
+    const hasPermissionAccess = hasPermission(auth, 'edit-products') || hasPermission(auth, 'view-pricing');
+    
+    if (!hasRoleAccess && !hasPermissionAccess) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Access Denied',
+        text: 'You don\'t have permission to manage repair service pricing.',
+        confirmButtonColor: '#2563eb',
+      }).then(() => {
+        window.history.back();
+      });
+      return;
+    }
+    
+    fetchServices();
+  }, []);
 
   // Filter data based on search and status
   const filteredData = servicePrices.filter((item) => {
@@ -223,20 +281,32 @@ export default function ERPPricingAndServices() {
     });
 
     if (result.isConfirmed) {
-      // Update the service price and status
-      const updatedServices = servicePrices.map((service) =>
-        service.name === selectedService?.name
-          ? { ...service, price: editFormData.price, status: "Under Review" }
-          : service
-      );
-      setServicePrices(updatedServices);
+      try {
+        // Remove peso sign and parse price
+        const priceValue = editFormData.price.replace(/[₱,]/g, '');
+        
+        const response = await axios.put(`/api/repair-services/${selectedService?.id}`, {
+          price: priceValue,
+          status: "Under Review",
+        });
 
-      Swal.fire({
-        title: "Success!",
-        text: "Service price updated successfully. Pleease wait for the Finance to approved it.",
-        icon: "success",
-        confirmButtonColor: "#2563eb",
-      });
+        if (response.data.success) {
+          await fetchServices(); // Refresh the list
+          Swal.fire({
+            title: "Success!",
+            text: "Service price updated successfully. Please wait for the Finance to approve it.",
+            icon: "success",
+            confirmButtonColor: "#2563eb",
+          });
+        }
+      } catch (error: any) {
+        console.error('Error updating service:', error);
+        Swal.fire({
+          icon: "error",
+          title: "Error",
+          text: error.response?.data?.message || "Failed to update service",
+        });
+      }
     }
   };
 
@@ -286,22 +356,34 @@ export default function ERPPricingAndServices() {
     });
 
     if (result.isConfirmed) {
-      const newService: ServiceItem = {
-        name: addFormData.name,
-        category: addFormData.category,
-        price: `₱${addFormData.price}`,
-        duration: addFormData.duration,
-        status: "Active",
-      };
-      setServicePrices([...servicePrices, newService]);
-      setAddFormData({ name: "", category: "Care", price: "", duration: "" });
+      try {
+        const response = await axios.post('/api/repair-services', {
+          name: addFormData.name,
+          category: addFormData.category,
+          price: addFormData.price,
+          duration: addFormData.duration,
+          status: "Active",
+        });
 
-      Swal.fire({
-        title: "Success!",
-        text: "Service added successfully.",
-        icon: "success",
-        confirmButtonColor: "#2563eb",
-      });
+        if (response.data.success) {
+          setAddFormData({ name: "", category: "Care", price: "", duration: "" });
+          await fetchServices(); // Refresh the list
+
+          Swal.fire({
+            title: "Success!",
+            text: "Service added successfully.",
+            icon: "success",
+            confirmButtonColor: "#2563eb",
+          });
+        }
+      } catch (error: any) {
+        console.error('Error adding service:', error);
+        Swal.fire({
+          icon: "error",
+          title: "Error",
+          text: error.response?.data?.message || "Failed to add service",
+        });
+      }
     }
   };
   return (
@@ -312,7 +394,7 @@ export default function ERPPricingAndServices() {
           <div>
             <h1 className="text-2xl font-semibold mb-1">Repair Pricing</h1>
             <p className="text-gray-600 dark:text-gray-400">
-              Manager controls for repair pricing and shoe pricing.
+              Manage repair service pricing and submit for approval.
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
@@ -355,7 +437,7 @@ export default function ERPPricingAndServices() {
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
           <div className="mb-4">
             <h2 className="text-lg font-semibold">Repair Services & Price</h2>
-            <p className="text-sm text-gray-500">Manager can edit service prices only.</p>
+            <p className="text-sm text-gray-500">Edit service prices and submit for Finance approval.</p>
           </div>
           
           {/* Search and Filter */}

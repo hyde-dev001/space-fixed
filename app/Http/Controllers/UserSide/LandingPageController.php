@@ -4,6 +4,7 @@ namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\RepairService;
 use App\Models\ShopOwner;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -165,7 +166,30 @@ class LandingPageController extends Controller
      */
     public function repair(): Response
     {
-        return Inertia::render('UserSide/Repair');
+        // Get all approved shop owners who offer repair services
+        $shops = ShopOwner::where('status', 'approved')
+            ->where(function($query) {
+                $query->where('business_type', 'repair')
+                      ->orWhere('business_type', 'both');
+            })
+            ->orderBy('business_name')
+            ->get()
+            ->map(function ($shop) {
+                return [
+                    'id' => $shop->id,
+                    'shopName' => $shop->business_name ?? $shop->getFullNameAttribute(),
+                    'shopLocation' => trim(($shop->city_state ?? '') . ($shop->city_state && $shop->country ? ', ' : '') . ($shop->country ?? '')) ?: 'Location not specified',
+                    'shopRating' => 4.5, // Default rating - can be calculated from reviews later
+                    'image' => $shop->profile_photo ? asset('storage/' . $shop->profile_photo) : asset('images/shop/shop.jpg'),
+                    'phone' => $shop->phone,
+                    'email' => $shop->email,
+                    'bio' => $shop->bio,
+                ];
+            });
+
+        return Inertia::render('UserSide/Repair', [
+            'shops' => $shops,
+        ]);
     }
 
     /**
@@ -245,18 +269,138 @@ class LandingPageController extends Controller
         return Inertia::render('UserSide/ShopProfile', [
             'shop' => [
                 'id' => $shopOwner->id,
-                'name' => $shopOwner->business_name,
-                'description' => 'Premium footwear products and services',
-                'address' => $shopOwner->business_address,
+                'name' => $shopOwner->business_name ?? $shopOwner->name,
+                'description' => $shopOwner->bio ?? 'Premium footwear products and services',
+                'address' => $shopOwner->business_address ?? $shopOwner->city_state,
                 'phone' => $shopOwner->phone,
                 'email' => $shopOwner->email,
+                'profile_photo' => $shopOwner->profile_photo ? "/storage/{$shopOwner->profile_photo}" : null,
                 'cover_image' => '/images/shop/shop-cover.jpg',
-                'profile_icon' => '/images/shop/shop-icon.png',
                 'rating' => 4.8,
                 'total_reviews' => 0,
                 'established_year' => 2024,
+                'country' => $shopOwner->country,
+                'postal_code' => $shopOwner->postal_code,
+                'tax_id' => $shopOwner->tax_id,
+                'monday_open' => $shopOwner->monday_open,
+                'monday_close' => $shopOwner->monday_close,
+                'tuesday_open' => $shopOwner->tuesday_open,
+                'tuesday_close' => $shopOwner->tuesday_close,
+                'wednesday_open' => $shopOwner->wednesday_open,
+                'wednesday_close' => $shopOwner->wednesday_close,
+                'thursday_open' => $shopOwner->thursday_open,
+                'thursday_close' => $shopOwner->thursday_close,
+                'friday_open' => $shopOwner->friday_open,
+                'friday_close' => $shopOwner->friday_close,
+                'saturday_open' => $shopOwner->saturday_open,
+                'saturday_close' => $shopOwner->saturday_close,
+                'sunday_open' => $shopOwner->sunday_open,
+                'sunday_close' => $shopOwner->sunday_close,
             ],
             'products' => $products,
+        ]);
+    }
+
+    /**
+     * Display a specific repair shop's services page
+     */
+    public function repairShow(string $id): Response
+    {
+        $shopOwner = ShopOwner::where('id', (int)$id)
+            ->where('status', 'approved')
+            ->where(function($query) {
+                $query->where('business_type', 'repair')
+                      ->orWhere('business_type', 'both');
+            })
+            ->firstOrFail();
+
+        // Format location
+        $location = $shopOwner->business_address ?? 'Location not specified';
+        if ($shopOwner->city_state || $shopOwner->country) {
+            $location = trim(
+                ($shopOwner->business_address ? $shopOwner->business_address . ', ' : '') .
+                ($shopOwner->city_state ?? '') . 
+                ($shopOwner->city_state && $shopOwner->country ? ', ' : '') . 
+                ($shopOwner->country ?? '')
+            );
+        }
+
+        // Format operating hours from individual column fields
+        $operatingHours = null;
+        
+        $daysOfWeek = [
+            ['day' => 'Monday', 'open' => 'monday_open', 'close' => 'monday_close'],
+            ['day' => 'Tuesday', 'open' => 'tuesday_open', 'close' => 'tuesday_close'],
+            ['day' => 'Wednesday', 'open' => 'wednesday_open', 'close' => 'wednesday_close'],
+            ['day' => 'Thursday', 'open' => 'thursday_open', 'close' => 'thursday_close'],
+            ['day' => 'Friday', 'open' => 'friday_open', 'close' => 'friday_close'],
+            ['day' => 'Saturday', 'open' => 'saturday_open', 'close' => 'saturday_close'],
+            ['day' => 'Sunday', 'open' => 'sunday_open', 'close' => 'sunday_close'],
+        ];
+        
+        $hasAnyHours = false;
+        $tempHours = [];
+        
+        foreach ($daysOfWeek as $day) {
+            $openTime = $shopOwner->{$day['open']};
+            $closeTime = $shopOwner->{$day['close']};
+            
+            if ($openTime && $closeTime) {
+                $hasAnyHours = true;
+                $tempHours[] = [
+                    'day' => $day['day'],
+                    'open' => date('g:i A', strtotime($openTime)),
+                    'close' => date('g:i A', strtotime($closeTime)),
+                    'is_closed' => false,
+                ];
+            } else {
+                $tempHours[] = [
+                    'day' => $day['day'],
+                    'open' => null,
+                    'close' => null,
+                    'is_closed' => true,
+                ];
+            }
+        }
+        
+        if ($hasAnyHours) {
+            $operatingHours = $tempHours;
+        }
+
+        // Fetch repair services for this shop owner only (excluding only rejected ones)
+        // Get all staff members belonging to this shop owner
+        $staffUserIds = \App\Models\User::where('shop_owner_id', $shopOwner->id)->pluck('id');
+        
+        $repairServices = RepairService::whereIn('created_by', $staffUserIds)
+            ->whereIn('status', ['Active', 'Under Review', 'Pending Owner Approval', 'Pending'])
+            ->orderBy('category')
+            ->orderBy('name')
+            ->get()
+            ->map(function ($service) {
+                return [
+                    'id' => $service->id,
+                    'title' => $service->name,
+                    'price' => '₱' . number_format($service->price, 0),
+                    'description' => $service->description ?? 'Professional ' . strtolower($service->category) . ' service',
+                    'category' => $service->category,
+                    'duration' => $service->duration,
+                ];
+            });
+
+        return Inertia::render('UserSide/repairShow', [
+            'shop' => [
+                'id' => $shopOwner->id,
+                'name' => $shopOwner->business_name ?? $shopOwner->getFullNameAttribute(),
+                'location' => $location,
+                'rating' => 0, // Will be calculated from reviews on frontend
+                'image' => $shopOwner->profile_photo ? asset('storage/' . $shopOwner->profile_photo) : asset('images/shop/shop.jpg'),
+                'description' => $shopOwner->bio ?? 'Premium shoe repair and restoration services. We specialize in professional repairs for all types of footwear.',
+                'hours' => $operatingHours,
+                'phone' => $shopOwner->phone ?? 'Not available',
+                'email' => $shopOwner->email,
+                'address' => $shopOwner->business_address ?? 'Not specified',
+            ],
+            'repairServices' => $repairServices,
         ]);
     }
 }

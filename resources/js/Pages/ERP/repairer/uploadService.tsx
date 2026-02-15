@@ -1,7 +1,9 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
+import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { hasPermission } from "../../../utils/permissions";
 
 type Service = {
   id: number;
@@ -132,35 +134,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 export default function UploadService() {
   const { auth } = usePage().props as any;
   const userRole = auth?.user?.role;
-  const [services, setServices] = useState<Service[]>([
-    {
-      id: 1,
-      name: "Basic Cleaning",
-      category: "Care",
-      price: "₱180",
-      duration: "20 min",
-      description: "Professional cleaning service for everyday shoe maintenance",
-      status: "Active",
-    },
-    {
-      id: 2,
-      name: "Deep Clean & Deodorize",
-      category: "Care",
-      price: "₱350",
-      duration: "45 min",
-      description: "Complete deep cleaning with deodorizing treatment",
-      status: "Active",
-    },
-    {
-      id: 3,
-      name: "Sole Replacement",
-      category: "Repair",
-      price: "₱650",
-      duration: "90 min",
-      description: "Full sole replacement with premium materials",
-      status: "Pending",
-    },
-  ]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -179,8 +154,42 @@ export default function UploadService() {
     status: "Active" as "Active" | "Inactive" | "Pending",
   });
 
-  // Check role authorization
-  if (userRole !== "STAFF" && userRole !== "MANAGER") {
+  // Fetch services from backend
+  const fetchServices = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('/api/repair-services');
+      if (response.data.success) {
+        // Format price with peso sign for display
+        const formattedServices = response.data.data.map((service: any) => ({
+          ...service,
+          price: `₱${parseFloat(service.price).toFixed(0)}`,
+        }));
+        setServices(formattedServices);
+      }
+    } catch (error) {
+      console.error('Error fetching services:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to load services',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load services on component mount
+  useEffect(() => {
+    fetchServices();
+  }, []);
+
+  // Check authorization - Shop staff/managers/repairers or users with edit-products permission
+  // Note: Super admin does NOT have access - this is shop-level operation only
+  const hasRoleAccess = userRole === "STAFF" || userRole === "MANAGER" || userRole === "REPAIRER";
+  const hasPermissionAccess = hasPermission(auth, 'edit-products') || hasPermission(auth, 'create-products');
+  
+  if (!hasRoleAccess && !hasPermissionAccess) {
     return (
       <AppLayoutERP>
         <div className="max-w-xl mx-auto mt-24 text-center p-8 bg-white dark:bg-gray-900 rounded-xl shadow">
@@ -190,13 +199,13 @@ export default function UploadService() {
             </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Access Denied</h2>
-          <p className="text-gray-600 dark:text-gray-400">You don't have permission to access this page.</p>
+          <p className="text-gray-600 dark:text-gray-400">You don't have permission to manage repair services.</p>
         </div>
       </AppLayoutERP>
     );
   }
 
-  const handleAddService = () => {
+  const handleAddService = async () => {
     if (!formData.name || !formData.category || !formData.price || !formData.duration) {
       Swal.fire({
         icon: "error",
@@ -206,33 +215,46 @@ export default function UploadService() {
       return;
     }
 
-    const newService: Service = {
-      id: services.length + 1,
-      name: formData.name,
-      category: formData.category,
-      price: formData.price,
-      duration: formData.duration,
-      description: formData.description,
-      status: formData.status,
-    };
+    try {
+      // Remove peso sign and parse price
+      const priceValue = formData.price.replace(/[₱,]/g, '');
+      
+      const response = await axios.post('/api/repair-services', {
+        name: formData.name,
+        category: formData.category,
+        price: priceValue,
+        duration: formData.duration,
+        description: formData.description,
+        status: formData.status,
+      });
 
-    setServices([...services, newService]);
-    setIsAddModalOpen(false);
-    resetForm();
+      if (response.data.success) {
+        setIsAddModalOpen(false);
+        resetForm();
+        await fetchServices(); // Refresh the list
 
-    Swal.fire({
-      icon: "success",
-      title: "Service Added",
-      text: "The service has been successfully added!",
-      timer: 2000,
-      showConfirmButton: false,
-    });
+        Swal.fire({
+          icon: "success",
+          title: "Service Added",
+          text: "The service has been successfully added!",
+          timer: 2000,
+          showConfirmButton: false,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error adding service:', error);
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: error.response?.data?.message || "Failed to add service",
+      });
+    }
   };
 
-  const handleEditService = () => {
+  const handleEditService = async () => {
     if (!selectedService) return;
 
-    if (!formData.name || !formData.category || !formData.price || !formData.duration) {
+    if (!formData.name || !formData.category || !formData.duration) {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
@@ -241,36 +263,42 @@ export default function UploadService() {
       return;
     }
 
-    const updatedServices = services.map((service) =>
-      service.id === selectedService.id
-        ? {
-            ...service,
-            name: formData.name,
-            category: formData.category,
-            price: formData.price,
-            duration: formData.duration,
-            description: formData.description,
-            status: formData.status,
-          }
-        : service
-    );
+    try {
+      const response = await axios.put(`/api/repair-services/${selectedService.id}`, {
+        name: formData.name,
+        category: formData.category,
+        // Price is not sent - can only be changed via pricing approval workflow
+        duration: formData.duration,
+        description: formData.description,
+        status: formData.status,
+      });
 
-    setServices(updatedServices);
-    setIsEditModalOpen(false);
-    setSelectedService(null);
-    resetForm();
+      if (response.data.success) {
+        setIsEditModalOpen(false);
+        setSelectedService(null);
+        resetForm();
+        await fetchServices(); // Refresh the list
 
-    Swal.fire({
-      icon: "success",
-      title: "Service Updated",
-      text: "The service has been successfully updated!",
-      timer: 2000,
-      showConfirmButton: false,
-    });
+        Swal.fire({
+          icon: "success",
+          title: "Service Updated",
+          text: "The service has been successfully updated!",
+          timer: 2000,
+          showConfirmButton: false,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error updating service:', error);
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: error.response?.data?.message || "Failed to update service",
+      });
+    }
   };
 
-  const handleDeleteService = (id: number) => {
-    Swal.fire({
+  const handleDeleteService = async (id: number) => {
+    const result = await Swal.fire({
       title: "Are you sure?",
       text: "You won't be able to revert this!",
       icon: "warning",
@@ -278,18 +306,31 @@ export default function UploadService() {
       confirmButtonColor: "#3085d6",
       cancelButtonColor: "#d33",
       confirmButtonText: "Yes, delete it!",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        setServices(services.filter((service) => service.id !== id));
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const response = await axios.delete(`/api/repair-services/${id}`);
+        
+        if (response.data.success) {
+          await fetchServices(); // Refresh the list
+          Swal.fire({
+            title: "Deleted!",
+            text: "The service has been deleted.",
+            icon: "success",
+            timer: 2000,
+            showConfirmButton: false,
+          });
+        }
+      } catch (error: any) {
+        console.error('Error deleting service:', error);
         Swal.fire({
-          title: "Deleted!",
-          text: "The service has been deleted.",
-          icon: "success",
-          timer: 2000,
-          showConfirmButton: false,
+          icon: "error",
+          title: "Error",
+          text: error.response?.data?.message || "Failed to delete service",
         });
       }
-    });
+    }
   };
 
   const openEditModal = (service: Service) => {
@@ -715,15 +756,14 @@ export default function UploadService() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Price *
+                    Current Price
                   </label>
-                  <input
-                    type="text"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="₱0.00"
-                  />
+                  <div className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                    {selectedService.price}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Price can only be changed via Pricing & Services page
+                  </p>
                 </div>
 
                 <div>

@@ -68,9 +68,7 @@ export default function UserLogin() {
       email: formData.email,
       password: formData.password,
     }, {
-      preserveState: false,
-      preserveScroll: false,
-      onSuccess: () => {
+      onSuccess: (page: any) => {
         Swal.fire({
           icon: 'success',
           title: 'Login Successful!',
@@ -79,6 +77,8 @@ export default function UserLogin() {
           timer: 1500,
           showConfirmButton: false,
         });
+        // Let Inertia handle the redirect - it will preserve the session properly
+        // The server already sends the correct redirect URL
       },
       onError: (errors) => {
         setIsLoading(false);

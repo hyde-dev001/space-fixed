@@ -375,7 +375,9 @@ class CheckoutController extends Controller
                         'status' => $order->status,
                         'total_amount' => $order->total_amount,
                         'created_at' => $order->created_at->format('Y-m-d H:i:s'),
+                        'shop_id' => $order->shopOwner ? $order->shopOwner->id : null,
                         'shop_name' => $order->shopOwner->business_name ?? 'Unknown Shop',
+                        'shop_address' => $order->shopOwner->business_address ?? $order->shopOwner->city_state,
                         'items_count' => $order->items->count(),
                         'items' => $order->items->map(function ($item) {
                             return [

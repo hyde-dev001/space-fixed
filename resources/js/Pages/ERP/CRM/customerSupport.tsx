@@ -36,6 +36,11 @@ export default function CustomerSupport() {
   const [loading, setLoading] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferNote, setTransferNote] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -234,7 +239,8 @@ export default function CustomerSupport() {
         setSelectedImages([]);
       } catch (error) {
         console.error("Error sending message:", error);
-        alert("Failed to send message. Please try again.");
+        setNotification({ type: 'error', message: 'Failed to send message. Please try again.' });
+        setTimeout(() => setNotification(null), 3000);
       } finally {
         setSendingMessage(false);
       }
@@ -297,51 +303,145 @@ export default function CustomerSupport() {
     ticket.customerName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handleTransferToRepairer = async () => {
+    if (!selectedTicket || !transferNote.trim()) {
+      setNotification({ type: 'error', message: 'Please add a transfer note explaining why this needs technical support.' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    try {
+      setIsTransferring(true);
+      const response = await axios.post(
+        `/api/crm/conversations/${selectedTicketId}/transfer`,
+        {
+          to_department: "repairer",
+          transfer_note: transferNote,
+        }
+      );
+
+      if (response.status === 200) {
+        // Remove from current list or update status
+        setTickets((prev) => prev.filter((t) => t.id !== selectedTicketId));
+        setSelectedTicketId(null);
+        setShowTransferModal(false);
+        setTransferNote("");
+        setNotification({ type: 'success', message: 'Conversation successfully transferred to Repairer department!' });
+        setTimeout(() => setNotification(null), 3000);
+      }
+    } catch (error) {
+      console.error("Error transferring conversation:", error);
+      setNotification({ type: 'error', message: 'Failed to transfer conversation. Please try again.' });
+      setTimeout(() => setNotification(null), 3000);
+    } finally {
+      setIsTransferring(false);
+    }
+  };
+
   return (
-    <AppLayoutERP hideHeader={!!fullscreenImage}>
+    <AppLayoutERP hideHeader={!!fullscreenImage || showTransferModal}>
       <Head title="Customer Support - Solespace ERP" />
+      
+      {/* Notification Toast */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-[60] animate-in slide-in-from-top-2">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg ${
+            notification.type === 'success' 
+              ? 'bg-green-500 text-white' 
+              : 'bg-red-500 text-white'
+          }`}>
+            {notification.type === 'success' ? (
+              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            )}
+            <span className="text-sm font-medium">{notification.message}</span>
+            <button
+              onClick={() => setNotification(null)}
+              className="ml-2 hover:opacity-80 transition-opacity"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="h-full flex flex-col bg-gray-50 overflow-hidden max-h-screen">
         <div className="flex gap-4 h-[calc(100vh-120px)] p-4">
           {/* Left Sidebar - Chat List */}
           <div className="w-80 bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="border-b border-gray-200 px-6 py-4">
+            <div className="border-b border-gray-200 px-6 py-4 relative z-20">
               <h1 className="text-2xl font-bold text-black mb-4">Chat</h1>
               
-              {/* Status Filter */}
-              <div className="mb-3 flex gap-2 flex-wrap">
-                {["all", "open", "in_progress", "resolved"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                      statusFilter === status
-                        ? "bg-blue-500 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                  >
-                    {status.replace("_", " ").toUpperCase()}
-                  </button>
-                ))}
-              </div>
-              
-              {/* Search */}
+              {/* Search and Filter Menu */}
               <div className="relative">
-                <svg
-                  className="absolute left-3 top-3 w-5 h-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
-                />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <svg
+                      className="absolute left-3 top-3 w-5 h-5 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
+                    />
+                  </div>
+                  
+                  {/* Filter Menu Button */}
+                  <div className="relative z-50">
+                    <button
+                      onClick={() => setShowFilterMenu(!showFilterMenu)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="Filter options"
+                    >
+                      <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                      </svg>
+                    </button>
+                    
+                    {/* Dropdown Menu */}
+                    {showFilterMenu && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowFilterMenu(false)}
+                        />
+                        <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-2 whitespace-nowrap">
+                          {["all", "open", "in_progress", "resolved"].map((status) => (
+                            <button
+                              key={status}
+                              onClick={() => {
+                                setStatusFilter(status);
+                                setShowFilterMenu(false);
+                              }}
+                              className={`block w-full px-6 py-2 text-sm text-left transition-colors ${
+                                statusFilter === status
+                                  ? "bg-blue-500 text-white"
+                                  : "text-gray-700 hover:bg-gray-100"
+                              }`}
+                            >
+                              {status.replace("_", " ").toUpperCase()}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -412,6 +512,17 @@ export default function CustomerSupport() {
                     <p className="text-xs text-gray-500">{getStatusText(selectedTicket.status)}</p>
                   </div>
                 </div>
+                
+                {/* Transfer Button */}
+                <button
+                  onClick={() => setShowTransferModal(true)}
+                  className="p-1.5 bg-white border-2 border-black hover:bg-gray-50 rounded-lg transition-colors"
+                  title="Transfer to Repairer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="black" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                </button>
               </div>
 
               {/* Messages */}
@@ -573,7 +684,7 @@ export default function CustomerSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
           onClick={() => setFullscreenImage(null)}
         >
           <button
@@ -593,6 +704,107 @@ export default function CustomerSupport() {
             alt="Fullscreen view"
             className="max-w-[90vw] max-h-[90vh] object-contain"
           />
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {showTransferModal && selectedTicket && (
+        <div 
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setShowTransferModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-black">Transfer to Repairer</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Customer: {selectedTicket.customerName}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-6 py-4">
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-sm text-orange-800">
+                    <p className="font-medium mb-1">This conversation will be transferred to the Repairer department</p>
+                    <p className="text-xs text-orange-700">The repairer will see the full conversation history and can respond directly to the customer.</p>
+                  </div>
+                </div>
+              </div>
+
+              <label className="block mb-2">
+                <span className="text-sm font-medium text-gray-700">Transfer Note *</span>
+                <p className="text-xs text-gray-500 mt-1 mb-2">
+                  Explain why this needs technical support (visible to repairer only)
+                </p>
+                <textarea
+                  value={transferNote}
+                  onChange={(e) => setTransferNote(e.target.value)}
+                  placeholder="Example: Customer asking about motherboard replacement timeline and warranty coverage for water damage repair..."
+                  rows={4}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition-all resize-none"
+                  disabled={isTransferring}
+                />
+              </label>
+
+              <div className="text-xs text-gray-500 mt-2">
+                <p>• Customer will be notified that a technical specialist is now handling their case</p>
+                <p>• This conversation will be removed from your queue</p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setTransferNote("");
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                disabled={isTransferring}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTransferToRepairer}
+                disabled={!transferNote.trim() || isTransferring}
+                className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
+                  transferNote.trim() && !isTransferring
+                    ? "bg-orange-500 hover:bg-orange-600 text-white"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {isTransferring ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Transferring...
+                  </span>
+                ) : (
+                  "Transfer to Repairer"
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </AppLayoutERP>

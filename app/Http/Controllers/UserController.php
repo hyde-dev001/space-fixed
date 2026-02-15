@@ -197,75 +197,69 @@ class UserController extends Controller
 
                 Auth::guard('user')->login($user, $request->filled('remember'));
                 $request->session()->regenerate();
+                
+                // CRITICAL: Explicitly save the session to ensure it persists
+                $request->session()->save();
 
                 $user->update([
                     'last_login_at' => now(),
                     'last_login_ip' => $request->ip(),
                 ]);
 
-                \Log::info('User logged in successfully', ['user_id' => $user->id]);
+                \Log::info('User logged in successfully', ['user_id' => $user->id, 'user_role' => $user->role, 'shop_owner_id' => $user->shop_owner_id]);
 
-                if ($request->expectsJson()) {
-                    // Check both Spatie roles and old role column for backward compatibility
-                    // Default redirect is now Time In/Out page for all staff
-                    $redirect = route('erp.time-in');
-                    $userRole = strtoupper($user->role ?? '');
+                // Determine redirect URL based ONLY on shop_owner_id
+                // - If user has shop_owner_id -> they are an employee/staff member -> redirect to erp/time-in
+                // - Otherwise -> they are a regular customer -> redirect to landing
+                // We use shop_owner_id as the source of truth because role column is unreliable (contaminated by migrations)
+                
+                $isEmployee = !is_null($user->shop_owner_id);
+                
+                // Default redirect for customers (no shop_owner_id)
+                $redirectUrl = route('landing');
+                
+                // If user is an employee, redirect to time-in
+                if ($isEmployee) {
+                    $redirectUrl = route('erp.time-in');
                     
-                    // Role-specific redirects (all staff go to time-in first)
-                    if ($user->hasRole('HR') || $userRole === 'HR') {
-                        $redirect = route('erp.time-in');
-                    } elseif ($user->hasAnyRole(['Finance Staff', 'Finance Manager']) || in_array($userRole, ['FINANCE', 'FINANCE_STAFF', 'FINANCE_MANAGER'])) {
-                        $redirect = route('erp.time-in');
-                    } elseif ($user->hasRole('CRM') || $userRole === 'CRM') {
-                        $redirect = route('erp.time-in');
-                    } elseif ($user->hasRole('Manager') || $userRole === 'MANAGER') {
-                        $redirect = route('erp.time-in');
-                    } elseif ($user->hasRole('Staff') || $userRole === 'STAFF') {
-                        $redirect = route('erp.time-in');
+                    // Check for password change requirement (staff only)
+                    if ($user->force_password_change) {
+                        $redirectUrl = route('erp.profile');
                     }
+                }
 
+                \Log::info('Login redirect decision', [
+                    'user_id' => $user->id,
+                    'shop_owner_id' => $user->shop_owner_id,
+                    'role' => $user->role,
+                    'is_employee' => $isEmployee,
+                    'is_customer' => !$isEmployee,
+                    'redirect_url' => $redirectUrl,
+                ]);
+
+                // For Inertia requests, return a redirect that preserves the session
+                if ($request->header('X-Inertia')) {
+                    return redirect($redirectUrl)->with('success', 'Welcome back!');
+                }
+
+                // For API/JSON requests, return the redirect URL in JSON
+                if ($request->expectsJson()) {
                     return response()->json([
                         'success' => true,
                         'message' => 'Login successful!',
-                        'redirect' => $redirect,
+                        'redirect' => $redirectUrl,
                         'user' => [
                             'id' => $user->id,
                             'name' => $user->name,
                             'email' => $user->email,
                             'role' => $user->role,
+                            'is_employee' => $isEmployee,
                         ],
                     ]);
                 }
 
-                // If flagged for password change, send to profile page first (applies to all roles)
-                if ($user->force_password_change) {
-                    return redirect()->route('erp.profile')->with('temporary_password', true);
-                }
-
-                // Role-based landing - All staff go to Time In/Out page first
-                $userRole = strtoupper($user->role ?? '');
-                
-                if ($user->hasRole('HR') || $userRole === 'HR') {
-                    return redirect()->route('erp.time-in')->with('success', 'Welcome back!');
-                }
-
-                if ($user->hasAnyRole(['Finance Staff', 'Finance Manager']) || in_array($userRole, ['FINANCE', 'FINANCE_STAFF', 'FINANCE_MANAGER'])) {
-                    return redirect()->route('erp.time-in')->with('success', 'Welcome back!');
-                }
-
-                if ($user->hasRole('CRM') || $userRole === 'CRM') {
-                    return redirect()->route('erp.time-in')->with('success', 'Welcome back!');
-                }
-
-                if ($user->hasRole('Manager') || $userRole === 'MANAGER') {
-                    return redirect()->route('erp.time-in')->with('success', 'Welcome back!');
-                }
-
-                if ($user->hasRole('Staff') || $userRole === 'STAFF') {
-                    return redirect()->route('erp.time-in')->with('success', 'Welcome back!');
-                }
-
-                return redirect()->route('landing')->with('success', 'Welcome back!');
+                // For regular requests, perform a server-side redirect
+                return redirect($redirectUrl)->with('success', 'Welcome back!');
             }
 
             // If not a regular user, attempt to authenticate as ShopOwner

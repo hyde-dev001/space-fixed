@@ -223,26 +223,28 @@ Route::middleware(['web', 'auth:user'])->prefix('media')->group(function () {
 });
 
 /**
- * Customer Conversation Routes - Customer-side chat with shops
+ * CRM Conversation Routes - Shop staff managing customer conversations
+ * NOTE: Customer conversation routes have been moved to routes/web.php for proper session handling
  */
-Route::prefix('customer/conversations')->middleware(['web', 'auth:user'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\Customer\ConversationController::class, 'index']);
-    Route::get('/shops', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getContactedShops']);
-    Route::post('/get-or-create', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getOrCreate']);
-    Route::get('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getMessages']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'sendMessage']);
+Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:view-crm-conversations'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\API\CRM\ConversationController::class, 'index']);
+    Route::get('/{conversation}', [\App\Http\Controllers\API\CRM\ConversationController::class, 'show']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\CRM\ConversationController::class, 'sendMessage'])->middleware('permission:send-crm-messages');
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\CRM\ConversationController::class, 'transfer'])->middleware('permission:transfer-crm-conversations');
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updateStatus'])->middleware('permission:update-crm-conversation-status');
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updatePriority'])->middleware('permission:update-crm-conversation-status');
 });
 
 /**
- * CRM Conversation Routes - Shop staff managing customer conversations
+ * Repairer Conversation Routes - Repair technicians handling technical support
  */
-Route::prefix('crm/conversations')->middleware(['web', 'auth:user'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\CRM\ConversationController::class, 'index']);
-    Route::get('/{conversation}', [\App\Http\Controllers\API\CRM\ConversationController::class, 'show']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\CRM\ConversationController::class, 'sendMessage']);
-    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\CRM\ConversationController::class, 'transfer']);
-    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updateStatus']);
-    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updatePriority']);
+Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permission:view-repairer-conversations'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'index']);
+    Route::get('/{conversation}', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'show']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'sendMessage'])->middleware('permission:send-repairer-messages');
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'transfer'])->middleware('permission:transfer-repairer-conversations');
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updateStatus'])->middleware('permission:update-repairer-conversation-status');
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updatePriority'])->middleware('permission:update-repairer-conversation-status');
 });
 
 /**

@@ -1,82 +1,138 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from './Navigation';
 
-// Mock repair services data for a shop
-const mockRepairServices = [
-  { id: 1, title: 'Sole Replacement', price: '₱450', description: 'Complete sole replacement with premium materials' },
-  { id: 2, title: 'Heel Repair', price: '₱300', description: 'Professional heel repair and restoration' },
-  { id: 3, title: 'Stitching & Patch', price: '₱250', description: 'Expert stitching and patching services' },
-  { id: 4, title: 'Deep Clean & Condition', price: '₱200', description: 'Deep cleaning and leather conditioning' },
-  { id: 5, title: 'Zipper Replacement', price: '₱350', description: 'High-quality zipper replacement' },
-];
+interface ShopHours {
+  day: string;
+  open: string | null;
+  close: string | null;
+  is_closed: boolean;
+}
 
-// Mock reviews data
-const mockReviews = [
-  {
-    id: 1,
-    userName: 'Sarah Chen',
-    rating: 5,
-    date: '2026-01-28',
-    comment: 'Excellent shoe repair service! The sole replacement looks brand new. Highly professional team.',
-    verified: true
-  },
-  {
-    id: 2,
-    userName: 'Mike Johnson',
-    rating: 4,
-    date: '2026-01-25',
-    comment: 'Good quality repairs and reasonable prices. They were very helpful and finished on time.',
-    verified: true
-  },
-  {
-    id: 3,
-    userName: 'Emma Rodriguez',
-    rating: 5,
-    date: '2026-01-22',
-    comment: 'Best repair shop in the area! My shoes look better than before. Will definitely come back.',
-    verified: true
-  },
-  {
-    id: 4,
-    userName: 'David Lee',
-    rating: 5,
-    date: '2026-01-20',
-    comment: 'Outstanding craftsmanship. The attention to detail is remarkable. Worth every peso!',
-    verified: true
-  },
-  {
-    id: 5,
-    userName: 'Jessica Martinez',
-    rating: 4,
-    date: '2026-01-18',
-    comment: 'Very professional service. Reasonable turnaround time and quality work. Recommended!',
-    verified: true
-  }
-];
+interface Shop {
+  id: number;
+  name: string;
+  location: string;
+  rating: number;
+  image: string;
+  description: string;
+  hours: ShopHours[] | null;
+  phone: string;
+  email: string;
+  address?: string;
+}
 
-const RepairShow: React.FC = () => {
-  const { repair } = usePage().props as any;
+interface RepairService {
+  id: number;
+  title: string;
+  price: string;
+  description: string;
+  category: string;
+  duration: string;
+}
 
-  // Mock shop data (will be replaced with real data from backend)
-  const shop = {
-    id: 1,
-    name: 'SoleHouse',
-    location: 'Dasmariñas, Cavite',
-    rating: 4.8,
-    image: '/images/shop/shop1.jpg',
-    description: 'Premium shoe repair and restoration services with over 15 years of experience. We specialize in professional repairs for all types of footwear.',
-    hours: '9:00 AM - 6:00 PM',
-    phone: '(046) 123-4567',
-    email: 'info@solehouse.com'
+interface Review {
+  id: number;
+  user_name: string;
+  rating: number;
+  comment: string;
+  images: string[];
+  created_at: string;
+  verified: boolean;
+}
+
+interface ReviewStats {
+  average_rating: number;
+  total_reviews: number;
+  rating_distribution: {
+    [key: number]: {
+      count: number;
+      percentage: number;
+    };
   };
+}
 
+interface Props {
+  shop: Shop;
+  repairServices: RepairService[];
+  auth?: {
+    user?: any;
+  };
+}
+
+const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
+  const { auth } = usePage().props as any;
+  const isAuthenticated = !!auth?.user;
+  
   const [newComment, setNewComment] = useState('');
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
+  
+  // Review system state
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewStats, setReviewStats] = useState<ReviewStats>({ 
+    average_rating: 0, 
+    total_reviews: 0, 
+    rating_distribution: {} 
+  });
+  const [canReview, setCanReview] = useState(false);
+  const [reviewEligibility, setReviewEligibility] = useState<any>(null);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  // Fetch reviews and check eligibility on mount
+  useEffect(() => {
+    console.log('Shop Hours Data:', shop.hours);
+    console.log('Shop ID:', shop.id);
+    console.log('Is Authenticated:', isAuthenticated);
+    console.log('Auth Object:', auth);
+    fetchReviews();
+    if (isAuthenticated) {
+      checkReviewEligibility();
+    }
+  }, [shop.id, isAuthenticated]);
+
+  const fetchReviews = async () => {
+    try {
+      const response = await fetch(`/api/shops/${shop.id}/reviews`);
+      const data = await response.json();
+      if (data.success) {
+        setReviews(data.reviews || []);
+        setReviewStats(data.statistics || { 
+          average_rating: 0, 
+          total_reviews: 0, 
+          rating_distribution: {} 
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch reviews:', error);
+    }
+  };
+
+  const checkReviewEligibility = async () => {
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      
+      console.log('Checking eligibility for shop:', shop.id);
+      const response = await fetch(`/api/shops/${shop.id}/reviews/check-eligibility`, {
+        credentials: 'include',
+        headers: {
+          'X-CSRF-TOKEN': csrfToken || '',
+          'Accept': 'application/json',
+        },
+      });
+      const data = await response.json();
+      console.log('Eligibility response:', data);
+      if (data.success) {
+        setCanReview(data.can_review);
+        setReviewEligibility(data);
+      }
+    } catch (error) {
+      console.error('Failed to check review eligibility:', error);
+    }
+  };
 
   const handleServiceToggle = (serviceId: number) => {
     setSelectedServices(prev => 
@@ -84,6 +140,19 @@ const RepairShow: React.FC = () => {
         ? prev.filter(id => id !== serviceId)
         : [...prev, serviceId]
     );
+  };
+
+  const handleRequestRepair = () => {
+    // Store selected service details in localStorage
+    const selectedServiceDetails = repairServices.filter(service => 
+      selectedServices.includes(service.id)
+    );
+    localStorage.setItem('selectedRepairServices', JSON.stringify(selectedServiceDetails));
+    localStorage.setItem('shopDetails', JSON.stringify({
+      id: shop.id,
+      name: shop.name,
+      location: shop.location,
+    }));
   };
 
   const handleImageUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,15 +181,110 @@ const RepairShow: React.FC = () => {
     setImageUploadGroups(prev => prev.filter(group => group.id !== id));
   };
 
-  const handleSubmitReview = () => {
+  // Check if shop is currently open
+  const checkIfOpen = () => {
+    if (!shop.hours || shop.hours.length === 0) {
+      return { isOpen: false, message: 'Hours not available' };
+    }
+
+    const now = new Date();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const currentDay = dayNames[now.getDay()];
+    
+    const todaySchedule = shop.hours.find(h => h.day === currentDay);
+    
+    if (!todaySchedule || todaySchedule.is_closed) {
+      return { isOpen: false, message: 'Closed today', currentDay };
+    }
+
+    // Parse current time
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+    
+    // Parse opening and closing times
+    const parseTime = (timeStr: string) => {
+      const [time, period] = timeStr.split(' ');
+      let [hours, minutes] = time.split(':').map(Number);
+      if (period === 'PM' && hours !== 12) hours += 12;
+      if (period === 'AM' && hours === 12) hours = 0;
+      return hours * 60 + minutes;
+    };
+
+    const openTime = parseTime(todaySchedule.open!);
+    const closeTime = parseTime(todaySchedule.close!);
+
+    if (currentTime >= openTime && currentTime < closeTime) {
+      return { isOpen: true, message: 'Open now', currentDay, closingTime: todaySchedule.close };
+    } else if (currentTime < openTime) {
+      return { isOpen: false, message: `Opens at ${todaySchedule.open}`, currentDay };
+    } else {
+      return { isOpen: false, message: 'Closed', currentDay };
+    }
+  };
+
+  const shopStatus = checkIfOpen();
+
+  const handleSubmitReview = async () => {
     if (!newComment.trim() || userRating === 0) {
       alert('Please provide both a rating and a comment');
       return;
     }
-    // Frontend only - in production this would send to backend
-    alert('Thank you for your review! (Backend integration pending)');
-    setNewComment('');
-    setUserRating(0);
+
+    if (!isAuthenticated) {
+      alert('Please log in to write a review');
+      return;
+    }
+
+    if (!canReview) {
+      alert(reviewEligibility?.message || 'You are not eligible to review this shop');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+      const formData = new FormData();
+      formData.append('rating', userRating.toString());
+      formData.append('comment', newComment);
+
+      // Add images if any
+      imageUploadGroups.forEach((group) => {
+        if (group.file) {
+          formData.append('images[]', group.file);
+        }
+      });
+
+      const response = await fetch(`/api/shops/${shop.id}/reviews`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'X-CSRF-TOKEN': csrfToken || '',
+          'Accept': 'application/json',
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('Thank you for your review!');
+        setNewComment('');
+        setUserRating(0);
+        setImageUploadGroups([{id: '0', file: null, preview: ''}]);
+        
+        // Refresh reviews and eligibility
+        await fetchReviews();
+        await checkReviewEligibility();
+      } else {
+        alert(data.message || 'Failed to submit review. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to submit review:', error);
+      alert('Failed to submit review. Please try again.');
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   const renderStars = (rating: number, interactive: boolean = false, onRate?: (rating: number) => void) => {
@@ -221,16 +385,60 @@ const RepairShow: React.FC = () => {
                   </svg>
                   <div>
                     <div className="font-bold text-black mb-1">Location</div>
-                    <div className="text-gray-600">{shop.location}</div>
+                    <div className={`${shop.location === 'Location not specified' || shop.location === 'Not specified' ? 'text-gray-400 italic' : 'text-gray-600'}`}>
+                      {shop.location || 'Location not specified'}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                   </svg>
-                  <div>
-                    <div className="font-bold text-black mb-1">Hours</div>
-                    <div className="text-gray-600">{shop.hours}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-bold text-black">Hours</div>
+                      {shop.hours && shop.hours.length > 0 && (
+                        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                          shopStatus.isOpen 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {shopStatus.message}
+                        </span>
+                      )}
+                    </div>
+                    {shop.hours && shop.hours.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {shop.hours.map((schedule, index) => (
+                          <div 
+                            key={index} 
+                            className={`flex justify-between items-center text-sm ${
+                              schedule.day === shopStatus.currentDay ? 'font-semibold' : ''
+                            }`}
+                          >
+                            <span className={`w-24 ${
+                              schedule.day === shopStatus.currentDay 
+                                ? 'text-black' 
+                                : 'text-gray-700'
+                            }`}>
+                              {schedule.day}
+                              {schedule.day === shopStatus.currentDay && (
+                                <span className="ml-1 text-blue-600">•</span>
+                              )}
+                            </span>
+                            {schedule.is_closed ? (
+                              <span className="text-gray-400 italic">Closed</span>
+                            ) : (
+                              <span className={schedule.day === shopStatus.currentDay ? 'text-blue-600' : 'text-gray-600'}>
+                                {schedule.open} - {schedule.close}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-400 italic text-sm">Not specified</div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -264,79 +472,119 @@ const RepairShow: React.FC = () => {
                 </div>
                 <h3 className="text-2xl font-bold text-black">Customer Rating</h3>
               </div>
-              <div className="flex items-center gap-8">
-                <div>
-                  <div className="flex items-baseline gap-3 mb-2">
-                    <span className="text-6xl font-bold text-black">{shop.rating}</span>
-                    <span className="text-4xl text-yellow-400">⭐</span>
+              {reviewStats.total_reviews > 0 ? (
+                <div className="flex items-center gap-8">
+                  <div>
+                    <div className="flex items-baseline gap-3 mb-2">
+                      <span className="text-6xl font-bold text-black">
+                        {reviewStats.average_rating.toFixed(1)}
+                      </span>
+                      <span className="text-4xl text-yellow-400">⭐</span>
+                    </div>
+                    <span className="text-sm text-gray-600">
+                      Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
+                    </span>
                   </div>
-                  <span className="text-sm text-gray-600">Based on {mockReviews.length} reviews</span>
+                  <div className="flex flex-col gap-1">
+                    {renderStars(reviewStats.average_rating)}
+                    <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  {renderStars(shop.rating)}
-                  <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-gray-400 italic mb-2">No reviews yet</p>
+                  <p className="text-sm text-gray-500">Be the first to review this shop!</p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
           {/* Repair Services Section */}
           <div className="mb-12">
             <h2 className="text-3xl font-bold text-black mb-8">Our Repair Services</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {mockRepairServices.map((service) => (
-                <div
-                  key={service.id}
-                  className={`bg-white rounded-2xl p-6 border-2 cursor-pointer transition-all hover:shadow-lg ${
-                    selectedServices.includes(service.id)
-                      ? 'border-black shadow-md'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  onClick={() => handleServiceToggle(service.id)}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-bold text-black mb-2">{service.title}</h3>
-                      <p className="text-sm text-gray-600 mb-4">{service.description}</p>
-                      <div className="text-2xl font-bold text-black">{service.price}</div>
-                    </div>
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+            {repairServices && repairServices.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {repairServices.map((service) => (
+                  <div
+                    key={service.id}
+                    className={`bg-white rounded-2xl p-6 border-2 cursor-pointer transition-all hover:shadow-lg ${
                       selectedServices.includes(service.id)
-                        ? 'border-black bg-black'
-                        : 'border-gray-300'
-                    }`}>
-                      {selectedServices.includes(service.id) && (
-                        <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
+                        ? 'border-black shadow-md'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => handleServiceToggle(service.id)}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="text-lg font-bold text-black">{service.title}</h3>
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
+                            {service.category}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">{service.description}</p>
+                        <div className="flex items-center justify-between">
+                          <div className="text-2xl font-bold text-black">{service.price}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10" />
+                              <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                            {service.duration}
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ml-3 transition-all ${
+                        selectedServices.includes(service.id)
+                          ? 'border-black bg-black'
+                          : 'border-gray-300'
+                      }`}>
+                        {selectedServices.includes(service.id) && (
+                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 bg-gray-50 rounded-2xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-gray-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                <p className="text-gray-600 text-lg">No repair services available at the moment</p>
+              </div>
+            )}
           </div>
 
           {/* Request Service Button */}
           <Link
-            href={`/repair-process${selectedServices.length > 0 ? `?services=${selectedServices.join(',')}` : ''}`}
+            href={`/repair-process${selectedServices.length > 0 ? `?services=${selectedServices.join(',')}&shop=${shop.id}` : ''}`}
+            onClick={handleRequestRepair}
             className="block w-full bg-black text-white py-5 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-xl shadow-xl hover:shadow-2xl text-center mb-16"
           >
             Request Repair Service {selectedServices.length > 0 && `(${selectedServices.length} service${selectedServices.length !== 1 ? 's' : ''} selected)`}
           </Link>
 
           {/* Reviews and Comments Section */}
-          <div className="border-t border-gray-200 pt-16">
+          <div id="reviews" className="border-t border-gray-200 pt-16">
             <div className="mb-12">
               <h2 className="text-4xl font-bold text-black mb-6">Customer Reviews</h2>
               <div className="flex items-center gap-6">
                 <div className="flex items-center gap-4">
-                  <span className="text-6xl font-bold text-black">{shop.rating}</span>
+                  <span className="text-6xl font-bold text-black">
+                    {reviewStats.average_rating > 0 ? reviewStats.average_rating.toFixed(1) : shop.rating}
+                  </span>
                   <div>
                     <div className="flex gap-1 mb-2">
-                      {renderStars(shop.rating)}
+                      {renderStars(reviewStats.average_rating > 0 ? reviewStats.average_rating : shop.rating)}
                     </div>
-                    <span className="text-sm text-gray-600">Based on {mockReviews.length} reviews</span>
+                    <span className="text-sm text-gray-600">
+                      Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -353,6 +601,46 @@ const RepairShow: React.FC = () => {
                 </div>
                 <h3 className="text-3xl font-bold text-black">Share Your Experience</h3>
               </div>
+
+              {/* Eligibility Messages */}
+              {!isAuthenticated ? (
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <p className="text-blue-800">
+                    Please <Link href="/login" className="font-bold underline hover:text-blue-600">log in</Link> to write a review
+                  </p>
+                </div>
+              ) : isAuthenticated && canReview ? (
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl">
+                  <p className="text-green-800 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    You are eligible to review this shop
+                  </p>
+                </div>
+              ) : isAuthenticated && reviewEligibility && !canReview ? (
+                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <p className="text-amber-800">
+                    {reviewEligibility.message || "You can only review shops where you have completed a purchase or repair service"}
+                    {reviewEligibility.reason === 'already_reviewed' && reviewEligibility.existing_review && (
+                      <span className="block mt-2 text-sm">
+                        You submitted a review on {new Date(reviewEligibility.existing_review.created_at).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              ) : isAuthenticated && !reviewEligibility ? (
+                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <p className="text-amber-800">
+                    You can only review shops where you have completed a purchase or repair service
+                  </p>
+                </div>
+              ) : null}
 
               <div className="mb-8">
                 <label className="block text-base font-bold text-black mb-4">Your Rating</label>
@@ -435,47 +723,91 @@ const RepairShow: React.FC = () => {
 
               <button
                 onClick={handleSubmitReview}
-                className="bg-black text-white px-10 py-4 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-lg shadow-lg hover:shadow-xl"
+                disabled={!canReview || isSubmittingReview}
+                className={`px-10 py-4 rounded-2xl font-bold text-lg shadow-lg transition-all ${
+                  canReview && !isSubmittingReview
+                    ? 'bg-black text-white hover:bg-gray-900 hover:shadow-xl active:scale-[0.98] cursor-pointer'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
                 type="button"
               >
-                Submit Review
+                {isSubmittingReview ? 'Submitting...' : 'Submit Review'}
               </button>
             </div>
 
             {/* Reviews List */}
-            <div className="space-y-6">
-              {mockReviews.map((review) => (
-                <div key={review.id} className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-8 border border-gray-100 hover:shadow-lg transition-all">
-                  <div className="flex items-start gap-6">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden flex-shrink-0 cursor-pointer hover:scale-105 transition-transform shadow-md" onClick={() => setEnlargedImage('/images/shop/shop1.jpg')}>
-                      <img
-                        src="/images/shop/shop1.jpg"
-                        alt={`${review.userName}'s repair photo`}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3 flex-wrap">
-                        <h4 className="font-bold text-black text-xl">{review.userName}</h4>
-                      </div>
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="flex gap-1">
-                          {renderStars(review.rating)}
-                        </div>
-                        <span className="text-sm text-gray-500 font-medium">
-                          {new Date(review.date).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}
+            {reviews.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-2xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 text-gray-300 mx-auto mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <p className="text-gray-500 text-lg">No reviews yet. Be the first to review this shop!</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {reviews.map((review) => (
+                  <div key={review.id} className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-8 border border-gray-100 hover:shadow-lg transition-all">
+                    <div className="flex items-start gap-6">
+                      {/* User Avatar */}
+                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center shadow-md">
+                        <span className="text-2xl font-bold text-gray-600">
+                          {review.user_name.charAt(0).toUpperCase()}
                         </span>
                       </div>
-                      <p className="text-gray-700 leading-relaxed text-base">{review.comment}</p>
+                      
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-3 flex-wrap">
+                          <h4 className="font-bold text-black text-xl">{review.user_name}</h4>
+                          {review.verified && (
+                            <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                              </svg>
+                              Verified Service
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="flex gap-1">
+                            {renderStars(review.rating)}
+                          </div>
+                          <span className="text-sm text-gray-500 font-medium">
+                            {new Date(review.created_at).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}
+                          </span>
+                        </div>
+                        
+                        <p className="text-gray-700 leading-relaxed text-base mb-4">{review.comment}</p>
+                        
+                        {/* Review Images */}
+                        {review.images && review.images.length > 0 && (
+                          <div className="flex gap-2 mt-4">
+                            {review.images.map((image, index) => (
+                              <img
+                                key={index}
+                                src={image}
+                                alt={`Review photo ${index + 1}`}
+                                className="w-24 h-24 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:scale-105 transition-transform shadow-sm"
+                                onClick={() => setEnlargedImage(image)}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

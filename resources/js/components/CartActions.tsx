@@ -19,10 +19,9 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
   const isProcessingRef = React.useRef(false); // Use ref for immediate synchronous check
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
+  // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
   const user = auth?.user;
-  const userRole = user?.role?.toUpperCase();
-  const isERPStaff = userRole && ['HR', 'FINANCE_STAFF', 'FINANCE_MANAGER', 'FINANCE', 'CRM', 'MANAGER', 'STAFF'].includes(userRole);
-  const isAuthenticated = Boolean(user && !isERPStaff);
+  const isAuthenticated = Boolean(user && !user?.shop_owner_id);
 
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();

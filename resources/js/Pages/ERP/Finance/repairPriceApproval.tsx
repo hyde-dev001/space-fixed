@@ -2,59 +2,23 @@ import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
+import axios from "axios";
 import { hasPermission } from "../../../utils/permissions";
 
-// Mock data for pending repair service approval requests
-const initialPendingRequests = [
-  {
-    id: 1,
-    serviceName: "Premium Leather Conditioning",
-    category: "Care",
-    currentPrice: "₱550",
-    requestedPrice: "₱650",
-    duration: "90 min",
-    requestedBy: "John Manager",
-    requestDate: "2026-02-01",
-    reason: "Premium materials cost increased by 18%",
-    status: "Pending",
-  },
-  {
-    id: 2,
-    serviceName: "Deep Clean & Deodorize",
-    category: "Care",
-    currentPrice: "₱300",
-    requestedPrice: "₱350",
-    duration: "45 min",
-    requestedBy: "Jane Supervisor",
-    requestDate: "2026-02-01",
-    reason: "Labor cost adjustment to match market standards",
-    status: "Pending",
-  },
-  {
-    id: 3,
-    serviceName: "Sole Whitening",
-    category: "Restoration",
-    currentPrice: "₱450",
-    requestedPrice: "₱420",
-    duration: "60 min",
-    requestedBy: "Mike Manager",
-    requestDate: "2026-01-31",
-    reason: "Promotional pricing to increase service uptake",
-    status: "Pending",
-  },
-  {
-    id: 4,
-    serviceName: "Suede Treatment",
-    category: "Restoration",
-    currentPrice: "₱480",
-    requestedPrice: "₱520",
-    duration: "75 min",
-    requestedBy: "Sarah Lead",
-    requestDate: "2026-01-31",
-    reason: "Specialized cleaning agents price increase",
-    status: "Pending",
-  },
-];
+// Types
+interface RepairService {
+  id: number;
+  serviceName: string;
+  category: string;
+  currentPrice: string;
+  requestedPrice: string;
+  duration: string;
+  requestedBy: string;
+  requestDate: string;
+  reason: string;
+  status: string;
+  originalPrice?: string;
+}
 
 // Icons
 const CheckIcon = ({ className }: { className?: string }) => (
@@ -122,7 +86,12 @@ interface RepairPriceRequest {
   requestedBy: string;
   requestDate: string;
   reason: string;
-  status: string;
+  status: 'pending' | 'finance_approved' | 'finance_rejected' | 'owner_approved' | 'owner_rejected';
+  financeReviewedBy: string | null;
+  financeReviewedAt: string | null;
+  financeNotes: string | null;
+  ownerReviewedBy: string | null;
+  ownerReviewedAt: string | null;
   rejectionReason?: string;
 }
 
@@ -186,12 +155,73 @@ export default function RepairPriceApproval() {
   const { auth } = usePage().props as any;
   const userRole = auth?.user?.role;
   
-  const [requests, setRequests] = useState<RepairPriceRequest[]>(initialPendingRequests);
+  const [requests, setRequests] = useState<RepairService[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<RepairPriceRequest | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<RepairService | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Pending");
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [viewMode, setViewMode] = useState<"pending" | "recent">("pending");
+
+  // Fetch repair services from backend
+  const fetchServices = async () => {
+    try {
+      setLoading(true);
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      
+      // Always fetch all services for metrics calculation
+      const url = '/api/finance/repair-price-changes';
+
+      const response = await fetch(url, {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch repair service price change requests');
+      }
+
+      const result = await response.json();
+      const apiRequests = result.data.map((item: any) => ({
+        id: item.id,
+        serviceName: item.service_name,
+        category: item.category || 'General',
+        currentPrice: `₱${parseFloat(item.current_price).toLocaleString()}`,
+        requestedPrice: `₱${parseFloat(item.proposed_price).toLocaleString()}`,
+        duration: item.duration || 'N/A',
+        requestedBy: item.requester?.name || 'Unknown',
+        requestDate: new Date(item.created_at).toISOString().split('T')[0],
+        reason: item.reason,
+        status: item.status,
+        financeReviewedBy: item.finance_reviewer?.name || null,
+        financeReviewedAt: item.finance_reviewed_at ? new Date(item.finance_reviewed_at).toISOString().split('T')[0] : null,
+        financeNotes: item.finance_notes,
+        rejectionReason: item.finance_rejection_reason || item.owner_rejection_reason,
+        ownerReviewedBy: item.owner_reviewer?.name || null,
+        ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
+      }));
+      
+      setRequests(apiRequests);
+    } catch (error) {
+      console.error('Error fetching repair service price change requests:', error);
+      Swal.fire({
+        title: 'Error',
+        text: 'Failed to load repair service price change requests',
+        icon: 'error',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchServices();
+  }, []); // Fetch once on mount
 
   // Check permissions on mount
   useEffect(() => {
@@ -212,13 +242,21 @@ export default function RepairPriceApproval() {
     }
   }, []);
 
-  // Filter data
+  // Filter data based on view mode
   const filteredData = requests.filter((item) => {
     const matchesSearch = item.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          item.requestedBy.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          item.category.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "All" || item.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    
+    // Apply view mode filter
+    let matchesViewMode = true;
+    if (viewMode === 'pending') {
+      matchesViewMode = item.status === 'pending'; // Awaiting Finance review
+    } else if (viewMode === 'recent') {
+      matchesViewMode = item.status === 'finance_approved' || item.status === 'owner_approved'; // Recently approved by Finance
+    }
+    
+    return matchesSearch && matchesViewMode;
   });
 
   const itemsPerPage = 5;
@@ -226,9 +264,10 @@ export default function RepairPriceApproval() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  const pendingCount = requests.filter(r => r.status === "Pending").length;
-  const approvedCount = requests.filter(r => r.status === "Approved").length;
-  const rejectedCount = requests.filter(r => r.status === "Rejected").length;
+  const pendingCount = requests.filter(r => r.status === "pending").length;
+  const financeApprovedCount = requests.filter(r => r.status === "finance_approved").length;
+  const approvedCount = requests.filter(r => r.status === "owner_approved").length;
+  const rejectedCount = requests.filter(r => r.status === "finance_rejected" || r.status === "owner_rejected").length;
 
   const handleViewClick = (request: RepairPriceRequest) => {
     setSelectedRequest(request);
@@ -244,37 +283,74 @@ export default function RepairPriceApproval() {
   };
 
   const handleApprove = async (request: RepairPriceRequest) => {
-    const result = await Swal.fire({
-      title: "Approve Price Change?",
+    const { value: notes } = await Swal.fire({
+      title: "Approve & Forward to Owner",
       html: `
-        <div style="text-align: left; margin-top: 1rem;">
+        <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${request.serviceName}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Category:</strong> ${request.category}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Current Price:</strong> ${request.currentPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
-          <p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
+          <p style="margin-bottom: 1rem;"><strong>Reason:</strong> ${request.reason}</p>
+          <p style="color: #6b7280; font-size: 0.875rem;">This will forward the request to the Shop Owner for final approval.</p>
         </div>
       `,
+      input: "textarea",
+      inputLabel: "Finance Notes (Optional)",
+      inputPlaceholder: "Add notes about margin analysis, profitability, etc...",
       icon: "question",
       showCancelButton: true,
       confirmButtonColor: "#10b981",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Approve",
+      confirmButtonText: "Approve & Forward",
       cancelButtonText: "Cancel",
     });
 
-    if (result.isConfirmed) {
-      setRequests(requests.map(r => 
-        r.id === request.id ? { ...r, status: "Approved" } : r
-      ));
-      
-      Swal.fire({
-        title: "Approved!",
-        text: "The repair service price change has been approved successfully.",
-        icon: "success",
-        confirmButtonColor: "#2563eb",
-      });
+    if (notes !== undefined) {
+      try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const response = await fetch(`/api/finance/repair-price-changes/${request.id}/approve`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+          },
+          body: JSON.stringify({ notes: notes || null }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to approve request');
+        }
+
+        const result = await response.json();
+        
+        // Close view modal if open
+        setViewModalOpen(false);
+        setSelectedRequest(null);
+
+        // Show centered modal notification
+        await Swal.fire({
+          icon: 'success',
+          title: 'Approved & Forwarded',
+          text: `${request.serviceName} sent to Shop Owner for final approval`,
+          confirmButtonColor: '#000000',
+        });
+
+        // Refresh data to get updated list and metrics
+        await fetchServices();
+      } catch (error: any) {
+        console.error('Error approving request:', error);
+        Swal.fire({
+          title: 'Error',
+          text: error.message || 'Failed to approve repair service price change request',
+          icon: 'error',
+          confirmButtonColor: '#000000',
+        });
+      }
     }
   };
 
@@ -282,14 +358,21 @@ export default function RepairPriceApproval() {
     const { value: reason } = await Swal.fire({
       title: "Reject Price Change",
       html: `
-        <div style="text-align: left; margin-bottom: 1rem;">
+        <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${request.serviceName}</p>
-          <p style="margin-bottom: 0.5rem;"><strong>Requested Price:</strong> ${request.requestedPrice}</p>
+          <p style="margin-bottom: 0.5rem;"><strong>Category:</strong> ${request.category}</p>
+          <p style="margin-bottom: 0.5rem;"><strong>Current Price:</strong> ${request.currentPrice}</p>
+          <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
+          <p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
+          <p style="margin-bottom: 1rem;"><strong>Reason:</strong> ${request.reason}</p>
+          <p style="margin-top: 1rem; color: #ef4444; font-size: 0.875rem;">
+            ⚠️ This will reject the request and notify the STAFF member.
+          </p>
         </div>
       `,
       input: "textarea",
-      inputLabel: "Rejection Reason",
-      inputPlaceholder: "Enter the reason for rejection...",
+      inputLabel: "Rejection Reason (Required)",
+      inputPlaceholder: "E.g., Profit margin below threshold, pricing strategy mismatch...",
       inputAttributes: {
         "aria-label": "Enter the reason for rejection",
       },
@@ -306,18 +389,72 @@ export default function RepairPriceApproval() {
     });
 
     if (reason) {
-      setRequests(requests.map(r => 
-        r.id === request.id ? { ...r, status: "Rejected", rejectionReason: reason } : r
-      ));
-      
-      Swal.fire({
-        title: "Rejected",
-        text: "The repair service price change has been rejected.",
-        icon: "info",
-        confirmButtonColor: "#2563eb",
-      });
+      try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const response = await fetch(`/api/finance/repair-price-changes/${request.id}/reject`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+          },
+          body: JSON.stringify({ reason }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to reject request');
+        }
+
+        const result = await response.json();
+        
+        // Close view modal if open
+        setViewModalOpen(false);
+        setSelectedRequest(null);
+
+        // Show centered modal notification
+        await Swal.fire({
+          icon: 'info',
+          title: 'Request Rejected',
+          text: `${request.serviceName} price change rejected by Finance`,
+          confirmButtonColor: '#000000',
+        });
+
+        // Refresh data to get updated list and metrics
+        await fetchServices();
+      } catch (error: any) {
+        console.error('Error rejecting request:', error);
+        Swal.fire({
+          title: 'Error',
+          text: error.message || 'Failed to reject repair service price change request',
+          icon: 'error',
+          confirmButtonColor: '#000000',
+        });
+      }
     }
   };
+
+  // Keyboard support for modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && viewModalOpen) {
+        setViewModalOpen(false);
+        setSelectedRequest(null);
+      }
+    };
+
+    if (viewModalOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [viewModalOpen]);
 
   return (
     <>
@@ -326,23 +463,38 @@ export default function RepairPriceApproval() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Repair Service Price Approvals</h1>
-            <p className="text-gray-600 dark:text-gray-400">Review and approve repair service pricing change requests</p>
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Repair Service Price Approval Requests</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Review and approve repair service price changes from STAFF</p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-              Finance Only
-            </span>
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
-              Approval Required
-            </span>
+          {/* View Toggle */}
+          <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode('pending')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'pending'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              Pending Review
+            </button>
+            <button
+              onClick={() => setViewMode('recent')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'recent'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              Recently Approved
+            </button>
           </div>
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard
-            title="Pending Approvals"
+            title="Pending Finance Review"
             value={pendingCount}
             change={12}
             changeType="increase"
@@ -351,13 +503,22 @@ export default function RepairPriceApproval() {
             description="Awaiting your review"
           />
           <MetricCard
-            title="Approved"
+            title="Forwarded to Owner"
+            value={financeApprovedCount}
+            change={5}
+            changeType="increase"
+            icon={WrenchIcon}
+            color="info"
+            description="Awaiting owner approval"
+          />
+          <MetricCard
+            title="Fully Approved"
             value={approvedCount}
             change={8}
             changeType="increase"
             icon={CheckIcon}
             color="success"
-            description="This month"
+            description="Owner approved & applied"
           />
           <MetricCard
             title="Rejected"
@@ -365,8 +526,8 @@ export default function RepairPriceApproval() {
             change={3}
             changeType="decrease"
             icon={XIcon}
-            color="info"
-            description="This month"
+            color="warning"
+            description="Finance or owner rejected"
           />
         </div>
 
@@ -377,35 +538,18 @@ export default function RepairPriceApproval() {
             <p className="text-sm text-gray-500 dark:text-gray-400">Review and take action on repair service pricing requests</p>
           </div>
 
-          {/* Search and Filter */}
-          <div className="mb-4 flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search by service name, category, or requestor..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-              />
-            </div>
-            <div className="sm:w-48">
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-              >
-                <option value="All">All Status</option>
-                <option value="Pending">Pending</option>
-                <option value="Approved">Approved</option>
-                <option value="Rejected">Rejected</option>
-              </select>
-            </div>
+          {/* Search Filter */}
+          <div className="mb-4">
+            <input
+              type="text"
+              placeholder="Search by service name, category, or requestor..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+            />
           </div>
 
           {/* Table */}
@@ -468,14 +612,22 @@ export default function RepairPriceApproval() {
                         <td className="py-4">
                           <span
                             className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              request.status === "Pending"
+                              request.status === "pending"
                                 ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-200"
-                                : request.status === "Approved"
+                                : request.status === "finance_approved"
+                                ? "bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+                                : request.status === "owner_approved"
                                 ? "bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-200"
                                 : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
                             }`}
                           >
-                            {request.status}
+                            {request.status === "pending" 
+                              ? "Pending Finance" 
+                              : request.status === "finance_approved"
+                              ? "Pending Owner"
+                              : request.status === "owner_approved"
+                              ? "Approved"
+                              : "Rejected"}
                           </span>
                         </td>
                         <td className="py-4">
@@ -562,7 +714,34 @@ export default function RepairPriceApproval() {
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Repair Service Price Change Request Details</h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Finance Price Review</h2>
+                  {selectedRequest.status === 'finance_approved' && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+                      Pending Owner
+                    </span>
+                  )}
+                  {selectedRequest.status === 'owner_approved' && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-200">
+                      Fully Approved
+                    </span>
+                  )}
+                  {selectedRequest.status === 'finance_rejected' && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200">
+                      Finance Rejected
+                    </span>
+                  )}
+                  {selectedRequest.status === 'owner_rejected' && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200">
+                      Owner Rejected
+                    </span>
+                  )}
+                  {selectedRequest.status === 'pending' && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-50 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-200">
+                      Pending Review
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={() => setViewModalOpen(false)}
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
@@ -573,18 +752,17 @@ export default function RepairPriceApproval() {
               <div className="p-6 space-y-6">
                 {/* Service Info */}
                 <div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Service Name</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">{selectedRequest.serviceName}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{selectedRequest.category} • {selectedRequest.duration}</p>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedRequest.serviceName}</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{selectedRequest.category} • {selectedRequest.duration}</p>
                 </div>
 
                 {/* Price Comparison */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Current Price</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">{selectedRequest.currentPrice}</p>
                   </div>
-                  <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Requested Price</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">{selectedRequest.requestedPrice}</p>
                   </div>
@@ -603,11 +781,11 @@ export default function RepairPriceApproval() {
                             {isIncrease ? "+" : ""}₱{Math.abs(change).toFixed(2)} ({isIncrease ? "+" : ""}{percentage}%)
                           </p>
                         </div>
-                        <div className="p-3 rounded-full border border-gray-200 dark:border-gray-700">
+                        <div className={`p-3 rounded-full ${isIncrease ? "bg-green-100 dark:bg-green-900/30" : "bg-red-100 dark:bg-red-900/30"}`}>
                           {isIncrease ? (
-                            <ArrowUpIcon className={`w-8 h-8 ${isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} />
+                            <ArrowUpIcon className="w-8 h-8 text-green-600 dark:text-green-400" />
                           ) : (
-                            <ArrowDownIcon className={`w-8 h-8 text-red-600 dark:text-red-400`} />
+                            <ArrowDownIcon className="w-8 h-8 text-red-600 dark:text-red-400" />
                           )}
                         </div>
                       </div>
@@ -628,7 +806,7 @@ export default function RepairPriceApproval() {
                 </div>
 
                 {/* Reason */}
-                <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     <DocumentIcon className="w-4 h-4" />
                     Reason for Change
@@ -636,32 +814,62 @@ export default function RepairPriceApproval() {
                   <p className="text-sm text-gray-600 dark:text-gray-400">{selectedRequest.reason}</p>
                 </div>
 
-                {/* Status */}
-                <div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Status</p>
-                  <span
-                    className={`inline-block px-4 py-2 rounded-lg border text-sm font-semibold ${
-                      selectedRequest.status === "Pending"
-                        ? "border-yellow-300 text-yellow-700 dark:border-yellow-700 dark:text-yellow-400"
-                        : selectedRequest.status === "Approved"
-                        ? "border-green-300 text-green-700 dark:border-green-700 dark:text-green-400"
-                        : "border-red-300 text-red-700 dark:border-red-700 dark:text-red-400"
-                    }`}
-                  >
-                    {selectedRequest.status}
-                  </span>
-                </div>
+                {/* Finance Review Section */}
+                {selectedRequest.financeReviewedBy && (
+                  <div className="p-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100">Finance Review</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-700 dark:text-gray-300">
+                        <span className="font-medium">Reviewed by:</span> {selectedRequest.financeReviewedBy}
+                      </p>
+                      <p className="text-gray-700 dark:text-gray-300">
+                        <span className="font-medium">Review date:</span> {selectedRequest.financeReviewedAt}
+                      </p>
+                      {selectedRequest.financeNotes && (
+                        <p className="text-gray-700 dark:text-gray-300">
+                          <span className="font-medium">Notes:</span> {selectedRequest.financeNotes}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Owner Review Section */}
+                {selectedRequest.ownerReviewedBy && (
+                  <div className="p-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      <h4 className="text-sm font-semibold text-green-900 dark:text-green-100">Owner Approval</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-700 dark:text-gray-300">
+                        <span className="font-medium">Approved by:</span> {selectedRequest.ownerReviewedBy}
+                      </p>
+                      <p className="text-gray-700 dark:text-gray-300">
+                        <span className="font-medium">Approval date:</span> {selectedRequest.ownerReviewedAt}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Rejection Reason */}
-                {selectedRequest.status === "Rejected" && selectedRequest.rejectionReason && (
-                  <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rejection Reason</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{selectedRequest.rejectionReason}</p>
+                {(selectedRequest.status === 'finance_rejected' || selectedRequest.status === 'owner_rejected') && selectedRequest.rejectionReason && (
+                  <div className="p-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+                    <div className="flex items-center gap-2 mb-2">
+                      <XIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      <h4 className="text-sm font-semibold text-red-900 dark:text-red-100">Rejection Reason</h4>
+                    </div>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{selectedRequest.rejectionReason}</p>
                   </div>
                 )}
               </div>
-              <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
-                {selectedRequest.status === "Pending" ? (
+
+              {/* Actions */}
+              <div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                {selectedRequest.status === 'pending' ? (
                   <>
                     <button
                       onClick={() => {
@@ -681,14 +889,27 @@ export default function RepairPriceApproval() {
                       className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
-                      Approve
+                      Approve & Forward
                     </button>
                   </>
+                ) : selectedRequest.status === 'finance_approved' ? (
+                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Close
+                  </button>
+                ) : selectedRequest.status === 'owner_approved' ? (
+                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Close
+                  </button>
+                ) : selectedRequest.status === 'owner_rejected' ? (
+                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Close
+                  </button>
+                ) : selectedRequest.status === 'finance_rejected' ? (
+                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Close
+                  </button>
                 ) : (
-                  <button
-                    onClick={() => setViewModalOpen(false)}
-                    className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                  >
+                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                     Close
                   </button>
                 )}

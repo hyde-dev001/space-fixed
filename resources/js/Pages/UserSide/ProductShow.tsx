@@ -23,10 +23,9 @@ const ProductShow: React.FC = () => {
   const { product, auth } = usePage().props as any;
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
+  // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
   const user = auth?.user;
-  const userRole = user?.role?.toUpperCase();
-  const isERPStaff = userRole && ['HR', 'FINANCE_STAFF', 'FINANCE_MANAGER', 'FINANCE', 'CRM', 'MANAGER', 'STAFF'].includes(userRole);
-  const isAuthenticated = Boolean(user && !isERPStaff);
+  const isAuthenticated = Boolean(user && !user?.shop_owner_id);
   
   // Check if product has color variants (new Adidas-style system)
   const hasColorVariants = product.colorVariants && Array.isArray(product.colorVariants) && product.colorVariants.length > 0;

@@ -19,7 +19,7 @@ interface Shop {
   id: number;
   name: string;
   cover_image: string;
-  profile_icon: string;
+  profile_photo?: string | null;
   description: string;
   address: string;
   phone: string;
@@ -27,6 +27,23 @@ interface Shop {
   rating: number;
   total_reviews: number;
   established_year: number;
+  country?: string;
+  postal_code?: string;
+  tax_id?: string;
+  monday_open?: string;
+  monday_close?: string;
+  tuesday_open?: string;
+  tuesday_close?: string;
+  wednesday_open?: string;
+  wednesday_close?: string;
+  thursday_open?: string;
+  thursday_close?: string;
+  friday_open?: string;
+  friday_close?: string;
+  saturday_open?: string;
+  saturday_close?: string;
+  sunday_open?: string;
+  sunday_close?: string;
 }
 
 interface Props {
@@ -77,7 +94,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
               <div className="flex-shrink-0">
                 <div className="w-40 h-40 rounded-lg border-4 border-white shadow-lg bg-gray-100 overflow-hidden -mt-24 relative z-10">
                   <img
-                    src={shop.profile_icon}
+                    src={shop.profile_photo || '/images/shop/shop-icon.png'}
                     alt={shop.name}
                     className="w-full h-full object-cover"
                   />
@@ -106,7 +123,10 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">Location</p>
-                    <p className="text-sm text-black font-medium">{shop.address}</p>
+                    <p className="text-sm text-black font-medium">
+                      {shop.address}
+                      {shop.country && <span className="block text-xs text-gray-600">{shop.country}{shop.postal_code ? ` ${shop.postal_code}` : ''}</span>}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">Phone</p>
@@ -117,6 +137,31 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                     <p className="text-sm text-black font-medium">{shop.email}</p>
                   </div>
                 </div>
+
+                {/* Operating Hours */}
+                {(shop.monday_open || shop.tuesday_open || shop.wednesday_open || shop.thursday_open || shop.friday_open || shop.saturday_open || shop.sunday_open) && (
+                  <div className="mt-8">
+                    <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Operating Hours</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {[
+                        { day: 'Monday', open: shop.monday_open, close: shop.monday_close },
+                        { day: 'Tuesday', open: shop.tuesday_open, close: shop.tuesday_close },
+                        { day: 'Wednesday', open: shop.wednesday_open, close: shop.wednesday_close },
+                        { day: 'Thursday', open: shop.thursday_open, close: shop.thursday_close },
+                        { day: 'Friday', open: shop.friday_open, close: shop.friday_close },
+                        { day: 'Saturday', open: shop.saturday_open, close: shop.saturday_close },
+                        { day: 'Sunday', open: shop.sunday_open, close: shop.sunday_close },
+                      ].map(({ day, open, close }) => (
+                        <div key={day} className="flex justify-between">
+                          <span className="text-gray-600">{day}:</span>
+                          <span className="font-medium text-gray-900">
+                            {open && close ? `${open} - ${close}` : 'Closed'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

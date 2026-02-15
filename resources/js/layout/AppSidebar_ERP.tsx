@@ -355,6 +355,15 @@ const managerItems: NavItem[] = [
     name: "Suspend Approval",
     route: "erp.manager.suspend-approval",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+    ),
+    name: "Repair Rejection Review",
+    route: "erp.manager.repair-rejection-review",
+  },
 ];
 
 const staffItems: NavItem[] = [
@@ -432,6 +441,24 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Pricing",
     route: "erp.manager.pricing-services",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      </svg>
+    ),
+    name: "Repair Support",
+    route: "erp.repairer.support",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+    ),
+    name: "Repair Reject Approval",
+    route: "erp.user.repair-reject-approval",
   },
 ];
 
@@ -517,6 +544,7 @@ const AppSidebar_ERP: React.FC = () => {
     "finance.index": "/finance",
     "finance.dashboard": "/finance/dashboard",
     "finance.create-invoice": "/create-invoice",
+    "erp.manager.repair-rejection-review": "/erp/manager/repair-rejection-review",
     "erp.finance.audit-logs": "/erp/finance/audit-logs",
     // CRM section routes
     "crm.dashboard": "/crm",
@@ -534,6 +562,8 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
+    // User section routes
+    "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
     "erp.staff.job-orders": "/erp/staff/job-orders",
@@ -800,6 +830,11 @@ const AppSidebar_ERP: React.FC = () => {
       if (item.route === "erp.manager.pricing-services") {
         return permissions.includes('view-pricing') || permissions.includes('edit-pricing') || 
                permissions.includes('manage-service-pricing');
+      }
+      
+      // Repair Support - accessible to repairer role, managers, and super admins
+      if (item.route === "erp.repairer.support") {
+        return role === 'REPAIRER' || role === 'MANAGER' || role === 'SUPER_ADMIN';
       }
       
       // Hide other items by default (no permissions)

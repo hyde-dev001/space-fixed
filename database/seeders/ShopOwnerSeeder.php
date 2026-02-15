@@ -22,7 +22,7 @@ class ShopOwnerSeeder extends Seeder
                 'password' => bcrypt('password'),
                 'business_name' => 'Test Business',
                 'business_address' => '123 Test Street, Test City',
-                'business_type' => 'retail',
+                'business_type' => 'both', // Changed from 'retail' to 'both' to show in repair services
                 'registration_type' => 'individual',
                 'operating_hours' => json_encode([
                     'monday' => ['open' => '09:00', 'close' => '17:00'],
