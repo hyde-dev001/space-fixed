@@ -268,7 +268,6 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
       const data = await response.json();
 
       if (data.success) {
-        alert('Thank you for your review!');
         setNewComment('');
         setUserRating(0);
         setImageUploadGroups([{id: '0', file: null, preview: ''}]);

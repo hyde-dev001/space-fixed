@@ -313,7 +313,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
                 <li><Link href={route("products")} className="text-black/60 hover:text-black transition-colors text-sm">Products</Link></li>
                 <li><Link href={route("repair")} className="text-black/60 hover:text-black transition-colors text-sm">Repair Services</Link></li>
                 <li><Link href={route("services")} className="text-black/60 hover:text-black transition-colors text-sm">Services</Link></li>
-                <li><Link href={route("contact")} className="text-black/60 hover:text-black transition-colors text-sm">Contact</Link></li>
               </ul>
             </div>
             <div>

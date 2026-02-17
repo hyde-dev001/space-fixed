@@ -35,6 +35,12 @@ interface CheckoutData {
 const Payment: React.FC = () => {
   const { auth } = usePage().props as any;
   const user = auth?.user;
+  const searchParams = new URLSearchParams(window.location.search);
+  const repairIdParam = searchParams.get('repair_id');
+  const repairTotalParam = searchParams.get('total');
+  const repairTypeParam = searchParams.get('repair_type');
+  const repairOrderNumberParam = searchParams.get('order_number');
+  const isRepairPayment = searchParams.get('source') === 'repair' && !!repairIdParam && !!repairTotalParam;
 
   const [checkoutData, setCheckoutData] = useState<CheckoutData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -60,6 +66,40 @@ const Payment: React.FC = () => {
 
   useEffect(() => {
     const loadCheckoutData = async () => {
+      if (isRepairPayment) {
+        const totalAmount = Number.parseFloat(repairTotalParam || '0') || 0;
+        const repairName = repairTypeParam || (repairOrderNumberParam ? `Repair ${repairOrderNumberParam}` : 'Repair Service');
+        const data: CheckoutData = {
+          items: [
+            {
+              id: `repair-${repairIdParam}`,
+              pid: Number(repairIdParam),
+              name: repairName,
+              price: totalAmount,
+              qty: 1,
+            },
+          ],
+          total_amount: totalAmount,
+          customer_name: user?.name || '',
+          customer_email: user?.email || '',
+          customer_phone: user?.phone || '',
+          shipping_address: '',
+          address_id: null,
+          shipping_region: null,
+          shipping_province: null,
+          shipping_city: null,
+          shipping_barangay: null,
+          shipping_postal_code: null,
+          shipping_address_line: null,
+          payment_method: 'paymongo',
+        };
+
+        setCheckoutData(data);
+        setCustomerName(data.customer_name);
+        setCustomerEmail(data.customer_email);
+        setCustomerPhone(data.customer_phone);
+        return;
+      }
 
       // First, try to get data from sessionStorage
       const stored = sessionStorage.getItem('checkoutData');

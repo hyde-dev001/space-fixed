@@ -49,10 +49,17 @@ return new class extends Migration
             
             // Compensation
             $table->decimal('salary', 12, 2)->nullable();
+            
+            // Retail commission structure
+            $table->decimal('sales_commission_rate', 5, 4)->nullable()->comment('Sales commission rate (0.0500 = 5%)');
+            $table->decimal('performance_bonus_rate', 5, 4)->nullable()->comment('Performance bonus rate (0.1000 = 10%)');
+            $table->decimal('other_allowances', 10, 2)->nullable()->comment('Other allowances (holiday pay, special bonuses)');
+            
             $table->date('hire_date')->nullable();
             
             // Status
             $table->enum('status', ['active', 'inactive', 'on_leave', 'suspended'])->default('active');
+            $table->text('suspension_reason')->nullable();
             
             // Timestamps
             $table->timestamps();

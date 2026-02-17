@@ -24,9 +24,17 @@ return new class extends Migration
             $table->enum('status', ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])->default('pending');
             $table->string('payment_method')->nullable();
             $table->enum('payment_status', ['pending', 'paid', 'refunded'])->default('pending');
+            $table->string('paymongo_link_id')->nullable();
+            $table->string('paymongo_payment_id')->nullable();
+            $table->timestamp('paid_at')->nullable();
             $table->string('tracking_number')->nullable();
             $table->string('shipping_carrier')->nullable();
+            $table->string('carrier_company')->nullable();
+            $table->string('carrier_name')->nullable();
+            $table->string('carrier_phone')->nullable();
+            $table->string('tracking_link')->nullable();
             $table->date('shipped_date')->nullable();
+            $table->string('eta')->nullable();
             $table->text('notes')->nullable();
             
             // Invoice tracking

@@ -22,6 +22,8 @@ class ShopOwnerSeeder extends Seeder
                 'password' => bcrypt('password'),
                 'business_name' => 'Test Business',
                 'business_address' => '123 Test Street, Test City',
+                'city_state' => 'Makati',
+                'country' => 'Philippines',
                 'business_type' => 'both', // Changed from 'retail' to 'both' to show in repair services
                 'registration_type' => 'individual',
                 'operating_hours' => json_encode([
@@ -48,6 +50,8 @@ class ShopOwnerSeeder extends Seeder
                 'password' => bcrypt('password'),
                 'business_name' => 'Urban Kicks Store',
                 'business_address' => '456 Commerce Ave, Metro Manila',
+                'city_state' => 'Metro Manila',
+                'country' => 'Philippines',
                 'business_type' => 'both',
                 'registration_type' => 'company',
                 'operating_hours' => json_encode([
@@ -63,14 +67,5 @@ class ShopOwnerSeeder extends Seeder
                 'rejection_reason' => null,
             ]
         );
-
-        // Create 5 pending shop owners
-        ShopOwner::factory(5)->pending()->create();
-
-        // Create 2 approved shop owners (since we added one test account)
-        ShopOwner::factory(2)->approved()->create();
-
-        // Create 2 rejected shop owners
-        ShopOwner::factory(2)->rejected()->create();
     }
 }

@@ -161,9 +161,6 @@ const Services: React.FC<Props> = () => {
                   <Link href={route("shop-owner-register")} className="inline-block px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-all duration-300 transform hover:scale-105">
                     Register as Shop Owner or Repairer
                   </Link>
-                  <Link href={route("contact")} className="inline-block px-10 py-4 bg-white border-2 border-black text-black font-semibold uppercase tracking-wider text-sm hover:bg-black hover:text-white transition-all duration-300">
-                    Learn More
-                  </Link>
                 </div>
               </div>
             </div>

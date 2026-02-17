@@ -85,40 +85,46 @@ class CustomerController extends Controller
         $activeCustomers = $customers->where('status', 'active')->count();
         $totalOrders = Order::where('shop_owner_id', $shopOwnerId)->count();
         $totalRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('payment_status', 'paid')
             ->sum('total_amount');
 
-        // Previous period for comparison
-        $prevTotalCustomers = max(1, User::join('orders', 'users.id', '=', 'orders.customer_id')
+        // Previous period for comparison (last 30 days)
+        $prevTotalCustomers = User::join('orders', 'users.id', '=', 'orders.customer_id')
             ->where('orders.shop_owner_id', $shopOwnerId)
-            ->where('orders.created_at', '<', now()->subDays(30))
+            ->whereBetween('orders.created_at', [now()->subDays(60), now()->subDays(30)])
             ->distinct('users.id')
-            ->count('users.id'));
+            ->count('users.id');
 
-        $prevActiveCustomers = max(1, User::join('orders', 'users.id', '=', 'orders.customer_id')
+        $prevActiveCustomers = User::join('orders', 'users.id', '=', 'orders.customer_id')
             ->where('orders.shop_owner_id', $shopOwnerId)
             ->whereBetween('orders.created_at', [now()->subDays(120), now()->subDays(90)])
             ->distinct('users.id')
-            ->count('users.id'));
+            ->count('users.id');
 
-        $prevTotalOrders = max(1, Order::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '<', now()->subDays(30))
-            ->count());
+        $prevTotalOrders = Order::where('shop_owner_id', $shopOwnerId)
+            ->whereBetween('created_at', [now()->subDays(60), now()->subDays(30)])
+            ->count();
 
-        $prevTotalRevenue = max(1, Order::where('shop_owner_id', $shopOwnerId)
-            ->where('payment_status', 'paid')
-            ->where('created_at', '<', now()->subDays(30))
-            ->sum('total_amount'));
+        $prevTotalRevenue = Order::where('shop_owner_id', $shopOwnerId)
+            ->whereBetween('created_at', [now()->subDays(60), now()->subDays(30)])
+            ->sum('total_amount');
+
+        // Calculate percentage changes (handle division by zero)
+        $calculateChange = function($current, $previous) {
+            if ($previous == 0) {
+                return $current > 0 ? 100 : 0;
+            }
+            return round((($current - $previous) / $previous) * 100, 1);
+        };
 
         $stats = [
             'totalCustomers' => $totalCustomers,
-            'totalCustomersChange' => round((($totalCustomers - $prevTotalCustomers) / $prevTotalCustomers) * 100, 1),
+            'totalCustomersChange' => $calculateChange($totalCustomers, $prevTotalCustomers),
             'activeCustomers' => $activeCustomers,
-            'activeCustomersChange' => round((($activeCustomers - $prevActiveCustomers) / $prevActiveCustomers) * 100, 1),
+            'activeCustomersChange' => $calculateChange($activeCustomers, $prevActiveCustomers),
             'totalOrders' => $totalOrders,
-            'totalOrdersChange' => round((($totalOrders - $prevTotalOrders) / $prevTotalOrders) * 100, 1),
+            'totalOrdersChange' => $calculateChange($totalOrders, $prevTotalOrders),
             'totalRevenue' => (float) $totalRevenue,
-            'totalRevenueChange' => round((($totalRevenue - $prevTotalRevenue) / $prevTotalRevenue) * 100, 1),
+            'totalRevenueChange' => $calculateChange($totalRevenue, $prevTotalRevenue),
         ];
 
         return Inertia::render('ERP/STAFF/Dashboard', [

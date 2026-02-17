@@ -10,6 +10,7 @@ use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\CartController;
 use App\Http\Controllers\UserSide\OrderController;
 use App\Http\Controllers\UserSide\CheckoutController;
+use App\Http\Controllers\UserSide\CustomerProfileController;
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
@@ -55,9 +56,9 @@ Route::get('/payment-failed', function () {
 Route::get('/my-orders', [OrderController::class, 'index'])->name('my-orders');
 Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->name('orders.confirm-delivery');
 Route::post('/orders/cancel', [OrderController::class, 'cancel'])->middleware('auth:user')->name('orders.cancel');
-Route::get('/customer-profile', function () {
-    return Inertia::render('UserSide/customerProfile');
-})->name('customer-profile');
+Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->middleware('auth:user')->name('customer-profile');
+Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
+Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware('auth:user')->name('customer-profile.password');
 Route::get('/my-repairs', function () {
     return Inertia::render('UserSide/myRepairs');
 })->name('my-repairs');
@@ -65,10 +66,14 @@ Route::get('/repair-process', function () {
     return Inertia::render('UserSide/RepairProcess');
 })->name('repair-process');
 Route::get('/erp/user/repair-reject-approval', function () {
-    return Inertia::render('UserSide/repairRejectReview');
+    return Inertia::render('ShopOwner/repairRejectReview');
 })->middleware('auth:user')->name('erp.user.repair-reject-approval');
 Route::get('/repair-services', [LandingPageController::class, 'repair'])->name('repair');
 Route::get('/repair-shop/{id}', [LandingPageController::class, 'repairShow'])->name('repair.show');
+// Customer conversations / Chat with repairer
+Route::get('/customer/conversations', function () {
+    return Inertia::render('UserSide/message');
+})->middleware('auth:user')->name('customer.conversations');
 // Message / Chat with shop owner
 Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
     return Inertia::render('UserSide/message', [
@@ -84,8 +89,12 @@ Route::get('/messages', function () {
 })->middleware('auth:user')->name('messages');
 
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
+
+// Phase 10D - Public shop reviews (no auth required)
+Route::get('/api/shop-owners/{id}/reviews', [\App\Http\Controllers\Api\RepairReviewController::class, 'getShopReviews']);
+
 Route::get('/services', [LandingPageController::class, 'services'])->name('services');
-Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
+// Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
 Route::get('/register', [LandingPageController::class, 'register'])->name('register');
 Route::get('/login', function () {
     return Inertia::render('UserSide/UserLogin');
@@ -254,8 +263,12 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     })->name('refund-approvals');
 
     Route::get('/repair-reject-approval', function () {
-        return Inertia::render('UserSide/repairRejectReview');
+        return Inertia::render('ShopOwner/repairRejectReview');
     })->name('repair-reject-approval');
+
+    Route::get('/history-rejection', function () {
+        return Inertia::render('ShopOwner/historyRejection');
+    })->name('history-rejection');
 
     Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
     Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
@@ -387,17 +400,17 @@ Route::prefix('api/repair-services')->group(function () {
     
     // Protected routes requiring authentication
     Route::middleware('auth:user')->group(function () {
-        // Create repair service (Staff and Manager only)
+        // Create repair service (Staff, Manager, and Repairer)
         Route::post('/', [\App\Http\Controllers\Api\RepairServiceController::class, 'store'])
-            ->middleware('permission:create-products|edit-products');
+            ->middleware('permission:create-products|edit-products|manage-repair-services');
         
-        // Update repair service (Staff and Manager only)
+        // Update repair service (Staff, Manager, and Repairer)
         Route::put('{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'update'])
-            ->middleware('permission:edit-products');
+            ->middleware('permission:edit-products|manage-repair-services');
         
-        // Delete repair service (Staff and Manager only)
+        // Delete repair service (Staff, Manager, and Repairer)
         Route::delete('{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'destroy'])
-            ->middleware('permission:delete-products');
+            ->middleware('permission:delete-products|manage-repair-services');
         
         // Finance approval routes
         Route::get('finance/pending', [\App\Http\Controllers\Api\RepairServiceController::class, 'financePending'])
@@ -411,14 +424,104 @@ Route::prefix('api/repair-services')->group(function () {
 
 // Repair Request API Routes
 Route::prefix('api/repair-requests')->group(function () {
-    // Submit repair request - Public (customers can submit without login)
-    Route::post('/', [\App\Http\Controllers\Api\RepairRequestController::class, 'store']);
+    // Submit repair request - Protected (customers must be logged in)
+    Route::post('/', [\App\Http\Controllers\Api\RepairRequestController::class, 'store'])
+        ->middleware('auth:user');
     
     // Get all repair requests - Protected (Staff/Manager only)
     Route::middleware('auth:user')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RepairRequestController::class, 'index']);
         Route::post('{requestId}/status', [\App\Http\Controllers\Api\RepairRequestController::class, 'updateStatus']);
     });
+});
+
+// Customer Repair Management API Routes (Phase 2)
+Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function () {
+    // Get customer's repair requests
+    Route::get('/', [\App\Http\Controllers\Api\RepairRequestController::class, 'myRepairs']);
+    
+    // Get single repair request
+    Route::get('{id}', [\App\Http\Controllers\Api\RepairRequestController::class, 'show']);
+    
+    // Cancel repair request
+    Route::post('{id}/cancel', [\App\Http\Controllers\Api\RepairRequestController::class, 'cancel']);
+    
+    // Confirm pickup
+    Route::post('{id}/confirm-pickup', [\App\Http\Controllers\Api\RepairRequestController::class, 'confirmPickup']);
+    
+    // Confirm repair after chat discussion (Phase 3)
+    Route::post('{id}/confirm', [\App\Http\Controllers\Api\RepairRequestController::class, 'confirmRepair']);
+    
+    // Phase 10D - Reviews & Ratings
+    Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
+    Route::get('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'getRepairReview']);
+    Route::get('{id}/can-review', [\App\Http\Controllers\Api\RepairReviewController::class, 'canReview']);
+});
+
+// Repair Workflow API Routes (Internal - Phase 2)
+Route::middleware('auth:user')->prefix('api/workflow/repairs')->group(function () {
+    // Auto-assign repairer
+    Route::post('{id}/assign', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'assignToRepairer']);
+    
+    // Get workflow status
+    Route::get('{id}/status', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getWorkflowStatus']);
+    
+    // Calculate high value threshold
+    Route::post('{id}/calculate-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'calculateHighValue']);
+});
+
+// Repairer API Routes (Phase 3 - Chat Integration)
+Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function () {
+    // Get assigned repairs
+    Route::get('/', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myAssignedRepairs']);
+    
+    // Accept repair (creates conversation)
+    Route::post('{id}/accept', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'acceptRepair']);
+    
+    // Reject repair (escalates to manager)
+    Route::post('{id}/reject', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectRepair']);
+    
+    // Mark shoes as received (after pickup from customer)
+    Route::post('{id}/mark-received', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAsReceived']);
+    
+    // Phase 8: Work Progress Tracking
+    Route::post('{id}/start-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'startWork']);
+    Route::post('{id}/mark-awaiting-parts', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAwaitingParts']);
+    Route::post('{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork']);
+    Route::post('{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted']);
+    Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
+});
+
+// Manager API Routes (Phase 5 - Rejection Review)
+Route::middleware('auth:user')->prefix('api/manager/repairs')->group(function () {
+    // Get repairs pending manager review
+    Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews']);
+    
+    // Get rejection history timeline
+    Route::get('/rejection-history', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRejectionHistory']);
+    
+    // Approve repairer's rejection
+    Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveRejection']);
+    
+    // Override rejection and reassign
+    Route::post('{id}/override-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'overrideRejection']);
+});
+
+// Shop Owner API Routes (Phase 6 - High-Value Approval)
+Route::middleware('auth:shop_owner')->prefix('api/shop-owner/repairs')->group(function () {
+    // Get high-value repairs pending owner approval
+    Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals']);
+    
+    // Approve high-value repair
+    Route::post('{id}/approve-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveHighValueRepair']);
+    
+    // Reject high-value repair
+    Route::post('{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair']);
+});
+
+// Phase 10D - Shop owner review responses
+Route::middleware('auth:shop_owner')->prefix('api/reviews')->group(function () {
+    Route::post('{id}/respond', [\App\Http\Controllers\Api\RepairReviewController::class, 'respond']);
 });
 
 // Repair Services - Shop Owner Routes
@@ -760,12 +863,6 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         }
         return Inertia::render('ERP/Manager/suspendAccountManager');
     })->name('suspend-approval');
-    Route::get('/pricing-and-services', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        return Inertia::render('ERP/repairer/PricingAndServices');
-    })->name('pricing-services');
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -808,18 +905,20 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
 
 // STAFF routes (both MANAGER and STAFF can access)
 Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manager.staff:staff'])->group(function () {
-    Route::get('/dashboard', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        return Inertia::render('ERP/STAFF/Dashboard');
-    })->name('dashboard');
+    Route::get('/dashboard', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])->name('dashboard');
     Route::get('/job-orders', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/JobOrders');
     })->middleware('permission:view-job-orders')->name('job-orders');
+
+    Route::get('/repair-dashboard', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/repairer/dashboardRepair');
+    })->middleware('permission:view-job-orders')->name('repair-dashboard');
     
     Route::get('/job-orders-repair', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -834,6 +933,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         }
         return Inertia::render('ERP/repairer/uploadService');
     })->name('upload-services');
+    
+    Route::get('/pricing-and-services', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/repairer/PricingAndServices');
+    })->middleware('permission:view-pricing|edit-pricing|manage-repair-services')->name('pricing-services');
     
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -877,6 +983,14 @@ Route::get('/erp/staff/repairer-support', function () {
     }
     return Inertia::render('ERP/repairer/repairerSupport');
 })->middleware(['auth:user', 'permission:view-repairer-conversations'])->name('erp.repairer.support');
+
+// Repairer Pricing Route - Accessible to users with repair service management permissions
+Route::get('/erp/repairer/pricing-and-services', function () {
+    if (Auth::guard('user')->user()?->force_password_change) {
+        return redirect()->route('erp.profile');
+    }
+    return Inertia::render('ERP/repairer/PricingAndServices');
+})->middleware(['auth:user', 'permission:manage-repair-services'])->name('erp.repairer.pricing-services');
 
 // Common Routes (for testing/development)
 Route::group([], function () {

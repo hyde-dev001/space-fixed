@@ -144,6 +144,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-repair-pricing', 'view-shoe-pricing',
             // Job Orders
             'view-job-orders', 'create-job-orders', 'edit-job-orders', 'complete-job-orders',
+            // Attendance
+            'view-attendance', 'create-attendance',
             // General
             'view-dashboard',
         ]);

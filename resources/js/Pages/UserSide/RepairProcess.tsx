@@ -264,11 +264,15 @@ const RepairProcess: React.FC = () => {
       submitFormData.append('description', formData.description);
       submitFormData.append('service_type', formData.serviceType);
       submitFormData.append('shop_owner_id', shopId || '');
-      submitFormData.append('pickup_address_line', formData.pickupAddressLine);
-      submitFormData.append('pickup_barangay', formData.pickupBarangay);
-      submitFormData.append('pickup_city', formData.pickupCity);
-      submitFormData.append('pickup_region', formData.pickupRegion);
-      submitFormData.append('pickup_postal_code', formData.pickupPostalCode);
+      
+      // Only add pickup address fields if service type is pickup
+      if (formData.serviceType === 'pickup') {
+        submitFormData.append('pickup_address_line', formData.pickupAddressLine);
+        submitFormData.append('pickup_barangay', formData.pickupBarangay);
+        submitFormData.append('pickup_city', formData.pickupCity);
+        submitFormData.append('pickup_region', formData.pickupRegion);
+        submitFormData.append('pickup_postal_code', formData.pickupPostalCode);
+      }
       
       // Add selected service IDs
       selectedServices.forEach((serviceId, index) => {
@@ -320,6 +324,11 @@ const RepairProcess: React.FC = () => {
             brand: '',
             description: '',
             serviceType: '',
+            pickupAddressLine: '',
+            pickupBarangay: '',
+            pickupCity: '',
+            pickupRegion: '',
+            pickupPostalCode: '',
           });
           setSelectedServices([]);
           setImageUploadGroups([{id: '0', file: null, preview: ''}]);
@@ -328,7 +337,29 @@ const RepairProcess: React.FC = () => {
           window.location.href = '/repair-services';
         }
       } else {
-        throw new Error(data.message || 'Failed to submit request');
+        // Show validation errors if available
+        setIsSubmitting(false);
+        
+        let errorMessage = data.message || 'Failed to submit request';
+        
+        // If there are specific validation errors, show them
+        if (data.errors) {
+          const errorList = Object.entries(data.errors)
+            .map(([field, messages]: [string, any]) => {
+              const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              return `${fieldName}: ${Array.isArray(messages) ? messages.join(', ') : messages}`;
+            })
+            .join('\n');
+          errorMessage = errorList;
+        }
+        
+        await Swal.fire({
+          title: 'Validation Failed',
+          html: `<pre style="text-align: left; font-size: 12px; max-height: 300px; overflow-y: auto;">${errorMessage}</pre>`,
+          icon: 'error',
+          confirmButtonColor: '#000000',
+        });
+        return;
       }
     } catch (error: any) {
       console.error('Failed to submit repair request:', error);

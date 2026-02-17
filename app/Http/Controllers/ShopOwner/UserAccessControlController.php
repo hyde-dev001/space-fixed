@@ -95,24 +95,17 @@ class UserAccessControlController extends Controller
                 'salary' => 'nullable|numeric|min:0',
                 'hire_date' => 'nullable|date',
                 'status' => 'nullable|in:active,inactive,on_leave',
-                'role' => 'required|in:MANAGER,FINANCE,HR,CRM,STAFF,Manager,Finance,Staff',
+                'role' => 'required|in:MANAGER,FINANCE,HR,CRM,STAFF,REPAIRER,Manager,Finance,Staff,Repairer',
             ], [
                 'name.required' => 'Employee name is required',
                 'email.required' => 'Email is required',
                 'email.unique' => 'This email is already registered',
                 'salary.numeric' => 'Salary must be a valid number',
-                'role.in' => 'Role must be Manager, Finance, HR, CRM, or Staff',
+                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, or Repairer',
             ]);
 
-            // Normalize role to match Spatie role names (capitalize first letter only)
-            // Special case: HR should stay HR, not Hr
-            if (strtoupper($validated['role']) === 'HR') {
-                $validated['role'] = 'HR';
-            } else if (strtoupper($validated['role']) === 'CRM') {
-                $validated['role'] = 'CRM';
-            } else {
-                $validated['role'] = ucfirst(strtolower($validated['role']));
-            }
+            // Normalize role to uppercase to match database enum
+            $validated['role'] = strtoupper($validated['role']);
 
             // Assign to shop owner's shop
             $validated['shop_owner_id'] = $shopOwner->id;
@@ -172,12 +165,12 @@ class UserAccessControlController extends Controller
 
                 // Assign Spatie role based on department
                 $roleMap = [
-                    'Manager' => 'Manager',
-                    'Finance' => 'Finance',
+                    'MANAGER' => 'Manager',
+                    'FINANCE' => 'Finance',
                     'HR' => 'HR',
                     'CRM' => 'CRM',
-                    'Repairer' => 'Repairer',
-                    'Staff' => 'Staff',
+                    'REPAIRER' => 'Repairer',
+                    'STAFF' => 'Staff',
                 ];
                 
                 $spatieRole = $roleMap[$validated['role']] ?? 'Staff';

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from './Navigation';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
-type RepairStatus = 'pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'cancelled';
+type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
+type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected';
 
 type RepairOrder = {
   id: number;
@@ -19,6 +21,9 @@ type RepairOrder = {
   shop_name: string;
   shop_address: string;
   image?: string;
+  conversation_id?: number | null;
+  delivery_method?: string;
+  pickup_address?: string;
 };
 
 // Static mock data for testing
@@ -29,10 +34,10 @@ const getStaticRepairOrders = (): RepairOrder[] => {
       order_number: 'REP-2026020201',
       repair_type: 'Sole Replacement',
       description: 'Replace worn out sole on Nike Air Max',
-      status: 'in_progress',
+      status: 'new_request',
       total_amount: 1500,
-      created_at: new Date('2026-02-01T10:30:00').toISOString(),
-      estimated_completion: 'Feb 5, 2026',
+      created_at: new Date('2026-02-02T10:30:00').toISOString(),
+      estimated_completion: 'Feb 7, 2026',
       shop_id: 1,
       shop_name: 'SoleSpace Repair Center',
       shop_address: '123 Main St, Makati City',
@@ -40,45 +45,85 @@ const getStaticRepairOrders = (): RepairOrder[] => {
     },
     {
       id: 2,
+      order_number: 'REP-2026020101',
+      repair_type: 'Heel Replacement',
+      description: 'Replace broken heel on dress shoes',
+      status: 'pending',
+      total_amount: 2000,
+      created_at: new Date('2026-02-01T16:45:00').toISOString(),
+      estimated_completion: 'Feb 6, 2026',
+      shop_id: 1,
+      shop_name: 'SoleSpace Repair Center',
+      shop_address: '123 Main St, Makati City',
+      image: '/images/product/product-04.jpg',
+    },
+    {
+      id: 3,
       order_number: 'REP-2026013101',
       repair_type: 'Shoe Cleaning',
       description: 'Deep cleaning for white sneakers',
-      status: 'ready_for_pickup',
+      status: 'received',
       total_amount: 800,
       created_at: new Date('2026-01-31T14:20:00').toISOString(),
-      completed_at: 'Feb 1, 2026',
+      estimated_completion: 'Feb 4, 2026',
       shop_id: 1,
       shop_name: 'SoleSpace Repair Center',
       shop_address: '123 Main St, Makati City',
       image: '/images/product/product-02.jpg',
     },
     {
-      id: 3,
-      order_number: 'REP-2026012901',
+      id: 4,
+      order_number: 'REP-2026013001',
       repair_type: 'Stitching Repair',
       description: 'Fix torn stitching on leather boots',
-      status: 'picked_up',
+      status: 'in_progress',
       total_amount: 1200,
-      created_at: new Date('2026-01-29T09:15:00').toISOString(),
-      completed_at: 'Jan 31, 2026',
+      created_at: new Date('2026-01-30T09:15:00').toISOString(),
+      estimated_completion: 'Feb 3, 2026',
       shop_id: 1,
       shop_name: 'SoleSpace Repair Center',
       shop_address: '123 Main St, Makati City',
       image: '/images/product/product-03.jpg',
     },
     {
-      id: 4,
-      order_number: 'REP-2026012801',
-      repair_type: 'Heel Replacement',
-      description: 'Replace broken heel on dress shoes',
-      status: 'pending',
-      total_amount: 2000,
-      created_at: new Date('2026-01-28T16:45:00').toISOString(),
-      estimated_completion: 'Feb 3, 2026',
+      id: 5,
+      order_number: 'REP-2026012901',
+      repair_type: 'Sole Reglue',
+      description: 'Re-glue sole on running shoes',
+      status: 'ready_for_pickup',
+      total_amount: 950,
+      created_at: new Date('2026-01-29T11:05:00').toISOString(),
+      completed_at: 'Feb 1, 2026',
       shop_id: 1,
       shop_name: 'SoleSpace Repair Center',
       shop_address: '123 Main St, Makati City',
-      image: '/images/product/product-04.jpg',
+      image: '/images/product/product-05.jpg',
+    },
+    {
+      id: 6,
+      order_number: 'REP-2026012801',
+      repair_type: 'Lace Replacement',
+      description: 'Replace worn laces on sneakers',
+      status: 'cancelled',
+      total_amount: 250,
+      created_at: new Date('2026-01-28T13:40:00').toISOString(),
+      shop_id: 1,
+      shop_name: 'SoleSpace Repair Center',
+      shop_address: '123 Main St, Makati City',
+      image: '/images/product/product-06.jpg',
+    },
+    {
+      id: 7,
+      order_number: 'REP-2026012701',
+      repair_type: 'Toe Cap Repair',
+      description: 'Fix scuffed toe cap on leather shoes',
+      status: 'rejected',
+      total_amount: 700,
+      created_at: new Date('2026-01-27T10:10:00').toISOString(),
+      shop_id: 1,
+      shop_name: 'SoleSpace Repair Center',
+      shop_address: '123 Main St, Makati City',
+      image: '/images/product/product-07.jpg',
     },
   ];
 };
@@ -86,7 +131,7 @@ const getStaticRepairOrders = (): RepairOrder[] => {
 const MyRepairs: React.FC = () => {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'in_progress' | 'ready' | 'completed' | 'cancelled'>('all');
+  const [selectedTab, setSelectedTab] = useState<RepairTab>('new_request');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<string>('');
@@ -101,12 +146,37 @@ const MyRepairs: React.FC = () => {
   const [refundMethod, setRefundMethod] = useState<string>('');
   const [refundNote, setRefundNote] = useState<string>('');
 
+  // Review modal states (Phase 10D)
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewOrderId, setReviewOrderId] = useState<number | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(0);
+  const [reviewText, setReviewText] = useState<string>('');
+  const [reviewImages, setReviewImages] = useState<File[]>([]);
+  const [hoveredRating, setHoveredRating] = useState<number>(0);
+
   useEffect(() => {
-    // Load static test orders immediately
-    const staticOrders = getStaticRepairOrders();
-    setOrders(staticOrders);
-    setLoading(false);
+    fetchRepairs();
   }, []);
+
+  const fetchRepairs = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('/api/customer/repairs');
+      if (response.data.success) {
+        setOrders(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch repairs:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Failed to load repairs',
+        text: 'Please try refreshing the page',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const confirmPickup = async (orderId: number) => {
     const result = await Swal.fire({
@@ -123,22 +193,36 @@ const MyRepairs: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
-    // Update order status to picked_up
-    setOrders(prev => 
-      prev.map(order => 
-        order.id === orderId 
-          ? { ...order, status: 'picked_up' as const } 
-          : order
-      )
-    );
+    try {
+      const response = await axios.post(`/api/customer/repairs/${orderId}/confirm-pickup`);
+      
+      if (response.data.success) {
+        // Update local state
+        setOrders(prev => 
+          prev.map(order => 
+            order.id === orderId 
+              ? { ...order, status: 'picked_up' as const } 
+              : order
+          )
+        );
 
-    await Swal.fire({
-      title: 'Pickup Confirmed!',
-      text: 'Thank you for confirming your pickup.',
-      icon: 'success',
-      confirmButtonText: 'OK',
-      confirmButtonColor: '#000000',
-    });
+        await Swal.fire({
+          title: 'Pickup Confirmed!',
+          text: 'Thank you for confirming your pickup.',
+          icon: 'success',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#000000',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to confirm pickup:', error);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Failed to confirm pickup',
+        text: 'Please try again',
+        confirmButtonColor: '#000000',
+      });
+    }
   };
 
   const cancelRepair = async (orderId: number, reason?: string) => {
@@ -158,21 +242,91 @@ const MyRepairs: React.FC = () => {
       if (!result.isConfirmed) return;
     }
 
-    setOrders(prev =>
-      prev.map(order =>
-        order.id === orderId
-          ? { ...order, status: 'cancelled' as const }
-          : order
-      )
-    );
+    try {
+      const response = await axios.post(`/api/customer/repairs/${orderId}/cancel`);
+      
+      if (response.data.success) {
+        setOrders(prev =>
+          prev.map(order =>
+            order.id === orderId
+              ? { ...order, status: 'cancelled' as const }
+              : order
+          )
+        );
 
-    await Swal.fire({
-      title: 'Repair Cancelled',
-      text: reason ? 'Your repair order has been cancelled.' : 'Your repair order has been cancelled.',
-      icon: 'success',
-      confirmButtonText: 'OK',
+        await Swal.fire({
+          title: 'Repair Cancelled',
+          text: reason ? 'Your repair order has been cancelled.' : 'Your repair order has been cancelled.',
+          icon: 'success',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#000000',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to cancel repair:', error);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Failed to cancel repair',
+        text: 'Please try again',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const confirmRepair = async (orderId: number) => {
+    const result = await Swal.fire({
+      title: 'Confirm Repair?',
+      html: `
+        <p>By confirming, you agree that:</p>
+        <ul style="text-align: left; padding-left: 20px; margin-top: 10px;">
+          <li>You have discussed all repair details with the repairer</li>
+          <li>You understand the repair cost and timeline</li>
+          <li>The repairer can begin work on your item</li>
+        </ul>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Confirm',
+      cancelButtonText: 'Not Yet',
       confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+      reverseButtons: true,
     });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const url = `/api/customer/repairs/${orderId}/confirm`;
+      console.log('Posting to:', url);
+      const response = await axios.post(url, {});
+      
+      if (response.data.success) {
+        const requiresOwnerApproval = response.data.requires_owner_approval;
+        
+        await Swal.fire({
+          title: 'Repair Confirmed!',
+          text: requiresOwnerApproval 
+            ? 'This is a high-value repair. Awaiting shop owner approval before work begins.'
+            : 'The repairer has been notified and will begin work on your item.',
+          icon: 'success',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#000000',
+        });
+        
+        // Refresh the repairs list
+        fetchRepairs();
+      }
+    } catch (error: any) {
+      console.error('Failed to confirm repair:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Failed to confirm repair',
+        text: error.response?.data?.message || 'Please try again',
+        confirmButtonColor: '#000000',
+      });
+    }
   };
 
   const handleSubmitRefund = async () => {
@@ -315,10 +469,139 @@ const MyRepairs: React.FC = () => {
     return images.length === 5 && videos.length === 1;
   };
 
+  // Phase 10D - Review functions
+  const openReviewModal = async (orderId: number) => {
+    try {
+      // Find the order to get the shop_id
+      const order = orders.find(o => o.id === orderId);
+      
+      if (!order || !order.shop_id) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Shop information not found',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
+      // Navigate to the shop page where they can leave a review
+      window.location.href = `/repair-shop/${order.shop_id}`;
+    } catch (error) {
+      console.error('Error navigating to shop:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to navigate to shop page',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const submitReview = async () => {
+    if (!reviewOrderId) return;
+
+    if (reviewRating === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Rating Required',
+        text: 'Please select a star rating',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('rating', reviewRating.toString());
+      if (reviewText) {
+        formData.append('review_text', reviewText);
+      }
+      
+      // Append review images
+      reviewImages.forEach((file, index) => {
+        formData.append(`review_images[${index}]`, file);
+      });
+
+      const response = await axios.post(
+        `/api/customer/repairs/${reviewOrderId}/review`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setShowReviewModal(false);
+        setReviewOrderId(null);
+        setReviewRating(0);
+        setReviewText('');
+        setReviewImages([]);
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Review Submitted!',
+          text: response.data.message || 'Thank you for your feedback!',
+          confirmButtonColor: '#000000',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error submitting review:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Failed to Submit Review',
+        text: error.response?.data?.message || 'Please try again',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const handleReviewImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files);
+      
+      if (reviewImages.length + filesArray.length > 3) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Image Limit',
+          text: 'You can upload up to 3 images only',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
+      setReviewImages(prev => [...prev, ...filesArray]);
+    }
+    e.target.value = '';
+  };
+
+  const removeReviewImage = (index: number) => {
+    setReviewImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   const getStatusColor = (status: RepairStatus) => {
     switch (status) {
       case 'cancelled':
+      case 'rejected':
+      case 'repairer_rejected':
+      case 'owner_rejected':
         return 'text-red-700';
+      case 'repairer_accepted':
+      case 'waiting_customer_confirmation':
+      case 'owner_approval_pending':
+        return 'text-blue-700';
+      case 'assigned_to_repairer':
+      case 'awaiting_parts':
+        return 'text-yellow-700';
+      case 'in_progress':
+        return 'text-purple-700';
+      case 'completed':
+      case 'ready_for_pickup':
+      case 'picked_up':
+      case 'owner_approved':
+        return 'text-green-700';
       default:
         return 'text-black';
     }
@@ -326,38 +609,89 @@ const MyRepairs: React.FC = () => {
 
   const getStatusText = (status: RepairStatus) => {
     switch (status) {
+      case 'new_request':
+        return 'New Request';
+      case 'assigned_to_repairer':
+        return 'Assigned to Repairer';
+      case 'repairer_accepted':
+        return 'Awaiting Your Confirmation';
+      case 'waiting_customer_confirmation':
+        return 'Confirmed - Work Starting';
+      case 'owner_approval_pending':
+        return 'Pending Shop Owner Approval';
+      case 'owner_approved':
+        return 'Approved - Work Starting';
+      case 'owner_rejected':
+        return 'Rejected by Shop Owner';
+      case 'in_progress':
+        return '🔧 Work In Progress';
+      case 'awaiting_parts':
+        return '⏳ Awaiting Parts';
+      case 'completed':
+        return '✅ Completed - QC Done';
+      case 'ready_for_pickup':
+        return '📦 Ready for Pickup';
+      case 'picked_up':
+        return '✅ Completed & Picked Up';
       case 'pending':
         return 'Pending';
-      case 'in_progress':
-        return 'In Progress';
-      case 'completed':
-        return 'Completed';
-      case 'ready_for_pickup':
-        return 'Ready for Pickup';
-      case 'picked_up':
-        return 'Picked Up';
       case 'cancelled':
         return 'Cancelled';
+      case 'rejected':
+      case 'repairer_rejected':
+        return 'Rejected';
       default:
         return status;
     }
   };
 
   // Count functions for repair statuses
-  const getCountByStatus = (status: string) => {
-    if (status === 'all') return orders.length;
-    if (status === 'ready') return orders.filter(o => o.status === 'ready_for_pickup').length;
-    if (status === 'completed') return orders.filter(o => o.status === 'picked_up').length;
-    return orders.filter(o => o.status === status).length;
+  const getCountByStatus = (status: RepairTab) => {
+    if (status === 'new_request') {
+      // NEW REQUEST tab includes both new_request and assigned_to_repairer
+      return orders.filter(order => 
+        order.status === 'new_request' || order.status === 'assigned_to_repairer'
+      ).length;
+    }
+    if (status === 'pending') {
+      // PENDING tab includes pending, repairer_accepted, waiting_customer_confirmation, and owner_approval_pending
+      return orders.filter(order => 
+        order.status === 'pending' || 
+        order.status === 'repairer_accepted' || 
+        order.status === 'waiting_customer_confirmation' ||
+        order.status === 'owner_approval_pending' ||
+        order.status === 'owner_approved'
+      ).length;
+    }
+    return orders.filter(order => order.status === status).length;
   };
 
-  const filteredOrders = selectedTab === 'all' 
-    ? orders 
-    : orders.filter(order => {
-        if (selectedTab === 'ready') return order.status === 'ready_for_pickup';
-        if (selectedTab === 'completed') return order.status === 'picked_up';
-        return order.status === selectedTab;
-      });
+  const filteredOrders = orders.filter(order => {
+    if (selectedTab === 'new_request') {
+      // NEW REQUEST tab shows new_request and assigned_to_repairer
+      return order.status === 'new_request' || order.status === 'assigned_to_repairer';
+    }
+    if (selectedTab === 'pending') {
+      // PENDING tab shows all confirmation/approval pending statuses
+      return order.status === 'pending' || 
+             order.status === 'repairer_accepted' || 
+             order.status === 'waiting_customer_confirmation' ||
+             order.status === 'owner_approval_pending' ||
+             order.status === 'owner_approved';
+    }
+    return order.status === selectedTab;
+  });
+  const getRepairPaymentHref = (order: RepairOrder) => {
+    const params = new URLSearchParams({
+      source: 'repair',
+      repair_id: String(order.id),
+      order_number: order.order_number,
+      repair_type: order.repair_type,
+      total: String(order.total_amount),
+    });
+
+    return `/payment?${params.toString()}`;
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -371,17 +705,17 @@ const MyRepairs: React.FC = () => {
           {/* Tabs */}
           <div className="flex gap-8 mb-12 border-b border-gray-200">
             <button
-              onClick={() => setSelectedTab('all')}
+              onClick={() => setSelectedTab('new_request')}
               className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
-                selectedTab === 'all'
+                selectedTab === 'new_request'
                   ? 'border-b-2 border-black text-black'
                   : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              ALL REPAIRS
-              {getCountByStatus('all') > 0 && (
+              NEW REQUEST
+              {getCountByStatus('new_request') > 0 && (
                 <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
-                  {getCountByStatus('all')}
+                  {getCountByStatus('new_request')}
                 </span>
               )}
             </button>
@@ -401,6 +735,21 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
+              onClick={() => setSelectedTab('received')}
+              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+                selectedTab === 'received'
+                  ? 'border-b-2 border-black text-black'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              RECEIVED
+              {getCountByStatus('received') > 0 && (
+                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                  {getCountByStatus('received')}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setSelectedTab('in_progress')}
               className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
                 selectedTab === 'in_progress'
@@ -416,32 +765,32 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('ready')}
+              onClick={() => setSelectedTab('ready_for_pickup')}
               className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
-                selectedTab === 'ready'
+                selectedTab === 'ready_for_pickup'
                   ? 'border-b-2 border-black text-black'
                   : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              READY
-              {getCountByStatus('ready') > 0 && (
+              READY FOR PICKUP
+              {getCountByStatus('ready_for_pickup') > 0 && (
                 <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
-                  {getCountByStatus('ready')}
+                  {getCountByStatus('ready_for_pickup')}
                 </span>
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('completed')}
+              onClick={() => setSelectedTab('picked_up')}
               className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
-                selectedTab === 'completed'
+                selectedTab === 'picked_up'
                   ? 'border-b-2 border-black text-black'
                   : 'text-gray-400 hover:text-gray-600'
               }`}
             >
               COMPLETED
-              {getCountByStatus('completed') > 0 && (
+              {getCountByStatus('picked_up') > 0 && (
                 <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
-                  {getCountByStatus('completed')}
+                  {getCountByStatus('picked_up')}
                 </span>
               )}
             </button>
@@ -457,6 +806,21 @@ const MyRepairs: React.FC = () => {
               {getCountByStatus('cancelled') > 0 && (
                 <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
                   {getCountByStatus('cancelled')}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setSelectedTab('rejected')}
+              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+                selectedTab === 'rejected'
+                  ? 'border-b-2 border-black text-black'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              REJECTED
+              {getCountByStatus('rejected') > 0 && (
+                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                  {getCountByStatus('rejected')}
                 </span>
               )}
             </button>
@@ -614,18 +978,111 @@ const MyRepairs: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
+                      {/* Chat with Repairer and Confirm Button - For Pickup/Delivery Only (Not Walk-in) */}
+                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && (
+                        <>
+                          <Link
+                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
+                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            CHAT WITH REPAIRER
+                          </Link>
+                          <button
+                            onClick={() => confirmRepair(order.id)}
+                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                          >
+                            CONFIRM REPAIR
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCancelTargetOrderId(order.id);
+                              setSelectedReason('');
+                              setCancelNote('');
+                              setShowCancelModal(true);
+                            }}
+                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                          >
+                            CANCEL REPAIR
+                          </button>
+                        </>
+                      )}
+                      
+                      {/* Walk-in Repairs - Just chat, no need to confirm */}
+                      {order.status === 'received' && order.conversation_id && order.delivery_method === 'walk_in' && (
+                        <>
+                          <Link
+                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
+                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            CHAT WITH REPAIRER
+                          </Link>
+                          <div className="px-6 py-2.5 bg-green-100 text-green-700 text-sm font-medium tracking-wide rounded-md flex items-center gap-2">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            SHOES RECEIVED
+                          </div>
+                        </>
+                      )}
+                      
+                      {/* Waiting for work to start - Pickup/Delivery */}
+                      {order.status === 'waiting_customer_confirmation' && order.conversation_id && order.delivery_method !== 'walk_in' && (
+                        <>
+                          <Link
+                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
+                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            CHAT WITH REPAIRER
+                          </Link>
+                          <button
+                            onClick={() => confirmRepair(order.id)}
+                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                          >
+                            CONFIRM REPAIR
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCancelTargetOrderId(order.id);
+                              setSelectedReason('');
+                              setCancelNote('');
+                              setShowCancelModal(true);
+                            }}
+                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                          >
+                            CANCEL REPAIR
+                          </button>
+                        </>
+                      )}
+                      
                       {order.status === 'pending' && (
-                        <button
-                          onClick={() => {
-                            setCancelTargetOrderId(order.id);
-                            setSelectedReason('');
-                            setCancelNote('');
-                            setShowCancelModal(true);
-                          }}
-                          className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
-                        >
-                          CANCEL REPAIR
-                        </button>
+                        <>
+                          <Link
+                            href={getRepairPaymentHref(order)}
+                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                          >
+                            PAY NOW
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setCancelTargetOrderId(order.id);
+                              setSelectedReason('');
+                              setCancelNote('');
+                              setShowCancelModal(true);
+                            }}
+                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                          >
+                            CANCEL REPAIR
+                          </button>
+                        </>
                       )}
                       {order.status === 'ready_for_pickup' && (
                         <button
@@ -651,12 +1108,12 @@ const MyRepairs: React.FC = () => {
                           >
                             REFUND
                           </button>
-                          <Link
-                            href={`/repair-shop/${order.shop_id ?? ''}#reviews`}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors inline-block rounded-md"
+                          <button
+                            onClick={() => openReviewModal(order.id)}
+                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
                           >
                             REVIEW
-                          </Link>
+                          </button>
                         </>
                       )}
                     </div>
@@ -1009,6 +1466,149 @@ const MyRepairs: React.FC = () => {
                     </button>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Phase 10D - Review Modal */}
+        {showReviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowReviewModal(false)}></div>
+            <div className="bg-white rounded-lg shadow-xl z-50 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b sticky top-0 bg-white">
+                <h3 className="text-lg font-semibold">Write a Review</h3>
+                <p className="text-sm text-gray-600 mt-1">Share your experience with this repair service</p>
+              </div>
+
+              <div className="px-6 py-4 space-y-6">
+                {/* Star Rating */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Rating <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setReviewRating(star)}
+                        onMouseEnter={() => setHoveredRating(star)}
+                        onMouseLeave={() => setHoveredRating(0)}
+                        className="transition-transform hover:scale-110"
+                      >
+                        <svg
+                          className={`w-10 h-10 ${
+                            star <= (hoveredRating || reviewRating)
+                              ? 'text-yellow-400 fill-yellow-400'
+                              : 'text-gray-300'
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                          />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                  {reviewRating > 0 && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      {reviewRating === 5 && '⭐ Excellent!'}
+                      {reviewRating === 4 && '👍 Very Good!'}
+                      {reviewRating === 3 && '👌 Good'}
+                      {reviewRating === 2 && '😕 Could be better'}
+                      {reviewRating === 1 && '😞 Needs improvement'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Review Text */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Your Review (Optional)
+                  </label>
+                  <textarea
+                    value={reviewText}
+                    onChange={(e) => setReviewText(e.target.value)}
+                    placeholder="Tell us about your experience with the repair service..."
+                    maxLength={1000}
+                    rows={4}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black resize-none"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {reviewText.length}/1000 characters
+                  </p>
+                </div>
+
+                {/* Image Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Photos (Optional)
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">Upload up to 3 images of the completed repair</p>
+                  
+                  <div className="flex flex-wrap gap-3">
+                    {reviewImages.map((file, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={`Review ${index + 1}`}
+                          className="w-24 h-24 object-cover rounded-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeReviewImage(index)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {reviewImages.length < 3 && (
+                      <label className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-gray-400 transition-colors">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleReviewImageUpload}
+                          className="hidden"
+                        />
+                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t flex justify-end gap-3 sticky bottom-0 bg-white">
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitReview}
+                  disabled={reviewRating === 0}
+                  className={`px-5 py-2.5 rounded-lg text-white font-medium transition-colors ${
+                    reviewRating > 0
+                      ? 'bg-black hover:bg-gray-800'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                >
+                  Submit Review
+                </button>
               </div>
             </div>
           </div>

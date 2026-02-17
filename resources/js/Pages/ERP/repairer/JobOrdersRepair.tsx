@@ -3,16 +3,18 @@ import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
+import axios from "axios";
 
 type RepairOrder = {
   id: string;
+  database_id: number;
   customer: string;
   email: string;
   phone: string;
   item: string;
   service: string;
   total: string;
-  status: "under-review" | "pending" | "received" | "in-progress" | "completed" | "ready-for-pickup" | "rejected";
+  status: "assigned_to_repairer" | "repairer_accepted" | "owner_approved" | "waiting_customer_confirmation" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "picked_up" | "under-review" | "pending" | "received" | "rejected" | "cancelled";
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -30,6 +32,7 @@ type RepairOrder = {
   pickupRegion?: string;
   pickupPostalCode?: string;
   selectedServices?: Array<{ name: string; price?: string } | string>;
+  conversation_id?: number | null;
 };
 
 type MetricCardProps = {
@@ -42,7 +45,7 @@ type MetricCardProps = {
   icon: React.FC<{ className?: string }>;
 };
 
-const useStaticData = true;
+const useStaticData = false;
 
 const staticOrders: RepairOrder[] = [
   {
@@ -305,12 +308,12 @@ export default function JobOrdersRepair() {
     "Other (please specify in notes)",
   ];
 
-  if (userRole !== "STAFF" && userRole !== "MANAGER") {
+  if (userRole !== "STAFF" && userRole !== "MANAGER" && userRole !== "REPAIRER") {
     return (
       <AppLayoutERP>
         <div className="max-w-xl mx-auto mt-24 text-center p-8 bg-white dark:bg-gray-900 rounded-xl shadow">
           <h2 className="text-2xl font-bold mb-2 text-red-600">Access Denied</h2>
-          <p className="text-gray-700 dark:text-gray-300">You do not have permission to view the Staff module.</p>
+          <p className="text-gray-700 dark:text-gray-300">You do not have permission to view the Repair Services module.</p>
         </div>
       </AppLayoutERP>
     );
@@ -318,40 +321,92 @@ export default function JobOrdersRepair() {
 
   // Fetch repair requests from backend
   useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const fetchOrders = async () => {
     if (useStaticData) {
       setOrders(staticOrders);
       setIsLoading(false);
       return;
     }
 
-    const fetchOrders = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch('/api/repair-requests', {
-          headers: {
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-          },
-        });
+    try {
+      setIsLoading(true);
+      const response = await axios.get('/api/repairer/repairs');
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch repair requests');
-        }
-
-        const data = await response.json();
-        if (data.success) {
-          setOrders(data.data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch repair requests:', error);
-        setError('Failed to load repair requests');
-      } finally {
-        setIsLoading(false);
+      if (response.data.success) {
+        // Map the API response to match the RepairOrder type
+        const mappedOrders = response.data.data.map((repair: any) => ({
+          id: repair.request_id || `REP-${repair.id}`,
+          database_id: repair.id,
+          customer: repair.customer_name || repair.user?.first_name + ' ' + repair.user?.last_name || 'N/A',
+          email: repair.email || repair.user?.email || 'N/A',
+          phone: repair.phone || 'N/A',
+          item: repair.shoe_type || 'N/A',
+          service: repair.services?.map((s: any) => s.name).join(', ') || 'N/A',
+          total: `₱${parseFloat(repair.total || 0).toFixed(2)}`,
+          status: repair.status,
+          createdAt: new Date(repair.created_at).toLocaleString('en-US', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }),
+          startedAt: repair.started_at ? new Date(repair.started_at).toLocaleString() : undefined,
+          completedAt: repair.completed_at ? new Date(repair.completed_at).toLocaleString() : undefined,
+          notes: repair.description || '',
+          description: repair.description,
+          shoeType: repair.shoe_type,
+          brand: repair.brand,
+          serviceType: repair.delivery_method === 'pickup' ? 'pickup' : 'walkin',
+          pickupAddressLine: repair.pickup_address?.address_line || null,
+          pickupBarangay: repair.pickup_address?.barangay || null,
+          pickupCity: repair.pickup_address?.city || null,
+          pickupRegion: repair.pickup_address?.region || null,
+          pickupPostalCode: repair.pickup_address?.postal_code || null,
+          imageUrls: (() => {
+            let images = repair.images;
+            
+            // If images is a string, try to parse it as JSON
+            if (typeof images === 'string') {
+              try {
+                images = JSON.parse(images);
+              } catch (e) {
+                console.error('Failed to parse images JSON:', e);
+                images = [];
+              }
+            }
+            
+            // Ensure images is an array
+            if (!Array.isArray(images)) {
+              images = images ? [images] : [];
+            }
+            
+            // Map images to include /storage/ prefix
+            return images.map((img: string) => {
+              // If image is already a full URL, return as is
+              if (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('/storage/')) {
+                return img;
+              }
+              // Otherwise, prepend the storage path
+              return `/storage/${img}`;
+            });
+          })(),
+          selectedServices: repair.services?.map((s: any) => ({ name: s.name, price: `₱${s.price}` })) || [],
+          conversation_id: repair.conversation_id
+        }));
+        setOrders(mappedOrders);
       }
-    };
-
-    fetchOrders();
-  }, []);
+    } catch (error) {
+      console.error('Failed to fetch repair requests:', error);
+      setError('Failed to load repair requests');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Filter orders based on tab and search
   const filteredOrders = useMemo(() => {
@@ -360,13 +415,16 @@ export default function JobOrdersRepair() {
       if (selectedTab === "all") {
         matchesTab = true;
       } else if (selectedTab === "under-review") {
-        // New Request tab includes only under-review status
-        matchesTab = order.status === "under-review";
+        // New Request tab includes assigned_to_repairer and under-review status
+        matchesTab = order.status === "under-review" || order.status === "assigned_to_repairer";
+      } else if (selectedTab === "picked_up") {
+        // Picked Up tab includes both completed and picked_up status
+        matchesTab = order.status === "completed" || order.status === "picked_up";
       } else {
         matchesTab = order.status === selectedTab;
       }
       const matchesSearch =
-        order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.item.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.service.toLowerCase().includes(searchTerm.toLowerCase());
@@ -383,19 +441,24 @@ export default function JobOrdersRepair() {
   // Calculate statistics
   const stats = useMemo(() => {
     const total = orders.length;
-    const underReview = orders.filter(o => o.status === "under-review" || o.status === "pending").length;
+    const underReview = orders.filter(o => o.status === "under-review" || o.status === "assigned_to_repairer" || o.status === "pending").length;
     const pending = orders.filter(o => o.status === "pending").length;
     const received = orders.filter(o => o.status === "received").length;
     const inProgress = orders.filter(o => o.status === "in-progress").length;
     const completed = orders.filter(o => o.status === "completed").length;
     const readyForPickup = orders.filter(o => o.status === "ready-for-pickup").length;
+    const pickedUp = orders.filter(o => o.status === "picked_up").length;
     const rejected = orders.filter(o => o.status === "rejected").length;
-    const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
-    return { total, underReview, pending, received, inProgress, completed, readyForPickup, rejected, totalRevenue };
+    const cancelled = orders.filter(o => o.status === "cancelled").length;
+    const totalRevenue = orders
+      .filter(o => o.status !== "cancelled" && o.status !== "rejected")
+      .reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
+    return { total, underReview, pending, received, inProgress, completed, readyForPickup, pickedUp, rejected, cancelled, totalRevenue };
   }, [orders]);
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
+      "assigned_to_repairer": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
       "under-review": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
       "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
       "received": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
@@ -403,14 +466,18 @@ export default function JobOrdersRepair() {
       "completed": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       "ready-for-pickup": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
       "rejected": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      "cancelled": "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
 
   const handleMarkReceived = async (order: RepairOrder) => {
     const result = await Swal.fire({
-      title: "Mark as received?",
-      text: `${order.service} for ${order.customer}`,
+      title: "Mark as Received?",
+      html: `
+        <p class="text-gray-700 mb-2">Confirm that you have received the shoes from the delivery service.</p>
+        <p class="font-semibold text-gray-900">${order.service} for ${order.customer}</p>
+      `,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Yes, mark received",
@@ -423,14 +490,13 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repair-requests/${order.id}/status`, {
+      const response = await fetch(`/api/repairer/repairs/${order.database_id}/mark-received`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ status: 'received' }),
       });
 
       const data = await response.json();
@@ -444,8 +510,8 @@ export default function JobOrdersRepair() {
         setCurrentPage(1);
 
         await Swal.fire({
-          title: "Marked as received",
-          text: `${order.id} has been marked as received.`,
+          title: "Marked as Received!",
+          text: `${order.id} has been marked as received. You can now begin the repair.`,
           icon: "success",
           confirmButtonText: "OK",
           confirmButtonColor: "#2563eb",
@@ -456,7 +522,7 @@ export default function JobOrdersRepair() {
     } catch (error: any) {
       console.error('Failed to mark as received:', error);
       await Swal.fire({
-        title: "Failed to mark received",
+        title: "Failed to Mark Received",
         text: error.message || "Please try again.",
         icon: "error",
         confirmButtonText: "OK",
@@ -481,14 +547,13 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repair-requests/${order.id}/status`, {
+      const response = await fetch(`/api/repairer/repairs/${order.database_id}/start-work`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ status: 'in-progress' }),
       });
 
       const data = await response.json();
@@ -518,6 +583,184 @@ export default function JobOrdersRepair() {
         icon: "error",
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
+      });
+    }
+  };
+
+  const handleMarkAwaitingParts = async (orderId: string) => {
+    const { value: notes } = await Swal.fire({
+      title: 'Mark as Awaiting Parts',
+      html: `
+        <p style="margin-bottom: 1rem;">Explain what parts or materials are needed:</p>
+        <textarea 
+          id="parts-notes" 
+          class="swal2-textarea" 
+          placeholder="e.g., Waiting for leather sole size 42..."
+          style="width: 100%; height: 100px;"
+        ></textarea>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Mark as Awaiting',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#f59e0b',
+      preConfirm: () => {
+        const notes = (document.getElementById('parts-notes') as HTMLTextAreaElement)?.value || '';
+        if (notes.length < 10) {
+          Swal.showValidationMessage('Please provide at least 10 characters');
+          return false;
+        }
+        return notes;
+      }
+    });
+
+    if (!notes) return;
+
+    try {
+      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-awaiting-parts`, { notes });
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Status Updated!',
+          text: 'Customer will be notified about the parts delay.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to update status',
+        icon: 'error',
+      });
+    }
+  };
+
+  const handleResumeWork = async (orderId: string) => {
+    const result = await Swal.fire({
+      title: 'Resume Work?',
+      text: 'Parts have arrived and work can continue.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Resume Work',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.post(`/api/repairer/repairs/${orderId}/resume-work`);
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Work Resumed!',
+          text: response.data.message,
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to resume work',
+        icon: 'error',
+      });
+    }
+  };
+
+  const handleMarkCompleted = async (orderId: string) => {
+    const { value: completionNotes } = await Swal.fire({
+      title: 'Mark as Completed',
+      html: `
+        <p style="margin-bottom: 1rem;">Add optional completion notes:</p>
+        <textarea 
+          id="completion-notes" 
+          class="swal2-textarea" 
+          placeholder="e.g., Replaced sole, cleaned thoroughly, applied protective coating..."
+          style="width: 100%; height: 100px;"
+        ></textarea>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Mark Completed',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#10b981',
+      preConfirm: () => {
+        return (document.getElementById('completion-notes') as HTMLTextAreaElement)?.value || '';
+      }
+    });
+
+    if (completionNotes === undefined) return;
+
+    try {
+      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-completed`, { 
+        completion_notes: completionNotes 
+      });
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Repair Completed!',
+          text: 'Customer will be notified that repair is done.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to mark as completed',
+        icon: 'error',
+      });
+    }
+  };
+
+  const handleMarkReady = async (orderId: string) => {
+    const { value: pickupInstructions } = await Swal.fire({
+      title: 'Mark as Ready for Pickup',
+      html: `
+        <p style="margin-bottom: 1rem;">Add pickup instructions for the customer:</p>
+        <textarea 
+          id="pickup-instructions" 
+          class="swal2-textarea" 
+          placeholder="e.g., Available Mon-Fri 9AM-5PM. Please bring your receipt..."
+          style="width: 100%; height: 100px;"
+        ></textarea>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Mark Ready',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#10b981',
+      preConfirm: () => {
+        return (document.getElementById('pickup-instructions') as HTMLTextAreaElement)?.value || '';
+      }
+    });
+
+    if (pickupInstructions === undefined) return;
+
+    try {
+      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-ready`, { 
+        pickup_instructions: pickupInstructions 
+      });
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Ready for Pickup!',
+          text: 'Customer will be notified to pick up their item.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to mark as ready',
+        icon: 'error',
       });
     }
   };
@@ -687,23 +930,36 @@ export default function JobOrdersRepair() {
     }
 
     if (action === "accept") {
-      // Close modal immediately
-      setIsViewModalOpen(false);
-      
-      // Update order status
-      setOrders((prev) =>
-        prev.map((o) => (o.id === viewOrder.id ? { ...o, status: "pending" } : o))
-      );
+      try {
+        const response = await axios.post(`/api/repairer/repairs/${viewOrder.database_id}/accept`);
+        
+        if (response.data.success) {
+          // Close modal immediately
+          setIsViewModalOpen(false);
+          
+          // Refresh the repairs list
+          fetchOrders();
 
-      await Swal.fire({
-        title: "Request Accepted",
-        text: `${viewOrder.id} has been moved to Pending status.`,
-        icon: "success",
-        confirmButtonText: "OK",
-        confirmButtonColor: "#2563eb",
-      });
+          await Swal.fire({
+            title: "Request Accepted",
+            text: response.data.message || "Conversation created with customer. You can now chat with them.",
+            icon: "success",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#2563eb",
+          });
 
-      setViewOrder(null);
+          setViewOrder(null);
+        }
+      } catch (error: any) {
+        console.error('Failed to accept repair:', error);
+        await Swal.fire({
+          title: "Error",
+          text: error.response?.data?.message || "Failed to accept the repair request. Please try again.",
+          icon: "error",
+          confirmButtonText: "OK",
+          confirmButtonColor: "#2563eb",
+        });
+      }
     } else if (action === "reject") {
       // Close view modal and open rejection modal
       setIsViewModalOpen(false);
@@ -714,7 +970,8 @@ export default function JobOrdersRepair() {
   };
 
   const handleSubmitRejection = async () => {
-    if (!viewOrder || !selectedRejectionReason.trim()) {
+    const rejectionTarget = viewOrder ?? selectedOrder;
+    if (!rejectionTarget || !selectedRejectionReason.trim()) {
       await Swal.fire({
         title: "Validation Error",
         text: "Please select a rejection reason.",
@@ -731,31 +988,36 @@ export default function JobOrdersRepair() {
       : selectedRejectionReason;
 
     try {
-      // Close rejection modal immediately
-      setIsRejectionModalOpen(false);
-
-      // Update order status
-      setOrders((prev) =>
-        prev.map((o) => (o.id === viewOrder.id ? { ...o, status: "rejected", notes: fullReason } : o))
-      );
-
-      await Swal.fire({
-        title: "Request Rejected",
-        text: `${viewOrder.id} has been rejected.`,
-        icon: "success",
-        confirmButtonText: "OK",
-        confirmButtonColor: "#2563eb",
+      const response = await axios.post(`/api/repairer/repairs/${rejectionTarget.database_id}/reject`, {
+        reason: fullReason
       });
+      
+      if (response.data.success) {
+        // Close rejection modal immediately
+        setIsRejectionModalOpen(false);
 
-      setViewOrder(null);
-      setSelectedRejectionReason("");
-      setRejectionReason("");
-      setSelectedTab("rejected");
-    } catch (error) {
+        // Refresh the repairs list
+        fetchOrders();
+
+        await Swal.fire({
+          title: "Request Rejected",
+          text: response.data.message || "The request has been rejected and manager has been notified.",
+          icon: "success",
+          confirmButtonText: "OK",
+          confirmButtonColor: "#2563eb",
+        });
+
+        setViewOrder(null);
+        setSelectedOrder(null);
+        setSelectedRejectionReason("");
+        setRejectionReason("");
+        setSelectedTab("rejected");
+      }
+    } catch (error: any) {
       console.error('Error rejecting request:', error);
       await Swal.fire({
         title: "Error",
-        text: "Failed to reject the request. Please try again.",
+        text: error.response?.data?.message || "Failed to reject the request. Please try again.",
         icon: "error",
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
@@ -885,6 +1147,16 @@ export default function JobOrdersRepair() {
                   Ready for Pickup ({stats.readyForPickup})
                 </button>
                 <button
+                  onClick={() => setSelectedTab("picked_up")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "picked_up"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  Completed ({stats.pickedUp})
+                </button>
+                <button
                   onClick={() => setSelectedTab("rejected")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "rejected"
@@ -893,6 +1165,16 @@ export default function JobOrdersRepair() {
                   }`}
                 >
                   Rejected ({stats.rejected})
+                </button>
+                <button
+                  onClick={() => setSelectedTab("cancelled")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "cancelled"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  Cancelled ({stats.cancelled})
                 </button>
               </div>
 
@@ -971,21 +1253,31 @@ export default function JobOrdersRepair() {
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{order.service}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status === "under-review"
-                            ? "Under Review"
-                            : order.status === "pending"
-                            ? "Pending"
-                            : order.status === "in-progress"
-                            ? "In Progress"
-                            : order.status === "ready-for-pickup"
-                            ? "Ready for Pickup"
-                            : order.status === "received"
-                            ? "Received"
-                            : order.status === "rejected"
-                            ? "Rejected"
-                            : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                            {order.status === "assigned_to_repairer"
+                              ? "Assigned to Repairer"
+                              : order.status === "under-review"
+                              ? "Under Review"
+                              : order.status === "pending"
+                              ? "Pending"
+                              : order.status === "in-progress"
+                              ? "In Progress"
+                              : order.status === "ready-for-pickup"
+                              ? "Ready for Pickup"
+                              : order.status === "received"
+                              ? "Received"
+                              : order.status === "rejected"
+                              ? "Rejected"
+                              : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                          </span>
+                          {order.status === "assigned_to_repairer" && order.serviceType === "pickup" && (
+                            <span className="px-2 py-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-700 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-900/30 rounded-full w-fit">
+                              <span>🚚</span>
+                              <span>Pickup</span>
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
                         {order.total}
@@ -1002,40 +1294,113 @@ export default function JobOrdersRepair() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          {order.status === "pending" && (
-                            <button
-                              onClick={() => handleShipOrder(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                              title="Ship order"
-                            >
-                              Ship
-                            </button>
+                          
+                          {/* Phase 3: Accept/Reject for assigned repairs */}
+                          {order.status === "assigned_to_repairer" && (
+                            <>
+                              <button
+                                onClick={async () => {
+                                  const result = await Swal.fire({
+                                    title: "Accept this repair?",
+                                    text: `${order.service} for ${order.customer}`,
+                                    icon: "question",
+                                    showCancelButton: true,
+                                    confirmButtonText: "Yes, accept",
+                                    cancelButtonText: "Cancel",
+                                    confirmButtonColor: "#10b981",
+                                  });
+
+                                  if (!result.isConfirmed) return;
+
+                                  try {
+                                    const response = await axios.post(`/api/repairer/repairs/${order.database_id}/accept`);
+                                    
+                                    if (response.data.success) {
+                                      fetchOrders();
+                                      await Swal.fire({
+                                        title: "Request Accepted",
+                                        text: response.data.message || "Conversation created with customer. You can now chat with them.",
+                                        icon: "success",
+                                        confirmButtonText: "OK",
+                                        confirmButtonColor: "#2563eb",
+                                      });
+                                    }
+                                  } catch (error: any) {
+                                    console.error('Failed to accept repair:', error);
+                                    await Swal.fire({
+                                      title: "Error",
+                                      text: error.response?.data?.message || "Failed to accept the repair request. Please try again.",
+                                      icon: "error",
+                                      confirmButtonText: "OK",
+                                      confirmButtonColor: "#2563eb",
+                                    });
+                                  }
+                                }}
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                                title="Accept this repair"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setIsRejectionModalOpen(true);
+                                }}
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                                title="Reject this repair"
+                              >
+                                Reject
+                              </button>
+                            </>
                           )}
-                          {order.status === "received" && (
+                          
+                          {/* Phase 8: Work Progress Action Buttons */}
+                          {(order.status === "owner_approved" || order.status === "waiting_customer_confirmation" || order.status === "received" || order.status === "confirmed") && (
                             <button
                               onClick={() => handleStartWork(order)}
                               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                              title="Start work"
+                              title="Start work on this repair"
                             >
                               Start Work
                             </button>
                           )}
+                          
                           {order.status === "in-progress" && (
+                            <>
+                              <button
+                                onClick={() => handleMarkAwaitingParts(order.database_id)}
+                                className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors"
+                                title="Need parts/materials"
+                              >
+                                Need Parts
+                              </button>
+                              <button
+                                onClick={() => handleMarkCompleted(order.database_id)}
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                                title="Mark work as completed"
+                              >
+                                Complete
+                              </button>
+                            </>
+                          )}
+                          
+                          {order.status === "awaiting_parts" && (
                             <button
-                              onClick={() => handleCompleteWork(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-                              title="Mark as completed"
+                              onClick={() => handleResumeWork(order.database_id)}
+                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                              title="Resume work (parts arrived)"
                             >
-                              Complete
+                              Resume Work
                             </button>
                           )}
-                          {order.status === "ready-for-pickup" && (
+                          
+                          {order.status === "completed" && (
                             <button
-                              onClick={() => handleShipOrder(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                              title="Mark as shipped"
+                              onClick={() => handleMarkReady(order.database_id)}
+                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                              title="Mark as ready for pickup"
                             >
-                              Ship
+                              Ready for Pickup
                             </button>
                           )}
                         </div>
@@ -1135,7 +1500,9 @@ export default function JobOrdersRepair() {
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Order {viewOrder.id}</p>
                   </div>
                   <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(viewOrder.status)}`}>
-                    {viewOrder.status === "under-review"
+                    {viewOrder.status === "assigned_to_repairer"
+                      ? "Assigned to Repairer"
+                      : viewOrder.status === "under-review"
                       ? "Under Review"
                       : viewOrder.status === "pending"
                       ? "Pending"
@@ -1209,7 +1576,7 @@ export default function JobOrdersRepair() {
                   <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Shoe Type</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.shoeType || viewOrder.item}</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.shoeType || viewOrder.item || 'Not specified'}</span>
                     </div>
                     {viewOrder.brand && (
                       <div className="flex items-center justify-between">
@@ -1218,7 +1585,13 @@ export default function JobOrdersRepair() {
                       </div>
                     )}
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Service Type</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Services Requested</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {viewOrder.service || 'Not specified'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Delivery Method</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">
                         {formatServiceType(viewOrder.serviceType)}
                       </span>
@@ -1266,17 +1639,36 @@ export default function JobOrdersRepair() {
                 {/* Pickup Address */}
                 {viewOrder.serviceType === "pickup" && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Pickup Address</p>
-                    <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2">
-                      {viewOrder.pickupAddressLine && (
-                        <div className="text-sm text-gray-700 dark:text-gray-300">{viewOrder.pickupAddressLine}</div>
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                      🚚 Customer's Collection Address
+                    </p>
+                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                      {viewOrder.pickupAddressLine || viewOrder.pickupBarangay || viewOrder.pickupCity ? (
+                        <div className="space-y-2">
+                          {viewOrder.pickupAddressLine && (
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.pickupAddressLine}</div>
+                          )}
+                          {(viewOrder.pickupBarangay || viewOrder.pickupCity) && (
+                            <div className="text-sm text-gray-700 dark:text-gray-300">
+                              {[viewOrder.pickupBarangay, viewOrder.pickupCity].filter(Boolean).join(", ")}
+                            </div>
+                          )}
+                          {(viewOrder.pickupRegion || viewOrder.pickupPostalCode) && (
+                            <div className="text-sm text-gray-700 dark:text-gray-300">
+                              {[viewOrder.pickupRegion, viewOrder.pickupPostalCode].filter(Boolean).join(" ")}
+                            </div>
+                          )}
+                          <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-700">
+                            <p className="text-xs text-amber-800 dark:text-amber-400 font-medium">
+                              📋 Instructions: Contact a delivery service (Lalamove, Grab, etc.) to collect the shoes from this address and bring them to your shop.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500 dark:text-gray-400 italic">
+                          No pickup address provided. This may be a walk-in repair or address was not collected during submission.
+                        </div>
                       )}
-                      <div className="text-sm text-gray-700 dark:text-gray-300">
-                        {[viewOrder.pickupBarangay, viewOrder.pickupCity].filter(Boolean).join(", ")}
-                      </div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">
-                        {[viewOrder.pickupRegion, viewOrder.pickupPostalCode].filter(Boolean).join(" ")}
-                      </div>
                     </div>
                   </div>
                 )}
@@ -1347,6 +1739,30 @@ export default function JobOrdersRepair() {
                       className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
                     >
                       Message
+                    </button>
+                  </div>
+                )}
+                {(viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation") && viewOrder.serviceType === "pickup" && (
+                  <div className="flex flex-wrap items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">💬 Discuss with Customer First</p>
+                      <p className="text-xs text-blue-700 dark:text-blue-400">Chat with customer to confirm repair details and pricing. After customer confirms, you can arrange pickup.</p>
+                    </div>
+                  </div>
+                )}
+                {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved") && viewOrder.serviceType === "pickup" && (
+                  <div className="flex flex-wrap items-center gap-3 p-4 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-200 dark:border-cyan-800">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-cyan-900 dark:text-cyan-300 mb-1">🚚 Ready to Arrange Pickup</p>
+                      <p className="text-xs text-cyan-700 dark:text-cyan-400 mb-2">Customer confirmed! Contact a delivery service (Lalamove, Grab, Mr. Speedy) with the address above to collect the shoes.</p>
+                      <p className="text-xs text-cyan-600 dark:text-cyan-500 font-medium">After delivery brings shoes to your shop, click "Mark as Received" below.</p>
+                    </div>
+                    <button
+                      onClick={() => handleMarkReceived(viewOrder)}
+                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+                      title="Mark shoes as received at shop"
+                    >
+                      Mark as Received
                     </button>
                   </div>
                 )}
@@ -1548,7 +1964,7 @@ export default function JobOrdersRepair() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Order ID
                     </label>
-                    <p className="text-sm text-gray-900 dark:text-white font-semibold">{viewOrder?.id}</p>
+                    <p className="text-sm text-gray-900 dark:text-white font-semibold">{(viewOrder ?? selectedOrder)?.id}</p>
                   </div>
 
                   <div>
@@ -1592,6 +2008,7 @@ export default function JobOrdersRepair() {
                 <button
                   onClick={() => {
                     setIsRejectionModalOpen(false);
+                    setSelectedOrder(null);
                     setSelectedRejectionReason("");
                     setRejectionReason("");
                   }}

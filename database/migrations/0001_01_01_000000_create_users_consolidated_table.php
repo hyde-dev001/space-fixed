@@ -42,14 +42,13 @@ return new class extends Migration
             
             // Role and permissions
             $table->enum('role', [
-                'HR', 
-                'FINANCE_STAFF', 
-                'FINANCE_MANAGER', 
-                'CRM', 
-                'MANAGER', 
-                'STAFF', 
-                'SUPER_ADMIN',
-                'PAYROLL_MANAGER',
+                'MANAGER',
+                'FINANCE',
+                'HR',
+                'CRM',
+                'REPAIRER',
+                'STAFF',
+                'SUPER_ADMIN'
             ])->nullable();
             $table->boolean('force_password_change')->default(false);
             

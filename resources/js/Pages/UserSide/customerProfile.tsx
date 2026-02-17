@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Head } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import Navigation from './Navigation';
 
 type ProfileData = {
@@ -7,34 +7,44 @@ type ProfileData = {
 	lastName: string;
 	email: string;
 	phone: string;
-	bio: string;
-	country: string;
-	cityState: string;
-	postalCode: string;
-	taxId: string;
+	address: string;
+};
+
+type PageProps = {
+	user: {
+		id: number;
+		first_name: string;
+		last_name: string;
+		name: string;
+		email: string;
+		phone: string | null;
+		address: string | null;
+		profile_photo_url: string | null;
+	};
+	flash?: {
+		success?: string;
+		error?: string;
+	};
+	errors?: Record<string, string>;
 };
 
 const CustomerProfile: React.FC = () => {
+	const { user, flash, errors } = usePage<PageProps>().props;
 	const [profileData, setProfileData] = useState<ProfileData>({
-		firstName: 'Musharof',
-		lastName: 'Chowdhury',
-		email: 'randomuser@pimjo.com',
-		phone: '+09 363 398 46',
-		bio: 'Team Manager',
-		country: 'United States',
-		cityState: 'Arizona, United States.',
-		postalCode: 'ERT 2489',
-		taxId: 'AS45683884',
+		firstName: user.first_name || '',
+		lastName: user.last_name || '',
+		email: user.email || '',
+		phone: user.phone || '',
+		address: user.address || '',
 	});
 	const [photoFile, setPhotoFile] = useState<File | null>(null);
-	const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+	const [photoPreview, setPhotoPreview] = useState<string | null>(user.profile_photo_url);
 	const [isEditingPersonal, setIsEditingPersonal] = useState(false);
-	const [isEditingAddress, setIsEditingAddress] = useState(false);
 	const [personalSnapshot, setPersonalSnapshot] = useState<ProfileData | null>(null);
-	const [addressSnapshot, setAddressSnapshot] = useState<ProfileData | null>(null);
 	const [currentPassword, setCurrentPassword] = useState('');
 	const [newPassword, setNewPassword] = useState('');
 	const [confirmPassword, setConfirmPassword] = useState('');
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	useEffect(() => {
 		if (!photoFile) return;
@@ -48,7 +58,6 @@ const CustomerProfile: React.FC = () => {
 	};
 
 	const startPersonalEdit = () => {
-		if (isEditingAddress) return;
 		setPersonalSnapshot(profileData);
 		setIsEditingPersonal(true);
 	};
@@ -59,26 +68,88 @@ const CustomerProfile: React.FC = () => {
 		setIsEditingPersonal(false);
 	};
 
+	const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		
+		setPhotoFile(file);
+		
+		// Auto-upload the photo immediately
+		setIsSubmitting(true);
+		const formData = new FormData();
+		formData.append('first_name', profileData.firstName);
+		formData.append('last_name', profileData.lastName);
+		formData.append('phone', profileData.phone);
+		formData.append('address', profileData.address);
+		formData.append('profile_photo', file);
+
+		router.post('/customer-profile', formData, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setIsSubmitting(false);
+				window.alert('Profile photo updated successfully!');
+			},
+			onError: (errors) => {
+				setIsSubmitting(false);
+				setPhotoFile(null);
+				const errorMsg = errors.profile_photo || 'Failed to upload photo. Please try again.';
+				window.alert(errorMsg);
+			},
+		});
+	};
+
 	const savePersonalEdit = () => {
-		setPersonalSnapshot(null);
-		setIsEditingPersonal(false);
+		setIsSubmitting(true);
+		const formData = new FormData();
+		formData.append('first_name', profileData.firstName);
+		formData.append('last_name', profileData.lastName);
+		formData.append('phone', profileData.phone);
+		formData.append('address', profileData.address);
+
+		router.post('/customer-profile', formData, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setPersonalSnapshot(null);
+				setIsEditingPersonal(false);
+				setIsSubmitting(false);
+			},
+			onError: () => {
+				setIsSubmitting(false);
+			},
+		});
 	};
 
 	const startAddressEdit = () => {
 		if (isEditingPersonal) return;
-		setAddressSnapshot(profileData);
-		setIsEditingAddress(true);
+		setPersonalSnapshot(profileData);
+		setIsEditingPersonal(true);
 	};
 
 	const cancelAddressEdit = () => {
-		if (addressSnapshot) setProfileData(addressSnapshot);
-		setAddressSnapshot(null);
-		setIsEditingAddress(false);
+		if (personalSnapshot) setProfileData(personalSnapshot);
+		setPersonalSnapshot(null);
+		setIsEditingPersonal(false);
 	};
 
 	const saveAddressEdit = () => {
-		setAddressSnapshot(null);
-		setIsEditingAddress(false);
+		setIsSubmitting(true);
+		const formData = new FormData();
+		formData.append('first_name', profileData.firstName);
+		formData.append('last_name', profileData.lastName);
+		formData.append('phone', profileData.phone);
+		formData.append('address', profileData.address);
+
+		router.post('/customer-profile', formData, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setPersonalSnapshot(null);
+				setIsEditingPersonal(false);
+				setIsSubmitting(false);
+			},
+			onError: () => {
+				setIsSubmitting(false);
+			},
+		});
 	};
 
 	const handlePasswordSubmit = (event: React.FormEvent) => {
@@ -91,18 +162,47 @@ const CustomerProfile: React.FC = () => {
 			window.alert('New password and confirmation do not match.');
 			return;
 		}
-		window.alert('Password change is local only (frontend only).');
-		setCurrentPassword('');
-		setNewPassword('');
-		setConfirmPassword('');
+
+		setIsSubmitting(true);
+		router.post('/customer-profile/password', {
+			current_password: currentPassword,
+			password: newPassword,
+			password_confirmation: confirmPassword,
+		}, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setCurrentPassword('');
+				setNewPassword('');
+				setConfirmPassword('');
+				setIsSubmitting(false);
+				window.alert('Password updated successfully!');
+			},
+			onError: (errors) => {
+				setIsSubmitting(false);
+				if (errors.current_password) {
+					window.alert(errors.current_password);
+				} else {
+					window.alert('Password update failed. Please check your input.');
+				}
+			},
+		});
 	};
 
 	const fullName = `${profileData.firstName} ${profileData.lastName}`.trim();
 	const displayName = fullName || 'Customer Name';
-	const displayRole = profileData.bio || 'Team Manager';
-	const displayLocation = profileData.cityState || 'Arizona, United States.';
-	const displayEmail = profileData.email || 'randomuser@pimjo.com';
-	const displayPhone = profileData.phone || '+09 363 398 46';
+	const displayEmail = profileData.email || user.email;
+	const displayPhone = profileData.phone || 'No phone';
+	const displayAddress = profileData.address || 'No address';
+
+	// Show flash messages
+	useEffect(() => {
+		if (flash?.success) {
+			window.alert(flash.success);
+		}
+		if (flash?.error) {
+			window.alert(flash.error);
+		}
+	}, [flash]);
 
 	return (
 		<div className="min-h-screen bg-gray-50">
@@ -124,19 +224,23 @@ const CustomerProfile: React.FC = () => {
 								</div>
 								<div>
 									<h3 className="text-lg font-semibold text-gray-900">{displayName}</h3>
-									<p className="text-sm text-gray-500 mt-1">{displayRole} | {displayLocation}</p>
+									<p className="text-sm text-gray-500 mt-1">{displayEmail}</p>
 								</div>
 							</div>
 							<div className="flex flex-wrap items-center gap-3">
-								<label className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer">
-									<span>Edit</span>
+								<label className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50">
+									<span>{isSubmitting ? 'Uploading...' : 'Change Photo'}</span>
 									<input
 										type="file"
 										accept="image/*"
-										onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+										onChange={handlePhotoChange}
 										className="hidden"
+										disabled={isSubmitting}
 									/>
 								</label>
+								{photoPreview && photoPreview !== user.profile_photo_url && (
+									<span className="text-xs text-green-600">Photo uploaded!</span>
+								)}
 							</div>
 						</div>
 					</div>
@@ -155,10 +259,11 @@ const CustomerProfile: React.FC = () => {
 									</button>
 									<button
 										type="button"
-										className="inline-flex items-center gap-2 rounded-full border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black"
+										className="inline-flex items-center gap-2 rounded-full border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
 										onClick={savePersonalEdit}
+										disabled={isSubmitting}
 									>
-										Save
+										{isSubmitting ? 'Saving...' : 'Save'}
 									</button>
 								</div>
 							) : (
@@ -166,7 +271,7 @@ const CustomerProfile: React.FC = () => {
 									type="button"
 									className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
 									onClick={startPersonalEdit}
-									disabled={isEditingAddress}
+									disabled={isEditingPersonal}
 								>
 									Edit
 								</button>
@@ -201,16 +306,7 @@ const CustomerProfile: React.FC = () => {
 							</div>
 							<div>
 								<p className="text-gray-400">Email address</p>
-								{isEditingPersonal ? (
-									<input
-										type="email"
-										value={profileData.email}
-										onChange={(e) => updateProfileField('email', e.target.value)}
-										className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none"
-									/>
-								) : (
-									<p className="text-gray-900 font-medium mt-1">{displayEmail}</p>
-								)}
+								<p className="text-gray-900 font-medium mt-1">{displayEmail}</p>
 							</div>
 							<div>
 								<p className="text-gray-400">Phone</p>
@@ -230,25 +326,12 @@ const CustomerProfile: React.FC = () => {
 								{isEditingPersonal ? (
 									<input
 										type="text"
-										value={profileData.cityState}
-										onChange={(e) => updateProfileField('cityState', e.target.value)}
+										value={profileData.address}
+										onChange={(e) => updateProfileField('address', e.target.value)}
 										className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none"
 									/>
 								) : (
-									<p className="text-gray-900 font-medium mt-1">{displayLocation}</p>
-								)}
-							</div>
-							<div className="md:col-span-2">
-								<p className="text-gray-400">Bio</p>
-								{isEditingPersonal ? (
-									<input
-										type="text"
-										value={profileData.bio}
-										onChange={(e) => updateProfileField('bio', e.target.value)}
-										className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none"
-									/>
-								) : (
-									<p className="text-gray-900 font-medium mt-1">{displayRole}</p>
+									<p className="text-gray-900 font-medium mt-1">{displayAddress}</p>
 								)}
 							</div>
 						</div>
@@ -287,9 +370,10 @@ const CustomerProfile: React.FC = () => {
 							<div className="md:col-span-2">
 								<button
 									type="submit"
-									className="inline-flex items-center gap-2 rounded-full border border-gray-900 bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-black"
+									className="inline-flex items-center gap-2 rounded-full border border-gray-900 bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+									disabled={isSubmitting}
 								>
-									Update password
+									{isSubmitting ? 'Updating...' : 'Update password'}
 								</button>
 							</div>
 						</form>
@@ -298,7 +382,6 @@ const CustomerProfile: React.FC = () => {
 			</div>
 		</div>
 	);
-	
 };
 
 export default CustomerProfile;

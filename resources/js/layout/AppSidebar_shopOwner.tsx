@@ -117,7 +117,7 @@ const navItems: NavItem[] = [
       </svg>
     ),
     name: "Repair Reject Approval",
-    route: "shopOwner.repair-reject-approval",
+    route: "shop-owner.repair-reject-approval",
     path: "/shop-owner/repair-reject-approval",
   },
 ];
@@ -140,6 +140,9 @@ const AppSidebar_shopOwner: React.FC = () => {
   const isActive = useCallback(
     (routeName: string) => {
       try {
+        if (routeName === "shop-owner.repair-reject-approval" && url.startsWith("/shop-owner/history-rejection")) {
+          return true;
+        }
         // Prefer Ziggy's router check when available: route() -> Router.current(name)
         try {
           if (typeof route === "function") {
@@ -182,12 +185,15 @@ const AppSidebar_shopOwner: React.FC = () => {
     (nav: NavItem) => {
       if (nav.route && isActive(nav.route)) return true;
       if (!nav.route && nav.path && isPathActive(nav.path)) return true;
+      if (nav.route === "shop-owner.repair-reject-approval" && url.startsWith("/shop-owner/history-rejection")) {
+        return true;
+      }
       if (nav.subItems) {
         return nav.subItems.some(sub => isActive(sub.route));
       }
       return false;
     },
-    [isActive, isPathActive]
+    [isActive, isPathActive, url]
   );
 
   useEffect(() => {

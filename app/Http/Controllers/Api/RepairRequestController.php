@@ -6,7 +6,11 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Models\RepairRequest;
+use App\Models\ShopOwner;
+use App\Models\User;
 
 class RepairRequestController extends Controller
 {
@@ -25,6 +29,12 @@ class RepairRequestController extends Controller
             'images' => 'required|array',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
             'total' => 'required|numeric|min:0',
+            'service_type' => 'required|in:pickup,walkin',
+            'pickup_address_line' => 'required_if:service_type,pickup|string|max:255',
+            'pickup_barangay' => 'required_if:service_type,pickup|string|max:255',
+            'pickup_city' => 'required_if:service_type,pickup|string|max:255',
+            'pickup_region' => 'required_if:service_type,pickup|string|max:255',
+            'pickup_postal_code' => 'required_if:service_type,pickup|string|max:10',
         ]);
 
         if ($validator->fails()) {
@@ -48,6 +58,28 @@ class RepairRequestController extends Controller
                 }
             }
 
+            // Get authenticated user if available
+            $userId = Auth::guard('user')->check() ? Auth::guard('user')->id() : null;
+            
+            // Get shop owner for high value check
+            $shopOwner = ShopOwner::find($request->shop_owner_id);
+            $isHighValue = $shopOwner && $request->total >= $shopOwner->high_value_threshold;
+            $requiresOwnerApproval = $isHighValue && $shopOwner && $shopOwner->require_two_way_approval;
+            
+            // Build pickup address if service type is pickup
+            $pickupAddress = null;
+            $deliveryMethod = $request->service_type === 'pickup' ? 'pickup' : 'walk_in';
+            
+            if ($request->service_type === 'pickup') {
+                $pickupAddress = [
+                    'address_line' => $request->pickup_address_line,
+                    'barangay' => $request->pickup_barangay,
+                    'city' => $request->pickup_city,
+                    'region' => $request->pickup_region,
+                    'postal_code' => $request->pickup_postal_code,
+                ];
+            }
+            
             // Create repair request
             $repairRequest = RepairRequest::create([
                 'request_id' => $requestId,
@@ -58,13 +90,21 @@ class RepairRequestController extends Controller
                 'brand' => $request->brand,
                 'description' => $request->description,
                 'shop_owner_id' => $request->shop_owner_id,
+                'user_id' => $userId,
                 'images' => json_encode($imagePaths),
                 'total' => $request->total,
-                'status' => 'pending',
+                'status' => 'new_request',
+                'delivery_method' => $deliveryMethod,
+                'pickup_address' => $pickupAddress,
+                'is_high_value' => $isHighValue,
+                'requires_owner_approval' => $requiresOwnerApproval,
             ]);
 
             // Attach services
             $repairRequest->services()->attach($request->services);
+
+            // AUTO-ASSIGN TO REPAIRER (Phase 2)
+            $this->autoAssignRepairer($repairRequest);
 
             return response()->json([
                 'success' => true,
@@ -72,6 +112,8 @@ class RepairRequestController extends Controller
                 'data' => [
                     'request_id' => $requestId,
                     'total' => $request->total,
+                    'status' => $repairRequest->fresh()->status,
+                    'assigned_repairer_id' => $repairRequest->fresh()->assigned_repairer_id,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -113,7 +155,8 @@ class RepairRequestController extends Controller
         return response()->json([
             'success' => true,
             'data' => $repairRequests->map(function ($request) {
-                $images = json_decode($request->images, true);
+                // Images are already cast as array, so handle both formats
+                $images = is_array($request->images) ? $request->images : (is_string($request->images) ? json_decode($request->images, true) : []);
                 return [
                     'id' => $request->request_id,
                     'customer' => $request->customer_name,
@@ -172,6 +215,453 @@ class RepairRequestController extends Controller
                 'success' => false,
                 'message' => 'Failed to update status: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Get authenticated customer's repair requests
+     */
+    public function myRepairs(Request $request)
+    {
+        $user = Auth::guard('user')->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $query = RepairRequest::with(['services', 'shopOwner', 'repairer'])
+            ->forCustomer($user->id);
+
+        // Filter by status if provided
+        if ($request->has('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
+        $repairRequests = $query->orderBy('created_at', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $repairRequests->map(function ($repair) {
+                // Images are already cast as array, so no need to json_decode
+                $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
+                return [
+                    'id' => $repair->id,
+                    'order_number' => $repair->request_id,
+                    'repair_type' => $repair->services->pluck('name')->join(', '),
+                    'description' => $repair->description,
+                    'status' => $repair->status,
+                    'total_amount' => $repair->total,
+                    'created_at' => $repair->created_at->toISOString(),
+                    'estimated_completion' => $repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null,
+                    'completed_at' => $repair->completed_at ? $repair->completed_at->format('M d, Y') : null,
+                    'shop_id' => $repair->shop_owner_id,
+                    'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
+                    'shop_address' => $repair->shopOwner ? $repair->shopOwner->business_address : '',
+                    'image' => !empty($images) ? Storage::url($images[0]) : null,
+                    'delivery_method' => $repair->delivery_method,
+                    'pickup_address' => $repair->pickup_address,
+                    'conversation_id' => $repair->conversation_id,
+                ];
+            })
+        ]);
+    }
+
+    /**
+     * Get single repair request details
+     */
+    public function show(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'conversation'])
+            ->where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found'
+            ], 404);
+        }
+
+        // Images are already cast as array, so handle both formats
+        $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $repair->id,
+                'request_id' => $repair->request_id,
+                'customer_name' => $repair->customer_name,
+                'email' => $repair->email,
+                'phone' => $repair->phone,
+                'shoe_type' => $repair->shoe_type,
+                'brand' => $repair->brand,
+                'description' => $repair->description,
+                'total' => $repair->total,
+                'status' => $repair->status,
+                'delivery_method' => $repair->delivery_method,
+                'pickup_address' => $repair->pickup_address,
+                'scheduled_dropoff_date' => $repair->scheduled_dropoff_date,
+                'customer_confirmed_at' => $repair->customer_confirmed_at,
+                'is_high_value' => $repair->is_high_value,
+                'started_at' => $repair->started_at,
+                'completed_at' => $repair->completed_at,
+                'picked_up_at' => $repair->picked_up_at,
+                'created_at' => $repair->created_at,
+                'images' => array_map(function($path) {
+                    return Storage::url($path);
+                }, $images ?: []),
+                'services' => $repair->services->map(function($service) {
+                    return [
+                        'id' => $service->id,
+                        'name' => $service->name,
+                        'price' => $service->price,
+                        'description' => $service->description,
+                    ];
+                }),
+                'shop' => $repair->shopOwner ? [
+                    'id' => $repair->shopOwner->id,
+                    'name' => $repair->shopOwner->business_name,
+                    'address' => $repair->shopOwner->business_address,
+                    'phone' => $repair->shopOwner->phone,
+                ] : null,
+                'repairer' => $repair->repairer ? [
+                    'id' => $repair->repairer->id,
+                    'name' => $repair->repairer->name,
+                ] : null,
+                'conversation_id' => $repair->conversation_id,
+            ]
+        ]);
+    }
+
+    /**
+     * Cancel repair request
+     */
+    public function cancel(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $repair = RepairRequest::where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found'
+            ], 404);
+        }
+
+        // Check if can be cancelled
+        if (in_array($repair->status, ['completed', 'picked_up', 'cancelled'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel repair in current status'
+            ], 400);
+        }
+
+        $repair->update([
+            'status' => 'cancelled'
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Repair request cancelled successfully'
+        ]);
+    }
+
+    /**
+     * Confirm pickup (Phase 9)
+     */
+    public function confirmPickup(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $repair = RepairRequest::where('id', $id)
+            ->forCustomer($user->id)
+            ->whereIn('status', ['ready-for-pickup', 'ready_for_pickup'])
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found or not ready for pickup'
+            ], 404);
+        }
+
+        $repair->update([
+            'status' => 'picked_up',
+            'picked_up_at' => now()
+        ]);
+
+        // TODO: Send notification to shop owner/repairer about successful pickup
+        // TODO: Trigger review request email/notification after 24 hours
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pickup confirmed! Thank you for your business. We hope to serve you again.',
+            'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
+        ]);
+    }
+    
+    /**
+     * Customer confirms repair after chat discussion (Phase 3)
+     */
+    public function confirmRepair(Request $request, $id)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            DB::beginTransaction();
+
+            $repair = RepairRequest::where('id', $id)
+                ->forCustomer($user->id)
+                ->whereIn('status', ['repairer_accepted', 'waiting_customer_confirmation'])
+                ->with(['shopOwner', 'services', 'repairer'])
+                ->firstOrFail();
+
+            // Walk-in repairs are auto-confirmed when repairer accepts, so this shouldn't be needed
+            if ($repair->delivery_method === 'walk_in') {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Walk-in repairs are automatically confirmed. No action needed.',
+                    'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
+                ], 400);
+            }
+
+            // Check if this is a high-value repair requiring owner approval
+            $requiresOwnerApproval = $repair->is_high_value && $repair->requires_owner_approval;
+            
+            if ($requiresOwnerApproval) {
+                $repair->update([
+                    'status' => 'owner_approval_pending',
+                    'customer_confirmed_at' => now()
+                ]);
+
+                DB::commit();
+
+                // TODO: Notify shop owner of pending high-value approval
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair confirmed. Awaiting shop owner approval for high-value repair.',
+                    'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
+                    'requires_owner_approval' => true
+                ]);
+            }
+
+            // Regular repair confirmation (not high-value or doesn't require approval)
+            $repair->update([
+                'status' => 'confirmed',
+                'customer_confirmed_at' => now()
+            ]);
+
+            DB::commit();
+
+            // TODO: Notify repairer that customer confirmed
+            // Repairer can now start work
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Repair confirmed. Repairer has been notified.',
+                'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
+                'requires_owner_approval' => false
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found or not in correct status'
+            ], 404);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error confirming repair: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'repair_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to confirm repair: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Auto-assign repair request to available repairer (Phase 2)
+     * Uses workload-based round-robin for fair distribution
+     * Called automatically when repair request is created
+     */
+    private function autoAssignRepairer(RepairRequest $repairRequest)
+    {
+        try {
+            // STRATEGY 1: Find repairers with Repairer role, sorted by current workload (least busy first)
+            $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
+                ->whereHas('employee', function($query) {
+                    $query->where('status', 'active');
+                })
+                ->whereHas('roles', function($query) {
+                    $query->where('name', 'Repairer');
+                })
+                ->where('status', 'active')
+                ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
+                    // Count only active repairs (not completed/cancelled)
+                    $query->whereIn('status', [
+                        'assigned_to_repairer',
+                        'repairer_accepted',
+                        'in_progress',
+                        'awaiting_parts'
+                    ]);
+                }])
+                ->having('active_repairs_count', '<', 15) // Max capacity limit: 15 active repairs per repairer
+                ->orderBy('active_repairs_count', 'asc')  // Assign to least busy first
+                ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
+                ->first();
+            
+            // FALLBACK STRATEGY 2: If no repairer with role, try any staff with repair permissions
+            if (!$repairer) {
+                $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
+                    ->whereHas('employee', function($query) {
+                        $query->where('status', 'active');
+                    })
+                    ->whereHas('permissions', function($query) {
+                        $query->whereIn('name', [
+                            'view-repair-services',
+                            'manage-repair-services',
+                            'view-job-orders',
+                            'create-job-orders',
+                            'view-repairer-conversations',
+                            'send-repairer-messages'
+                        ]);
+                    })
+                    ->where('status', 'active')
+                    ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
+                        $query->whereIn('status', [
+                            'assigned_to_repairer',
+                            'repairer_accepted',
+                            'in_progress',
+                            'awaiting_parts'
+                        ]);
+                    }])
+                    ->having('active_repairs_count', '<', 15)
+                    ->orderBy('active_repairs_count', 'asc')
+                    ->first();
+            }
+            
+            // FALLBACK STRATEGY 3: If all repairers at capacity, assign to least busy anyway
+            if (!$repairer) {
+                $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
+                    ->whereHas('employee', function($query) {
+                        $query->where('status', 'active');
+                    })
+                    ->whereHas('roles', function($query) {
+                        $query->where('name', 'Repairer');
+                    })
+                    ->where('status', 'active')
+                    ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
+                        $query->whereIn('status', [
+                            'assigned_to_repairer',
+                            'repairer_accepted',
+                            'in_progress',
+                            'awaiting_parts'
+                        ]);
+                    }])
+                    ->orderBy('active_repairs_count', 'asc')
+                    ->first();
+            }
+            
+            if ($repairer) {
+                $repairRequest->update([
+                    'assigned_repairer_id' => $repairer->id,
+                    'status' => 'assigned_to_repairer',
+                    'assigned_at' => now()
+                ]);
+                
+                // Log successful assignment with workload info
+                $workloadCount = $repairer->active_repairs_count ?? 0;
+                \Log::info("✅ Repair {$repairRequest->request_id} auto-assigned to {$repairer->name} (ID: {$repairer->id}) - Current workload: {$workloadCount} active repairs");
+                
+                // TODO: Send notification to repairer about new assignment
+                // event(new RepairAssigned($repairRequest, $repairer));
+                
+            } else {
+                // No repairer available - handle assignment failure
+                $this->handleAssignmentFailure($repairRequest);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error("❌ Failed to auto-assign repair {$repairRequest->request_id}: " . $e->getMessage());
+            $this->handleAssignmentFailure($repairRequest);
+        }
+    }
+    
+    /**
+     * Handle assignment failure - notify manager and update status
+     */
+    private function handleAssignmentFailure(RepairRequest $repairRequest)
+    {
+        try {
+            // Update repair status to indicate assignment failed
+            $repairRequest->update([
+                'status' => 'assignment_failed'
+            ]);
+            
+            \Log::warning("⚠️ No available repairer found for repair {$repairRequest->request_id} in shop {$repairRequest->shop_owner_id}");
+            
+            // Find and notify manager or shop owner
+            $manager = User::where('shop_owner_id', $repairRequest->shop_owner_id)
+                ->whereHas('roles', function($query) {
+                    $query->where('name', 'Manager');
+                })
+                ->where('status', 'active')
+                ->first();
+            
+            if ($manager) {
+                \Log::info("📧 Notifying manager {$manager->name} (ID: {$manager->id}) about failed assignment for repair {$repairRequest->request_id}");
+                // TODO: Send notification to manager
+                // event(new AssignmentFailed($repairRequest, $manager));
+            } else {
+                \Log::warning("⚠️ No manager found to notify for shop {$repairRequest->shop_owner_id}");
+            }
+            
+            // Repair stays in 'assignment_failed' status - manual assignment required
+            
+        } catch (\Exception $e) {
+            \Log::error("Failed to handle assignment failure for repair {$repairRequest->request_id}: " . $e->getMessage());
         }
     }
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from './Navigation';
 import AddToCartButton from '../../Components/CartActions';
+import Virtual3DShowroom from '../../Components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../types/cart-events';
 
 type ColorVariantImage = {
@@ -104,6 +105,8 @@ const ProductShow: React.FC = () => {
   const [userExistingReview, setUserExistingReview] = useState<any>(null);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [showMyReview, setShowMyReview] = useState(false);
+
+  const [show3DShowroom, setShow3DShowroom] = useState(false);
 
   // Filter images based on selected size and color in modal
   const getFilteredImages = () => {
@@ -363,6 +366,23 @@ const ProductShow: React.FC = () => {
                     className="w-full h-full object-contain cursor-zoom-in hover:scale-105 transition-transform duration-300" 
                   />
                   
+                  {/* 3D & 360 Virtual Showroom Buttons */}
+                  <div className="absolute bottom-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* 3D Model Button */}
+                    <button
+                      onClick={() => setShow3DShowroom(true)}
+                      className="bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      title="View 3D Interactive Model"
+                      aria-label="View 3D interactive model"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      3D View
+                    </button>
+
+                  </div>
+                  
                   {/* Navigation Arrow Buttons - Overlaid on Image */}
                   {images.length > 1 && (
                     <>
@@ -420,10 +440,10 @@ const ProductShow: React.FC = () => {
                             key={`${img}-${idx}`} 
                             onClick={() => setSelectedImage(img)} 
                             className={`
-                              relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0 transition-all duration-200
+                              relative w-16 h-16 rounded-md overflow-hidden shrink-0 border-2 transition-all duration-200
                               ${isSelected 
-                                ? 'ring-2 ring-black ring-offset-2' 
-                                : 'ring-1 ring-gray-200 hover:ring-gray-400'
+                                ? 'border-black' 
+                                : 'border-gray-200 hover:border-gray-400'
                               }
                             `}
                             aria-label={`View image ${idx + 1}`}
@@ -433,9 +453,6 @@ const ProductShow: React.FC = () => {
                               alt={`Thumbnail ${idx + 1}`} 
                               className="w-full h-full object-cover" 
                             />
-                            {isSelected && (
-                              <div className="absolute inset-0 bg-black bg-opacity-10"></div>
-                            )}
                           </button>
                         );
                       })}
@@ -1235,6 +1252,17 @@ const ProductShow: React.FC = () => {
           </div>
         </div>
       </div>
+
+
+
+      {/* Virtual 3D Showroom Modal */}
+      {show3DShowroom && (
+        <Virtual3DShowroom
+          modelUrl="/images/3D SHOES/shoe_3d_scan.glb"
+          productName={product.name}
+          onClose={() => setShow3DShowroom(false)}
+        />
+      )}
 
       {/* Image Lightbox Modal */}
       {enlargedImage && (

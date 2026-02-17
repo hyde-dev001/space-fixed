@@ -30,20 +30,46 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->string('phone');
             $table->string('password')->nullable();
+            $table->string('profile_photo')->nullable();
+            $table->text('bio')->nullable();
             
             // Business Information
             $table->string('business_name');
             $table->string('business_address');
+            $table->string('country')->nullable();
+            $table->string('city_state')->nullable();
+            $table->string('postal_code')->nullable();
+            $table->string('tax_id')->nullable();
             $table->string('business_type'); // retail, repair, or both
             $table->string('registration_type'); // individual or company
             
             // Operating Schedule
             $table->json('operating_hours')->nullable();
             
+            // Individual day operating hours
+            $table->time('monday_open')->nullable();
+            $table->time('monday_close')->nullable();
+            $table->time('tuesday_open')->nullable();
+            $table->time('tuesday_close')->nullable();
+            $table->time('wednesday_open')->nullable();
+            $table->time('wednesday_close')->nullable();
+            $table->time('thursday_open')->nullable();
+            $table->time('thursday_close')->nullable();
+            $table->time('friday_open')->nullable();
+            $table->time('friday_close')->nullable();
+            $table->time('saturday_open')->nullable();
+            $table->time('saturday_close')->nullable();
+            $table->time('sunday_open')->nullable();
+            $table->time('sunday_close')->nullable();
+            
             // Approval Status & Reasons
             $table->string('status')->default('pending'); // pending, approved, rejected, suspended
             $table->string('rejection_reason', 500)->nullable();
             $table->text('suspension_reason')->nullable();
+            
+            // High value threshold for repair requests (default: ₱5000)
+            $table->decimal('high_value_threshold', 10, 2)->default(5000.00);
+            $table->boolean('require_two_way_approval')->default(true);
             
             // Business Targets
             $table->decimal('monthly_target', 15, 2)->nullable();

@@ -200,10 +200,10 @@ export default function ERPPricingAndServices() {
 
   // Load services on component mount
   useEffect(() => {
-    // Check authorization - Shop staff/managers/repairers or users with edit-products permission
+    // Check authorization - Shop staff/managers/repairers or users with appropriate permissions
     // Note: Super admin does NOT have access - this is shop-level operation only
     const hasRoleAccess = userRole === "STAFF" || userRole === "MANAGER" || userRole === "REPAIRER";
-    const hasPermissionAccess = hasPermission(auth, 'edit-products') || hasPermission(auth, 'view-pricing');
+    const hasPermissionAccess = hasPermission(auth, 'edit-products') || hasPermission(auth, 'view-pricing') || hasPermission(auth, 'manage-repair-services');
     
     if (!hasRoleAccess && !hasPermissionAccess) {
       Swal.fire({
@@ -232,6 +232,12 @@ export default function ERPPricingAndServices() {
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedServices = filteredData.slice(startIndex, startIndex + itemsPerPage);
+
+  // Calculate metrics from real data
+  const activeServices = servicePrices.filter(s => s.status === 'Active').length;
+  const underReviewServices = servicePrices.filter(s => s.status === 'Under Review').length;
+  const rejectedServices = servicePrices.filter(s => s.status === 'Rejected').length;
+  const uniqueCategories = [...new Set(servicePrices.map(s => s.category))].length;
 
   const handleViewClick = (item: ServiceItem) => {
     setSelectedService(item);
@@ -407,30 +413,30 @@ export default function ERPPricingAndServices() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <MetricCard
             title="Active Services"
-            value={12}
+            value={activeServices}
             change={6}
             changeType="increase"
             icon={GridIcon}
-            color="info"
-            description="3 categories"
+            color="success"
+            description={`${uniqueCategories} ${uniqueCategories === 1 ? 'category' : 'categories'}`}
           />
           <MetricCard
-            title="Repair Options"
-            value={8}
+            title="Under Review"
+            value={underReviewServices}
             change={3}
             changeType="increase"
             icon={WrenchIcon}
             color="warning"
-            description="Labor + materials"
+            description="Pending approval"
           />
           <MetricCard
-            title="Retail SKUs"
-            value={24}
+            title="Rejected"
+            value={rejectedServices}
             change={2}
             changeType="decrease"
             icon={TagIcon}
-            color="success"
-            description="Pricing updated weekly"
+            color="info"
+            description="Requires revision"
           />
         </div>
 

@@ -43,6 +43,7 @@ class User extends Authenticatable
         'phone',
         'age',
         'address',
+        'profile_photo',
         'valid_id_path',
         'password',
         'status',
@@ -106,6 +107,14 @@ class User extends Authenticatable
     public function defaultAddress()
     {
         return $this->hasOne(UserAddress::class)->where('is_default', true);
+    }
+
+    /**
+     * Get repair requests assigned to this repairer
+     */
+    public function assignedRepairs()
+    {
+        return $this->hasMany(RepairRequest::class, 'assigned_repairer_id');
     }
 
     /**

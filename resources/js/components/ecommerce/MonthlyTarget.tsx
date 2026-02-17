@@ -12,10 +12,13 @@ interface MonthlyTargetProps {
 
 export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyTargetProps) {
   // Calculate target as 120% of last month or a default 100000
-  const target = lastMonth > 0 ? lastMonth * 1.2 : 100000;
+  const defaultTarget = lastMonth > 0 ? lastMonth * 1.2 : 100000;
+  const [targetAmount, setTargetAmount] = useState(defaultTarget);
+  const [draftTarget, setDraftTarget] = useState(String(Math.round(defaultTarget)));
+  const [isEditingTarget, setIsEditingTarget] = useState(false);
   
   // Calculate progress percentage
-  const progressPercentage = target > 0 ? Math.min((thisMonth / target) * 100, 100) : 0;
+  const progressPercentage = targetAmount > 0 ? Math.min((thisMonth / targetAmount) * 100, 100) : 0;
   
   // Calculate growth percentage vs last month
   const growthPercentage = lastMonth > 0 
@@ -91,10 +94,27 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
   function closeDropdown() {
     setIsOpen(false);
   }
+
+  const openTargetEditor = () => {
+    setDraftTarget(String(Math.round(targetAmount)));
+    setIsEditingTarget(true);
+  };
+
+  const handleSaveTarget = () => {
+    const numericValue = Number(String(draftTarget).replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      setDraftTarget(String(Math.round(targetAmount)));
+      setIsEditingTarget(false);
+      return;
+    }
+
+    setTargetAmount(Math.round(numericValue));
+    setIsEditingTarget(false);
+  };
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03]">
       <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-11 dark:bg-gray-900 sm:px-6 sm:pt-6">
-        <div className="flex justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
               Monthly Target
@@ -103,28 +123,81 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
               Target you’ve set for each month
             </p>
           </div>
-          <div className="relative inline-block">
-            <button className="dropdown-toggle" onClick={toggleDropdown}>
-              <MoreDotIcon className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 size-6" />
-            </button>
-            <Dropdown
-              isOpen={isOpen}
-              onClose={closeDropdown}
-              className="w-40 p-2"
-            >
-              <DropdownItem
-                onItemClick={closeDropdown}
-                className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+          <div className="flex items-start gap-3">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={openTargetEditor}
+                className="rounded-lg border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
               >
-                View More
-              </DropdownItem>
-              <DropdownItem
-                onItemClick={closeDropdown}
-                className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+                Set Target
+              </button>
+              {isEditingTarget && (
+                <div className="absolute right-0 top-full z-20 mt-3 w-64 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+                  <div className="mb-3">
+                    <p className="text-sm font-semibold text-gray-900">Update monthly target</p>
+                    <p className="text-xs text-gray-500">Set a goal for this month.</p>
+                  </div>
+                  <label className="text-xs font-semibold text-gray-600">Target amount</label>
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2">
+                    <span className="text-xs font-semibold text-gray-500">PHP</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={draftTarget}
+                      onChange={(event) => setDraftTarget(event.target.value)}
+                      className="w-full text-sm font-semibold text-gray-800 outline-none"
+                    />
+                  </div>
+                  <div className="mt-4 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftTarget(String(Math.round(targetAmount)));
+                        setIsEditingTarget(false);
+                      }}
+                      className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-gray-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveTarget}
+                      className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
+                    >
+                      Save Target
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="relative inline-block">
+              <button className="dropdown-toggle" onClick={toggleDropdown}>
+                <MoreDotIcon className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 size-6" />
+              </button>
+              <Dropdown
+                isOpen={isOpen}
+                onClose={closeDropdown}
+                className="w-40 p-2"
               >
-                Edit Target
-              </DropdownItem>
-            </Dropdown>
+                <DropdownItem
+                  onItemClick={closeDropdown}
+                  className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+                >
+                  View More
+                </DropdownItem>
+                <DropdownItem
+                  onItemClick={() => {
+                    closeDropdown();
+                    openTargetEditor();
+                  }}
+                  className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+                >
+                  Edit Target
+                </DropdownItem>
+              </Dropdown>
+            </div>
           </div>
         </div>
         <div className="relative">
@@ -161,7 +234,7 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
             Target
           </p>
           <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">
-            {formatCurrency(target)}
+            {formatCurrency(targetAmount)}
             <svg
               width="16"
               height="16"

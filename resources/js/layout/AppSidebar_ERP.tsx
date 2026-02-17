@@ -415,6 +415,18 @@ const staffItems: NavItem[] = [
 const repairItems: NavItem[] = [
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 3v18h18"></path>
+        <path d="M7 15v-4"></path>
+        <path d="M12 15V8"></path>
+        <path d="M17 15v-6"></path>
+      </svg>
+    ),
+    name: "Repair Dashboard",
+    route: "erp.staff.repair-dashboard",
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         <circle cx="12" cy="12" r="3"></circle>
@@ -440,7 +452,7 @@ const repairItems: NavItem[] = [
       </svg>
     ),
     name: "Repair Pricing",
-    route: "erp.manager.pricing-services",
+    route: "erp.repairer.pricing-services",
   },
   {
     icon: (
@@ -523,8 +535,10 @@ const AppSidebar_ERP: React.FC = () => {
   const staffRouteMap: Record<string, string> = {
     "erp.staff.dashboard": "/erp/staff/dashboard",
     "erp.staff.job-orders": "/erp/staff/job-orders",
+    "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
     "erp.staff.upload-services": "/erp/staff/upload-services",
+    "erp.staff.pricing-services": "/erp/staff/pricing-and-services",
     "erp.staff.repair-status": "/erp/staff/repair-status",
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
@@ -555,7 +569,6 @@ const AppSidebar_ERP: React.FC = () => {
     // Manager section routes
     "erp.manager.dashboard": "/erp/manager/dashboard",
     "erp.manager.reports": "/erp/manager/reports",
-    "erp.manager.pricing-services": "/erp/manager/pricing-and-services",
     "erp.manager.shoe-pricing": "/erp/manager/shoe-pricing",
     "erp.manager.products": "/erp/manager/products",
     "erp.manager.inventory-overview": "/erp/manager/inventory-overview",
@@ -564,11 +577,15 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
     // User section routes
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
+    "erp.repairer.support": "/erp/staff/repairer-support",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
     "erp.staff.job-orders": "/erp/staff/job-orders",
+    "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
     "erp.staff.upload-services": "/erp/staff/upload-services",
+    "erp.staff.pricing-services": "/erp/staff/pricing-and-services",
+    "erp.repairer.pricing-services": "/erp/repairer/pricing-and-services",
     "erp.staff.repair-status": "/erp/staff/repair-status",
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
@@ -761,11 +778,11 @@ const AppSidebar_ERP: React.FC = () => {
     return financePermissions.some(perm => permissions.includes(perm));
   };
 
-  // Check if user has any HR permissions
+  // Check if user has any HR permissions (excluding basic attendance logging)
   const hasHRAccess = () => {
     const hrPermissions = [
       'view-employees', 'create-employees', 'edit-employees', 'delete-employees',
-      'view-attendance', 'mark-attendance', 'edit-attendance',
+      'edit-attendance', // HR can edit attendance records, but view-attendance is for personal logging
       'view-leave-requests', 'approve-leave-requests', 'manage-leave-requests',
       'generate-payroll', 'edit-payroll'
     ];
@@ -815,6 +832,12 @@ const AppSidebar_ERP: React.FC = () => {
   // Filter repair items based on user permissions
   const getFilteredRepairItems = () => {
     return repairItems.filter((item) => {
+      // Repair Dashboard - requires job order permissions
+      if (item.route === "erp.staff.repair-dashboard") {
+        return permissions.includes('view-job-orders') || permissions.includes('create-job-orders') || 
+               permissions.includes('edit-job-orders') || permissions.includes('complete-job-orders');
+      }
+
       // Job Orders Repair - requires job order permissions
       if (item.route === "erp.staff.job-orders-repair") {
         return permissions.includes('view-job-orders') || permissions.includes('create-job-orders') || 
@@ -826,10 +849,9 @@ const AppSidebar_ERP: React.FC = () => {
         return true;
       }
       
-      // Repair Pricing - requires pricing or service pricing permissions
-      if (item.route === "erp.manager.pricing-services") {
-        return permissions.includes('view-pricing') || permissions.includes('edit-pricing') || 
-               permissions.includes('manage-service-pricing');
+      // Repair Pricing - requires repair service management permission for repairers
+      if (item.route === "erp.repairer.pricing-services") {
+        return permissions.includes("manage-repair-services");
       }
       
       // Repair Support - accessible to repairer role, managers, and super admins
@@ -1042,7 +1064,7 @@ const AppSidebar_ERP: React.FC = () => {
             </div>
           </nav>
         )}
-        {(role === "STAFF" || role === "MANAGER") && (
+        {(role === "STAFF" || role === "MANAGER" || role === "REPAIRER") && (
           <nav className="mb-6">
             <div className="flex flex-col gap-4">
               <div>
@@ -1061,6 +1083,8 @@ const AppSidebar_ERP: React.FC = () => {
                 </h2>
                 {renderMenuItems(
                   role === "MANAGER"
+                    ? getFilteredRepairItems()
+                    : role === "REPAIRER"
                     ? getFilteredRepairItems()
                     : getFilteredRepairItems().filter((item) => 
                         item.route === "erp.staff.job-orders-repair" || 

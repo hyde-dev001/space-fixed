@@ -76,7 +76,10 @@ const Repair: React.FC<Props> = ({ shops }) => {
                       <Link href={`/repair-shop/${shop.id}`} className="text-sm text-black/80 font-medium hover:text-black transition-colors inline-block">
                         {shop.shopName}
                       </Link>
-                      <div className="text-xs text-black/50 mt-1">{shop.shopLocation} • {shop.shopRating} ⭐</div>
+                      <div className="text-xs text-black/50 mt-1">
+                        {shop.shopLocation}
+                        {shop.shopRating > 0 && ` • ${shop.shopRating} ⭐`}
+                      </div>
                       <div className="mt-3">
                         <div className="px-4 py-2 border border-black text-black text-sm rounded hover:bg-black hover:text-white transition inline-block">View Shop</div>
                       </div>

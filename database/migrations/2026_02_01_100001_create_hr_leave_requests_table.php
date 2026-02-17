@@ -28,10 +28,14 @@ return new class extends Migration
             $table->date('start_date');
             $table->date('end_date');
             $table->integer('no_of_days');
+            $table->boolean('is_half_day')->default(false);
             $table->text('reason');
+            $table->string('supporting_document')->nullable();
             
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+            $table->integer('approval_level')->default(1);
             $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('approver_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('approval_date')->nullable();
             $table->text('rejection_reason')->nullable();
             $table->text('approver_comments')->nullable();

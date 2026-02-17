@@ -13,6 +13,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Implements hierarchical role-based access:
  * - MANAGER can access both Manager and Staff pages
  * - STAFF can only access Staff pages
+ * - REPAIRER can access Staff pages (repair-related functionality)
  * 
  * Usage in routes:
  * Route::get('/erp/manager/dashboard', ...)->middleware('manager.staff:manager');
@@ -51,8 +52,8 @@ class CheckManagerStaffAccess
             // Only MANAGER can access manager pages
             $canAccess = ($userRole === 'MANAGER');
         } elseif ($requiredLevel === 'staff') {
-            // Both MANAGER and STAFF can access staff pages
-            $canAccess = in_array($userRole, ['MANAGER', 'STAFF']);
+            // MANAGER, STAFF, and REPAIRER can access staff pages
+            $canAccess = in_array($userRole, ['MANAGER', 'STAFF', 'REPAIRER']);
         }
 
         if (!$canAccess) {
@@ -61,6 +62,7 @@ class CheckManagerStaffAccess
                 $targetRoute = match ($userRole) {
                     'MANAGER' => 'erp.manager.dashboard',
                     'STAFF' => 'erp.staff.dashboard',
+                    'REPAIRER' => 'erp.staff.repair-dashboard',
                     'FINANCE' => 'finance.index',
                     'HR' => 'erp.hr',
                     'CRM' => 'crm.dashboard',

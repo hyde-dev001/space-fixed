@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { hasPermission } from "../../../utils/permissions";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import axios from "axios";
 
 // Sample initial data - replace with API data
 const initialRepairRejections: RepairRejection[] = [
@@ -144,11 +145,11 @@ interface RepairRejection {
 	id: number;
 	requestNumber: string;
 	serviceName: string;
-	category: string;
+	category?: string;
 	customerName: string;
 	orderedBy: string;
 	requestedOn: string;
-	reason: string;
+	reason?: string;
 	rejectionReason: string;
 	status: "Pending" | "Approved" | "Rejected";
 	approvedBy?: string;
@@ -157,6 +158,7 @@ interface RepairRejection {
 	rejectedAt?: string;
 	decisionReason?: string;
 	media?: string[];
+	repairerName?: string;
 }
 
 type MetricColor = "success" | "warning" | "info";
@@ -219,13 +221,14 @@ export default function RepairRejectReview() {
 	const { auth } = usePage().props as any;
 	const userRole = auth?.user?.role;
 
-	const [rejections, setRejections] = useState<RepairRejection[]>(initialRepairRejections);
+	const [rejections, setRejections] = useState<RepairRejection[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRejection, setSelectedRejection] = useState<RepairRejection | null>(null);
 	const [activeImage, setActiveImage] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState("Pending");
+	const [isLoading, setIsLoading] = useState(true);
 
 	useEffect(() => {
 		const hasRoleAccess = userRole === "Manager" || userRole === "Finance";
@@ -243,8 +246,81 @@ export default function RepairRejectReview() {
 			}).then(() => {
 				window.history.back();
 			});
+		} else {
+			fetchRejections();
 		}
 	}, []);
+
+	const fetchRejections = async () => {
+		try {
+			setIsLoading(true);
+			const response = await axios.get('/api/manager/repairs/rejected');
+			
+			if (response.data.success) {
+				const formattedData = response.data.data.map((item: any) => {
+					const rejecterSource = item.repairer_rejected_by || item.repairerRejectedBy || item.repairer;
+					const rejecterName = rejecterSource?.name
+						|| (rejecterSource?.first_name && rejecterSource?.last_name
+							? `${rejecterSource.first_name} ${rejecterSource.last_name}`
+							: null);
+					const rawMedia = item.repair_images ?? item.images;
+					let parsedMedia: string[] = [];
+					if (rawMedia) {
+						if (Array.isArray(rawMedia)) {
+							parsedMedia = rawMedia;
+						} else {
+							try {
+								parsedMedia = JSON.parse(rawMedia);
+							} catch (parseError) {
+								parsedMedia = [];
+							}
+						}
+					}
+					const normalizedMedia = parsedMedia.map((src: string) => {
+						if (!src) return src;
+						if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/storage/')) {
+							return src;
+						}
+						return `/storage/${src}`;
+					});
+
+					return ({
+					id: item.id,
+					requestNumber: item.request_id,
+					serviceName: item.services?.map((s: any) => s.name).join(', ') || 'N/A',
+					category: item.services?.[0]?.category || 'General',
+					customerName: item.user?.name || item.customer_name,
+						orderedBy: rejecterName
+							? `Repairer - ${rejecterName}`
+							: 'Repairer - Unknown',
+					requestedOn: new Date(item.created_at).toISOString().split('T')[0],
+					reason: item.description || 'No description',
+					rejectionReason: item.repairer_rejection_reason,
+					status: item.manager_decision === 'approve_rejection' ? 'Approved' : 
+							 item.manager_decision === 'override_accept' ? 'Rejected' : 'Pending',
+					approvedBy: item.manager_reviewed_by?.name,
+					approvedAt: item.manager_reviewed_at,
+					rejectedBy: item.manager_reviewed_by?.name,
+					rejectedAt: item.manager_reviewed_at,
+					decisionReason: item.manager_review_notes,
+						media: normalizedMedia,
+					repairerName: item.repairer?.name || 'Unassigned',
+					});
+				});
+				setRejections(formattedData);
+			}
+		} catch (error) {
+			console.error('Failed to fetch rejections:', error);
+			Swal.fire({
+				icon: 'error',
+				title: 'Failed to load rejections',
+				text: 'Please try refreshing the page',
+				confirmButtonColor: '#000000',
+			});
+		} finally {
+			setIsLoading(false);
+		}
+	};
 
 	const filteredData = useMemo(() => {
 		return rejections.filter((item) => {
@@ -278,75 +354,112 @@ export default function RepairRejectReview() {
 	};
 
 	const handleApproveRejection = async (rejection: RepairRejection) => {
-		const result = await Swal.fire({
+		const { value: notes } = await Swal.fire({
 			title: "Approve Rejection?",
 			html: `
-				<div style="text-align: left; margin-top: 1rem;">
+				<div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Request:</strong> ${rejection.requestNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${rejection.serviceName}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${rejection.customerName}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${rejection.rejectionReason}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${rejection.orderedBy}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Rejected by:</strong> ${rejection.orderedBy}</p>
 				</div>
 			`,
+			input: 'textarea',
+			inputPlaceholder: 'Add notes (optional)...',
+			inputAttributes: {
+				'aria-label': 'Notes'
+			},
 			icon: "question",
 			showCancelButton: true,
 			confirmButtonColor: "#10b981",
 			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Approve",
+			confirmButtonText: "Approve Rejection",
 			cancelButtonText: "Cancel",
 		});
 
-		if (result.isConfirmed) {
-			setRejections((prev) =>
-				prev.map((r) =>
-					r.id === rejection.id
-						? { ...r, status: "Approved", approvedBy: auth?.user?.name, approvedAt: new Date().toISOString().split("T")[0] }
-						: r
-				)
-			);
-			Swal.fire({
-				title: "Approved!",
-				text: "The rejection has been approved.",
-				icon: "success",
-				confirmButtonColor: "#2563eb",
-			});
+		if (notes !== undefined) {
+			try {
+				const response = await axios.post(`/api/manager/repairs/${rejection.id}/approve-rejection`, {
+					notes: notes
+				});
+				
+				if (response.data.success) {
+					handleCloseModal();
+					await Swal.fire({
+						title: "Approved!",
+						text: response.data.message || "The rejection has been approved.",
+						icon: "success",
+						confirmButtonColor: "#2563eb",
+					});
+					fetchRejections();
+				}
+			} catch (error: any) {
+				console.error('Failed to approve rejection:', error);
+				Swal.fire({
+					icon: 'error',
+					title: 'Failed to approve',
+					text: error.response?.data?.message || 'Please try again',
+					confirmButtonColor: '#000000',
+				});
+			}
 		}
 	};
 
 	const handleRejectRejection = async (rejection: RepairRejection) => {
-		Swal.fire({
-			title: "Reject This Rejection?",
-			text: "The rejection will be marked as rejected and returned for review.",
+		const { value: notes } = await Swal.fire({
+			title: "Override Rejection?",
+			html: `
+				<div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
+					<p style="margin-bottom: 0.5rem;">The repair will be reassigned to another repairer.</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Request:</strong> ${rejection.requestNumber}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${rejection.customerName}</p>
+				</div>
+			`,
+			input: 'textarea',
+			inputPlaceholder: 'Reason for override (required, min 10 characters)...',
+			inputAttributes: {
+				'aria-label': 'Override reason'
+			},
+			inputValidator: (value) => {
+				if (!value || value.length < 10) {
+					return 'Please provide a reason (minimum 10 characters)'
+				}
+			},
 			icon: "warning",
 			showCancelButton: true,
 			confirmButtonColor: "#ef4444",
 			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Reject",
+			confirmButtonText: "Override & Reassign",
 			cancelButtonText: "Cancel",
-		}).then((result) => {
-			if (result.isConfirmed) {
-				setRejections((prev) =>
-					prev.map((r) =>
-						r.id === rejection.id
-							? {
-									...r,
-									status: "Rejected",
-									rejectedBy: auth?.user?.name,
-									rejectedAt: new Date().toISOString().split("T")[0],
-									decisionReason: "Rejected by manager",
-							}
-							: r
-					)
-				);
+		});
+
+		if (notes) {
+			try {
+				const response = await axios.post(`/api/manager/repairs/${rejection.id}/override-rejection`, {
+					notes: notes
+				});
+				
+				if (response.data.success) {
+					handleCloseModal();
+					await Swal.fire({
+						title: "Overridden!",
+						text: response.data.message || "The repair has been reassigned.",
+						icon: "success",
+						confirmButtonColor: "#2563eb",
+					});
+					fetchRejections();
+				}
+			} catch (error: any) {
+				console.error('Failed to override rejection:', error);
 				Swal.fire({
-					title: "Rejected",
-					text: "The rejection has been rejected and returned for review.",
-					icon: "success",
-					confirmButtonColor: "#2563eb",
+					icon: 'error',
+					title: 'Failed to override',
+					text: error.response?.data?.message || 'Please try again',
+					confirmButtonColor: '#000000',
 				});
 			}
-		});
+		}
 	};
 
 	return (
@@ -712,14 +825,14 @@ export default function RepairRejectReview() {
 								disabled={selectedRejection.status !== "Pending"}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Approve
+								Approve Rejection
 							</button>
 							<button
 								onClick={() => handleRejectRejection(selectedRejection)}
 								disabled={selectedRejection.status !== "Pending"}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Reject
+								Override & Reassign
 							</button>
 						</div>
 					</div>

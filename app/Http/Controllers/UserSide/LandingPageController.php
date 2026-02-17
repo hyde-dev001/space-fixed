@@ -175,12 +175,27 @@ class LandingPageController extends Controller
             ->orderBy('business_name')
             ->get()
             ->map(function ($shop) {
+                // Handle profile photo path - check if it starts with / (public path) or not (storage path)
+                $profilePhoto = $shop->profile_photo;
+                if ($profilePhoto) {
+                    $image = str_starts_with($profilePhoto, '/') 
+                        ? asset(ltrim($profilePhoto, '/'))
+                        : asset('storage/' . $profilePhoto);
+                } else {
+                    // Generate default SVG with shop initials
+                    $initials = strtoupper(substr($shop->business_name ?? $shop->first_name, 0, 1) . substr($shop->last_name ?? '', 0, 1));
+                    $colors = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
+                    $bgColor = $colors[abs(crc32($shop->id)) % count($colors)];
+                    $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="' . $bgColor . '"/><text x="50%" y="50%" font-size="80" font-family="Arial, sans-serif" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">' . htmlspecialchars($initials) . '</text></svg>';
+                    $image = 'data:image/svg+xml;base64,' . base64_encode($svg);
+                }
+                
                 return [
                     'id' => $shop->id,
                     'shopName' => $shop->business_name ?? $shop->getFullNameAttribute(),
                     'shopLocation' => trim(($shop->city_state ?? '') . ($shop->city_state && $shop->country ? ', ' : '') . ($shop->country ?? '')) ?: 'Location not specified',
-                    'shopRating' => 4.5, // Default rating - can be calculated from reviews later
-                    'image' => $shop->profile_photo ? asset('storage/' . $shop->profile_photo) : asset('images/shop/shop.jpg'),
+                    'shopRating' => 0, // Will be calculated from actual reviews
+                    'image' => $image,
                     'phone' => $shop->phone,
                     'email' => $shop->email,
                     'bio' => $shop->bio,
@@ -203,10 +218,10 @@ class LandingPageController extends Controller
     /**
      * Display the contact page.
      */
-    public function contact(): Response
-    {
-        return Inertia::render('UserSide/Contact');
-    }
+    // public function contact(): Response
+    // {
+    //     return Inertia::render('UserSide/Contact');
+    // }
 
     /**
      * Display the register page.
@@ -274,7 +289,9 @@ class LandingPageController extends Controller
                 'address' => $shopOwner->business_address ?? $shopOwner->city_state,
                 'phone' => $shopOwner->phone,
                 'email' => $shopOwner->email,
-                'profile_photo' => $shopOwner->profile_photo ? "/storage/{$shopOwner->profile_photo}" : null,
+                'profile_photo' => $shopOwner->profile_photo && str_starts_with($shopOwner->profile_photo, '/') 
+                    ? $shopOwner->profile_photo
+                    : ($shopOwner->profile_photo ? "/storage/{$shopOwner->profile_photo}" : null),
                 'cover_image' => '/images/shop/shop-cover.jpg',
                 'rating' => 4.8,
                 'total_reviews' => 0,
@@ -387,13 +404,27 @@ class LandingPageController extends Controller
                 ];
             });
 
+        // Handle shop image
+        if ($shopOwner->profile_photo) {
+            $shopImage = str_starts_with($shopOwner->profile_photo, '/') 
+                ? asset(ltrim($shopOwner->profile_photo, '/'))
+                : asset('storage/' . $shopOwner->profile_photo);
+        } else {
+            // Generate default SVG with shop initials
+            $initials = strtoupper(substr($shopOwner->business_name ?? $shopOwner->first_name, 0, 1) . substr($shopOwner->last_name ?? '', 0, 1));
+            $colors = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
+            $bgColor = $colors[abs(crc32($shopOwner->id)) % count($colors)];
+            $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="' . $bgColor . '"/><text x="50%" y="50%" font-size="80" font-family="Arial, sans-serif" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">' . htmlspecialchars($initials) . '</text></svg>';
+            $shopImage = 'data:image/svg+xml;base64,' . base64_encode($svg);
+        }
+
         return Inertia::render('UserSide/repairShow', [
             'shop' => [
                 'id' => $shopOwner->id,
                 'name' => $shopOwner->business_name ?? $shopOwner->getFullNameAttribute(),
                 'location' => $location,
                 'rating' => 0, // Will be calculated from reviews on frontend
-                'image' => $shopOwner->profile_photo ? asset('storage/' . $shopOwner->profile_photo) : asset('images/shop/shop.jpg'),
+                'image' => $shopImage,
                 'description' => $shopOwner->bio ?? 'Premium shoe repair and restoration services. We specialize in professional repairs for all types of footwear.',
                 'hours' => $operatingHours,
                 'phone' => $shopOwner->phone ?? 'Not available',

@@ -40,7 +40,6 @@ export default function CustomerSupport() {
   const [transferNote, setTransferNote] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -381,65 +380,58 @@ export default function CustomerSupport() {
               <h1 className="text-2xl font-bold text-black mb-4">Chat</h1>
               
               {/* Search and Filter Menu */}
-              <div className="relative">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <svg
-                      className="absolute left-3 top-3 w-5 h-5 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <svg
+                    className="absolute left-3 top-3 w-5 h-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
+                  />
+                </div>
+                
+                {/* Filter Menu Button - Hover Dropdown */}
+                <div className="relative group">
+                  <button
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-800"
+                    title="Filter by status"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                     </svg>
-                    <input
-                      type="text"
-                      placeholder="Search..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
-                    />
-                  </div>
+                  </button>
                   
-                  {/* Filter Menu Button */}
-                  <div className="relative z-50">
-                    <button
-                      onClick={() => setShowFilterMenu(!showFilterMenu)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="Filter options"
-                    >
-                      <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                      </svg>
-                    </button>
-                    
-                    {/* Dropdown Menu */}
-                    {showFilterMenu && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-40"
-                          onClick={() => setShowFilterMenu(false)}
-                        />
-                        <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-2 whitespace-nowrap">
-                          {["all", "open", "in_progress", "resolved"].map((status) => (
-                            <button
-                              key={status}
-                              onClick={() => {
-                                setStatusFilter(status);
-                                setShowFilterMenu(false);
-                              }}
-                              className={`block w-full px-6 py-2 text-sm text-left transition-colors ${
-                                statusFilter === status
-                                  ? "bg-blue-500 text-white"
-                                  : "text-gray-700 hover:bg-gray-100"
-                              }`}
-                            >
-                              {status.replace("_", " ").toUpperCase()}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                  {/* Dropdown Menu - Hidden by default, visible on group hover */}
+                  <div className="hidden group-hover:block absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-2 whitespace-nowrap">
+                    {["all", "open", "in_progress", "resolved"].map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setStatusFilter(status);
+                        }}
+                        className={`flex items-center gap-3 w-full px-6 py-2 text-sm text-left transition-colors ${
+                          statusFilter === status
+                            ? "bg-blue-50 text-blue-600"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          statusFilter === status
+                            ? "bg-blue-600"
+                            : "bg-gray-400"
+                        }`}></span>
+                        {status.replace("_", " ").toUpperCase()}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>

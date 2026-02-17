@@ -16,10 +16,16 @@ return new class extends Migration
             $table->string('name');
             $table->string('category');
             $table->decimal('price', 10, 2);
+            $table->decimal('old_price', 10, 2)->nullable();
             $table->string('duration');
             $table->text('description')->nullable();
             $table->enum('status', ['Active', 'Inactive', 'Pending', 'Under Review', 'Rejected'])->default('Active');
             $table->text('rejection_reason')->nullable();
+            $table->text('finance_notes')->nullable();
+            $table->foreignId('finance_reviewed_by')->nullable()->constrained('users')->onDelete('set null');
+            $table->timestamp('finance_reviewed_at')->nullable();
+            $table->foreignId('owner_reviewed_by')->nullable()->constrained('shop_owners')->onDelete('set null');
+            $table->timestamp('owner_reviewed_at')->nullable();
             $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('updated_by')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamps();

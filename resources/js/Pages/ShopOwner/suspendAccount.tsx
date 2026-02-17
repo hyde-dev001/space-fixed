@@ -150,11 +150,8 @@ const SuspendAccount: React.FC = () => {
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (statusFilter !== 'all') params.append('status', statusFilter);
-      if (searchQuery) params.append('search', searchQuery);
-
-      const response = await fetch(`/api/shop-owner/suspension-requests?${params}`);
+      // Always fetch all requests, filtering happens client-side
+      const response = await fetch(`/api/shop-owner/suspension-requests`);
       if (!response.ok) throw new Error('Failed to fetch requests');
       
       const data = await response.json();
@@ -186,10 +183,10 @@ const SuspendAccount: React.FC = () => {
     }
   };
 
-  // Load requests on mount and when filters change
+  // Load requests on mount only
   useEffect(() => {
     fetchRequests();
-  }, [statusFilter, searchQuery]);
+  }, []);
 
   // Filter requests
   useEffect(() => {
@@ -210,9 +207,8 @@ const SuspendAccount: React.FC = () => {
     setFilteredRequests(filtered);
   }, [requests, statusFilter, searchQuery]);
 
-  // Calculate metrics
+  // Calculate metrics - always show all counts regardless of filter
   const metrics = useMemo(() => {
-    const total = requests.length;
     const pending = requests.filter((r) => r.status === "pending").length;
     const approved = requests.filter((r) => r.status === "approved").length;
     const rejected = requests.filter((r) => r.status === "rejected").length;

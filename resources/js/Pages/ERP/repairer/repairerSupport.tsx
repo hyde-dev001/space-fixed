@@ -2,6 +2,7 @@ import { Head } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
+import Swal from "sweetalert2";
 
 interface Message {
   id: number;
@@ -135,6 +136,14 @@ export default function RepairerSupport() {
   useEffect(() => {
     if (selectedTicketId) {
       fetchConversationMessages(selectedTicketId);
+      
+      // Set up auto-refresh to poll for new messages every 3 seconds
+      const pollInterval = setInterval(() => {
+        fetchConversationMessages(selectedTicketId);
+      }, 3000);
+      
+      // Clean up interval on unmount or when conversation changes
+      return () => clearInterval(pollInterval);
     }
   }, [selectedTicketId]);
 
@@ -346,6 +355,31 @@ export default function RepairerSupport() {
   const handleMarkResolved = async () => {
     if (!selectedTicket || isResolving) return;
 
+    // Show confirmation dialog
+    const result = await Swal.fire({
+      icon: "question",
+      title: "Mark as Resolved?",
+      html: "Are you sure you want to mark this conversation as resolved?",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      confirmButtonText: "Yes, resolve",
+      confirmButtonColor: "#10b981",
+      cancelButtonText: "Cancel",
+      cancelButtonColor: "#6b7280",
+      showCancelButton: true,
+      customClass: {
+        container: "swal2-container",
+        popup: "swal2-popup",
+        header: "swal2-header",
+        title: "swal2-title text-center",
+        htmlContainer: "swal2-html-container text-center",
+        confirmButton: "swal2-confirm",
+        cancelButton: "swal2-cancel",
+      },
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
       setIsResolving(true);
       const response = await axios.patch(
@@ -416,42 +450,60 @@ export default function RepairerSupport() {
           <div className="w-80 bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
             {/* Header */}
             <div className="border-b border-gray-200 px-6 py-4">
-              <h1 className="text-2xl font-bold text-black mb-4">Technical Support</h1>
+              <h1 className="text-2xl font-bold text-black mb-3">Technical Support</h1>
               
-              {/* Status Filter */}
-              <div className="mb-3 flex gap-2 flex-wrap">
-                {["all", "open", "in_progress", "resolved"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                      statusFilter === status
-                        ? "bg-purple-500 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
+              {/* Search and Filter */}
+              <div className="flex items-center gap-3">
+                {/* Search */}
+                <div className="relative flex-1">
+                  <svg
+                    className="absolute left-3 top-3 w-5 h-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    {status.replace("_", " ").toUpperCase()}
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
+                  />
+                </div>
+                
+                {/* Status Filter Dropdown */}
+                <div className="relative group">
+                  <button
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors shrink-0"
+                    title="Filter by status"
+                  >
+                    <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
                   </button>
-                ))}
-              </div>
-              
-              {/* Search */}
-              <div className="relative">
-                <svg
-                  className="absolute left-3 top-3 w-5 h-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
-                />
+                  
+                  {/* Dropdown Menu */}
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
+                    {["all", "open", "in_progress", "resolved"].map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setStatusFilter(status)}
+                        className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center gap-3 ${
+                          statusFilter === status
+                            ? "bg-blue-50 text-blue-700 font-medium border-l-2 border-l-blue-500"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${
+                          statusFilter === status ? "bg-blue-500" : "bg-gray-300"
+                        }`} />
+                        {status.replace("_", " ").toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -477,7 +529,7 @@ export default function RepairerSupport() {
                   key={ticket.id}
                   onClick={() => setSelectedTicketId(ticket.id)}
                   className={`px-6 py-4 border-b border-gray-100 cursor-pointer transition-colors hover:bg-gray-50 ${
-                    selectedTicketId === ticket.id ? "bg-gray-50 border-l-4 border-l-purple-500" : ""
+                    selectedTicketId === ticket.id ? "bg-gray-50 border-l-4 border-l-blue-500" : ""
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -497,7 +549,7 @@ export default function RepairerSupport() {
                       </div>
                       <p className="text-xs text-gray-500">{ticket.customerRole}</p>
                       {ticket.transferredFrom && (
-                        <p className="text-xs text-purple-600 font-medium mt-0.5">
+                        <p className="text-xs text-blue-600 font-medium mt-0.5">
                           ↳ From: {ticket.transferredFrom}
                         </p>
                       )}
@@ -512,9 +564,9 @@ export default function RepairerSupport() {
 
           {/* Right Side - Chat Area */}
           {selectedTicket ? (
-            <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm">
               {/* Header */}
-              <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
+              <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white relative z-10">
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold text-sm">
@@ -529,55 +581,47 @@ export default function RepairerSupport() {
                 </div>
                 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2">
-                  {selectedTicket.transferNote && (
-                    <button
-                      onClick={() => setShowTransferNoteModal(true)}
-                      className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors text-sm font-medium border border-blue-200"
-                      title="View transfer note"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      View Note
-                    </button>
-                  )}
+                <div className="flex items-center gap-2 relative z-20">
                   <button
                     onClick={handleMarkResolved}
                     disabled={isResolving}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                    className={`p-1.5 rounded-lg transition-colors ${
                       isResolving
                         ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        : "bg-green-500 hover:bg-green-600 text-white"
+                        : "hover:bg-green-100 text-green-600 hover:text-green-700"
                     }`}
                     title="Mark as resolved"
                   >
                     {isResolving ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Resolving...
-                      </>
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
                     ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Resolve
-                      </>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
                     )}
                   </button>
+                  {selectedTicket.transferNote && (
+                    <button
+                      onClick={() => setShowTransferNoteModal(true)}
+                      className="p-1.5 hover:bg-blue-100 rounded-lg transition-colors text-blue-600 hover:text-blue-700"
+                      title="View transfer note"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowTransferModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors text-sm font-medium"
+                    className="p-1.5 border border-gray-300 hover:border-gray-400 rounded-lg transition-colors text-gray-600 hover:text-gray-700"
                     title="Transfer back to CRM"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                     </svg>
-                    Transfer to CRM
                   </button>
                 </div>
               </div>
@@ -612,7 +656,7 @@ export default function RepairerSupport() {
                               <div
                                 className={`${
                                   message.sender === "repairer"
-                                    ? "bg-purple-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm"
+                                    ? "bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm"
                                     : "bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm"
                                 }`}
                               >
@@ -626,7 +670,7 @@ export default function RepairerSupport() {
                           <div
                             className={`max-w-xs lg:max-w-md xl:max-w-lg ${
                               message.sender === "repairer"
-                                ? "bg-purple-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
+                                ? "bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
                                 : "bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
                             }`}
                           >
@@ -767,7 +811,7 @@ export default function RepairerSupport() {
       {/* Transfer Note Modal (View Only) */}
       {showTransferNoteModal && selectedTicket?.transferNote && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
           onClick={() => setShowTransferNoteModal(false)}
         >
           <div 
@@ -817,7 +861,7 @@ export default function RepairerSupport() {
       {/* Transfer Back to CRM Modal */}
       {showTransferModal && selectedTicket && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
           onClick={() => setShowTransferModal(false)}
         >
           <div 

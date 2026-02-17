@@ -95,7 +95,14 @@ class ShopReviewController extends Controller
             ->whereIn('status', ['delivered', 'completed'])
             ->exists();
 
-        if (!$hasCompletedOrder) {
+        // Also check if user has completed a repair service from this shop
+        $hasCompletedRepair = DB::table('repair_requests')
+            ->where('user_id', $user->id)
+            ->where('shop_owner_id', $shopId)
+            ->where('status', 'picked_up')
+            ->exists();
+
+        if (!$hasCompletedOrder && !$hasCompletedRepair) {
             return response()->json([
                 'success' => true,
                 'can_review' => false,
@@ -140,13 +147,19 @@ class ShopReviewController extends Controller
             ], 422);
         }
 
-        $hasCompletedService = DB::table('orders')
+        $hasCompletedOrder = DB::table('orders')
             ->where('customer_id', $user->id)
             ->where('shop_owner_id', $shopId)
             ->whereIn('status', ['delivered', 'completed'])
             ->exists();
 
-        if (!$hasCompletedService) {
+        $hasCompletedRepair = DB::table('repair_requests')
+            ->where('user_id', $user->id)
+            ->where('shop_owner_id', $shopId)
+            ->where('status', 'picked_up')
+            ->exists();
+
+        if (!$hasCompletedOrder && !$hasCompletedRepair) {
             return response()->json([
                 'success' => false,
                 'message' => 'You can only review shops where you have completed a purchase or repair service',

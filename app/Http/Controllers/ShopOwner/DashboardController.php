@@ -135,7 +135,7 @@ class DashboardController extends Controller
 
         // Recent Orders (last 10)
         $recentOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->with(['customer', 'items'])
+            ->with(['customer', 'items.product'])
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
@@ -148,6 +148,19 @@ class DashboardController extends Controller
                     'total_amount' => $order->total_amount,
                     'status' => $order->status,
                     'items_count' => $order->items->count(),
+                    'order_items' => $order->items->map(function($item) {
+                        return [
+                            'id' => $item->id,
+                            'product_id' => $item->product_id,
+                            'quantity' => $item->quantity,
+                            'price' => $item->price,
+                            'product' => $item->product ? [
+                                'id' => $item->product->id,
+                                'name' => $item->product->name,
+                                'images' => $item->product->images,
+                            ] : null,
+                        ];
+                    }),
                     'created_at' => $order->created_at->toISOString(),
                 ];
             });

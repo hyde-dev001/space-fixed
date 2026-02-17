@@ -29,6 +29,13 @@ return new class extends Migration
             
             // Payment details
             $table->enum('status', ['pending', 'processed', 'paid'])->default('pending');
+            
+            // Finance approval workflow fields
+            $table->enum('approval_status', ['pending', 'approved', 'rejected'])->default('pending')->comment('Finance approval status');
+            $table->foreignId('approved_by')->nullable()->constrained('users')->onDelete('set null')->comment('Finance user who approved/rejected');
+            $table->timestamp('approved_at')->nullable()->comment('When the payslip was approved/rejected');
+            $table->text('approval_notes')->nullable()->comment('Approval or rejection notes from Finance');
+            
             $table->timestamp('payment_date')->nullable();
             $table->enum('payment_method', ['cash', 'bank_transfer', 'check'])->default('bank_transfer');
             
@@ -45,6 +52,7 @@ return new class extends Migration
             $table->index('shop_owner_id');
             $table->index('payroll_period');
             $table->index('status');
+            $table->index('approval_status');
             
             // Unique constraint to prevent duplicate payroll for same period
             $table->unique(['employee_id', 'payroll_period']);
