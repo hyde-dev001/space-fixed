@@ -18,6 +18,7 @@ interface Conversation {
   customer_id: number;
   status: string;
   last_message_at: string;
+  type?: 'repair' | 'product' | 'general';
   shopOwner?: {
     id: number;
     business_name: string;
@@ -25,6 +26,12 @@ interface Conversation {
     profile_photo?: string;
     email?: string;
     phone?: string;
+  };
+  repairRequest?: {
+    request_id: string;
+    repair_type: string;
+    description: string;
+    status: string;
   };
   messages?: ConversationMessage[];
 }
@@ -53,6 +60,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(initialConversation || null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'repairs' | 'products' | 'general'>('all');
   const [inputValue, setInputValue] = useState('');
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
@@ -73,7 +81,11 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         console.log('CSRF Token:', csrfToken ? 'Present' : 'Missing');
         
-        const response = await fetch('/api/customer/conversations', {
+        const url = activeFilter === 'all' 
+          ? '/api/customer/conversations'
+          : `/api/customer/conversations?type=${activeFilter}`;
+        
+        const response = await fetch(url, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
@@ -147,7 +159,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     };
 
     fetchConversations();
-  }, []);  // Keep empty dependency array to run only once on mount
+  }, [activeFilter]);  // Re-fetch when filter changes
 
   const fetchMessages = async (conversationId: number, silent: boolean = false) => {
     try {
@@ -360,7 +372,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           <div className="w-96 bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
             <div className="border-b border-gray-200 px-6 py-4">
               <h1 className="text-2xl font-bold text-black mb-4">Shop Messages</h1>
-              <div className="relative">
+              <div className="relative mb-4">
                 <svg
                   className="absolute left-3 top-3 w-5 h-5 text-gray-400"
                   fill="none"
@@ -381,6 +393,50 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
                 />
+              </div>
+              
+              {/* Filter Tabs */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setActiveFilter('all')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeFilter === 'all'
+                      ? 'bg-black text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setActiveFilter('repairs')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeFilter === 'repairs'
+                      ? 'bg-black text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Repairs
+                </button>
+                <button
+                  onClick={() => setActiveFilter('products')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeFilter === 'products'
+                      ? 'bg-black text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Products
+                </button>
+                <button
+                  onClick={() => setActiveFilter('general')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    activeFilter === 'general'
+                      ? 'bg-black text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  General
+                </button>
               </div>
             </div>
 
@@ -426,12 +482,19 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between">
-                          <h3 className="font-semibold text-black text-sm">{conversation.shopOwner?.business_name || 'Unknown Shop'}</h3>
-                          <span className="text-xs text-gray-500 ml-2">
+                          <h3 className="font-semibold text-black text-sm truncate">
+                            {conversation.repairRequest 
+                              ? `${conversation.shopOwner?.business_name || 'Shop'} - ${conversation.repairRequest.request_id}`
+                              : conversation.shopOwner?.business_name || 'Unknown Shop'
+                            }
+                          </h3>
+                          <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
                             {conversation.last_message_at ? new Date(conversation.last_message_at).toLocaleDateString() : 'No messages'}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500">{conversation.shopOwner?.location || 'Location not available'}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {conversation.repairRequest?.repair_type || conversation.shopOwner?.business_address || 'No details'}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -465,8 +528,15 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     )}
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-black">{selectedConversation.shopOwner?.business_name || 'Shop'}</h2>
-                    <p className="text-xs text-gray-500">{selectedConversation.shopOwner?.location || 'Location not available'}</p>
+                    <h2 className="text-lg font-bold text-black">
+                      {selectedConversation.repairRequest 
+                        ? `${selectedConversation.repairRequest.request_id} - ${selectedConversation.repairRequest.repair_type}`
+                        : selectedConversation.shopOwner?.business_name || 'Unknown Shop'
+                      }
+                    </h2>
+                    <p className="text-xs text-gray-500">
+                      {selectedConversation.shopOwner?.business_name || 'Unknown Shop'}
+                    </p>
                   </div>
                 </div>
               ) : (

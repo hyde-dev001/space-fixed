@@ -2,6 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Notification;
+use App\Models\ConversationMessage;
+use App\Models\CartItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Middleware;
@@ -36,10 +39,49 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = Auth::guard('user')->user();
+        $isCustomer = $user && empty($user->shop_owner_id);
+
+        $orderStatusCount = 0;
+        $repairStatusCount = 0;
+        $chatIconCount = 0;
+        $cartIconCount = 0;
+
+        if ($isCustomer) {
+            $orderStatusCount = Notification::query()
+                ->where('user_id', $user->id)
+                ->where('is_read', false)
+                ->where('type', 'order_status_update')
+                ->count();
+
+            $repairStatusCount = Notification::query()
+                ->where('user_id', $user->id)
+                ->where('is_read', false)
+                ->where('type', 'repair_status_update')
+                ->count();
+
+            $chatIconCount = ConversationMessage::query()
+                ->whereNull('read_at')
+                ->where('sender_id', '!=', $user->id)
+                ->whereHas('conversation', function ($query) use ($user) {
+                    $query->where('customer_id', $user->id);
+                })
+                ->count();
+
+            $cartIconCount = CartItem::query()
+                ->where('user_id', $user->id)
+                ->sum('quantity');
+        }
+
         return [
             ...parent::share($request),
             // CSRF token
             'csrf_token' => csrf_token(),
+            'orderStatusCount' => $orderStatusCount,
+            'repairStatusCount' => $repairStatusCount,
+            'userIconCount' => $orderStatusCount + $repairStatusCount,
+            'chatIconCount' => $chatIconCount,
+            'cartIconCount' => $cartIconCount,
             
             // Share session flash data
             'success' => fn () => $request->session()->get('success'),

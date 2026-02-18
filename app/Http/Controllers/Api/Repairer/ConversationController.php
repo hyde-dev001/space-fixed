@@ -44,7 +44,10 @@ class ConversationController extends Controller
             ->with([
                 'customer', 
                 'order', 
-                'assignedTo', 
+                'assignedTo',
+                'repairRequest' => function ($q) {
+                    $q->select('id', 'conversation_id', 'request_id', 'shoe_type', 'brand', 'description', 'status');
+                },
                 'messages' => function ($q) {
                     $q->latest()->limit(1);
                 },
@@ -76,6 +79,26 @@ class ConversationController extends Controller
         $conversations->getCollection()->transform(function ($conversation) {
             $latestTransfer = $conversation->transfers->first();
             
+            // Build repair_type from description, fallback to shoe_type and brand
+            $repairRequestData = null;
+            if ($conversation->repairRequest) {
+                // Use description as the main display, fallback to shoe_type + brand
+                $repairType = $conversation->repairRequest->description ?? '';
+                if (empty($repairType)) {
+                    $repairType = $conversation->repairRequest->shoe_type ?? '';
+                    if ($conversation->repairRequest->brand) {
+                        $repairType .= ' - ' . $conversation->repairRequest->brand;
+                    }
+                }
+                
+                $repairRequestData = [
+                    'request_id' => $conversation->repairRequest->request_id,
+                    'repair_type' => $repairType,
+                    'description' => $conversation->repairRequest->description,
+                    'status' => $conversation->repairRequest->status,
+                ];
+            }
+            
             return [
                 'id' => $conversation->id,
                 'shop_owner_id' => $conversation->shop_owner_id,
@@ -88,6 +111,7 @@ class ConversationController extends Controller
                     'name' => $conversation->customer->name,
                     'email' => $conversation->customer->email,
                 ],
+                'repairRequest' => $repairRequestData,
                 'messages' => $conversation->messages,
                 'transfer_note' => $latestTransfer?->transfer_note,
                 'transferred_from_name' => $latestTransfer?->fromUser?->name,

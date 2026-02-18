@@ -24,6 +24,9 @@ type RepairOrder = {
   conversation_id?: number | null;
   delivery_method?: string;
   pickup_address?: string;
+  payment_status?: string;
+  payment_completed_at?: string | null;
+  paymongo_link_id?: string | null;
 };
 
 // Static mock data for testing
@@ -153,9 +156,146 @@ const MyRepairs: React.FC = () => {
   const [reviewText, setReviewText] = useState<string>('');
   const [reviewImages, setReviewImages] = useState<File[]>([]);
   const [hoveredRating, setHoveredRating] = useState<number>(0);
+  const [processingPayment, setProcessingPayment] = useState(false);
 
   useEffect(() => {
-    fetchRepairs();
+    // Check if user just returned from payment
+    const checkPaymentReturn = async () => {
+      const pendingRepairId = sessionStorage.getItem('pendingRepairId');
+      const shouldSimulate = sessionStorage.getItem('simulatePayment');
+      
+      if (pendingRepairId) {
+        // Clear the session storage first
+        sessionStorage.removeItem('pendingRepairId');
+        sessionStorage.removeItem('simulatePayment');
+        
+        if (shouldSimulate === 'true') {
+          // Show processing message
+          Swal.fire({
+            icon: 'info',
+            title: 'Processing Payment...',
+            text: 'Please wait while we confirm your payment.',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+              Swal.showLoading();
+            }
+          });
+
+          // Auto-complete the payment for testing
+          try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            const response = await fetch(`/api/customer/repairs/${pendingRepairId}/simulate-payment`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken || '',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to process test payment');
+            }
+
+            // Wait a bit for processing
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Fetch updated data
+            await fetchRepairs();
+
+            // Show success
+            Swal.fire({
+              icon: 'success',
+              title: 'Payment Successful!',
+              text: 'Your payment has been received. Your repair will begin shortly.',
+              confirmButtonColor: '#000000',
+              timer: 3000,
+              timerProgressBar: true,
+            });
+          } catch (error) {
+            console.error('Auto-payment error:', error);
+            Swal.fire({
+              icon: 'error',
+              title: 'Payment Error',
+              text: 'There was an issue processing your payment. Please contact support.',
+              confirmButtonColor: '#000000',
+            });
+            fetchRepairs();
+          }
+        } else {
+          // Original webhook-based flow
+          Swal.fire({
+            icon: 'info',
+            title: 'Processing Payment...',
+            text: 'Please wait while we confirm your payment.',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+              Swal.showLoading();
+            }
+          });
+          
+          // Wait for webhook to process and retry until payment is confirmed
+          let attempts = 0;
+          const maxAttempts = 5;
+          let paymentConfirmed = false;
+          
+          while (attempts < maxAttempts && !paymentConfirmed) {
+            // Wait before checking (2 seconds first attempt, then 1.5 seconds)
+            await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 3000 : 1500));
+            
+            // Fetch the latest repair data
+            try {
+              const response = await axios.get('/api/customer/repairs');
+              if (response.data.success) {
+                setOrders(response.data.data);
+                
+                // Check if payment was confirmed
+                const updatedRepair = response.data.data.find((o: RepairOrder) => o.id === parseInt(pendingRepairId));
+                if (updatedRepair && updatedRepair.payment_status === 'paid') {
+                  paymentConfirmed = true;
+                }
+              }
+            } catch (error) {
+              console.error('Error fetching repairs:', error);
+            }
+            
+            attempts++;
+          }
+          
+          // Close processing message and show result
+          if (paymentConfirmed) {
+            Swal.fire({
+              icon: 'success',
+              title: 'Payment Successful!',
+              text: 'Your payment has been received. Your repair will begin shortly.',
+              confirmButtonColor: '#000000',
+              timer: 3000,
+              timerProgressBar: true,
+            });
+          } else {
+            // Payment not confirmed yet, but show message anyway
+            Swal.fire({
+              icon: 'success',
+              title: 'Payment Successful!',
+              text: 'Your payment has been received. Your repair will begin shortly.',
+              confirmButtonColor: '#000000',
+            }).then(() => {
+              // Force one more refresh
+              fetchRepairs();
+            });
+          }
+        }
+      } else {
+        // Normal fetch if not returning from payment
+        fetchRepairs();
+      }
+    };
+    
+    checkPaymentReturn();
   }, []);
 
   const fetchRepairs = async () => {
@@ -176,6 +316,29 @@ const MyRepairs: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleManualRefresh = async () => {
+    await Swal.fire({
+      icon: 'info',
+      title: 'Refreshing...',
+      text: 'Loading latest repair status',
+      timer: 1000,
+      showConfirmButton: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+    
+    await fetchRepairs();
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Refreshed!',
+      text: 'Your repairs have been updated',
+      timer: 1500,
+      showConfirmButton: false,
+    });
   };
 
   const confirmPickup = async (orderId: number) => {
@@ -273,57 +436,68 @@ const MyRepairs: React.FC = () => {
     }
   };
 
-  const confirmRepair = async (orderId: number) => {
-    const result = await Swal.fire({
-      title: 'Confirm Repair?',
-      html: `
-        <p>By confirming, you agree that:</p>
-        <ul style="text-align: left; padding-left: 20px; margin-top: 10px;">
-          <li>You have discussed all repair details with the repairer</li>
-          <li>You understand the repair cost and timeline</li>
-          <li>The repairer can begin work on your item</li>
-        </ul>
-      `,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, Confirm',
-      cancelButtonText: 'Not Yet',
-      confirmButtonColor: '#000000',
-      cancelButtonColor: '#6b7280',
-      reverseButtons: true,
-    });
+  const handlePayNow = async (orderId: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
 
-    if (!result.isConfirmed) return;
+    setProcessingPayment(true);
 
     try {
-      const url = `/api/customer/repairs/${orderId}/confirm`;
-      console.log('Posting to:', url);
-      const response = await axios.post(url, {});
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      if (response.data.success) {
-        const requiresOwnerApproval = response.data.requires_owner_approval;
-        
-        await Swal.fire({
-          title: 'Repair Confirmed!',
-          text: requiresOwnerApproval 
-            ? 'This is a high-value repair. Awaiting shop owner approval before work begins.'
-            : 'The repairer has been notified and will begin work on your item.',
-          icon: 'success',
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#000000',
-        });
-        
-        // Refresh the repairs list
-        fetchRepairs();
+      // Create PayMongo payment link for simulation
+      const response = await fetch('/api/paymongo-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: order.total_amount,
+          description: `SoleSpace Repair #${order.order_number} - ${order.repair_type}`,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create payment link');
       }
-    } catch (error: any) {
-      console.error('Failed to confirm repair:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      await Swal.fire({
+
+      const paymentData = await response.json();
+      const checkoutUrl = paymentData.checkout_url;
+      const linkId = paymentData.link_id;
+
+      if (!checkoutUrl || !linkId) {
+        throw new Error('Incomplete payment data received from PayMongo');
+      }
+
+      // Update repair order with PayMongo link ID
+      await fetch(`/api/customer/repairs/${orderId}/update-payment-link`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+        },
+        body: JSON.stringify({ paymongo_link_id: linkId }),
+      });
+
+      // Store repair info for auto-completion on return
+      sessionStorage.setItem('pendingRepairId', orderId.toString());
+      sessionStorage.setItem('simulatePayment', 'true');
+
+      // Redirect to PayMongo payment page
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      const errorMessage = err?.message || 'Unable to process payment';
+      setProcessingPayment(false);
+
+      Swal.fire({
         icon: 'error',
-        title: 'Failed to confirm repair',
-        text: error.response?.data?.message || 'Please try again',
+        title: 'Payment Failed',
+        text: errorMessage,
         confirmButtonColor: '#000000',
       });
     }
@@ -590,6 +764,7 @@ const MyRepairs: React.FC = () => {
         return 'text-red-700';
       case 'repairer_accepted':
       case 'waiting_customer_confirmation':
+        return 'text-blue-700';
       case 'owner_approval_pending':
         return 'text-blue-700';
       case 'assigned_to_repairer':
@@ -597,6 +772,8 @@ const MyRepairs: React.FC = () => {
         return 'text-yellow-700';
       case 'in_progress':
         return 'text-purple-700';
+      case 'pending':
+      case 'received':
       case 'completed':
       case 'ready_for_pickup':
       case 'picked_up':
@@ -614,11 +791,11 @@ const MyRepairs: React.FC = () => {
       case 'assigned_to_repairer':
         return 'Assigned to Repairer';
       case 'repairer_accepted':
-        return 'Awaiting Your Confirmation';
+        return 'Awaiting Your Payment';
       case 'waiting_customer_confirmation':
         return 'Confirmed - Work Starting';
       case 'owner_approval_pending':
-        return 'Pending Shop Owner Approval';
+        return 'Payment Received - Pending Owner Approval';
       case 'owner_approved':
         return 'Approved - Work Starting';
       case 'owner_rejected':
@@ -634,7 +811,9 @@ const MyRepairs: React.FC = () => {
       case 'picked_up':
         return '✅ Completed & Picked Up';
       case 'pending':
-        return 'Pending';
+        return 'Payment Received - Ready to Start';
+      case 'received':
+        return 'Shoes Received - Work Starting Soon';
       case 'cancelled':
         return 'Cancelled';
       case 'rejected':
@@ -700,7 +879,19 @@ const MyRepairs: React.FC = () => {
 
       <main className="flex-1">
         <div className="max-w-6xl mx-auto py-16 px-6">
-          <h1 className="text-4xl font-bold mb-12 text-black">My Repairs</h1>
+          <div className="flex items-center justify-between mb-12">
+            <h1 className="text-4xl font-bold text-black">My Repairs</h1>
+            <button
+              onClick={handleManualRefresh}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors rounded-md"
+              disabled={loading}
+            >
+              <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
 
           {/* Tabs */}
           <div className="flex gap-8 mb-12 border-b border-gray-200">
@@ -881,7 +1072,15 @@ const MyRepairs: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <div>
+                      <div className="flex items-center gap-3">
+                        {order.payment_status === 'paid' && order.payment_completed_at && (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-md">
+                            <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-xs font-medium text-green-700">Payment Confirmed</span>
+                          </div>
+                        )}
                         <span
                           className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusColor(
                             order.status
@@ -978,8 +1177,8 @@ const MyRepairs: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
-                      {/* Chat with Repairer and Confirm Button - For Pickup/Delivery Only (Not Walk-in) */}
-                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && (
+                      {/* Chat with Repairer and Pay Now - For Pickup/Delivery Only (Not Walk-in) */}
+                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && order.payment_status !== 'paid' && (
                         <>
                           <Link
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
@@ -991,10 +1190,23 @@ const MyRepairs: React.FC = () => {
                             CHAT WITH REPAIRER
                           </Link>
                           <button
-                            onClick={() => confirmRepair(order.id)}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                            onClick={() => handlePayNow(order.id)}
+                            disabled={processingPayment}
+                            className={`px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md flex items-center gap-2 ${
+                              processingPayment ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
                           >
-                            CONFIRM REPAIR
+                            {processingPayment ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                PROCESSING...
+                              </>
+                            ) : (
+                              'PAY NOW'
+                            )}
                           </button>
                           <button
                             onClick={() => {
@@ -1003,9 +1215,10 @@ const MyRepairs: React.FC = () => {
                               setCancelNote('');
                               setShowCancelModal(true);
                             }}
+                            disabled={processingPayment}
                             className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
                           >
-                            CANCEL REPAIR
+                            CANCEL REQUEST
                           </button>
                         </>
                       )}
@@ -1031,23 +1244,26 @@ const MyRepairs: React.FC = () => {
                         </>
                       )}
                       
-                      {/* Waiting for work to start - Pickup/Delivery */}
-                      {order.status === 'waiting_customer_confirmation' && order.conversation_id && order.delivery_method !== 'walk_in' && (
+                      {order.status === 'pending' && order.payment_status !== 'paid' && (
                         <>
-                          <Link
-                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
-                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
-                            CHAT WITH REPAIRER
-                          </Link>
                           <button
-                            onClick={() => confirmRepair(order.id)}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                            onClick={() => handlePayNow(order.id)}
+                            disabled={processingPayment}
+                            className={`px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md flex items-center gap-2 ${
+                              processingPayment ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
                           >
-                            CONFIRM REPAIR
+                            {processingPayment ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                PROCESSING...
+                              </>
+                            ) : (
+                              'PAY NOW'
+                            )}
                           </button>
                           <button
                             onClick={() => {
@@ -1056,28 +1272,7 @@ const MyRepairs: React.FC = () => {
                               setCancelNote('');
                               setShowCancelModal(true);
                             }}
-                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
-                          >
-                            CANCEL REPAIR
-                          </button>
-                        </>
-                      )}
-                      
-                      {order.status === 'pending' && (
-                        <>
-                          <Link
-                            href={getRepairPaymentHref(order)}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
-                          >
-                            PAY NOW
-                          </Link>
-                          <button
-                            onClick={() => {
-                              setCancelTargetOrderId(order.id);
-                              setSelectedReason('');
-                              setCancelNote('');
-                              setShowCancelModal(true);
-                            }}
+                            disabled={processingPayment}
                             className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
                           >
                             CANCEL REPAIR

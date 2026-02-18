@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Head, Link, usePage, router } from '@inertiajs/react';
+import Swal from 'sweetalert2';
 import Navigation from './Navigation';
 import AddToCartButton from '../../Components/CartActions';
 import Virtual3DShowroom from '../../Components/Virtual3DShowroom';
@@ -255,17 +256,32 @@ const ProductShow: React.FC = () => {
 
   const handleSubmitReview = async () => {
     if (!newComment.trim() || userRating === 0) {
-      alert('Please provide both a rating and a comment');
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Incomplete review',
+        text: 'Please provide both a rating and a comment',
+        confirmButtonText: 'OK',
+      });
       return;
     }
 
     if (!isAuthenticated) {
-      alert('Please log in to write a review');
+      await Swal.fire({
+        icon: 'info',
+        title: 'Login required',
+        text: 'Please log in to write a review',
+        confirmButtonText: 'OK',
+      });
       return;
     }
 
     if (!canReview) {
-      alert(reviewEligibility?.message || 'You are not eligible to review this product');
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Not eligible',
+        text: reviewEligibility?.message || 'You are not eligible to review this product',
+        confirmButtonText: 'OK',
+      });
       return;
     }
 
@@ -299,7 +315,12 @@ const ProductShow: React.FC = () => {
       const data = await response.json();
 
       if (data.success) {
-        alert('Thank you for your review!');
+        await Swal.fire({
+          icon: 'success',
+          title: 'Review submitted',
+          text: 'Thank you for your review!',
+          confirmButtonText: 'OK',
+        });
         setNewComment('');
         setUserRating(0);
         setImageUploadGroups([{id: '0', file: null, preview: ''}]);
@@ -307,11 +328,21 @@ const ProductShow: React.FC = () => {
         await fetchReviews();
         await checkReviewEligibility();
       } else {
-        alert(data.message || 'Failed to submit review');
+        await Swal.fire({
+          icon: 'error',
+          title: 'Submission failed',
+          text: data.message || 'Failed to submit review',
+          confirmButtonText: 'OK',
+        });
       }
     } catch (error) {
       console.error('Failed to submit review:', error);
-      alert('Failed to submit review. Please try again.');
+      await Swal.fire({
+        icon: 'error',
+        title: 'Submission failed',
+        text: 'Failed to submit review. Please try again.',
+        confirmButtonText: 'OK',
+      });
     } finally {
       setIsSubmittingReview(false);
     }

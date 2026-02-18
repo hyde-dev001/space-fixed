@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Notification;
 
 class RepairRequest extends Model
 {
@@ -30,6 +31,11 @@ class RepairRequest extends Model
         'conversation_id',
         'images',
         'total',
+        'paymongo_link_id',
+        'paymongo_payment_id',
+        'payment_link_created_at',
+        'payment_completed_at',
+        'payment_status',
         'status',
         'delivery_method',
         'pickup_address',
@@ -66,6 +72,8 @@ class RepairRequest extends Model
         'repairer_rejected_at' => 'datetime',
         'manager_reviewed_at' => 'datetime',
         'owner_reviewed_at' => 'datetime',
+        'payment_link_created_at' => 'datetime',
+        'payment_completed_at' => 'datetime',
         'total' => 'decimal:2',
         'is_high_value' => 'boolean',
         'requires_owner_approval' => 'boolean',
@@ -178,5 +186,35 @@ class RepairRequest extends Model
     public function scopePendingManagerReview($query)
     {
         return $query->where('status', 'repairer_rejected');
+    }
+
+    protected static function booted(): void
+    {
+        static::updated(function (RepairRequest $repair): void {
+            if (!$repair->wasChanged('status') || !$repair->user_id) {
+                return;
+            }
+
+            $status = (string) $repair->status;
+            if ($status === 'new_request') {
+                return;
+            }
+
+            $statusLabel = str_replace('_', ' ', $status);
+
+            Notification::create([
+                'user_id' => $repair->user_id,
+                'type' => 'repair_status_update',
+                'title' => 'Repair Status Updated',
+                'message' => "Repair {$repair->request_id} is now {$statusLabel}.",
+                'data' => [
+                    'repair_id' => $repair->id,
+                    'request_id' => $repair->request_id,
+                    'status' => $status,
+                ],
+                'action_url' => '/my-repairs',
+                'shop_id' => $repair->shop_owner_id,
+            ]);
+        });
     }
 }

@@ -120,10 +120,10 @@ php artisan tinker
 - Customer can now chat with repairer
 
 #### Test 3.2: Chat Communication
-
-**Steps:**
+asd
+**Steps:**asdasdasd
 1. Logout from repairer account
-2. Login as the customer
+2. Login as the customer    
 3. Navigate to `/my-repairs`
 4. Click "CHAT" button on the accepted repair
 5. Send message: "How long will this take?"
@@ -151,34 +151,68 @@ php artisan tinker
 
 ---
 
-### Phase 4: Customer Confirmation (10 min)
+### Phase 4: Customer Payment (15 min)
 
-#### Test 4.1: Customer Reviews and Confirms Repair
+#### Test 4.1: Customer Reviews and Pays for Repair
 
 **Steps:**
 1. Login as customer
 2. Navigate to `/my-repairs`
-3. Find repair with status "Waiting Customer Confirmation"
-4. Click "CONFIRM REPAIR" button
-5. Review the confirmation dialog
-6. Click "Yes, Confirm"
+3. Find repair with status "Awaiting Your Confirmation" (repairer_accepted)
+4. Note: Repair should be in "PENDING" tab
+5. Click "PAY NOW" button
+6. Verify PayMongo payment link creation
 
 **✅ Expected:**
-- SweetAlert confirmation dialog appears
-- After confirmation:
-  - Status changes to next phase
-  - Success message appears
-  - Repair moves to "In Progress" or "Owner Approval Pending" (if high-value)
+- "PAY NOW" button visible (no "CONFIRM" button)
+- "CHAT WITH REPAIRER" button available for questions
+- "CANCEL REQUEST" button available
+- After clicking "PAY NOW":
+  - Processing indicator shows
+  - PayMongo payment link created
+  - Payment link ID saved to repair order
+  - Customer redirected to PayMongo checkout page
 
-#### Test 4.2: Verify Status Change
+#### Test 4.2: Complete Payment on PayMongo
+
+**Steps:**
+1. On PayMongo checkout page
+2. Fill in payment details (use test card if in test mode)
+3. Complete payment
+4. Verify redirect back to success page
+
+**✅ Expected:**
+- Payment completes successfully
+- Customer redirected to success page
+- Payment webhook updates repair status
+- Status changes to next phase based on approval requirements
+
+#### Test 4.3: Verify Payment in Database
 ```powershell
 php artisan tinker
 
 > $repair = App\Models\RepairRequest::latest()->first();
-> $repair->status  # Should be 'confirmed' or 'owner_approval_pending'
-> $repair->customer_confirmed_at  # Should have timestamp
+> $repair->paymongo_link_id  # Should have payment link ID
+> $repair->payment_link_created_at  # Should have timestamp
+> $repair->payment_status  # Should be 'pending' or 'paid'
+> $repair->payment_completed_at  # Should have timestamp if paid
 > exit
 ```
+
+#### Test 4.4: Cancel Before Payment
+
+**Alternative Test:**
+1. Create another repair that reaches repairer_accepted status
+2. Click "CANCEL REQUEST" instead of "PAY NOW"
+3. Select cancellation reason
+4. Confirm cancellation
+
+**✅ Expected:**
+- Cancellation modal appears
+- After cancellation:
+  - Status changes to "Cancelled"
+  - Repair moves to "CANCELLED" tab
+  - No payment link created
 
 ---
 

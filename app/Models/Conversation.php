@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Conversation extends Model
 {
@@ -45,6 +46,14 @@ class Conversation extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Get the repair request related to this conversation (optional)
+     */
+    public function repairRequest(): HasOne
+    {
+        return $this->hasOne(RepairRequest::class, 'conversation_id');
     }
 
     /**

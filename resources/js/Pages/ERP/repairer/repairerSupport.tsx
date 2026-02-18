@@ -27,6 +27,12 @@ interface Ticket {
   conversationStatus?: string;
   transferNote?: string;
   transferredFrom?: string;
+  repairRequest?: {
+    request_id: string;
+    repair_type: string;
+    description: string;
+    status: string;
+  };
 }
 
 export default function RepairerSupport() {
@@ -85,8 +91,7 @@ export default function RepairerSupport() {
           priority: conv.priority,
           conversationStatus: conv.status,
           transferNote: conv.transfer_note,
-          transferredFrom: conv.transferred_from_name,
-        };
+          transferredFrom: conv.transferred_from_name,          repairRequest: conv.repairRequest || undefined,        };
       });
       
       setTickets(conversationsData);
@@ -544,10 +549,17 @@ export default function RepairerSupport() {
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between">
-                        <h3 className="font-semibold text-black text-sm">{ticket.customerName}</h3>
-                        <span className="text-xs text-gray-500 ml-2">{ticket.lastMessageTime}</span>
+                        <h3 className="font-semibold text-black text-sm truncate">
+                          {ticket.repairRequest 
+                            ? `${ticket.repairRequest.request_id} - ${ticket.repairRequest.repair_type}`
+                            : ticket.customerName
+                          }
+                        </h3>
+                        <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{ticket.lastMessageTime}</span>
                       </div>
-                      <p className="text-xs text-gray-500">{ticket.customerRole}</p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {ticket.customerName} • {ticket.customerRole}
+                      </p>
                       {ticket.transferredFrom && (
                         <p className="text-xs text-blue-600 font-medium mt-0.5">
                           ↳ From: {ticket.transferredFrom}
@@ -575,8 +587,15 @@ export default function RepairerSupport() {
                     <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${getStatusColor(selectedTicket.status)}`} />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-black">{selectedTicket.customerName}</h2>
-                    <p className="text-xs text-gray-500">{getStatusText(selectedTicket.status)}</p>
+                    <h2 className="text-lg font-bold text-black">
+                      {selectedTicket.repairRequest 
+                        ? `${selectedTicket.repairRequest.request_id} - ${selectedTicket.repairRequest.repair_type}`
+                        : selectedTicket.customerName
+                      }
+                    </h2>
+                    <p className="text-xs text-gray-500">
+                      {selectedTicket.customerName} • {getStatusText(selectedTicket.status)}
+                    </p>
                   </div>
                 </div>
                 

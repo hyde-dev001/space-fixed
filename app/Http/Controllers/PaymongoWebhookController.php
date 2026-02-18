@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\RepairRequest;
 use App\Models\Finance\Invoice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -66,14 +67,31 @@ class PaymongoWebhookController extends Controller
             return response()->json(['message' => 'Missing payment_link_id'], 400);
         }
 
-        // Find order by payment_link_id
+        // Try to find order by payment_link_id
         $order = Order::where('paymongo_link_id', $paymentLinkId)->first();
 
-        if (!$order) {
-            Log::warning('Order not found for payment_link_id', ['payment_link_id' => $paymentLinkId]);
-            return response()->json(['message' => 'Order not found'], 404);
+        if ($order) {
+            // Handle product order payment
+            return $this->handleOrderPayment($order, $paymentId);
         }
 
+        // Try to find repair request by payment_link_id
+        $repairRequest = RepairRequest::where('paymongo_link_id', $paymentLinkId)->first();
+
+        if ($repairRequest) {
+            // Handle repair request payment
+            return $this->handleRepairPayment($repairRequest, $paymentId);
+        }
+
+        Log::warning('Order or RepairRequest not found for payment_link_id', ['payment_link_id' => $paymentLinkId]);
+        return response()->json(['message' => 'Order or RepairRequest not found'], 404);
+    }
+
+    /**
+     * Handle product order payment
+     */
+    private function handleOrderPayment($order, $paymentId)
+    {
         // Update order payment status
         $order->update([
             'payment_status' => 'paid',
@@ -108,6 +126,49 @@ class PaymongoWebhookController extends Controller
         // Mail::to($order->customer_email)->send(new OrderConfirmation($order));
 
         return response()->json(['message' => 'Payment processed'], 200);
+    }
+
+    /**
+     * Handle repair request payment
+     */
+    private function handleRepairPayment($repairRequest, $paymentId)
+    {
+        // Update repair request payment status
+        $repairRequest->update([
+            'payment_status' => 'paid',
+            'paymongo_payment_id' => $paymentId,
+            'payment_completed_at' => now(),
+        ]);
+
+        // Determine next status based on approval requirements
+        if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {
+            // High-value repairs need owner approval before work begins
+            $repairRequest->update([
+                'status' => 'owner_approval_pending',
+            ]);
+            
+            Log::info('High-value repair payment confirmed - awaiting owner approval', [
+                'repair_id' => $repairRequest->id,
+                'request_id' => $repairRequest->request_id,
+                'payment_id' => $paymentId,
+            ]);
+        } else {
+            // Regular repairs can start work immediately after payment
+            $repairRequest->update([
+                'status' => 'pending',
+            ]);
+            
+            Log::info('Repair payment confirmed - ready for work', [
+                'repair_id' => $repairRequest->id,
+                'request_id' => $repairRequest->request_id,
+                'payment_id' => $paymentId,
+            ]);
+        }
+
+        // TODO: Send confirmation email/notification
+        // Mail::to($repairRequest->email)->send(new RepairPaymentConfirmation($repairRequest));
+
+        return response()->json(['message' => 'Repair payment processed'], 200);
     }
 
     /**

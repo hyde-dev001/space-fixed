@@ -264,6 +264,9 @@ class RepairRequestController extends Controller
                     'delivery_method' => $repair->delivery_method,
                     'pickup_address' => $repair->pickup_address,
                     'conversation_id' => $repair->conversation_id,
+                    'payment_status' => $repair->payment_status ?? 'pending',
+                    'payment_completed_at' => $repair->payment_completed_at ? $repair->payment_completed_at->toISOString() : null,
+                    'paymongo_link_id' => $repair->paymongo_link_id,
                 ];
             })
         ]);
@@ -486,7 +489,7 @@ class RepairRequestController extends Controller
 
             // Regular repair confirmation (not high-value or doesn't require approval)
             $repair->update([
-                'status' => 'confirmed',
+                'status' => 'pending',
                 'customer_confirmed_at' => now()
             ]);
 
@@ -497,7 +500,7 @@ class RepairRequestController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Repair confirmed. Repairer has been notified.',
+                'message' => 'Repair confirmed. Status updated to pending.',
                 'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
                 'requires_owner_approval' => false
             ]);
@@ -517,6 +520,66 @@ class RepairRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to confirm repair: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update PayMongo payment link for repair order
+     */
+    public function updatePaymentLink(Request $request, $id)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $repair = RepairRequest::where('id', $id)
+                ->forCustomer($user->id)
+                ->firstOrFail();
+
+            $validator = Validator::make($request->all(), [
+                'paymongo_link_id' => 'required|string'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $repair->update([
+                'paymongo_link_id' => $request->paymongo_link_id,
+                'payment_link_created_at' => now()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment link updated successfully',
+                'data' => $repair
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found'
+            ], 404);
+        } catch (\Exception $e) {
+            \Log::error('Error updating payment link: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'repair_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update payment link: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -663,5 +726,59 @@ class RepairRequestController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to handle assignment failure for repair {$repairRequest->request_id}: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Simulate payment completion for testing (bypasses PayMongo)
+     */
+    public function simulatePayment(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $repair = RepairRequest::where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found'
+            ], 404);
+        }
+
+        // Simulate payment completion
+        $repair->update([
+            'payment_status' => 'paid',
+            'paymongo_payment_id' => 'TEST_PAYMENT_' . time(),
+            'payment_completed_at' => now(),
+        ]);
+
+        // Determine next status based on approval requirements (same logic as webhook)
+        if ($repair->is_high_value && $repair->requires_owner_approval) {
+            // High-value repairs need owner approval before work begins
+            $repair->update([
+                'status' => 'owner_approval_pending',
+            ]);
+        } else {
+            // Regular repairs can start work immediately after payment
+            $repair->update([
+                'status' => 'pending',
+            ]);
+        }
+
+        \Log::info('Test payment simulated for repair: ' . $repair->request_id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment simulated successfully',
+            'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
+        ]);
     }
 }

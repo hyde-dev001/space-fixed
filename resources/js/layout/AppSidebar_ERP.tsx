@@ -1033,8 +1033,8 @@ const AppSidebar_ERP: React.FC = () => {
         ref={sidebarScrollRef}
         className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
       >
-        {/* Standalone Attendance - Requires view-attendance permission */}
-        {permissions.includes('view-attendance') && (
+        {/* Standalone Attendance - Requires view-attendance permission or Finance/Manager role */}
+        {(permissions.includes('view-attendance') || role === 'Finance' || role === 'FINANCE' || role === 'Manager' || role === 'MANAGER') && (
           <nav className="mb-6">
             <div className="flex flex-col gap-4">
               {renderMenuItems([attendanceItem], "attendance")}
@@ -1064,7 +1064,7 @@ const AppSidebar_ERP: React.FC = () => {
             </div>
           </nav>
         )}
-        {(role === "STAFF" || role === "MANAGER" || role === "REPAIRER") && (
+        {(role === "MANAGER" || role === "REPAIRER") && (
           <nav className="mb-6">
             <div className="flex flex-col gap-4">
               <div>
@@ -1081,17 +1081,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(
-                  role === "MANAGER"
-                    ? getFilteredRepairItems()
-                    : role === "REPAIRER"
-                    ? getFilteredRepairItems()
-                    : getFilteredRepairItems().filter((item) => 
-                        item.route === "erp.staff.job-orders-repair" || 
-                        item.route === "erp.staff.upload-services"
-                      ),
-                  "repair"
-                )}
+                {renderMenuItems(getFilteredRepairItems(), "repair")}
               </div>
             </div>
           </nav>

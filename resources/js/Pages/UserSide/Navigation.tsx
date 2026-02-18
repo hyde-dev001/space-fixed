@@ -19,11 +19,17 @@ const Navigation: React.FC = () => {
   const page = usePage();
   const { url } = page;
   const { auth } = page.props as any;
+  const orderStatusCount = Number((page.props as any)?.orderStatusCount ?? 0);
+  const repairStatusCount = Number((page.props as any)?.repairStatusCount ?? 0);
+  const userIconCount = Number((page.props as any)?.userIconCount ?? (orderStatusCount + repairStatusCount));
+  const chatIconCount = Number((page.props as any)?.chatIconCount ?? 0);
+  const cartIconCount = Number((page.props as any)?.cartIconCount ?? 0);
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
   // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
   const user = auth?.user;
   const isAuthenticated = Boolean(user && !user.shop_owner_id);
+  const effectiveCartCount = isAuthenticated ? cartIconCount : (cartLoading ? 0 : cartCount);
 
   // Shoe categories for dropdown
   const shoeCategories = [
@@ -512,6 +518,11 @@ const Navigation: React.FC = () => {
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
+                {isAuthenticated && userIconCount > 0 && (
+                  <span className="absolute -top-1 -right-1 text-black text-xs font-bold leading-none">
+                    {userIconCount}
+                  </span>
+                )}
               </button>
 
               {/* Dropdown Menu */}
@@ -536,17 +547,23 @@ const Navigation: React.FC = () => {
                     <>
                       <Link
                         href="/my-orders"
-                        className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                        className="flex items-center justify-between px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        Orders
+                        <span>Orders</span>
+                        {orderStatusCount > 0 && (
+                          <span className="ml-2 text-xs font-semibold leading-none">{orderStatusCount}</span>
+                        )}
                       </Link>
                       <Link
                         href="/my-repairs"
-                        className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                        className="flex items-center justify-between px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        Repair
+                        <span>Repair</span>
+                        {repairStatusCount > 0 && (
+                          <span className="ml-2 text-xs font-semibold leading-none">{repairStatusCount}</span>
+                        )}
                       </Link>
                       <Link
                         href="/customer-profile"
@@ -586,9 +603,11 @@ const Navigation: React.FC = () => {
                     d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z"
                   />
                 </svg>
-                {/* Notification badge: show only if there are unread messages */}
-                {/* Replace 6 with a dynamic unread count if available, or remove if not needed */}
-                {/* Example: {unreadCount > 0 && ( ...badge... )} */}
+                {chatIconCount > 0 && (
+                  <span className="absolute -top-1 -right-1 text-black text-xs font-bold leading-none">
+                    {chatIconCount}
+                  </span>
+                )}
               </Link>
             )}
 
@@ -598,16 +617,9 @@ const Navigation: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.1 5H19M7 13v8a2 2 0 002 2h10a2 2 0 002-2v-3" />
               </svg>
               {/* Cart badge (only for authenticated users) */}
-              {isAuthenticated && (
-                <span id="cart-badge" className="absolute -top-1 -right-1 bg-black text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                  {cartLoading ? (
-                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  ) : (
-                    cartCount
-                  )}
+              {effectiveCartCount > 0 && (
+                <span id="cart-badge" className="absolute -top-1 -right-1 text-black text-xs font-bold leading-none">
+                  {effectiveCartCount}
                 </span>
               )}
             </Link>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
+use App\Models\Notification;
 use App\Models\Order;
 use App\Enums\OrderStatus;
 use Illuminate\Http\Request;
@@ -22,6 +23,15 @@ class OrderController extends Controller
         if (!$user) {
             return redirect()->route('login');
         }
+
+        Notification::query()
+            ->where('user_id', $user->id)
+            ->where('is_read', false)
+            ->where('type', 'order_status_update')
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
         
         $orders = Order::where('customer_id', $user->id)
             ->with(['items', 'shopOwner'])
@@ -112,7 +122,9 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'order_id' => 'required|integer',
+            'order_item_id' => 'nullable|integer',
             'reason' => 'nullable|string|max:500',
+            'note' => 'nullable|string|max:1000',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -131,10 +143,60 @@ class OrderController extends Controller
 
             // Only allow cancellation of pending/processing orders
             if (!in_array($order->status, [OrderStatus::PENDING, OrderStatus::PROCESSING])) {
+                \Illuminate\Support\Facades\DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot cancel orders that are already shipped or completed',
                 ], 400);
+            }
+
+            if (!empty($validated['order_item_id'])) {
+                $item = $order->items->firstWhere('id', (int) $validated['order_item_id']);
+
+                if (!$item) {
+                    \Illuminate\Support\Facades\DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected order item was not found for this order',
+                    ], 404);
+                }
+
+                $product = \App\Models\Product::find($item->product_id);
+                if ($product) {
+                    $product->increment('stock_quantity', $item->quantity);
+
+                    if ($item->size && $item->color) {
+                        $variant = \App\Models\ProductVariant::where('product_id', $product->id)
+                            ->where('size', $item->size)
+                            ->where('color', $item->color)
+                            ->first();
+
+                        if ($variant) {
+                            $variant->increment('quantity', $item->quantity);
+                        }
+                    }
+                }
+
+                $item->delete();
+
+                $remainingCount = $order->items()->count();
+                $remainingTotal = (float) $order->items()->sum('subtotal');
+
+                $order->total_amount = $remainingTotal;
+                if ($remainingCount === 0) {
+                    $order->status = OrderStatus::CANCELLED;
+                }
+                $order->save();
+
+                \Illuminate\Support\Facades\DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $remainingCount > 0
+                        ? 'Order item cancelled successfully. Remaining items are still active.'
+                        : 'Order cancelled successfully. Inventory has been restored.',
+                    'order_cancelled' => $remainingCount === 0,
+                ]);
             }
 
             // Restore inventory for each item
@@ -172,6 +234,7 @@ class OrderController extends Controller
             \Illuminate\Support\Facades\Log::error('Order cancellation failed', [
                 'error' => $e->getMessage(),
                 'order_id' => $validated['order_id'],
+                'order_item_id' => $validated['order_item_id'] ?? null,
             ]);
             
             return response()->json([

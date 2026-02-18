@@ -201,7 +201,7 @@ class RepairWorkflowController extends Controller
             // Get repairs assigned to this repairer
             $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
                 ->forRepairer($user->id)
-                ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'picked_up', 'rejected', 'cancelled', 'received'])
+                ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'picked_up', 'rejected', 'cancelled', 'received'])
                 ->orderBy('created_at', 'desc')
                 ->get();
             
@@ -1010,7 +1010,7 @@ class RepairWorkflowController extends Controller
             }
             
             // Check if status is valid
-            $validStatuses = ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'confirmed', 'owner_approval_pending', 'owner_approved'];
+            $validStatuses = ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'confirmed', 'owner_approval_pending', 'owner_approved', 'pending'];
             if (!in_array($debugRepair->status, $validStatuses)) {
                 DB::rollBack();
                 return response()->json([

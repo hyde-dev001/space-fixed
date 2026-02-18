@@ -1,5 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { useEffect, useState } from "react";
 
 type MetricColor = "success" | "error" | "warning" | "info";
 
@@ -120,69 +121,85 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 	);
 };
 
-const metricCards: MetricCardProps[] = [
-	{
-		title: "Open Repairs",
-		value: 24,
-		change: 8.2,
-		changeType: "increase",
-		icon: WrenchIcon,
-		color: "info",
-		description: "Active job orders in progress.",
-	},
-	{
-		title: "Ready for Pickup",
-		value: 7,
-		change: 3.1,
-		changeType: "decrease",
-		icon: PackageIcon,
-		color: "warning",
-		description: "Waiting for customer pickup.",
-	},
-	{
-		title: "New Requests",
-		value: 5,
-		change: 6.8,
-		changeType: "increase",
-		icon: ClipboardIcon,
-		color: "info",
-		description: "Pending initial review.",
-	},
-	{
-		title: "Completed Today",
-		value: 9,
-		change: 12.4,
-		changeType: "increase",
-		icon: CheckCircleIcon,
-		color: "success",
-		description: "Finished repair services today.",
-	},
-];
-
-const requestedServices: RequestedService[] = [
-  { service: "Sole Replacement", requests: 18, avgTurnaround: "3.2 days", lastRequested: "Today, 10:40 AM" },
-  { service: "Deep Cleaning", requests: 14, avgTurnaround: "1.4 days", lastRequested: "Today, 9:05 AM" },
-  { service: "Stitching Repair", requests: 11, avgTurnaround: "2.6 days", lastRequested: "Yesterday, 5:20 PM" },
-  { service: "Heel Replacement", requests: 9, avgTurnaround: "2.1 days", lastRequested: "Yesterday, 3:15 PM" },
-  { service: "Glue Reglue", requests: 7, avgTurnaround: "1.8 days", lastRequested: "Yesterday, 1:45 PM" },
-];
-
-const revenueRows: RevenueRow[] = [
-  { period: "Today", orders: 12, revenue: "PHP 8,450", change: "+6.4%" },
-  { period: "This Week", orders: 68, revenue: "PHP 49,320", change: "+9.1%" },
-  { period: "This Month", orders: 214, revenue: "PHP 162,780", change: "+12.8%" },
-  { period: "Last Month", orders: 198, revenue: "PHP 148,900", change: "+4.9%" },
-];
-
-const recentRepairs: RecentRepair[] = [
-  { orderId: "RR-2190", customer: "Jade Navarro", service: "Sole Replacement", status: "In Progress", amount: "PHP 1,500", createdAt: "Feb 15, 2026" },
-  { orderId: "RR-2187", customer: "Luis Mendoza", service: "Deep Cleaning", status: "Ready for Pickup", amount: "PHP 800", createdAt: "Feb 15, 2026" },
-  { orderId: "RR-2185", customer: "Maria Santos", service: "Heel Replacement", status: "Pending", amount: "PHP 2,000", createdAt: "Feb 14, 2026" },
-  { orderId: "RR-2182", customer: "Ethan Cruz", service: "Stitching Repair", status: "Received", amount: "PHP 1,200", createdAt: "Feb 14, 2026" },
-  { orderId: "RR-2178", customer: "Ariana Lim", service: "Glue Reglue", status: "Completed", amount: "PHP 950", createdAt: "Feb 13, 2026" },
-];
-
 const DashboardRepair: React.FC = () => {
+	const [metricCards, setMetricCards] = useState<MetricCardProps[]>([]);
+	const [requestedServices, setRequestedServices] = useState<RequestedService[]>([]);
+	const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
+	const [recentRepairs, setRecentRepairs] = useState<RecentRepair[]>([]);
+	const [isLoading, setIsLoading] = useState(true);
+
+	// Icon mapping
+	const iconMap = {
+		"Open Repairs": WrenchIcon,
+		"Ready for Pickup": PackageIcon,
+		"New Requests": ClipboardIcon,
+		"Completed Today": CheckCircleIcon,
+	};
+
+	const colorMap = {
+		"Open Repairs": "info" as MetricColor,
+		"Ready for Pickup": "warning" as MetricColor,
+		"New Requests": "info" as MetricColor,
+		"Completed Today": "success" as MetricColor,
+	};
+
+	useEffect(() => {
+		const fetchDashboardData = async () => {
+			try {
+				const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+				
+				const response = await fetch('/api/repairer/dashboard', {
+					method: 'GET',
+					headers: {
+						'Accept': 'application/json',
+						'Content-Type': 'application/json',
+						'X-CSRF-TOKEN': csrfToken,
+						'X-Requested-With': 'XMLHttpRequest',
+					},
+					credentials: 'include',
+				});
+
+				if (!response.ok) {
+					throw new Error('Failed to fetch dashboard data');
+				}
+
+				const data = await response.json();
+				
+				// Map metric cards with icons and colors
+				const mappedMetricCards = data.metricCards.map((card: any) => ({
+					...card,
+					icon: iconMap[card.title as keyof typeof iconMap] || WrenchIcon,
+					color: colorMap[card.title as keyof typeof colorMap] || "info",
+				}));
+
+				setMetricCards(mappedMetricCards);
+				setRequestedServices(data.requestedServices);
+				setRevenueRows(data.revenueRows);
+				setRecentRepairs(data.recentRepairs);
+			} catch (error) {
+				console.error('Error fetching dashboard data:', error);
+			} finally {
+				setIsLoading(false);
+			}
+		};
+
+		fetchDashboardData();
+	}, []);
+
+	if (isLoading) {
+		return (
+			<AppLayoutERP>
+				<Head title="Repair Dashboard" />
+				<div className="flex items-center justify-center min-h-screen">
+					<div className="text-center">
+						<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+						<p className="mt-4 text-gray-600">Loading dashboard...</p>
+					</div>
+				</div>
+			</AppLayoutERP>
+		);
+	}
+
 	return (
 		<AppLayoutERP>
 			<Head title="Repair Dashboard" />
@@ -226,14 +243,22 @@ const DashboardRepair: React.FC = () => {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-gray-100">
-									{requestedServices.map((service) => (
-										<tr key={service.service} className="text-gray-700">
-											<td className="px-6 py-4 font-medium text-gray-900">{service.service}</td>
-											<td className="px-6 py-4">{service.requests}</td>
-											<td className="px-6 py-4">{service.avgTurnaround}</td>
-											<td className="px-6 py-4 text-gray-500">{service.lastRequested}</td>
+									{requestedServices.length > 0 ? (
+										requestedServices.map((service) => (
+											<tr key={service.service} className="text-gray-700">
+												<td className="px-6 py-4 font-medium text-gray-900">{service.service}</td>
+												<td className="px-6 py-4">{service.requests}</td>
+												<td className="px-6 py-4">{service.avgTurnaround}</td>
+												<td className="px-6 py-4 text-gray-500">{service.lastRequested}</td>
+											</tr>
+										))
+									) : (
+										<tr>
+											<td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+												No repair services requested in the last 7 days
+											</td>
 										</tr>
-									))}
+									)}
 								</tbody>
 							</table>
 						</div>

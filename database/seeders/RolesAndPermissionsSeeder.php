@@ -155,8 +155,17 @@ class RolesAndPermissionsSeeder extends Seeder
         $staff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'user']);
         $staff->syncPermissions([
             'view-dashboard',
-            'view-job-orders',
+            'view-attendance',        // Can log their own attendance
+            'view-job-orders',        // Job Orders Retail access
             'create-job-orders',
+            'edit-job-orders',
+            'complete-job-orders',
+            'view-products',          // Product management access
+            'create-products',
+            'edit-products',
+            'delete-products',
+            'view-pricing',           // Shoe pricing access
+            'edit-pricing',
         ]);
         $this->command->info('✓ Staff role: ' . $staff->permissions->count() . ' base permissions (HR can add more)');
 

@@ -44,6 +44,7 @@ const MyOrders: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled'>('all');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
+  const [cancelTargetOrderItemId, setCancelTargetOrderItemId] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [cancelNote, setCancelNote] = useState<string>('');
   
@@ -114,7 +115,7 @@ const MyOrders: React.FC = () => {
     }
   };
 
-  const cancelOrder = async (orderId: number, reason?: string, note?: string) => {
+  const cancelOrder = async (orderId: number, reason?: string, note?: string, orderItemId?: number | null) => {
     // If no reason provided, fall back to a simple confirmation (backwards-compatible)
     if (!reason) {
       const result = await Swal.fire({
@@ -141,27 +142,46 @@ const MyOrders: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
-        body: JSON.stringify({ order_id: orderId, reason: reason || null, note: note || null }),
+        body: JSON.stringify({
+          order_id: orderId,
+          order_item_id: orderItemId || null,
+          reason: reason || null,
+          note: note || null,
+        }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.message || 'Failed to cancel order');
       }
 
       // Update local state
-      setOrders(prev => 
-        prev.map(order => 
-          order.id === orderId 
-            ? { ...order, status: 'cancelled' } 
-            : order
-        )
+      setOrders(prev =>
+        prev.map(order => {
+          if (order.id !== orderId) return order;
+
+          if (!orderItemId) {
+            return { ...order, status: 'cancelled' };
+          }
+
+          const remainingItems = (order.items || []).filter(item => item.id !== orderItemId);
+          const updatedTotal = remainingItems.reduce((sum, item) => sum + Number(item.subtotal), 0);
+
+          return {
+            ...order,
+            items: remainingItems,
+            items_count: remainingItems.length,
+            total_amount: updatedTotal,
+            status: remainingItems.length === 0 ? 'cancelled' : order.status,
+          };
+        })
       );
 
       Swal.fire({
         icon: 'success',
-        title: 'Order Cancelled',
-        text: 'Your order has been cancelled and inventory has been restored.',
+        title: orderItemId ? 'Item Cancelled' : 'Order Cancelled',
+        text: data.message || 'Your order has been cancelled and inventory has been restored.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
@@ -229,9 +249,10 @@ const MyOrders: React.FC = () => {
     }
 
     // perform cancel with reason and optional note
-    await cancelOrder(cancelTargetOrderId, selectedReason, cancelNote);
+    await cancelOrder(cancelTargetOrderId, selectedReason, cancelNote, cancelTargetOrderItemId);
     setShowCancelModal(false);
     setCancelTargetOrderId(null);
+    setCancelTargetOrderItemId(null);
     setSelectedReason('');
     setCancelNote('');
   };
@@ -498,182 +519,189 @@ const MyOrders: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-8">
-              {filteredOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300"
-                >
-                  {/* Order Header */}
-                  <div className="bg-white px-8 py-5 border-b border-gray-200">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex items-center gap-8">
-                        <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Number</p>
-                          <p className="font-semibold text-black text-lg">{order.order_number}</p>
+              {filteredOrders.flatMap((order) =>
+                (order.items || []).map((item, idx) => (
+                  <div
+                    key={`${order.id}-${item.id ?? idx}`}
+                    className="border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                  >
+                    {/* Order Header */}
+                    <div className="bg-white px-8 py-5 border-b border-gray-200">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-8">
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Number</p>
+                            <p className="font-semibold text-black text-lg">{order.order_number}</p>
+                          </div>
+                          <div className="h-10 w-px bg-gray-200"></div>
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
+                            <p className="text-sm text-black">
+                              {new Date(order.created_at).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </p>
+                          </div>
                         </div>
-                        <div className="h-10 w-px bg-gray-200"></div>
                         <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
-                          <p className="text-sm text-black">
-                            {new Date(order.created_at).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </p>
+                          <span
+                            className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusBadge(
+                              order.status
+                            )}`}
+                          >
+                            {getStatusText(order.status)}
+                          </span>
                         </div>
                       </div>
-                      <div>
-                        <span
-                          className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusBadge(
-                            order.status
-                          )}`}
-                        >
-                          {getStatusText(order.status)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Order Items */}
-                  <div className="p-8">
-                    <div className="space-y-6">
-                      {order.items && order.items.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-6">
-                          <div className="w-24 h-24 bg-white border border-gray-200 overflow-hidden flex-shrink-0">
-                            {item.product_image ? (
-                              <img
-                                src={item.product_image}
-                                alt={item.product_name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-grow">
-                            <h3 className="font-semibold text-black text-base mb-1">
-                              {item.product_slug ? (
-                                <Link href={`/products/${item.product_slug}`} className="hover:underline">
-                                  {item.product_name}
-                                </Link>
-                              ) : (
-                                item.product_name
-                              )}
-                            </h3>
-                            {item.size && <p className="text-sm text-gray-500">Size: {item.size}</p>}
-                            <p className="text-sm text-gray-500 mt-1">Qty: {item.quantity}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-black text-lg">₱{item.subtotal.toLocaleString()}</p>
-                            <p className="text-xs text-gray-400 mt-1">₱{item.price.toLocaleString()} each</p>
-                          </div>
-                        </div>
-                      ))}
                     </div>
 
-                    {/* Order Total */}
-                    <div className="mt-8 pt-6 border-t border-gray-200">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
-                          {order.shop_id ? (
-                            <Link
-                              href={`/shop-profile/${order.shop_id}`}
-                              className="font-semibold text-black underline"
-                            >
-                              {order.shop_name}
-                            </Link>
+                    {/* Order Item */}
+                    <div className="p-8">
+                      <div className="flex items-center gap-6">
+                        <div className="w-24 h-24 bg-white border border-gray-200 overflow-hidden shrink-0">
+                          {item.product_image ? (
+                            <img
+                              src={item.product_image}
+                              alt={item.product_name}
+                              className="w-full h-full object-cover"
+                            />
                           ) : (
-                            <p className="font-semibold text-black">{order.shop_name}</p>
+                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                              <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </div>
                           )}
-                          {order.shop_address && (
-                            <p className="text-sm text-gray-500">{order.shop_address}</p>
-                          )}
+                        </div>
+                        <div className="grow">
+                          <h3 className="font-semibold text-black text-base mb-1">
+                            {item.product_slug ? (
+                              <Link href={`/products/${item.product_slug}`} className="hover:underline">
+                                {item.product_name}
+                              </Link>
+                            ) : (
+                              item.product_name
+                            )}
+                          </h3>
+                          {item.size && <p className="text-sm text-gray-500">Size: {item.size}</p>}
+                          {item.color && <p className="text-sm text-gray-500 mt-1">Color: {item.color}</p>}
+                          <p className="text-sm text-gray-500 mt-1">Qty: {item.quantity}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Order Total</p>
-                          <p className="font-bold text-black text-2xl">₱{order.total_amount.toLocaleString()}</p>
+                          <p className="font-semibold text-black text-lg">₱{item.subtotal.toLocaleString()}</p>
+                          <p className="text-xs text-gray-400 mt-1">₱{item.price.toLocaleString()} each</p>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Order Actions */}
-                    <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
-                      {order.status === 'pending' && (
-                        <button
-                          onClick={() => {
-                            setCancelTargetOrderId(order.id);
-                            setSelectedReason('');
-                            setCancelNote('');
-                            setShowCancelModal(true);
-                          }}
-                          className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
-                        >
-                          CANCEL ORDER
-                        </button>
-                      )}
-                      {(order.status === 'shipped' || order.status === 'to_ship') && (
-                        <button
-                          onClick={() => confirmDelivery(order.id)}
-                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
-                        >
-                          CONFIRM RECEIVED
-                        </button>
-                      )}
-                      {order.status === 'delivered' && (
-                        <>
+                      {/* Item Total */}
+                      <div className="mt-8 pt-6 border-t border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
+                            {order.shop_id ? (
+                              <Link
+                                href={`/shop-profile/${order.shop_id}`}
+                                className="font-semibold text-black underline"
+                              >
+                                {order.shop_name}
+                              </Link>
+                            ) : (
+                              <p className="font-semibold text-black">{order.shop_name}</p>
+                            )}
+                            {order.shop_address && (
+                              <p className="text-sm text-gray-500">{order.shop_address}</p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Item Total</p>
+                            <p className="font-bold text-black text-2xl">₱{item.subtotal.toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Order Actions */}
+                      <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
+                        {order.status === 'pending' && (
                           <button
                             onClick={() => {
-                              setRefundOrderId(order.id);
-                              setRefundStep(1);
-                              setRefundReason('');
-                              setRefundMedia([]);
-                              setRefundMethod('');
-                              setRefundNote('');
-                              setShowRefundModal(true);
+                              const shouldCancelWholeOrder = (order.items?.length || 0) === 1;
+                              setCancelTargetOrderId(order.id);
+                              setCancelTargetOrderItemId(shouldCancelWholeOrder ? null : item.id);
+                              setSelectedReason('');
+                              setCancelNote('');
+                              setShowCancelModal(true);
                             }}
-                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
                           >
-                            REFUND
+                            CANCEL ORDER
                           </button>
+                        )}
+                        {(order.status === 'shipped' || order.status === 'to_ship') && (
                           <button
-                            onClick={() => {
-                              if (order.items && order.items.length > 0) {
-                                const firstItem = order.items[0];
-                                if (firstItem.product_slug) {
-                                  router.visit(`/products/${firstItem.product_slug}#reviews`);
-                                }
-                              }
-                            }}
+                            onClick={() => confirmDelivery(order.id)}
                             className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
                           >
-                            REVIEW
+                            CONFIRM RECEIVED
                           </button>
-                        </>
-                      )}
-                      {order.status === 'completed' && (
-                        <Link
-                          href={`/products`}
-                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors inline-block rounded-md"
-                        >
-                          ORDER AGAIN
-                        </Link>
-                      )}
+                        )}
+                        {order.status === 'delivered' && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setRefundOrderId(order.id);
+                                setRefundStep(1);
+                                setRefundReason('');
+                                setRefundMedia([]);
+                                setRefundMethod('');
+                                setRefundNote('');
+                                setShowRefundModal(true);
+                              }}
+                              className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                            >
+                              REFUND
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (item.product_slug) {
+                                  router.visit(`/products/${item.product_slug}#reviews`);
+                                }
+                              }}
+                              className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                            >
+                              REVIEW
+                            </button>
+                          </>
+                        )}
+                        {order.status === 'completed' && (
+                          <Link
+                            href={`/products`}
+                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors inline-block rounded-md"
+                          >
+                            ORDER AGAIN
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           )}
         </div>
         {showCancelModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowCancelModal(false)}></div>
+            <div
+              className="absolute inset-0 bg-black opacity-40"
+              onClick={() => {
+                setShowCancelModal(false);
+                setCancelTargetOrderId(null);
+                setCancelTargetOrderItemId(null);
+                setSelectedReason('');
+                setCancelNote('');
+              }}
+            ></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-lg w-full mx-4">
               <div className="px-6 py-4 border-b">
                 <h3 className="text-lg font-semibold">Cancel Order</h3>
@@ -723,6 +751,7 @@ const MyOrders: React.FC = () => {
                   onClick={() => {
                     setShowCancelModal(false);
                     setCancelTargetOrderId(null);
+                    setCancelTargetOrderItemId(null);
                     setSelectedReason('');
                     setCancelNote('');
                   }}

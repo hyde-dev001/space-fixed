@@ -16,8 +16,9 @@ class ConversationController extends Controller
 {
     /**
      * Get all conversations for the authenticated customer
+     * Supports filtering by type: repairs, products, general, or all
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -27,41 +28,104 @@ class ConversationController extends Controller
                 return response()->json(['error' => 'Unauthenticated'], 401);
             }
             
-            \Log::info('ConversationController@index - Fetching conversations', ['user_id' => $user->id]);
+            \Log::info('ConversationController@index - Fetching conversations', ['user_id' => $user->id, 'type' => $request->type ?? 'all']);
             
-            $conversations = Conversation::where('customer_id', $user->id)
+            $query = Conversation::where('customer_id', $user->id)
                 ->with(['shopOwner' => function ($q) {
-                    // Select specific fields from shop_owners
                     $q->select('id', 'business_name', 'business_address', 'profile_photo', 'email', 'phone');
                 }, 'messages' => function ($q) {
-                    $q->latest()->limit(1); // Only load last message
-                }])
-                ->orderBy('last_message_at', 'desc')
-                ->get()
-                ->map(function ($conversation) {
+                    $q->latest()->limit(1);
+                }, 'repairRequest' => function ($q) {
+                    $q->select('id', 'conversation_id', 'request_id', 'shoe_type', 'brand', 'description', 'status');
+                }, 'order']);
+            
+            // Apply type filter
+            $type = $request->query('type', 'all');
+            switch ($type) {
+                case 'repairs':
+                    $query->whereHas('repairRequest');
+                    break;
+                case 'products':
+                    $query->whereNotNull('order_id');
+                    break;
+                case 'general':
+                    $query->whereNull('order_id')
+                          ->whereDoesntHave('repairRequest');
+                    break;
+                // 'all' - no filter
+            }
+            
+            $conversations = $query->orderBy('last_message_at', 'desc')->get();
+            
+            \Log::info('ConversationController@index - Conversations fetched', ['count' => $conversations->count()]);
+            
+            $formattedConversations = $conversations->map(function ($conversation) {
+                try {
                     // Format the response
+                    $shopOwnerData = null;
+                    if ($conversation->shopOwner) {
+                        $shopOwnerData = [
+                            'id' => $conversation->shopOwner->id ?? null,
+                            'business_name' => $conversation->shopOwner->business_name ?? 'Unknown Shop',
+                            'location' => $conversation->shopOwner->business_address ?? '',
+                            'profile_photo' => $conversation->shopOwner->profile_photo ?? '',
+                            'email' => $conversation->shopOwner->email ?? '',
+                            'phone' => $conversation->shopOwner->phone ?? '',
+                        ];
+                    }
+                    
+                    $repairRequestData = null;
+                    if ($conversation->repairRequest) {
+                        // Use description as the main display, fallback to shoe_type + brand
+                        $repairType = $conversation->repairRequest->description ?? '';
+                        if (empty($repairType)) {
+                            $repairType = $conversation->repairRequest->shoe_type ?? '';
+                            if ($conversation->repairRequest->brand) {
+                                $repairType .= ' - ' . $conversation->repairRequest->brand;
+                            }
+                        }
+                        
+                        $repairRequestData = [
+                            'request_id' => $conversation->repairRequest->request_id ?? '',
+                            'repair_type' => $repairType,
+                            'description' => $conversation->repairRequest->description ?? '',
+                            'status' => $conversation->repairRequest->status ?? '',
+                        ];
+                    }
+                    
+                    // Determine conversation type
+                    $conversationType = 'general';
+                    if ($conversation->repairRequest) {
+                        $conversationType = 'repair';
+                    } elseif ($conversation->order_id) {
+                        $conversationType = 'product';
+                    }
+                    
                     return [
                         'id' => $conversation->id,
                         'shop_owner_id' => $conversation->shop_owner_id,
                         'customer_id' => $conversation->customer_id,
                         'status' => $conversation->status,
                         'last_message_at' => $conversation->last_message_at,
-                        'shopOwner' => $conversation->shopOwner ? [
-                            'id' => $conversation->shopOwner->id,
-                            'business_name' => $conversation->shopOwner->business_name,
-                            'location' => $conversation->shopOwner->business_address,
-                            'profile_photo' => $conversation->shopOwner->profile_photo,
-                            'email' => $conversation->shopOwner->email,
-                            'phone' => $conversation->shopOwner->phone,
-                        ] : null,
+                        'type' => $conversationType,
+                        'shopOwner' => $shopOwnerData,
+                        'repairRequest' => $repairRequestData,
                         'messages' => $conversation->messages,
                     ];
-                });
+                } catch (\Exception $e) {
+                    \Log::error('Error formatting conversation', [
+                        'conversation_id' => $conversation->id ?? 'unknown',
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    throw $e;
+                }
+            });
 
-            return response()->json($conversations);
+            return response()->json($formattedConversations);
         } catch (\Exception $e) {
             \Log::error('ConversationController@index - Error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json(['error' => 'Server error'], 500);
+            return response()->json(['error' => 'Server error: ' . $e->getMessage()], 500);
         }
     }
 

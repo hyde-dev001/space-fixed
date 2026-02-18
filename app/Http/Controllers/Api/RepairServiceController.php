@@ -172,13 +172,7 @@ class RepairServiceController extends Controller
      */
     public function financePending(Request $request)
     {
-        $query = RepairService::with(['creator', 'updater'])
-            ->with(['financeReviewer' => function($query) {
-                $query->select('id', 'name');
-            }])
-            ->with(['ownerReviewer' => function($query) {
-                $query->select('id', 'name');
-            }]);
+        $query = RepairService::with(['creator', 'updater', 'financeReviewer', 'ownerReviewer']);
 
         // Always return all statuses for metrics calculation on frontend
         // The frontend will handle filtering for display
@@ -195,7 +189,11 @@ class RepairServiceController extends Controller
             } elseif ($service->status === 'Pending Owner Approval') {
                 $frontendStatus = 'finance_approved';
             } elseif ($service->status === 'Active' && $service->owner_reviewed_at) {
+                // Only Active services that went through approval workflow
                 $frontendStatus = 'owner_approved';
+            } elseif ($service->status === 'Active' && !$service->finance_reviewed_at) {
+                // Active services that were never reviewed (newly created) - skip these
+                return null;
             } elseif ($service->status === 'Rejected' && $service->finance_reviewed_at && !$service->owner_reviewed_at) {
                 $frontendStatus = 'finance_rejected';
             } elseif ($service->status === 'Rejected' && $service->owner_reviewed_at) {
@@ -234,11 +232,11 @@ class RepairServiceController extends Controller
                 'owner_reviewed_at' => $service->owner_reviewed_at,
                 'owner_rejection_reason' => $frontendStatus === 'owner_rejected' ? $service->rejection_reason : null,
             ];
-        });
+        })->filter(); // Remove null values (newly created Active services)
 
         return response()->json([
             'success' => true,
-            'data' => $transformedData,
+            'data' => $transformedData->values(), // Re-index array after filtering
         ]);
     }
 

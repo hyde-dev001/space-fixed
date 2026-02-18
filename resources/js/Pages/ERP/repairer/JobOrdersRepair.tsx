@@ -417,6 +417,9 @@ export default function JobOrdersRepair() {
       } else if (selectedTab === "under-review") {
         // New Request tab includes assigned_to_repairer and under-review status
         matchesTab = order.status === "under-review" || order.status === "assigned_to_repairer";
+      } else if (selectedTab === "pending") {
+        // Pending tab includes pending, repairer_accepted, owner_approval_pending, and owner_approved
+        matchesTab = order.status === "pending" || order.status === "repairer_accepted" || order.status === "owner_approval_pending" || order.status === "owner_approved";
       } else if (selectedTab === "picked_up") {
         // Picked Up tab includes both completed and picked_up status
         matchesTab = order.status === "completed" || order.status === "picked_up";
@@ -441,8 +444,8 @@ export default function JobOrdersRepair() {
   // Calculate statistics
   const stats = useMemo(() => {
     const total = orders.length;
-    const underReview = orders.filter(o => o.status === "under-review" || o.status === "assigned_to_repairer" || o.status === "pending").length;
-    const pending = orders.filter(o => o.status === "pending").length;
+    const underReview = orders.filter(o => o.status === "under-review" || o.status === "assigned_to_repairer").length;
+    const pending = orders.filter(o => o.status === "pending" || o.status === "repairer_accepted" || o.status === "owner_approval_pending" || o.status === "owner_approved").length;
     const received = orders.filter(o => o.status === "received").length;
     const inProgress = orders.filter(o => o.status === "in-progress").length;
     const completed = orders.filter(o => o.status === "completed").length;

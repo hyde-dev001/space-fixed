@@ -225,7 +225,7 @@ export default function UploadService() {
         price: priceValue,
         duration: formData.duration,
         description: formData.description,
-        status: formData.status,
+        status: 'Active', // New services are always Active, no approval needed
       });
 
       if (response.data.success) {

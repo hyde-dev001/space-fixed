@@ -60,6 +60,18 @@ Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->mid
 Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
 Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware('auth:user')->name('customer-profile.password');
 Route::get('/my-repairs', function () {
+    $user = Auth::guard('user')->user();
+    if ($user) {
+        \App\Models\Notification::query()
+            ->where('user_id', $user->id)
+            ->where('is_read', false)
+            ->where('type', 'repair_status_update')
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
+    }
+
     return Inertia::render('UserSide/myRepairs');
 })->name('my-repairs');
 Route::get('/repair-process', function () {
@@ -72,10 +84,36 @@ Route::get('/repair-services', [LandingPageController::class, 'repair'])->name('
 Route::get('/repair-shop/{id}', [LandingPageController::class, 'repairShow'])->name('repair.show');
 // Customer conversations / Chat with repairer
 Route::get('/customer/conversations', function () {
+    $user = Auth::guard('user')->user();
+    if ($user) {
+        \App\Models\ConversationMessage::query()
+            ->whereNull('read_at')
+            ->where('sender_id', '!=', $user->id)
+            ->whereHas('conversation', function ($query) use ($user) {
+                $query->where('customer_id', $user->id);
+            })
+            ->update([
+                'read_at' => now(),
+            ]);
+    }
+
     return Inertia::render('UserSide/message');
 })->middleware('auth:user')->name('customer.conversations');
 // Message / Chat with shop owner
 Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
+    $user = Auth::guard('user')->user();
+    if ($user) {
+        \App\Models\ConversationMessage::query()
+            ->whereNull('read_at')
+            ->where('sender_id', '!=', $user->id)
+            ->whereHas('conversation', function ($query) use ($user) {
+                $query->where('customer_id', $user->id);
+            })
+            ->update([
+                'read_at' => now(),
+            ]);
+    }
+
     return Inertia::render('UserSide/message', [
         'shopOwnerId' => $shopOwnerId ? (int)$shopOwnerId : null,
     ]);
@@ -83,6 +121,19 @@ Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
 
 // Messages / Conversations listing page
 Route::get('/messages', function () {
+    $user = Auth::guard('user')->user();
+    if ($user) {
+        \App\Models\ConversationMessage::query()
+            ->whereNull('read_at')
+            ->where('sender_id', '!=', $user->id)
+            ->whereHas('conversation', function ($query) use ($user) {
+                $query->where('customer_id', $user->id);
+            })
+            ->update([
+                'read_at' => now(),
+            ]);
+    }
+
     return Inertia::render('UserSide/message', [
         'shops' => [], // Frontend will fetch shop list
     ]);
@@ -452,6 +503,12 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     // Confirm repair after chat discussion (Phase 3)
     Route::post('{id}/confirm', [\App\Http\Controllers\Api\RepairRequestController::class, 'confirmRepair']);
     
+    // Update payment link (PayMongo integration)
+    Route::post('{id}/update-payment-link', [\App\Http\Controllers\Api\RepairRequestController::class, 'updatePaymentLink']);
+    
+    // Simulate payment for testing (bypasses PayMongo)
+    Route::post('{id}/simulate-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'simulatePayment']);
+    
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
     Route::get('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'getRepairReview']);
@@ -471,6 +528,11 @@ Route::middleware('auth:user')->prefix('api/workflow/repairs')->group(function (
 });
 
 // Repairer API Routes (Phase 3 - Chat Integration)
+Route::middleware('auth:user')->prefix('api/repairer')->group(function () {
+    // Dashboard statistics
+    Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData']);
+});
+
 Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function () {
     // Get assigned repairs
     Route::get('/', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myAssignedRepairs']);

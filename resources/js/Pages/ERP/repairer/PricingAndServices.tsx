@@ -368,7 +368,7 @@ export default function ERPPricingAndServices() {
           category: addFormData.category,
           price: addFormData.price,
           duration: addFormData.duration,
-          status: "Active",
+          status: "Active", // New services are always Active, no approval needed
         });
 
         if (response.data.success) {
