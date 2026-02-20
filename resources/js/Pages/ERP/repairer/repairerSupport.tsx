@@ -45,12 +45,10 @@ export default function RepairerSupport() {
   const [loading, setLoading] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [transferNote, setTransferNote] = useState("");
-  const [isTransferring, setIsTransferring] = useState(false);
   const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
-  const [isResolving, setIsResolving] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [activatedPayNowTicketIds, setActivatedPayNowTicketIds] = useState<number[]>([]);
+  const [activatingPayNowTicketId, setActivatingPayNowTicketId] = useState<number | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -322,105 +320,67 @@ export default function RepairerSupport() {
     ticket.customerName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleTransferBackToCRM = async () => {
-    if (!selectedTicket || !transferNote.trim()) {
-      setNotification({ type: 'error', message: 'Please add a note explaining the resolution or reason for transfer back.' });
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
+  const handleActivatePayNow = async () => {
+    if (!selectedTicketId) return;
+    if (activatedPayNowTicketIds.includes(selectedTicketId)) return;
 
-    try {
-      setIsTransferring(true);
-      const response = await axios.post(
-        `/api/repairer/conversations/${selectedTicketId}/transfer`,
-        {
-          to_department: "crm",
-          transfer_note: transferNote,
-        }
-      );
-
-      if (response.status === 200) {
-        // Remove from current list
-        setTickets((prev) => prev.filter((t) => t.id !== selectedTicketId));
-        setSelectedTicketId(null);
-        setShowTransferModal(false);
-        setTransferNote("");
-        setNotification({ type: 'success', message: 'Conversation successfully transferred back to CRM!' });
-        setTimeout(() => setNotification(null), 3000);
-      }
-    } catch (error) {
-      console.error("Error transferring conversation:", error);
-      setNotification({ type: 'error', message: 'Failed to transfer conversation. Please try again.' });
-      setTimeout(() => setNotification(null), 3000);
-    } finally {
-      setIsTransferring(false);
-    }
-  };
-
-  const handleMarkResolved = async () => {
-    if (!selectedTicket || isResolving) return;
-
-    // Show confirmation dialog
-    const result = await Swal.fire({
+    const confirmation = await Swal.fire({
+      title: "Activate Pay Now?",
+      text: "This will enable the customer to proceed with payment.",
       icon: "question",
-      title: "Mark as Resolved?",
-      html: "Are you sure you want to mark this conversation as resolved?",
-      allowOutsideClick: false,
-      allowEscapeKey: false,
-      confirmButtonText: "Yes, resolve",
-      confirmButtonColor: "#10b981",
-      cancelButtonText: "Cancel",
-      cancelButtonColor: "#6b7280",
       showCancelButton: true,
-      customClass: {
-        container: "swal2-container",
-        popup: "swal2-popup",
-        header: "swal2-header",
-        title: "swal2-title text-center",
-        htmlContainer: "swal2-html-container text-center",
-        confirmButton: "swal2-confirm",
-        cancelButton: "swal2-cancel",
-      },
+      confirmButtonText: "Yes, activate",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#111827",
+      cancelButtonColor: "#9CA3AF",
     });
 
-    if (!result.isConfirmed) return;
+    if (!confirmation.isConfirmed) return;
 
     try {
-      setIsResolving(true);
-      const response = await axios.patch(
-        `/api/repairer/conversations/${selectedTicketId}/status`,
-        {
-          status: "resolved",
-        }
-      );
+      setActivatingPayNowTicketId(selectedTicketId);
+      const response = await axios.post(`/api/repairer/conversations/${selectedTicketId}/activate-payment`);
 
-      if (response.status === 200) {
-        // Remove from active list or update status
-        setTickets((prev) =>
-          prev.map((t) =>
-            t.id === selectedTicketId
-              ? { ...t, conversationStatus: "resolved" }
-              : t
-          )
+      if (response.data.success) {
+        setActivatedPayNowTicketIds((prev) =>
+          prev.includes(selectedTicketId) ? prev : [...prev, selectedTicketId]
         );
-        setNotification({ type: 'success', message: 'Conversation marked as resolved!' });
+        await Swal.fire({
+          icon: "success",
+          title: "Activated",
+          text: response.data.message || "Pay Now has been activated successfully.",
+          confirmButtonColor: "#111827",
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Failed to activate payment. Please try again.'
+        });
         setTimeout(() => setNotification(null), 3000);
       }
     } catch (error) {
-      console.error("Error marking conversation as resolved:", error);
-      setNotification({ type: 'error', message: 'Failed to mark as resolved. Please try again.' });
+      console.error('Error activating payment:', error);
+      setNotification({ 
+        type: 'error', 
+        message: 'Failed to activate payment. Please try again.' 
+      });
       setTimeout(() => setNotification(null), 3000);
     } finally {
-      setIsResolving(false);
+      setActivatingPayNowTicketId(null);
     }
   };
+
+  const isSelectedTicketPayNowActivated =
+    selectedTicketId !== null && activatedPayNowTicketIds.includes(selectedTicketId);
+  const isActivatingSelectedTicketPayNow =
+    selectedTicketId !== null && activatingPayNowTicketId === selectedTicketId;
 
   return (
     <AppLayoutERP hideHeader={!!fullscreenImage}>
       
       {/* Notification Toast */}
       {notification && (
-        <div className="fixed top-4 right-4 z-[60] animate-in slide-in-from-top-2">
+        <div className="fixed top-20 right-4 z-[999999] animate-in slide-in-from-top-2">
           <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg ${
             notification.type === 'success' 
               ? 'bg-green-500 text-white' 
@@ -602,25 +562,20 @@ export default function RepairerSupport() {
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 relative z-20">
                   <button
-                    onClick={handleMarkResolved}
-                    disabled={isResolving}
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      isResolving
-                        ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        : "hover:bg-green-100 text-green-600 hover:text-green-700"
+                    onClick={handleActivatePayNow}
+                    disabled={isSelectedTicketPayNowActivated || isActivatingSelectedTicketPayNow}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      isSelectedTicketPayNowActivated || isActivatingSelectedTicketPayNow
+                        ? "bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed"
+                        : "bg-white text-black border-black hover:bg-black hover:text-white"
                     }`}
-                    title="Mark as resolved"
+                    title="Activate Pay Now"
                   >
-                    {isResolving ? (
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
+                    {isActivatingSelectedTicketPayNow
+                      ? "Activating..."
+                      : isSelectedTicketPayNowActivated
+                        ? "Pay Now Activated"
+                        : "Activate Pay Now"}
                   </button>
                   {selectedTicket.transferNote && (
                     <button
@@ -633,15 +588,6 @@ export default function RepairerSupport() {
                       </svg>
                     </button>
                   )}
-                  <button
-                    onClick={() => setShowTransferModal(true)}
-                    className="p-1.5 border border-gray-300 hover:border-gray-400 rounded-lg transition-colors text-gray-600 hover:text-gray-700"
-                    title="Transfer back to CRM"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                    </svg>
-                  </button>
                 </div>
               </div>
 
@@ -877,101 +823,6 @@ export default function RepairerSupport() {
         </div>
       )}
 
-      {/* Transfer Back to CRM Modal */}
-      {showTransferModal && selectedTicket && (
-        <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
-          onClick={() => setShowTransferModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-black">Transfer Back to CRM</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Customer: {selectedTicket.customerName}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowTransferModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="px-6 py-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <div className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="text-sm text-blue-800">
-                    <p className="font-medium mb-1">Transfer back to CRM team</p>
-                    <p className="text-xs text-blue-700">Use this if the technical issue is resolved or requires general customer support follow-up.</p>
-                  </div>
-                </div>
-              </div>
-
-              <label className="block mb-2">
-                <span className="text-sm font-medium text-gray-700">Transfer Note *</span>
-                <p className="text-xs text-gray-500 mt-1 mb-2">
-                  Explain what was done or why transferring back
-                </p>
-                <textarea
-                  value={transferNote}
-                  onChange={(e) => setTransferNote(e.target.value)}
-                  placeholder="Example: Issue resolved - replaced motherboard. Customer may need follow-up on warranty registration..."
-                  rows={4}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all resize-none"
-                  disabled={isTransferring}
-                />
-              </label>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowTransferModal(false);
-                  setTransferNote("");
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
-                disabled={isTransferring}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleTransferBackToCRM}
-                disabled={!transferNote.trim() || isTransferring}
-                className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-                  transferNote.trim() && !isTransferring
-                    ? "bg-blue-500 hover:bg-blue-600 text-white"
-                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                }`}
-              >
-                {isTransferring ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Transferring...
-                  </span>
-                ) : (
-                  "Transfer to CRM"
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppLayoutERP>
   );
 }

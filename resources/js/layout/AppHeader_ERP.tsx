@@ -2,11 +2,11 @@ import { useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
-import NotificationDropdown from "../components/header/NotificationDropdown";
 import NotificationCenter from "../Pages/ERP/Common/NotificationCenter";
 import GlobalSearch from "../Pages/ERP/Common/GlobalSearch";
 import UserDropdown from "../components/header/UserDropdown";
 import SuperAdminDropdown from "../components/header/SuperAdminDropdown";
+import NotificationBell from "../Components/common/NotificationBell";
 
 const AppHeader_ERP: React.FC = () => {
   const { auth } = usePage().props as any;
@@ -114,7 +114,10 @@ const AppHeader_ERP: React.FC = () => {
           {/* Right Side Actions */}
           <div className="flex items-center gap-2 2xsm:gap-3">
             <ThemeToggleButton />
-            <NotificationCenter />
+            <NotificationBell 
+              basePath="/api/staff/notifications"
+              iconSize={24}
+            />
           </div>
           {auth?.super_admin ? <SuperAdminDropdown /> : auth?.user ? <UserDropdown /> : null}
         </div>

@@ -219,6 +219,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index'])->name('hr.notifications.index');
         Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('hr.notifications.unread_count');
+        Route::get('/recent', [NotificationController::class, 'recent'])->name('hr.notifications.recent');
         Route::get('/stats', [NotificationController::class, 'stats'])->name('hr.notifications.stats');
         Route::post('/{id}/mark-as-read', [NotificationController::class, 'markAsRead'])->name('hr.notifications.mark_as_read');
         Route::post('/mark-all-as-read', [NotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark_all_as_read');
@@ -276,7 +277,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
  * Staff/Manager Self-Service Routes
  * Protected by: STAFF, MANAGER, shop_owner roles
  */
-Route::prefix('api/staff')->middleware(['auth:user', 'old_role:Staff|Manager|Shop Owner'])->group(function () {
+Route::prefix('api/staff')->middleware(['auth:user', 'old_role:Staff|Manager|Shop Owner|Repairer'])->group(function () {
     // ============================================
     // SELF-SERVICE ATTENDANCE
     // ============================================
@@ -312,5 +313,18 @@ Route::prefix('api/staff')->middleware(['auth:user', 'old_role:Staff|Manager|Sho
         Route::post('/{id}/check-in', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'overtimeCheckIn'])->name('staff.overtime.check_in');
         Route::post('/{id}/check-out', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'overtimeCheckOut'])->name('staff.overtime.check_out');
         Route::post('/{id}/cancel', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'cancel'])->name('staff.overtime.cancel');
+    });
+
+    // ============================================
+    // NOTIFICATIONS (ERP Staff)
+    // ============================================
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [\App\Http\Controllers\ErpNotificationController::class, 'index'])->name('erp.notifications.index');
+        Route::get('/unread-count', [\App\Http\Controllers\ErpNotificationController::class, 'unreadCount'])->name('erp.notifications.unread-count');
+        Route::get('/recent', [\App\Http\Controllers\ErpNotificationController::class, 'recent'])->name('erp.notifications.recent');
+        Route::get('/stats', [\App\Http\Controllers\ErpNotificationController::class, 'stats'])->name('erp.notifications.stats');
+        Route::post('/{id}/read', [\App\Http\Controllers\ErpNotificationController::class, 'markAsRead'])->name('erp.notifications.mark-read');
+        Route::post('/mark-all-read', [\App\Http\Controllers\ErpNotificationController::class, 'markAllAsRead'])->name('erp.notifications.mark-all-read');
+        Route::delete('/{id}', [\App\Http\Controllers\ErpNotificationController::class, 'destroy'])->name('erp.notifications.destroy');
     });
 });

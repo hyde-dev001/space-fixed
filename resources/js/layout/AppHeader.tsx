@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
-import NotificationDropdown from "../components/header/NotificationDropdown";
+import NotificationCenter from "../components/header/NotificationCenter";
 import UserDropdown from "../components/header/UserDropdown";
 import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
 import SuperAdminDropdown from "../components/header/SuperAdminDropdown";
@@ -162,7 +162,9 @@ const AppHeader: React.FC = () => {
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
             {/* <!-- Dark Mode Toggler --> */}
-            <NotificationDropdown />
+            <NotificationCenter
+              viewAllHref={auth?.super_admin ? "/admin/notifications" : "/erp/notifications"}
+            />
             {/* <!-- Notification Menu Area --> */}
           </div>
           {/* <!-- User Area --> */}

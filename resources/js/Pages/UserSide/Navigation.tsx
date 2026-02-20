@@ -4,6 +4,8 @@ import Swal from 'sweetalert2';
 import { route } from 'ziggy-js';
 import { useCart } from '../../contexts/CartContext';
 import { dispatchCartAddedEvent } from '../../types/cart-events';
+import NotificationCenter from '../../components/header/NotificationCenter';
+import NotificationBell from '../../Components/common/NotificationBell';
 
 const Navigation: React.FC = () => {
   const { cartCount, isLoading: cartLoading } = useCart();
@@ -123,6 +125,8 @@ const Navigation: React.FC = () => {
 
   const cleanUrl = url.split('?')[0]; // Remove query params
   const queryString = url.split('?')[1]; // Extract query string
+  const headerIconButtonClasses = 'relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none text-black transition-opacity hover:opacity-70';
+  const headerIconSvgClasses = 'block h-6 w-6 shrink-0';
   
   // Extract category from query params
   const categoryMatch = queryString?.match(/category=([^&]+)/);
@@ -488,10 +492,16 @@ const Navigation: React.FC = () => {
                 aria-label="Search products"
               />
             </form>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-2 leading-none">
+            {isAuthenticated && (
+              <NotificationBell 
+                basePath="/api/notifications"
+                iconSize={24}
+              />
+            )}
             {/* User Icon with Dropdown */}
             <div
-              className="relative"
+              className="relative flex shrink-0 items-center justify-center"
               ref={dropdownRef}
               onMouseEnter={() => {
                 if (hoverCloseTimeoutRef.current) {
@@ -506,16 +516,16 @@ const Navigation: React.FC = () => {
                 hoverCloseTimeoutRef.current = window.setTimeout(() => {
                   setUserDropdownOpen(false);
                   hoverCloseTimeoutRef.current = null;
-                }, 150);
+                }, 220);
               }}
             >
               <button
                 type="button"
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className="relative inline-flex items-center justify-center h-10 w-10 text-black hover:opacity-70 transition-opacity"
+                className={headerIconButtonClasses}
                 aria-label="User account"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
                 {isAuthenticated && userIconCount > 0 && (
@@ -528,7 +538,7 @@ const Navigation: React.FC = () => {
               {/* Dropdown Menu */}
               {userDropdownOpen && (
                 <div
-                  className="absolute right-0 mt-2 w-48 bg-white border border-black shadow-lg rounded z-50"
+                  className="absolute right-0 top-full mt-0 w-48 bg-white border border-black shadow-lg rounded z-50"
                   onMouseEnter={() => {
                     if (hoverCloseTimeoutRef.current) {
                       window.clearTimeout(hoverCloseTimeoutRef.current);
@@ -540,7 +550,7 @@ const Navigation: React.FC = () => {
                     hoverCloseTimeoutRef.current = window.setTimeout(() => {
                       setUserDropdownOpen(false);
                       hoverCloseTimeoutRef.current = null;
-                    }, 150);
+                    }, 220);
                   }}
                 >
                   {isAuthenticated ? (
@@ -594,8 +604,8 @@ const Navigation: React.FC = () => {
 
             {/* Messages Icon - Only visible for authenticated customers */}
             {isAuthenticated && (
-              <Link href="/messages" className="relative inline-flex items-center justify-center h-10 w-10 text-black hover:opacity-70 transition-opacity" aria-label="Messages">
-                <svg className="w-6 h-6 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link href="/messages" className={headerIconButtonClasses} aria-label="Messages">
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -612,9 +622,11 @@ const Navigation: React.FC = () => {
             )}
 
             {/* Shopping Cart Icon */}
-            <Link id="cart-icon" href="/checkout" className="relative inline-flex items-center justify-center h-10 w-10 text-black hover:opacity-70 transition-opacity" aria-label="Shopping cart">
-              <svg className="w-6 h-6 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.1 5H19M7 13v8a2 2 0 002 2h10a2 2 0 002-2v-3" />
+            <Link id="cart-icon" href="/checkout" className={headerIconButtonClasses} aria-label="Shopping cart">
+              <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
+                <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
+                <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
               </svg>
               {/* Cart badge (only for authenticated users) */}
               {effectiveCartCount > 0 && (

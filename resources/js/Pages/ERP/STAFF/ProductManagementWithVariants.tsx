@@ -140,8 +140,14 @@ export default function ProductManagement() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const allowed3DModelExtensions = ['glb', 'gltf', 'obj', 'fbx', 'stl', 'ply', 'dae'];
+  const accepted3DModelsInput = '.glb,.gltf,.obj,.fbx,.stl,.ply,.dae';
+
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
+    { label: 'Women', value: 'women' },
+    { label: 'Men', value: 'men' },
+    { label: 'Kids', value: 'kids' },
     { label: 'Running', value: 'running' },
     { label: 'Basketball', value: 'basketball' },
     { label: 'Training', value: 'training' },
@@ -184,6 +190,8 @@ export default function ProductManagement() {
   // Color Variant Management (Adidas-style)
   const [colorVariants, setColorVariants] = useState<ColorVariant[]>([]);
   const [variantMode, setVariantMode] = useState<'legacy' | 'color-first'>('color-first');
+  const [product3DFiles, setProduct3DFiles] = useState<File[]>([]);
+  const [show3DShoeModels, setShow3DShoeModels] = useState(false);
   
   const [uploading, setUploading] = useState(false);
 
@@ -224,6 +232,9 @@ export default function ProductManagement() {
   };
 
   const handleOpenModal = async (product?: Product) => {
+    setShow3DShoeModels(false);
+    setProduct3DFiles([]);
+
     if (product) {
       setEditingProduct(product);
       const parsedCategories = (product.category || '')
@@ -363,6 +374,58 @@ export default function ProductManagement() {
       }
       return [...prev, value];
     });
+  };
+
+  const getFileExtension = (fileName: string) => {
+    const parts = fileName.toLowerCase().split('.');
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+
+  const isAllowed3DModelFile = (file: File) => {
+    const extension = getFileExtension(file.name);
+    return allowed3DModelExtensions.includes(extension);
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const units = ['Bytes', 'KB', 'MB', 'GB'];
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, exponent);
+    return `${value.toFixed(exponent === 0 ? 0 : 2)} ${units[exponent]}`;
+  };
+
+  const handle3DModelFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const pickedFiles = Array.from(e.target.files || []);
+
+    if (pickedFiles.length === 0) return;
+
+    const validFiles = pickedFiles.filter(isAllowed3DModelFile);
+    const invalidFiles = pickedFiles.filter((file) => !isAllowed3DModelFile(file));
+
+    if (invalidFiles.length > 0) {
+      Swal.fire({
+        title: 'Unsupported 3D Format',
+        text: `Only ${allowed3DModelExtensions.join(', ').toUpperCase()} files are allowed.`,
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+    }
+
+    if (validFiles.length > 0) {
+      setProduct3DFiles((prev) => {
+        const existingKeys = new Set(prev.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+        const newUniqueFiles = validFiles.filter(
+          (file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`)
+        );
+        return [...prev, ...newUniqueFiles];
+      });
+    }
+
+    e.target.value = '';
+  };
+
+  const remove3DModelFile = (index: number) => {
+    setProduct3DFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index));
   };
 
   const addVariantRow = () => {
@@ -1062,12 +1125,37 @@ export default function ProductManagement() {
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full shadow-2xl relative flex flex-col" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {editingProduct ? 'Edit Product' : 'Add New Product'}
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Configure product details and manage inventory by size and color variants
-              </p>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {editingProduct ? 'Edit Product' : 'Add New Product'}
+                  </h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    Configure product details and manage inventory by size and color variants
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShow3DShoeModels((prev) => !prev)}
+                  aria-label="Toggle 3D Shoe Models"
+                  title="Toggle 3D Shoe Models"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  <span>3D Shoe Models</span>
+                  <span
+                    className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
+                      show3DShoeModels ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        show3DShoeModels ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </span>
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
@@ -1081,8 +1169,60 @@ export default function ProductManagement() {
                   />
               </div>
 
+              {show3DShoeModels && (
+                <div className="order-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                  <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        3D Shoe Models
+                      </label>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        GLB, GLTF, OBJ, FBX, STL, PLY, DAE
+                      </span>
+                    </div>
+
+                    <input
+                      type="file"
+                      multiple
+                      accept={accepted3DModelsInput}
+                      onChange={handle3DModelFilesChange}
+                      title="Upload 3D shoe model files"
+                      aria-label="Upload 3D shoe model files"
+                      className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:rounded-md file:border-0 file:bg-black file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-800"
+                    />
+
+                    {product3DFiles.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {product3DFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${file.lastModified}-${index}`}
+                            className="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{file.name}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{formatBytes(file.size)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => remove3DModelFile(index)}
+                              title="Remove 3D model"
+                              aria-label="Remove 3D model"
+                              className="ml-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 text-red-600 transition-colors hover:bg-red-50 dark:border-gray-600 dark:text-red-400 dark:hover:bg-red-900/20"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Basic Information */}
-              <div className="order-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+              <div className="order-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Basic Information</h3>
                 
                 <div className="grid grid-cols-2 gap-4">
@@ -1193,6 +1333,7 @@ export default function ProductManagement() {
                       ))}
                     </div>
                   </div>
+
                 </div>
               </div>
               </div>

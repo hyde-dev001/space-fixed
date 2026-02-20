@@ -4,14 +4,147 @@ namespace App\Services;
 
 use App\Models\Notification;
 use App\Models\NotificationPreference;
+use App\Models\User;
+use App\Models\ShopOwner;
+use App\Enums\NotificationType;
 use App\Mail\NotificationEmail;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Unified Notification Service
+ * 
+ * Handles all notification sending across the platform:
+ * - Customer notifications (orders, repairs, payments)
+ * - Shop Owner notifications (new orders, approvals, alerts)
+ * - ERP Staff notifications (finance, HR, tasks, repairs)
+ * 
+ * Respects user notification preferences for email and browser notifications
+ */
 class NotificationService
 {
+    // ==================== CORE METHODS ====================
+
     /**
-     * Send a notification to a user
+     * Send notification to a user (customer or ERP staff)
+     */
+    public function sendToUser(
+        int $userId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        ?array $data = null,
+        ?string $actionUrl = null,
+        ?int $shopId = null,
+        string $priority = 'medium',
+        ?string $groupKey = null,
+        bool $requiresAction = false,
+        ?\DateTime $expiresAt = null
+    ): ?Notification {
+        try {
+            $user = User::find($userId);
+            if (!$user) {
+                Log::warning("User not found for notification", ['user_id' => $userId]);
+                return null;
+            }
+
+            $preferences = NotificationPreference::getOrCreateForUser($userId);
+            
+            // Check quiet hours
+            if ($preferences->isQuietHours() && $priority !== 'high') {
+                Log::info("Notification suppressed due to quiet hours", ['user_id' => $userId]);
+                // Still create but don't push
+            }
+            
+            // Create browser notification if enabled
+            $notification = null;
+            if ($this->shouldSendBrowserNotification($type, $preferences)) {
+                $notification = Notification::create([
+                    'user_id' => $userId,
+                    'type' => $type->value,
+                    'priority' => $priority,
+                    'group_key' => $groupKey,
+                    'title' => $title,
+                    'message' => $message,
+                    'data' => $data,
+                    'action_url' => $actionUrl,
+                    'requires_action' => $requiresAction,
+                    'expires_at' => $expiresAt,
+                    'shop_id' => $shopId ?? $user->shop_owner_id ?? null,
+                ]);
+            }
+
+            // Send email if enabled (not during quiet hours unless high priority)
+            if ($this->shouldSendEmail($type, $preferences) && $user->email) {
+                if (!$preferences->isQuietHours() || $priority === 'high') {
+                    $this->sendEmailToAddress($user->email, $title, $message, $actionUrl);
+                }
+            }
+
+            return $notification;
+        } catch (\Exception $e) {
+            Log::error('Failed to send user notification: ' . $e->getMessage(), [
+                'user_id' => $userId,
+                'type' => $type->value,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send notification to a shop owner
+     */
+    public function sendToShopOwner(
+        int $shopOwnerId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        ?array $data = null,
+        ?string $actionUrl = null,
+        string $priority = 'medium',
+        ?string $groupKey = null,
+        bool $requiresAction = false
+    ): ?Notification {
+        try {
+            $shopOwner = ShopOwner::find($shopOwnerId);
+            if (!$shopOwner) {
+                Log::warning("Shop owner not found for notification", ['shop_owner_id' => $shopOwnerId]);
+                return null;
+            }
+
+            // Create notification (always create for shop owners - they need to see everything)
+            $notification = Notification::create([
+                'shop_owner_id' => $shopOwnerId,
+                'type' => $type->value,
+                'priority' => $priority,
+                'group_key' => $groupKey,
+                'title' => $title,
+                'message' => $message,
+                'data' => $data,
+                'action_url' => $actionUrl,
+                'requires_action' => $requiresAction,
+                'shop_id' => $shopOwner->id,
+            ]);
+
+            // Send email if shop owner has email
+            if ($shopOwner->email) {
+                $this->sendEmailToAddress($shopOwner->email, $title, $message, $actionUrl);
+            }
+
+            return $notification;
+        } catch (\Exception $e) {
+            Log::error('Failed to send shop owner notification: ' . $e->getMessage(), [
+                'shop_owner_id' => $shopOwnerId,
+                'type' => $type->value,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Legacy method for backward compatibility
      */
     public function send(
         int $userId,
@@ -20,45 +153,281 @@ class NotificationService
         string $message,
         ?array $data = null,
         ?string $actionUrl = null,
-        int $shopId = null
+        ?int $shopId = null
     ): ?Notification {
-        try {
-            $preferences = NotificationPreference::getOrCreateForUser($userId);
-            
-            // Create browser notification if enabled
-            $notification = null;
-            $browserPrefKey = 'browser_' . $type;
-            if ($preferences->$browserPrefKey ?? true) {
-                $notification = Notification::create([
-                    'user_id' => $userId,
-                    'type' => $type,
-                    'title' => $title,
-                    'message' => $message,
-                    'data' => $data,
-                    'action_url' => $actionUrl,
-                    'shop_id' => $shopId,
-                ]);
-            }
-
-            // Send email notification if enabled
-            $emailPrefKey = 'email_' . $type;
-            if ($preferences->$emailPrefKey ?? false) {
-                $this->sendEmail($userId, $title, $message, $actionUrl);
-            }
-
-            return $notification;
-        } catch (\Exception $e) {
-            Log::error('Failed to send notification: ' . $e->getMessage(), [
-                'user_id' => $userId,
-                'type' => $type,
-            ]);
+        // Convert string type to enum
+        $notificationType = NotificationType::tryFrom($type);
+        if (!$notificationType) {
+            Log::warning("Unknown notification type: {$type}");
             return null;
         }
+
+        return $this->sendToUser($userId, $notificationType, $title, $message, $data, $actionUrl, $shopId);
+    }
+
+    // ==================== CUSTOMER NOTIFICATIONS ====================
+
+    /**
+     * Notify customer when order is placed
+     */
+    public function notifyOrderPlaced(int $userId, array $orderData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::ORDER_PLACED,
+            title: 'Order Placed Successfully',
+            message: "Your order #{$orderData['order_number']} has been placed. Total: ₱{$orderData['total']}",
+            data: $orderData,
+            actionUrl: '/my-orders'
+        );
     }
 
     /**
-     * Send notification for expense approval request
+     * Notify customer when order is confirmed by shop
      */
+    public function notifyOrderConfirmed(int $userId, array $orderData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::ORDER_CONFIRMED,
+            title: 'Order Confirmed',
+            message: "Your order #{$orderData['order_number']} has been confirmed and is being prepared.",
+            data: $orderData,
+            actionUrl: '/my-orders'
+        );
+    }
+
+    /**
+     * Notify customer when order is shipped
+     */
+    public function notifyOrderShipped(int $userId, array $orderData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::ORDER_SHIPPED,
+            title: 'Order Shipped',
+            message: "Your order #{$orderData['order_number']} has been shipped and is on the way!",
+            data: $orderData,
+            actionUrl: '/my-orders'
+        );
+    }
+
+    /**
+     * Notify customer when order is delivered
+     */
+    public function notifyOrderDelivered(int $userId, array $orderData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::ORDER_DELIVERED,
+            title: 'Order Delivered',
+            message: "Your order #{$orderData['order_number']} has been delivered. Enjoy your purchase!",
+            data: $orderData,
+            actionUrl: '/my-orders'
+        );
+    }
+
+    /**
+     * Notify customer when order is cancelled
+     */
+    public function notifyOrderCancelled(int $userId, array $orderData): ?Notification
+    {
+        $reason = $orderData['reason'] ?? '';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::ORDER_CANCELLED,
+            title: 'Order Cancelled',
+            message: "Your order #{$orderData['order_number']} has been cancelled. {$reason}",
+            data: $orderData,
+            actionUrl: '/my-orders'
+        );
+    }
+
+    /**
+     * Notify customer about repair status update
+     */
+    public function notifyRepairStatusUpdate(int $userId, array $repairData): ?Notification
+    {
+        $statusMessages = [
+            'assigned_to_repairer' => 'Your repair request has been assigned to a repairer.',
+            'repairer_accepted' => 'Repairer has accepted your repair request.',
+            'waiting_customer_confirmation' => 'Please confirm the repair details and pricing.',
+            'owner_approval_pending' => 'Repair is pending shop owner approval.',
+            'owner_approved' => 'Your repair has been approved!',
+            'in_progress' => 'Your repair work is now in progress.',
+            'awaiting_parts' => 'Repair is awaiting parts.',
+            'completed' => 'Your repair has been completed!',
+            'ready_for_pickup' => 'Your shoes are ready for pickup!',
+        ];
+
+        $message = $statusMessages[$repairData['status']] ?? 'Your repair status has been updated.';
+
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_STATUS_UPDATE,
+            title: 'Repair Status Updated',
+            message: "Repair #{$repairData['order_number']}: {$message}",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when repair is assigned to repairer
+     */
+    public function notifyRepairAssigned(int $userId, array $repairData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_ASSIGNED,
+            title: 'Repair Request Assigned',
+            message: "Your repair request #{$repairData['order_number']} has been assigned to our repairer.",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when repairer accepts repair
+     */
+    public function notifyRepairAccepted(int $userId, array $repairData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_ACCEPTED,
+            title: 'Repair Request Accepted',
+            message: "Your repair request has been accepted. Please confirm the details via chat.",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when repair is rejected
+     */
+    public function notifyRepairRejected(int $userId, array $repairData): ?Notification
+    {
+        $reason = $repairData['reason'] ?? '';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_REJECTED,
+            title: 'Repair Request Rejected',
+            message: "We're unable to process repair #{$repairData['order_number']}. {$reason}",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when repair work starts
+     */
+    public function notifyRepairInProgress(int $userId, array $repairData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_IN_PROGRESS,
+            title: 'Repair Work Started',
+            message: "Your repair #{$repairData['order_number']} is now being worked on.",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when repair is completed
+     */
+    public function notifyRepairCompleted(int $userId, array $repairData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_COMPLETED,
+            title: 'Repair Completed!',
+            message: "Your repair #{$repairData['order_number']} has been completed successfully!",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when shoes are ready for pickup
+     */
+    public function notifyRepairReadyForPickup(int $userId, array $repairData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_READY_PICKUP,
+            title: 'Ready for Pickup!',
+            message: "Your repaired shoes are ready for pickup! Order #{$repairData['order_number']}",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when payment is received
+     */
+    public function notifyPaymentReceived(int $userId, array $paymentData): ?Notification
+    {
+        $actionUrl = $paymentData['action_url'] ?? '/my-orders';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::PAYMENT_RECEIVED,
+            title: 'Payment Received',
+            message: "Your payment of ₱{$paymentData['amount']} has been received.",
+            data: $paymentData,
+            actionUrl: $actionUrl
+        );
+    }
+
+    /**
+     * Notify customer when payment fails
+     */
+    public function notifyPaymentFailed(int $userId, array $paymentData): ?Notification
+    {
+        $reason = $paymentData['reason'] ?? 'Please try again.';
+        $actionUrl = $paymentData['action_url'] ?? '/my-orders';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::PAYMENT_FAILED,
+            title: 'Payment Failed',
+            message: "Payment of ₱{$paymentData['amount']} failed. {$reason}",
+            data: $paymentData,
+            actionUrl: $actionUrl
+        );
+    }
+
+    /**
+     * Notify customer of new message
+     */
+    public function notifyMessageReceived(int $userId, array $messageData): ?Notification
+    {
+        $actionUrl = $messageData['action_url'] ?? '/messages';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::MESSAGE_RECEIVED,
+            title: 'New Message',
+            message: "You have a new message from {$messageData['sender_name']}",
+            data: $messageData,
+            actionUrl: $actionUrl
+        );
+    }
+
+    /**
+     * Request customer to leave a review
+     */
+    public function notifyReviewRequest(int $userId, array $reviewData): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REVIEW_REQUEST,
+            title: 'How Was Your Experience?',
+            message: "Please share your feedback on {$reviewData['item_name']}",
+            data: $reviewData,
+            actionUrl: $reviewData['action_url']
+        );
+    }
+
+    // ==================== SHOP OWNER NOTIFICATIONS ====================
     public function notifyExpenseApproval(
         int $managerId,
         array $expenseData,
@@ -120,20 +489,425 @@ class NotificationService
         int $delegateId,
         array $delegationData,
         int $shopId
-    ): void {
-        $this->send(
+    ): ?Notification {
+        return $this->sendToUser(
             userId: $delegateId,
-            type: 'delegation_assigned',
+            type: NotificationType::DELEGATION_ASSIGNED,
             title: 'Approval Authority Delegated',
-            message: "{$delegationData['delegated_by']} has delegated approval authority to you from {$delegationData['start_date']} to {$delegationData['end_date']}",
+            message: "{$delegationData['delegated_by']} delegated approval authority to you ({$delegationData['start_date']} to {$delegationData['end_date']})",
             data: $delegationData,
-            actionUrl: '/erp/finance/approvals',
+            actionUrl: '/finance',
+            shopId: $shopId
+        );
+    }
+
+    // ==================== SHOP OWNER NOTIFICATIONS ====================
+
+    /**
+     * Notify shop owner of new order
+     */
+    public function notifyNewOrder(int $shopOwnerId, array $orderData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::NEW_ORDER,
+            title: 'New Order Received',
+            message: "New order #{$orderData['order_number']} - ₱{$orderData['total']}",
+            data: $orderData,
+            actionUrl: '/shop-owner/orders'
+        );
+    }
+
+    /**
+     * Notify shop owner of new repair request
+     */
+    public function notifyNewRepairRequest(int $shopOwnerId, array $repairData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::NEW_REPAIR_REQUEST,
+            title: 'New Repair Request',
+            message: "New repair request #{$repairData['order_number']} - {$repairData['service_type']}",
+            data: $repairData,
+            actionUrl: '/shop-owner/orders'
+        );
+    }
+
+    /**
+     * Notify shop owner of price change request
+     */
+    public function notifyPriceChangeRequest(int $shopOwnerId, array $requestData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::PRICE_CHANGE_REQUEST,
+            title: 'Price Change Approval Required',
+            message: "{$requestData['product_name']}: ₱{$requestData['old_price']} → ₱{$requestData['new_price']}",
+            data: $requestData,
+            actionUrl: '/shop-owner/price-approvals'
+        );
+    }
+
+    /**
+     * Notify shop owner of repair service approval request
+     */
+    public function notifyRepairServiceRequest(int $shopOwnerId, array $serviceData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::REPAIR_SERVICE_REQUEST,
+            title: 'Repair Service Approval Required',
+            message: "New repair service '{$serviceData['service_name']}' requires approval - ₱{$serviceData['price']}",
+            data: $serviceData,
+            actionUrl: '/shop-owner/repair-reject-approval'
+        );
+    }
+
+    /**
+     * Notify shop owner of high-value repair needing approval
+     */
+    public function notifyHighValueRepairApproval(int $shopOwnerId, array $repairData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::HIGH_VALUE_APPROVAL,
+            title: 'High-Value Repair Approval',
+            message: "Repair #{$repairData['order_number']} (₱{$repairData['total']}) requires your approval",
+            data: $repairData,
+            actionUrl: '/shop-owner/repair-reject-approval'
+        );
+    }
+
+    /**
+     * Notify shop owner of refund request
+     */
+    public function notifyRefundRequest(int $shopOwnerId, array $refundData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::REFUND_REQUEST,
+            title: 'Refund Request',
+            message: "Refund request for order #{$refundData['order_number']} - ₱{$refundData['amount']}",
+            data: $refundData,
+            actionUrl: '/shop-owner/refund-approvals'
+        );
+    }
+
+    /**
+     * Notify shop owner of low stock alert
+     */
+    public function notifyLowStockAlert(int $shopOwnerId, array $stockData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Low Stock Alert',
+            message: "{$stockData['product_name']}: Only {$stockData['quantity']} units remaining",
+            data: $stockData,
+            actionUrl: '/shop-owner/products'
+        );
+    }
+
+    /**
+     * Notify shop owner of employee suspension request
+     */
+    public function notifyEmployeeSuspensionRequest(int $shopOwnerId, array $suspensionData): ?Notification
+    {
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::EMPLOYEE_SUSPENSION_REQUEST,
+            title: 'Employee Suspension Request',
+            message: "Suspension request for {$suspensionData['employee_name']} from {$suspensionData['requested_by']}",
+            data: $suspensionData,
+            actionUrl: '/shop-owner/suspend-accounts'
+        );
+    }
+
+    /**
+     * Notify shop owner of customer message
+     */
+    public function notifyCustomerMessage(int $shopOwnerId, array $messageData): ?Notification
+    {
+        $actionUrl = $messageData['action_url'] ?? '/shop-owner/messages';
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::CUSTOMER_MESSAGE,
+            title: 'New Customer Message',
+            message: "Message from {$messageData['customer_name']}",
+            data: $messageData,
+            actionUrl: $actionUrl
+        );
+    }
+
+    // ==================== ADDITIONAL ERP NOTIFICATIONS ====================
+
+    /**
+     * Notify repairer of new repair assignment
+     */
+    public function notifyRepairerAssignment(int $repairerId, array $repairData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $repairerId,
+            type: NotificationType::REPAIR_ASSIGNED_TO_ME,
+            title: 'New Repair Assigned',
+            message: "Repair request {$repairData['order_number']} has been assigned to you.",
+            data: $repairData,
+            actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId
         );
     }
 
     /**
-     * Send email notification
+     * Notify manager of repair rejection needing review
+     */
+    public function notifyRepairRejectionReview(int $managerId, array $repairData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $managerId,
+            type: NotificationType::REPAIR_REJECTION_REVIEW,
+            title: 'Repair Rejection Review Required',
+            message: "Repairer rejected repair {$repairData['order_number']}: {$repairData['reason']}",
+            data: $repairData,
+            actionUrl: '/erp/manager/repair-rejection-review',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify staff member of task assignment
+     */
+    public function notifyTaskAssigned(int $userId, array $taskData, int $shopId): ?Notification
+    {
+        $actionUrl = $taskData['action_url'] ?? '/erp/staff/dashboard';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::TASK_ASSIGNED,
+            title: 'New Task Assigned',
+            message: "You have been assigned: {$taskData['task_name']}",
+            data: $taskData,
+            actionUrl: $actionUrl,
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify employee of training assignment
+     */
+    public function notifyTrainingAssigned(int $userId, array $trainingData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::TRAINING_ASSIGNED,
+            title: 'Training Assigned',
+            message: "You have been assigned to: {$trainingData['training_name']}",
+            data: $trainingData,
+            actionUrl: '/training',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify employee of attendance reminder
+     */
+    public function notifyAttendanceReminder(int $userId, array $attendanceData, int $shopId): ?Notification
+    {
+        $message = $attendanceData['message'] ?? 'Please remember to clock in/out.';
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::ATTENDANCE_REMINDER,
+            title: 'Attendance Reminder',
+            message: $message,
+            data: $attendanceData,
+            actionUrl: '/erp/time-in',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify employee of expiring document
+     */
+    public function notifyDocumentExpiring(int $userId, array $documentData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::DOCUMENT_EXPIRING,
+            title: 'Document Expiring Soon',
+            message: "Your {$documentData['document_type']} expires on {$documentData['expiry_date']}",
+            data: $documentData,
+            actionUrl: '/erp/hr',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify employee of payroll generation
+     */
+    public function notifyPayrollGenerated(int $userId, array $payrollData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::PAYROLL_GENERATED,
+            title: 'Payroll Generated',
+            message: "Your payroll for {$payrollData['period']} is ready - ₱{$payrollData['net_pay']}",
+            data: $payrollData,
+            actionUrl: '/erp/hr',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify manager of leave request
+     */
+    public function notifyLeaveRequestPending(int $managerId, array $leaveData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $managerId,
+            type: NotificationType::LEAVE_REQUEST_PENDING,
+            title: 'Leave Request Pending',
+            message: "{$leaveData['employee_name']} requests leave: {$leaveData['leave_type']}",
+            data: $leaveData,
+            actionUrl: '/erp/manager/dashboard',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify manager of expense request
+     */
+    public function notifyExpenseRequestPending(int $managerId, array $expenseData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $managerId,
+            type: NotificationType::EXPENSE_REQUEST_PENDING,
+            title: 'Expense Request Pending',
+            message: "{$expenseData['submitted_by']} submitted expense: ₱{$expenseData['amount']}",
+            data: $expenseData,
+            actionUrl: '/erp/manager/dashboard',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify manager of suspension request
+     */
+    public function notifySuspensionRequestPending(int $managerId, array $suspensionData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $managerId,
+            type: NotificationType::SUSPENSION_REQUEST_PENDING,
+            title: 'Suspension Request Pending',
+            message: "Suspension request for {$suspensionData['employee_name']}",
+            data: $suspensionData,
+            actionUrl: '/erp/manager/suspend-approval',
+            shopId: $shopId
+        );
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Check if browser notification should be sent based on preferences
+     */
+    private function shouldSendBrowserNotification(NotificationType $type, NotificationPreference $preferences): bool
+    {
+        // Map notification types to preference fields
+        $preferenceMap = [
+            'order_placed' => 'browser_order_updates',
+            'order_confirmed' => 'browser_order_updates',
+            'order_shipped' => 'browser_order_updates',
+            'order_delivered' => 'browser_order_updates',
+            'order_cancelled' => 'browser_order_updates',
+            'repair_submitted' => 'browser_repair_updates',
+            'repair_assigned' => 'browser_repair_updates',
+            'repair_accepted' => 'browser_repair_updates',
+            'repair_rejected' => 'browser_repair_updates',
+            'repair_in_progress' => 'browser_repair_updates',
+            'repair_completed' => 'browser_repair_updates',
+            'repair_ready_pickup' => 'browser_repair_updates',
+            'repair_status_update' => 'browser_repair_updates',
+            'payment_received' => 'browser_payment_updates',
+            'payment_failed' => 'browser_payment_updates',
+            'message_received' => 'browser_messages',
+            'review_request' => 'browser_messages',
+            'expense_approval' => 'browser_expense_approval',
+            'leave_approval' => 'browser_leave_approval',
+            'invoice_created' => 'browser_invoice_created',
+            'delegation_assigned' => 'browser_delegation_assigned',
+            'task_assigned' => 'browser_tasks',
+            'repair_assigned_to_me' => 'browser_tasks',
+            'training_assigned' => 'browser_hr_updates',
+            'attendance_reminder' => 'browser_hr_updates',
+            'document_expiring' => 'browser_hr_updates',
+            'payroll_generated' => 'browser_hr_updates',
+        ];
+
+        $prefKey = $preferenceMap[$type->value] ?? null;
+        return $prefKey ? ($preferences->$prefKey ?? true) : true; // Default to true
+    }
+
+    /**
+     * Check if email notification should be sent based on preferences
+     */
+    private function shouldSendEmail(NotificationType $type, NotificationPreference $preferences): bool
+    {
+        // Map notification types to preference fields
+        $preferenceMap = [
+            'order_placed' => 'email_order_updates',
+            'order_confirmed' => 'email_order_updates',
+            'order_shipped' => 'email_order_updates',
+            'order_delivered' => 'email_order_updates',
+            'order_cancelled' => 'email_order_updates',
+            'repair_submitted' => 'email_repair_updates',
+            'repair_assigned' => 'email_repair_updates',
+            'repair_accepted' => 'email_repair_updates',
+            'repair_rejected' => 'email_repair_updates',
+            'repair_in_progress' => 'email_repair_updates',
+            'repair_completed' => 'email_repair_updates',
+            'repair_ready_pickup' => 'email_repair_updates',
+            'repair_status_update' => 'email_repair_updates',
+            'payment_received' => 'email_payment_updates',
+            'payment_failed' => 'email_payment_updates',
+            'message_received' => 'email_messages',
+            'review_request' => 'email_messages',
+            'expense_approval' => 'email_expense_approval',
+            'leave_approval' => 'email_leave_approval',
+            'invoice_created' => 'email_invoice_created',
+            'delegation_assigned' => 'email_delegation_assigned',
+            'task_assigned' => 'email_tasks',
+            'repair_assigned_to_me' => 'email_tasks',
+            'training_assigned' => 'email_hr_updates',
+            'attendance_reminder' => 'email_hr_updates',
+            'document_expiring' => 'email_hr_updates',
+            'payroll_generated' => 'email_hr_updates',
+        ];
+
+        $prefKey = $preferenceMap[$type->value] ?? null;
+        return $prefKey ? ($preferences->$prefKey ?? false) : false; // Default to false for email
+    }
+
+    /**
+     * Send email to a specific address
+     */
+    private function sendEmailToAddress(
+        string $email,
+        string $title,
+        string $message,
+        ?string $actionUrl
+    ): void {
+        try {
+            Mail::to($email)->send(
+                new NotificationEmail($title, $message, $actionUrl)
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to send email notification: ' . $e->getMessage(), [
+                'email' => $email,
+                'title' => $title
+            ]);
+        }
+    }
+
+    /**
+     * Legacy send email method for backward compatibility
      */
     private function sendEmail(
         int $userId,
@@ -141,26 +915,28 @@ class NotificationService
         string $message,
         ?string $actionUrl
     ): void {
-        try {
-            $user = \App\Models\User::find($userId);
-            if ($user && $user->email) {
-                Mail::to($user->email)->send(
-                    new NotificationEmail($title, $message, $actionUrl)
-                );
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to send email notification: ' . $e->getMessage());
+        $user = User::find($userId);
+        if ($user && $user->email) {
+            $this->sendEmailToAddress($user->email, $title, $message, $actionUrl);
         }
     }
+
+    // ==================== UTILITY METHODS ====================
 
     /**
      * Mark notification as read
      */
-    public function markAsRead(int $notificationId, int $userId): bool
+    public function markAsRead(int $notificationId, int $userId, bool $isShopOwner = false): bool
     {
-        $notification = Notification::where('id', $notificationId)
-            ->where('user_id', $userId)
-            ->first();
+        $query = Notification::where('id', $notificationId);
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        $notification = $query->first();
 
         if ($notification) {
             $notification->markAsRead();
@@ -173,32 +949,265 @@ class NotificationService
     /**
      * Mark all notifications as read for a user
      */
-    public function markAllAsRead(int $userId): int
+    public function markAllAsRead(int $userId, bool $isShopOwner = false): int
     {
-        return Notification::forUser($userId)
-            ->unread()
-            ->update([
-                'is_read' => true,
-                'read_at' => now(),
-            ]);
+        $query = Notification::unread();
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->update([
+            'is_read' => true,
+            'read_at' => now(),
+        ]);
     }
 
     /**
      * Get unread count for user
      */
-    public function getUnreadCount(int $userId): int
+    public function getUnreadCount(int $userId, bool $isShopOwner = false): int
     {
-        return Notification::forUser($userId)->unread()->count();
+        $query = Notification::unread();
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->count();
     }
 
     /**
      * Get recent notifications for user
      */
-    public function getRecent(int $userId, int $limit = 10): \Illuminate\Support\Collection
+    public function getRecent(int $userId, int $limit = 10, bool $isShopOwner = false): \Illuminate\Support\Collection
     {
-        return Notification::forUser($userId)
-            ->orderBy('created_at', 'desc')
+        $query = Notification::active(); // Only active (not archived)
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();
     }
+
+    // ==================== PHASE 6: ADVANCED FEATURES ====================
+
+    /**
+     * Archive old notifications based on user preferences
+     */
+    public function autoArchive(int $userId, bool $isShopOwner = false): int
+    {
+        $preferences = NotificationPreference::getOrCreateForUser($userId);
+        
+        if (!$preferences->auto_archive_enabled) {
+            return 0;
+        }
+
+        $cutoffDate = now()->subDays($preferences->auto_archive_days);
+        
+        $query = Notification::active()
+            ->where('created_at', '<', $cutoffDate);
+            
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->update([
+            'is_archived' => true,
+            'archived_at' => now(),
+        ]);
+    }
+
+    /**
+     * Bulk delete notifications
+     */
+    public function bulkDelete(array $notificationIds, int $userId, bool $isShopOwner = false): int
+    {
+        $query = Notification::whereIn('id', $notificationIds);
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->delete();
+    }
+
+    /**
+     * Bulk mark as read
+     */
+    public function bulkMarkAsRead(array $notificationIds, int $userId, bool $isShopOwner = false): int
+    {
+        $query = Notification::whereIn('id', $notificationIds)
+            ->where('is_read', false);
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->update([
+            'is_read' => true,
+            'read_at' => now(),
+        ]);
+    }
+
+    /**
+     * Bulk archive notifications
+     */
+    public function bulkArchive(array $notificationIds, int $userId, bool $isShopOwner = false): int
+    {
+        $query = Notification::whereIn('id', $notificationIds)
+            ->where('is_archived', false);
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->update([
+            'is_archived' => true,
+            'archived_at' => now(),
+        ]);
+    }
+
+    /**
+     * Get grouped notifications
+     */
+    public function getGrouped(int $userId, bool $isShopOwner = false): \Illuminate\Support\Collection
+    {
+        $query = Notification::active()
+            ->whereNotNull('group_key');
+            
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('group_key');
+    }
+
+    /**
+     * Get notification statistics
+     */
+    public function getStatistics(int $userId, bool $isShopOwner = false): array
+    {
+        $query = Notification::query();
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        $total = $query->count();
+        $unread = (clone $query)->unread()->count();
+        $archived = (clone $query)->archived()->count();
+        $requiresAction = (clone $query)->where('requires_action', true)->count();
+        $highPriority = (clone $query)->highPriority()->count();
+
+        $byPriority = (clone $query)
+            ->selectRaw('priority, count(*) as count')
+            ->groupBy('priority')
+            ->pluck('count', 'priority')
+            ->toArray();
+
+        $byType = (clone $query)
+            ->selectRaw('type, count(*) as count')
+            ->groupBy('type')
+            ->orderByDesc('count')
+            ->limit(10)
+            ->pluck('count', 'type')
+            ->toArray();
+
+        return [
+            'total' => $total,
+            'unread' => $unread,
+            'archived' => $archived,
+            'requires_action' => $requiresAction,
+            'high_priority' => $highPriority,
+            'by_priority' => $byPriority,
+            'by_type' => $byType,
+            'read_percentage' => $total > 0 ? round((($total - $unread) / $total) * 100, 2) : 0,
+        ];
+    }
+
+    /**
+     * Export notifications to array
+     */
+    public function exportNotifications(int $userId, bool $isShopOwner = false, array $filters = []): array
+    {
+        $query = Notification::query();
+        
+        if ($isShopOwner) {
+            $query->where('shop_owner_id', $userId);
+        } else {
+            $query->where('user_id', $userId);
+        }
+
+        // Apply filters
+        if (!empty($filters['start_date'])) {
+            $query->where('created_at', '>=', $filters['start_date']);
+        }
+        if (!empty($filters['end_date'])) {
+            $query->where('created_at', '<=', $filters['end_date']);
+        }
+        if (!empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+        if (!empty($filters['priority'])) {
+            $query->where('priority', $filters['priority']);
+        }
+        if (isset($filters['is_read'])) {
+            $query->where('is_read', $filters['is_read']);
+        }
+
+        return $query->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($notification) {
+                return [
+                    'id' => $notification->id,
+                    'type' => $notification->type,
+                    'priority' => $notification->priority,
+                    'title' => $notification->title,
+                    'message' => $notification->message,
+                    'is_read' => $notification->is_read,
+                    'requires_action' => $notification->requires_action,
+                    'created_at' => $notification->created_at->format('Y-m-d H:i:s'),
+                    'read_at' => $notification->read_at?->format('Y-m-d H:i:s'),
+                ];
+            })
+            ->toArray();
+    }
+
+    /**
+     * Clean up expired notifications
+     */
+    public function cleanupExpired(): int
+    {
+        return Notification::where('expires_at', '<', now())
+            ->where('is_archived', false)
+            ->update([
+                'is_archived' => true,
+                'archived_at' => now(),
+            ]);
+    }
 }
+

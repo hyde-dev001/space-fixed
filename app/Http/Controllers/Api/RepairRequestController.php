@@ -11,9 +11,17 @@ use Illuminate\Support\Facades\DB;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\NotificationService;
 
 class RepairRequestController extends Controller
 {
+    protected $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -102,6 +110,16 @@ class RepairRequestController extends Controller
 
             // Attach services
             $repairRequest->services()->attach($request->services);
+
+            // Notify shop owner of new repair request
+            $this->notificationService->notifyNewRepairRequest(
+                $request->shop_owner_id,
+                [
+                    'order_number' => $requestId,
+                    'service_type' => $deliveryMethod,
+                    'repair_id' => $repairRequest->id,
+                ]
+            );
 
             // AUTO-ASSIGN TO REPAIRER (Phase 2)
             $this->autoAssignRepairer($repairRequest);
@@ -267,6 +285,8 @@ class RepairRequestController extends Controller
                     'payment_status' => $repair->payment_status ?? 'pending',
                     'payment_completed_at' => $repair->payment_completed_at ? $repair->payment_completed_at->toISOString() : null,
                     'paymongo_link_id' => $repair->paymongo_link_id,
+                    'payment_enabled' => $repair->payment_enabled ?? false,
+                    'payment_enabled_at' => $repair->payment_enabled_at ? $repair->payment_enabled_at->toISOString() : null,
                 ];
             })
         ]);
@@ -678,8 +698,17 @@ class RepairRequestController extends Controller
                 $workloadCount = $repairer->active_repairs_count ?? 0;
                 \Log::info("✅ Repair {$repairRequest->request_id} auto-assigned to {$repairer->name} (ID: {$repairer->id}) - Current workload: {$workloadCount} active repairs");
                 
-                // TODO: Send notification to repairer about new assignment
-                // event(new RepairAssigned($repairRequest, $repairer));
+                // Send notification to repairer about new assignment
+                $this->notificationService->notifyRepairerAssignment(
+                    $repairer->id,
+                    [
+                        'order_number' => $repairRequest->request_id,
+                        'repair_id' => $repairRequest->id,
+                        'customer_name' => $repairRequest->customer_name,
+                        'service_type' => $repairRequest->delivery_method,
+                    ],
+                    $repairRequest->shop_owner_id
+                );
                 
             } else {
                 // No repairer available - handle assignment failure

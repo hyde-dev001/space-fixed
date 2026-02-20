@@ -16,6 +16,7 @@ type RepairOrder = {
   total_amount: number;
   created_at: string;
   estimated_completion?: string;
+  duration?: string;
   completed_at?: string;
   shop_id?: number | null;
   shop_name: string;
@@ -27,6 +28,13 @@ type RepairOrder = {
   payment_status?: string;
   payment_completed_at?: string | null;
   paymongo_link_id?: string | null;
+  payment_enabled?: boolean;
+  payment_enabled_at?: string | null;
+};
+
+type ConversationShop = {
+  conversation_id?: number;
+  unreadCount?: number;
 };
 
 // Static mock data for testing
@@ -157,6 +165,29 @@ const MyRepairs: React.FC = () => {
   const [reviewImages, setReviewImages] = useState<File[]>([]);
   const [hoveredRating, setHoveredRating] = useState<number>(0);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [conversationUnreadCounts, setConversationUnreadCounts] = useState<Record<number, number>>({});
+
+  const fetchConversationUnreadCounts = async () => {
+    try {
+      const response = await axios.get('/api/customer/conversations/shops');
+      const unreadMap: Record<number, number> = {};
+
+      (response.data as ConversationShop[]).forEach((shop) => {
+        if (shop.conversation_id) {
+          unreadMap[shop.conversation_id] = shop.unreadCount ?? 0;
+        }
+      });
+
+      setConversationUnreadCounts(unreadMap);
+    } catch (error) {
+      console.error('Failed to fetch conversation unread counts:', error);
+    }
+  };
+
+  const getUnreadCountForConversation = (conversationId?: number | null) => {
+    if (!conversationId) return 0;
+    return conversationUnreadCounts[conversationId] ?? 0;
+  };
 
   useEffect(() => {
     // Check if user just returned from payment
@@ -252,6 +283,7 @@ const MyRepairs: React.FC = () => {
               const response = await axios.get('/api/customer/repairs');
               if (response.data.success) {
                 setOrders(response.data.data);
+                await fetchConversationUnreadCounts();
                 
                 // Check if payment was confirmed
                 const updatedRepair = response.data.data.find((o: RepairOrder) => o.id === parseInt(pendingRepairId));
@@ -298,12 +330,23 @@ const MyRepairs: React.FC = () => {
     checkPaymentReturn();
   }, []);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      fetchConversationUnreadCounts();
+    }, 10000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const fetchRepairs = async () => {
     try {
       setLoading(true);
       const response = await axios.get('/api/customer/repairs');
       if (response.data.success) {
         setOrders(response.data.data);
+        await fetchConversationUnreadCounts();
       }
     } catch (error) {
       console.error('Failed to fetch repairs:', error);
@@ -316,29 +359,6 @@ const MyRepairs: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleManualRefresh = async () => {
-    await Swal.fire({
-      icon: 'info',
-      title: 'Refreshing...',
-      text: 'Loading latest repair status',
-      timer: 1000,
-      showConfirmButton: false,
-      didOpen: () => {
-        Swal.showLoading();
-      }
-    });
-    
-    await fetchRepairs();
-    
-    Swal.fire({
-      icon: 'success',
-      title: 'Refreshed!',
-      text: 'Your repairs have been updated',
-      timer: 1500,
-      showConfirmButton: false,
-    });
   };
 
   const confirmPickup = async (orderId: number) => {
@@ -784,14 +804,25 @@ const MyRepairs: React.FC = () => {
     }
   };
 
-  const getStatusText = (status: RepairStatus) => {
-    switch (status) {
+  const getStatusText = (order: RepairOrder) => {
+    if (
+      order.status === 'repairer_accepted' &&
+      Boolean(order.conversation_id) &&
+      order.delivery_method !== 'walk_in' &&
+      order.payment_status !== 'paid' &&
+      Boolean(order.payment_enabled) &&
+      !processingPayment
+    ) {
+      return 'PAY NOW';
+    }
+
+    switch (order.status) {
       case 'new_request':
         return 'New Request';
       case 'assigned_to_repairer':
         return 'Assigned to Repairer';
       case 'repairer_accepted':
-        return 'Awaiting Your Payment';
+        return 'Repairer Accepted - Contact for Details';
       case 'waiting_customer_confirmation':
         return 'Confirmed - Work Starting';
       case 'owner_approval_pending':
@@ -820,8 +851,32 @@ const MyRepairs: React.FC = () => {
       case 'repairer_rejected':
         return 'Rejected';
       default:
-        return status;
+        return order.status;
     }
+  };
+
+  const getRepairDuration = (order: RepairOrder) => {
+    if (order.duration && order.duration.trim().length > 0) {
+      return order.duration;
+    }
+
+    const startDate = new Date(order.created_at);
+    const endDateValue = order.completed_at || order.estimated_completion;
+
+    if (!endDateValue) {
+      return '1-3 days';
+    }
+
+    const endDate = new Date(endDateValue);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return '1-3 days';
+    }
+
+    const millisecondsPerDay = 1000 * 60 * 60 * 24;
+    const totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / millisecondsPerDay));
+
+    return `${totalDays} day${totalDays > 1 ? 's' : ''}`;
   };
 
   // Count functions for repair statuses
@@ -881,16 +936,6 @@ const MyRepairs: React.FC = () => {
         <div className="max-w-6xl mx-auto py-16 px-6">
           <div className="flex items-center justify-between mb-12">
             <h1 className="text-4xl font-bold text-black">My Repairs</h1>
-            <button
-              onClick={handleManualRefresh}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors rounded-md"
-              disabled={loading}
-            >
-              <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {loading ? 'Refreshing...' : 'Refresh'}
-            </button>
           </div>
 
           {/* Tabs */}
@@ -1073,20 +1118,12 @@ const MyRepairs: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {order.payment_status === 'paid' && order.payment_completed_at && (
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-md">
-                            <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            <span className="text-xs font-medium text-green-700">Payment Confirmed</span>
-                          </div>
-                        )}
                         <span
                           className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusColor(
                             order.status
                           )}`}
                         >
-                          {getStatusText(order.status)}
+                          {getStatusText(order)}
                         </span>
                       </div>
                     </div>
@@ -1122,7 +1159,7 @@ const MyRepairs: React.FC = () => {
                         <h3 className="font-bold text-black text-xl mb-2">{order.repair_type}</h3>
                         <p className="text-gray-600 mb-4">{order.description}</p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                           <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Shop Location</p>
                             {order.shop_id ? (
@@ -1136,6 +1173,13 @@ const MyRepairs: React.FC = () => {
                               <p className="text-sm text-black font-medium">{order.shop_name}</p>
                             )}
                             <p className="text-sm text-gray-500">{order.shop_address}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Duration</p>
+                            <p className="text-sm text-black font-medium">{getRepairDuration(order)}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Note: Duration starts once the status is IN PROGRESS.
+                            </p>
                           </div>
                           {order.estimated_completion && (
                             <div>
@@ -1184,29 +1228,28 @@ const MyRepairs: React.FC = () => {
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
                             className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
                           >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
+                            <span className="relative inline-flex">
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                              </svg>
+                              {getUnreadCountForConversation(order.conversation_id) > 0 && (
+                                <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center">
+                                  {getUnreadCountForConversation(order.conversation_id) > 99 ? '99+' : getUnreadCountForConversation(order.conversation_id)}
+                                </span>
+                              )}
+                            </span>
                             CHAT WITH REPAIRER
                           </Link>
                           <button
                             onClick={() => handlePayNow(order.id)}
-                            disabled={processingPayment}
-                            className={`px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md flex items-center gap-2 ${
-                              processingPayment ? 'opacity-50 cursor-not-allowed' : ''
+                            disabled={!order.payment_enabled || processingPayment}
+                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                              order.payment_enabled && !processingPayment
+                                ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             }`}
                           >
-                            {processingPayment ? (
-                              <>
-                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                PROCESSING...
-                              </>
-                            ) : (
-                              'PAY NOW'
-                            )}
+                            {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
                           </button>
                           <button
                             onClick={() => {
@@ -1230,9 +1273,16 @@ const MyRepairs: React.FC = () => {
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
                             className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
                           >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
+                            <span className="relative inline-flex">
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                              </svg>
+                              {getUnreadCountForConversation(order.conversation_id) > 0 && (
+                                <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center">
+                                  {getUnreadCountForConversation(order.conversation_id) > 99 ? '99+' : getUnreadCountForConversation(order.conversation_id)}
+                                </span>
+                              )}
+                            </span>
                             CHAT WITH REPAIRER
                           </Link>
                           <div className="px-6 py-2.5 bg-green-100 text-green-700 text-sm font-medium tracking-wide rounded-md flex items-center gap-2">
@@ -1248,22 +1298,14 @@ const MyRepairs: React.FC = () => {
                         <>
                           <button
                             onClick={() => handlePayNow(order.id)}
-                            disabled={processingPayment}
-                            className={`px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md flex items-center gap-2 ${
-                              processingPayment ? 'opacity-50 cursor-not-allowed' : ''
+                            disabled={!order.payment_enabled || processingPayment}
+                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                              order.payment_enabled && !processingPayment
+                                ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             }`}
                           >
-                            {processingPayment ? (
-                              <>
-                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                PROCESSING...
-                              </>
-                            ) : (
-                              'PAY NOW'
-                            )}
+                            {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
                           </button>
                           <button
                             onClick={() => {
@@ -1281,10 +1323,11 @@ const MyRepairs: React.FC = () => {
                       )}
                       {order.status === 'ready_for_pickup' && (
                         <button
-                          onClick={() => confirmPickup(order.id)}
-                          className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                          type="button"
+                          disabled
+                          className="px-6 py-2.5 bg-gray-300 text-gray-500 text-sm font-medium tracking-wide rounded-md cursor-not-allowed"
                         >
-                          CONFIRM PICKUP
+                          Received
                         </button>
                       )}
                       {order.status === 'picked_up' && (

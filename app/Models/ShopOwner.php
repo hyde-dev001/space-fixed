@@ -109,6 +109,39 @@ class ShopOwner extends Authenticatable
     }
 
     /**
+     * Get all notifications for this shop owner
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class, 'shop_owner_id');
+    }
+
+    /**
+     * Get unread notifications for this shop owner
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function unreadNotifications()
+    {
+        return $this->notifications()->where('is_read', false);
+    }
+
+    /**
+     * Get notification preferences for this shop owner
+     * Note: Shop owners use the same preferences table as users via a user record
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function notificationPreferences()
+    {
+        // If shop owner has an associated user record, get their preferences
+        // Otherwise return null - will be created when needed
+        return $this->hasOne(NotificationPreference::class, 'user_id', 'id');
+    }
+
+    /**
      * Scope query to only pending registrations
      * 
      * Usage: ShopOwner::pending()->get()

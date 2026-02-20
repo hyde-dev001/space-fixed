@@ -10,9 +10,16 @@ use App\Models\ShopOwner;
 use App\Models\Conversation;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Services\NotificationService;
 
 class RepairWorkflowController extends Controller
 {
+    protected $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Auto-assign repair request to available repairer
      */
@@ -47,7 +54,17 @@ class RepairWorkflowController extends Controller
                     'status' => 'assigned_to_repairer'
                 ]);
                 
-                // TODO: Send notification to repairer
+                // Send notification to repairer
+                $this->notificationService->notifyRepairerAssignment(
+                    $repairer->id,
+                    [
+                        'order_number' => $repairRequest->request_id,
+                        'repair_id' => $repairRequest->id,
+                        'customer_name' => $repairRequest->customer_name,
+                        'service_type' => $repairRequest->delivery_method,
+                    ],
+                    $repairRequest->shop_owner_id
+                );
                 
                 return response()->json([
                     'success' => true,
@@ -560,11 +577,21 @@ class RepairWorkflowController extends Controller
             // If new repairer found, change status to assigned
                 if ($newRepairer) {
                     $repairRequest->update(['status' => 'assigned_to_repairer']);
+                    
+                    // Send notification to new repairer
+                    $this->notificationService->notifyRepairerAssignment(
+                        $newRepairer->id,
+                        [
+                            'order_number' => $repairRequest->request_id,
+                            'repair_id' => $repairRequest->id,
+                            'customer_name' => $repairRequest->customer_name,
+                            'service_type' => $repairRequest->delivery_method,
+                        ],
+                        $repairRequest->shop_owner_id
+                    );
                 }
             
             DB::commit();
-            
-            // TODO: Send notification to new repairer and customer
             
             return response()->json([
                 'success' => true,
@@ -939,12 +966,13 @@ class RepairWorkflowController extends Controller
             
             $repairRequest = RepairRequest::where('id', $id)
                 ->where('assigned_repairer_id', $user->id)
-                ->where('status', 'completed')
+                ->whereIn('status', ['completed', 'in_progress'])
                 ->firstOrFail();
             
             $repairRequest->update([
                 'status' => 'ready_for_pickup',
                 'ready_for_pickup_at' => now(),
+                'completed_at' => $repairRequest->completed_at ?? now(),
                 'pickup_instructions' => $request->pickup_instructions,
             ]);
             

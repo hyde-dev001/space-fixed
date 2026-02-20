@@ -134,6 +134,7 @@ class NotificationController extends Controller
         $user = Auth::guard('user')->user();
         
         $validator = Validator::make($request->all(), [
+            // Original preferences
             'email_expense_approval' => 'boolean',
             'email_leave_approval' => 'boolean',
             'email_invoice_created' => 'boolean',
@@ -142,6 +143,18 @@ class NotificationController extends Controller
             'browser_leave_approval' => 'boolean',
             'browser_invoice_created' => 'boolean',
             'browser_delegation_assigned' => 'boolean',
+            // Phase 6: Quiet hours
+            'quiet_hours_enabled' => 'boolean',
+            'quiet_hours_start' => 'nullable|date_format:H:i',
+            'quiet_hours_end' => 'nullable|date_format:H:i',
+            // Phase 6: Browser push
+            'browser_push_enabled' => 'boolean',
+            'push_subscription' => 'nullable|string',
+            // Phase 6: Grouping
+            'group_notifications' => 'boolean',
+            // Phase 6: Auto-archive
+            'auto_archive_enabled' => 'boolean',
+            'auto_archive_days' => 'nullable|integer|min:1|max:365',
         ]);
 
         if ($validator->fails()) {
@@ -158,6 +171,14 @@ class NotificationController extends Controller
             'browser_leave_approval',
             'browser_invoice_created',
             'browser_delegation_assigned',
+            'quiet_hours_enabled',
+            'quiet_hours_start',
+            'quiet_hours_end',
+            'browser_push_enabled',
+            'push_subscription',
+            'group_notifications',
+            'auto_archive_enabled',
+            'auto_archive_days',
         ]));
 
         return response()->json([

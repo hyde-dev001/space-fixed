@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@inertiajs/react";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
-import NotificationDropdown from "../components/header/NotificationDropdown";
+import NotificationCenter from "../components/header/NotificationCenter";
 import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
+import NotificationBell from "../Components/common/NotificationBell";
 
 const AppHeader_shopOwner: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
@@ -158,7 +159,10 @@ const AppHeader_shopOwner: React.FC = () => {
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
             {/* <!-- Dark Mode Toggler --> */}
-            <NotificationDropdown />
+            <NotificationBell 
+              basePath="/api/shop-owner/notifications"
+              iconSize={24}
+            />
             {/* <!-- Notification Menu Area --> */}
           </div>
           {/* <!-- User Area --> */}

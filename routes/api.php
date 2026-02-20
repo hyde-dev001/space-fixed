@@ -245,6 +245,29 @@ Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permis
     Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'transfer'])->middleware('permission:transfer-repairer-conversations');
     Route::patch('/{conversation}/status', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updateStatus'])->middleware('permission:update-repairer-conversation-status');
     Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updatePriority'])->middleware('permission:update-repairer-conversation-status');
+    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'activatePayment'])->middleware('permission:send-repairer-messages');
+});
+
+/**
+ * Customer Notifications API
+ * Middleware: auth:user (for customers only)
+ */
+Route::prefix('notifications')->middleware(['auth:user'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::get('/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('notifications.recent');
+    Route::get('/stats', [\App\Http\Controllers\NotificationController::class, 'stats'])->name('notifications.stats');
+    Route::post('/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
+    Route::post('/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+    
+    // Phase 6: Advanced Features
+    Route::post('/bulk/mark-read', [\App\Http\Controllers\NotificationController::class, 'bulkMarkAsRead'])->name('notifications.bulk-mark-read');
+    Route::delete('/bulk/delete', [\App\Http\Controllers\NotificationController::class, 'bulkDelete'])->name('notifications.bulk-delete');
+    Route::post('/bulk/archive', [\App\Http\Controllers\NotificationController::class, 'bulkArchive'])->name('notifications.bulk-archive');
+    Route::post('/{id}/archive', [\App\Http\Controllers\NotificationController::class, 'archive'])->name('notifications.archive');
+    Route::get('/grouped', [\App\Http\Controllers\NotificationController::class, 'grouped'])->name('notifications.grouped');
+    Route::get('/export', [\App\Http\Controllers\NotificationController::class, 'export'])->name('notifications.export');
 });
 
 /**

@@ -426,4 +426,66 @@ class ConversationController extends Controller
             'conversation' => $conversation
         ]);
     }
+
+    /**
+     * Activate payment for a repair request
+     * This enables the "Pay Now" button on customer's side
+     */
+    public function activatePayment(Conversation $conversation): JsonResponse
+    {
+        $user = Auth::user();
+        
+        // Get shop_owner_id from authenticated user
+        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        
+        // Verify access
+        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+            \Log::warning('Repairer: Unauthorized payment activation attempt', [
+                'user_id' => $user->id,
+                'conversation_shop_owner_id' => $conversation->shop_owner_id,
+                'user_shop_owner_id' => $userShopOwnerId,
+            ]);
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        // Verify conversation is assigned to repairer
+        if ($conversation->assigned_to_type !== 'repairer') {
+            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
+        }
+
+        // Get the repair request associated with this conversation
+        $repairRequest = $conversation->repairRequest;
+        
+        if (!$repairRequest) {
+            return response()->json(['error' => 'No repair request found for this conversation'], 404);
+        }
+
+        // Check if payment is already enabled
+        if ($repairRequest->payment_enabled) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment is already enabled for this repair',
+                'repair_request' => $repairRequest
+            ]);
+        }
+
+        // Enable payment
+        $repairRequest->update([
+            'payment_enabled' => true,
+            'payment_enabled_at' => now(),
+            'payment_enabled_by' => $user->id,
+        ]);
+
+        \Log::info('Repairer: Payment activated for repair request', [
+            'user_id' => $user->id,
+            'conversation_id' => $conversation->id,
+            'repair_request_id' => $repairRequest->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment has been activated successfully',
+            'repair_request' => $repairRequest
+        ]);
+    }
 }

@@ -63,6 +63,19 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::post('/{id}/review', [SuspensionFinalApprovalController::class, 'review'])->name('shop_owner.suspension_requests.review');
     });
 
+    // ============================================
+    // NOTIFICATIONS (Shop Owner)
+    // ============================================
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'index'])->name('shop_owner.notifications.index');
+        Route::get('/unread-count', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'unreadCount'])->name('shop_owner.notifications.unread-count');
+        Route::get('/recent', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'recent'])->name('shop_owner.notifications.recent');
+        Route::get('/stats', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'stats'])->name('shop_owner.notifications.stats');
+        Route::post('/{id}/read', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'markAsRead'])->name('shop_owner.notifications.mark-read');
+        Route::post('/mark-all-read', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'markAllAsRead'])->name('shop_owner.notifications.mark-all-read');
+        Route::delete('/{id}', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'destroy'])->name('shop_owner.notifications.destroy');
+    });
+
     // Additional shop owner specific endpoints can be added here
     // e.g., shop settings, business metrics, subscription management, etc.
 });

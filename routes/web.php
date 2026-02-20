@@ -139,6 +139,16 @@ Route::get('/messages', function () {
     ]);
 })->middleware('auth:user')->name('messages');
 
+// Customer notifications page
+Route::get('/notifications', function () {
+    return Inertia::render('Notifications/CustomerNotifications');
+})->middleware('auth:user')->name('notifications.index');
+
+// Customer notification preferences
+Route::get('/notifications/settings', function () {
+    return Inertia::render('Notifications/CustomerPreferences');
+})->middleware('auth:user')->name('notifications.settings');
+
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
 
 // Phase 10D - Public shop reviews (no auth required)
@@ -202,6 +212,16 @@ Route::get('/api/user/me', [UserController::class, 'me'])->middleware('auth:user
 Route::post('/shop-owner/register', [ShopOwnerAuthController::class, 'register'])->name('shop-owner.register');
 Route::post('/shop-owner/login', [ShopOwnerAuthController::class, 'login'])->name('shop-owner.login');
 Route::post('/shop-owner/logout', [ShopOwnerAuthController::class, 'logout'])->name('shop-owner.logout');
+
+// Shop Owner notifications page
+Route::get('/shop-owner/notifications', function () {
+    return Inertia::render('Notifications/ShopOwnerNotifications');
+})->middleware('auth:shop_owner')->name('shop-owner.notifications.index');
+
+// Shop Owner notification preferences
+Route::get('/shop-owner/notifications/settings', function () {
+    return Inertia::render('Notifications/ShopOwnerPreferences');
+})->middleware('auth:shop_owner')->name('shop-owner.notifications.settings');
 
 // TEST ROUTE - Remove after debugging
 Route::get('/test-auth', function () {
@@ -808,6 +828,16 @@ Route::prefix('training')->name('training.')->middleware('auth:user')->group(fun
 });
 
 // HR and ERP routes
+// ERP notifications page
+Route::get('/erp/notifications', function () {
+    return Inertia::render('Notifications/ERPNotifications');
+})->middleware(['auth:user', 'check.suspension'])->name('erp.notifications.index');
+
+// ERP notification preferences
+Route::get('/erp/notifications/settings', function () {
+    return Inertia::render('Notifications/ERPPreferences');
+})->middleware(['auth:user', 'check.suspension'])->name('erp.notifications.settings');
+
 // Time In/Out - First thing staff see after login
 Route::middleware(['auth:user', 'check.suspension'])->get('/erp/time-in', function () {
     if (Auth::guard('user')->user()?->force_password_change) {

@@ -249,6 +249,28 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
+    const confirmSubmit = await Swal.fire({
+      title: 'Confirm Submit Request',
+      html: `
+        <div style="text-align:left;">
+          <p style="margin-bottom:8px;">Please confirm your repair request details:</p>
+          <p><strong>Services:</strong> ${selectedServices.length}</p>
+          <p><strong>Service Type:</strong> ${formData.serviceType === 'pickup' ? 'Pick Up' : 'Walk In'}</p>
+          <p><strong>Total:</strong> ₱${grandTotal.toLocaleString()}</p>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Submit',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!confirmSubmit.isConfirmed) {
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
