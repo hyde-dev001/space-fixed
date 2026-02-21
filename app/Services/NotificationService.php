@@ -113,23 +113,51 @@ class NotificationService
                 return null;
             }
 
-            // Create notification (always create for shop owners - they need to see everything)
-            $notification = Notification::create([
-                'shop_owner_id' => $shopOwnerId,
-                'type' => $type->value,
-                'priority' => $priority,
-                'group_key' => $groupKey,
-                'title' => $title,
-                'message' => $message,
-                'data' => $data,
-                'action_url' => $actionUrl,
-                'requires_action' => $requiresAction,
-                'shop_id' => $shopOwner->id,
-            ]);
+            // Get or create shop owner preferences
+            $preferences = NotificationPreference::firstOrCreate(
+                ['shop_owner_id' => $shopOwnerId],
+                [
+                    'preferences' => [],
+                    'email_digest_frequency' => 'none',
+                    'sound_enabled' => true,
+                    // Shop Owner notification defaults
+                    'email_new_orders' => true,
+                    'email_approvals' => true,
+                    'email_alerts' => true,
+                    'browser_new_orders' => true,
+                    'browser_approvals' => true,
+                    'browser_alerts' => true,
+                ]
+            );
 
-            // Send email if shop owner has email
-            if ($shopOwner->email) {
-                $this->sendEmailToAddress($shopOwner->email, $title, $message, $actionUrl);
+            // Check quiet hours
+            if ($preferences->isQuietHours() && $priority !== 'high') {
+                Log::info("Shop owner notification suppressed due to quiet hours", ['shop_owner_id' => $shopOwnerId]);
+                // Still create but don't push
+            }
+
+            // Create notification if enabled in preferences
+            $notification = null;
+            if ($this->shouldSendBrowserNotification($type, $preferences)) {
+                $notification = Notification::create([
+                    'shop_owner_id' => $shopOwnerId,
+                    'type' => $type->value,
+                    'priority' => $priority,
+                    'group_key' => $groupKey,
+                    'title' => $title,
+                    'message' => $message,
+                    'data' => $data,
+                    'action_url' => $actionUrl,
+                    'requires_action' => $requiresAction,
+                    'shop_id' => $shopOwner->id,
+                ]);
+            }
+
+            // Send email if enabled and not in quiet hours (unless high priority)
+            if ($this->shouldSendEmail($type, $preferences) && $shopOwner->email) {
+                if (!$preferences->isQuietHours() || $priority === 'high') {
+                    $this->sendEmailToAddress($shopOwner->email, $title, $message, $actionUrl);
+                }
             }
 
             return $notification;
@@ -534,6 +562,52 @@ class NotificationService
     }
 
     /**
+     * Notify all active repairers of new repair request
+     */
+    public function notifyAllRepairersNewRequest(int $shopOwnerId, array $repairData): int
+    {
+        try {
+            // Find all active repairers in the shop
+            $repairers = User::where('shop_owner_id', $shopOwnerId)
+                ->whereHas('employee', function($query) {
+                    $query->where('status', 'active');
+                })
+                ->whereHas('roles', function($query) {
+                    $query->where('name', 'Repairer');
+                })
+                ->where('status', 'active')
+                ->get();
+
+            $notifiedCount = 0;
+            foreach ($repairers as $repairer) {
+                $notification = $this->sendToUser(
+                    userId: $repairer->id,
+                    type: NotificationType::NEW_REPAIR_REQUEST,
+                    title: 'New Repair Request',
+                    message: "New repair request #{$repairData['order_number']} - {$repairData['service_type']}",
+                    data: $repairData,
+                    actionUrl: '/erp/staff/job-orders-repair',
+                    shopId: $shopOwnerId,
+                    priority: 'medium'
+                );
+                
+                if ($notification) {
+                    $notifiedCount++;
+                }
+            }
+
+            Log::info("Notified {$notifiedCount} repairers about new repair request #{$repairData['order_number']}");
+            return $notifiedCount;
+        } catch (\Exception $e) {
+            Log::error('Failed to notify repairers: ' . $e->getMessage(), [
+                'shop_owner_id' => $shopOwnerId,
+                'repair_data' => $repairData
+            ]);
+            return 0;
+        }
+    }
+
+    /**
      * Notify shop owner of price change request
      */
     public function notifyPriceChangeRequest(int $shopOwnerId, array $requestData): ?Notification
@@ -669,6 +743,38 @@ class NotificationService
             message: "Repairer rejected repair {$repairData['order_number']}: {$repairData['reason']}",
             data: $repairData,
             actionUrl: '/erp/manager/repair-rejection-review',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify repairer that their rejection was approved by manager
+     */
+    public function notifyRepairerRejectionApproved(int $repairerId, array $repairData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $repairerId,
+            type: NotificationType::REPAIR_REJECTION_REVIEW,
+            title: 'Rejection Approved',
+            message: "Your rejection of repair {$repairData['order_number']} has been approved by the manager.",
+            data: $repairData,
+            actionUrl: '/erp/staff/job-orders-repair',
+            shopId: $shopId
+        );
+    }
+
+    /**
+     * Notify repairer that their rejection was overridden by manager
+     */
+    public function notifyRepairerRejectionOverridden(int $repairerId, array $repairData, int $shopId): ?Notification
+    {
+        return $this->sendToUser(
+            userId: $repairerId,
+            type: NotificationType::REPAIR_REJECTION_REVIEW,
+            title: 'Rejection Overridden',
+            message: "Your rejection of repair {$repairData['order_number']} has been overridden. The repair has been reassigned.",
+            data: $repairData,
+            actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId
         );
     }
@@ -810,6 +916,15 @@ class NotificationService
      */
     private function shouldSendBrowserNotification(NotificationType $type, NotificationPreference $preferences): bool
     {
+        // First check granular preferences (Phase 7)
+        if (!empty($preferences->preferences)) {
+            $typeValue = $type->value;
+            if (isset($preferences->preferences[$typeValue])) {
+                return $preferences->preferences[$typeValue];
+            }
+        }
+
+        // Fallback to legacy column-based preferences
         // Map notification types to preference fields
         $preferenceMap = [
             'order_placed' => 'browser_order_updates',
@@ -825,10 +940,22 @@ class NotificationService
             'repair_completed' => 'browser_repair_updates',
             'repair_ready_pickup' => 'browser_repair_updates',
             'repair_status_update' => 'browser_repair_updates',
+            'repair_rejection_review' => 'browser_tasks',
             'payment_received' => 'browser_payment_updates',
             'payment_failed' => 'browser_payment_updates',
-            'message_received' => 'browser_messages',
-            'review_request' => 'browser_messages',
+            'message_received' => 'browser_alerts',
+            'review_request' => 'browser_alerts',
+            // Shop Owner notifications
+            'new_order' => 'browser_new_orders',
+            'new_repair_request' => 'browser_new_orders',
+            'price_change_request' => 'browser_approvals',
+            'repair_service_request' => 'browser_new_orders',
+            'high_value_approval' => 'browser_approvals',
+            'refund_request' => 'browser_approvals',
+            'low_stock_alert' => 'browser_alerts',
+            'employee_suspension_request' => 'browser_approvals',
+            'customer_message' => 'browser_alerts',
+            // Finance/HR/Staff notifications
             'expense_approval' => 'browser_expense_approval',
             'leave_approval' => 'browser_leave_approval',
             'invoice_created' => 'browser_invoice_created',
@@ -865,10 +992,22 @@ class NotificationService
             'repair_completed' => 'email_repair_updates',
             'repair_ready_pickup' => 'email_repair_updates',
             'repair_status_update' => 'email_repair_updates',
+            'repair_rejection_review' => 'email_tasks',
             'payment_received' => 'email_payment_updates',
             'payment_failed' => 'email_payment_updates',
-            'message_received' => 'email_messages',
-            'review_request' => 'email_messages',
+            'message_received' => 'email_alerts',
+            'review_request' => 'email_alerts',
+            // Shop Owner notifications
+            'new_order' => 'email_new_orders',
+            'new_repair_request' => 'email_new_orders',
+            'price_change_request' => 'email_approvals',
+            'repair_service_request' => 'email_new_orders',
+            'high_value_approval' => 'email_approvals',
+            'refund_request' => 'email_approvals',
+            'low_stock_alert' => 'email_alerts',
+            'employee_suspension_request' => 'email_approvals',
+            'customer_message' => 'email_alerts',
+            // Finance/HR/Staff notifications
             'expense_approval' => 'email_expense_approval',
             'leave_approval' => 'email_leave_approval',
             'invoice_created' => 'email_invoice_created',

@@ -2,7 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
-import { hasPermission } from "../../../utils/permissions";
+import { hasPermission, hasRole } from "../../../utils/permissions";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import axios from "axios";
 
@@ -231,17 +231,14 @@ export default function RepairRejectReview() {
 	const [isLoading, setIsLoading] = useState(true);
 
 	useEffect(() => {
-		const hasRoleAccess = userRole === "Manager" || userRole === "Finance";
-		const hasPermissionAccess =
-			hasPermission(auth, "approve-expenses") ||
-			hasPermission(auth, "view-expenses") ||
-			hasPermission(auth, "view-invoices");
+		// Check if user has Manager role using Spatie
+		const isManager = hasRole(auth, "Manager");
 
-		if (!hasRoleAccess && !hasPermissionAccess) {
+		if (!isManager) {
 			Swal.fire({
 				icon: "error",
 				title: "Access Denied",
-				text: "You do not have permission to access repair rejection reviews. This page is restricted to Finance and Manager roles with appropriate permissions.",
+				text: "You do not have permission to access repair rejection reviews. This page is restricted to Manager role only.",
 				confirmButtonColor: "#000000",
 			}).then(() => {
 				window.history.back();
@@ -257,56 +254,26 @@ export default function RepairRejectReview() {
 			const response = await axios.get('/api/manager/repairs/rejected');
 			
 			if (response.data.success) {
-				const formattedData = response.data.data.map((item: any) => {
-					const rejecterSource = item.repairer_rejected_by || item.repairerRejectedBy || item.repairer;
-					const rejecterName = rejecterSource?.name
-						|| (rejecterSource?.first_name && rejecterSource?.last_name
-							? `${rejecterSource.first_name} ${rejecterSource.last_name}`
-							: null);
-					const rawMedia = item.repair_images ?? item.images;
-					let parsedMedia: string[] = [];
-					if (rawMedia) {
-						if (Array.isArray(rawMedia)) {
-							parsedMedia = rawMedia;
-						} else {
-							try {
-								parsedMedia = JSON.parse(rawMedia);
-							} catch (parseError) {
-								parsedMedia = [];
-							}
-						}
-					}
-					const normalizedMedia = parsedMedia.map((src: string) => {
-						if (!src) return src;
-						if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/storage/')) {
-							return src;
-						}
-						return `/storage/${src}`;
-					});
-
-					return ({
+				const formattedData = response.data.data.map((item: any) => ({
 					id: item.id,
 					requestNumber: item.request_id,
 					serviceName: item.services?.map((s: any) => s.name).join(', ') || 'N/A',
 					category: item.services?.[0]?.category || 'General',
 					customerName: item.user?.name || item.customer_name,
-						orderedBy: rejecterName
-							? `Repairer - ${rejecterName}`
-							: 'Repairer - Unknown',
+					orderedBy: item.repairer_rejected_by?.name || 'Staff',
 					requestedOn: new Date(item.created_at).toISOString().split('T')[0],
 					reason: item.description || 'No description',
 					rejectionReason: item.repairer_rejection_reason,
-					status: item.manager_decision === 'approve_rejection' ? 'Approved' : 
-							 item.manager_decision === 'override_accept' ? 'Rejected' : 'Pending',
+					status: item.manager_decision === 'approve' ? 'Approved' : 
+							 item.manager_decision === 'override' ? 'Rejected' : 'Pending',
 					approvedBy: item.manager_reviewed_by?.name,
 					approvedAt: item.manager_reviewed_at,
 					rejectedBy: item.manager_reviewed_by?.name,
 					rejectedAt: item.manager_reviewed_at,
 					decisionReason: item.manager_review_notes,
-						media: normalizedMedia,
+					media: item.images ? JSON.parse(item.images) : [],
 					repairerName: item.repairer?.name || 'Unassigned',
-					});
-				});
+				}));
 				setRejections(formattedData);
 			}
 		} catch (error) {

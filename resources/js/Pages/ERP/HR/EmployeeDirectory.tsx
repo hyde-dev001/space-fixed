@@ -519,6 +519,7 @@ export const EmployeeManagement: React.FC<{
       hr: string[];
       crm: string[];
       manager: string[];
+      repairer: string[];
       staff: string[];
     };
     roles: Array<{ name: string; permissions: string[] }>;
@@ -533,12 +534,14 @@ export const EmployeeManagement: React.FC<{
     hr: boolean;
     crm: boolean;
     manager: boolean;
+    repairer: boolean;
     staff: boolean;
   }>({
     finance: true,
     hr: true,
     crm: true,
     manager: false,
+    repairer: false,
     staff: false,
   });
 
@@ -1018,7 +1021,7 @@ export const EmployeeManagement: React.FC<{
     });
   };
 
-  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'staff') => {
+  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'staff') => {
     setExpandedCategories(prev => ({
       ...prev,
       [category]: !prev[category]
@@ -1031,6 +1034,7 @@ export const EmployeeManagement: React.FC<{
       hr: true,
       crm: true,
       manager: true,
+      repairer: true,
       staff: true,
     });
   };
@@ -1041,6 +1045,7 @@ export const EmployeeManagement: React.FC<{
       hr: false,
       crm: false,
       manager: false,
+      repairer: false,
       staff: false,
     });
   };
@@ -1108,7 +1113,27 @@ export const EmployeeManagement: React.FC<{
       }
 
       if (!response.ok) {
-        throw new Error('Failed to update permissions');
+        const errorData = await response.json();
+        
+        // Check if it's a finance permission restriction error for managers
+        if (response.status === 403 && errorData.forbidden_permissions) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Finance Access Restricted',
+            html: `
+              <p class="mb-3">Managers cannot be assigned finance permissions.</p>
+              <p class="text-sm text-gray-600 mb-2">The following finance permissions were blocked:</p>
+              <ul class="text-sm text-left bg-red-50 p-3 rounded list-disc list-inside">
+                ${errorData.forbidden_permissions.map((p: string) => `<li class="text-red-700">${p}</li>`).join('')}
+              </ul>
+              <p class="text-sm text-gray-600 mt-3">Only the <strong>Shop Owner</strong> can access finance modules.</p>
+            `,
+            confirmButtonColor: '#ef4444'
+          });
+          return;
+        }
+        
+        throw new Error(errorData.error || 'Failed to update permissions');
       }
 
       setIsPermissionModalOpen(false);
@@ -1121,12 +1146,12 @@ export const EmployeeManagement: React.FC<{
         showConfirmButton: false
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update permissions:', error);
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: 'Failed to update permissions. Please try again.',
+        text: error?.message || 'Failed to update permissions. Please try again.',
       });
     } finally {
       setIsSavingPermissions(false);
@@ -1926,7 +1951,7 @@ export const EmployeeManagement: React.FC<{
                             className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
                           >
                             <option value="">Select department/role</option>
-                            <option value="Manager">Manager - Full System Access</option>
+                            <option value="Manager">Manager - User Management & System Oversight Only</option>
                             <option value="Finance">Finance - Invoices, Expenses, Reports</option>
                             <option value="HR">Human Resources - Employees, Payroll, Attendance</option>
                             <option value="CRM">CRM - Customers, Leads, Sales</option>
@@ -1957,10 +1982,18 @@ export const EmployeeManagement: React.FC<{
                         </div>
 
                         {addEmployeeForm.department === 'Manager' && (
-                          <div className="flex items-center justify-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                            <p className="text-sm text-purple-700 dark:text-purple-300">
-                              <span className="font-semibold">Manager Role:</span> Automatically gets all permissions. No position needed.
-                            </p>
+                          <div className="col-span-2 flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                            <AlertIcon className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-sm font-semibold text-amber-900 dark:text-amber-300 mb-1">
+                                🔒 Manager Role - Limited Access
+                              </p>
+                              <p className="text-sm text-amber-700 dark:text-amber-400">
+                                Managers can ONLY access <span className="font-semibold">Manager pages</span> (user management, role assignment, system oversight, audit logs, and settings). 
+                                <span className="font-semibold"> Managers do NOT have access to HR, CRM, Finance, or operational modules.</span> 
+                                For full module access, assign specific department roles (HR, CRM, Finance) or grant additional permissions.
+                              </p>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2060,6 +2093,24 @@ export const EmployeeManagement: React.FC<{
 
                 {/* Body */}
                 <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+                  {/* Manager Access Warning */}
+                  {selectedEmployeeForPermissions.department === 'Manager' && (
+                    <div className="mb-6 flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border-2 border-amber-300 dark:border-amber-700">
+                      <AlertIcon className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-bold text-amber-900 dark:text-amber-200 mb-1">
+                          🔒 Manager Role - Restricted to Manager Pages Only
+                        </p>
+                        <p className="text-sm text-amber-800 dark:text-amber-300">
+                          This employee has the <span className="font-semibold">Manager</span> role, which grants access to <span className="font-bold">manager-specific pages only</span> 
+                          (user management, role assignment, system oversight, audit logs, and settings). 
+                          <span className="font-bold"> Managers cannot access HR, CRM, Finance, or operational modules.</span> 
+                          To grant access to specific modules, add the appropriate additional permissions below.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="flex items-center justify-between mb-4">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Select additional permissions for this employee
@@ -2265,6 +2316,57 @@ export const EmployeeManagement: React.FC<{
                         {expandedCategories.manager && (
                           <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                             {availablePermissions.grouped.manager.map((permission) => (
+                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPermissions.includes(permission)}
+                                  onChange={() => togglePermission(permission)}
+                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                                />
+                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Repairer Module */}
+                    {availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                        <div className="flex">
+                          <button
+                            onClick={() => toggleCategory('repairer')}
+                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3">
+                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.repairer ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <span className="font-semibold text-gray-900 dark:text-white">🔧 Repairer Module</span>
+                            </div>
+                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
+                              {availablePermissions.grouped.repairer.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.repairer.length}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => addRolePermissions('repairer')}
+                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
+                            title="Add all Repairer permissions"
+                          >
+                            Add
+                          </button>
+                          <button
+                            onClick={() => clearRolePermissions('repairer')}
+                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
+                            title="Clear all Repairer permissions"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        {expandedCategories.repairer && (
+                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {availablePermissions.grouped.repairer.map((permission) => (
                               <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
                                 <input
                                   type="checkbox"

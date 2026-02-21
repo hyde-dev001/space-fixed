@@ -71,9 +71,12 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/unread-count', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'unreadCount'])->name('shop_owner.notifications.unread-count');
         Route::get('/recent', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'recent'])->name('shop_owner.notifications.recent');
         Route::get('/stats', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'stats'])->name('shop_owner.notifications.stats');
+        Route::get('/preferences', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'getPreferences'])->name('shop_owner.notifications.preferences');
+        Route::put('/preferences', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'updatePreferences'])->name('shop_owner.notifications.update-preferences');
         Route::post('/{id}/read', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'markAsRead'])->name('shop_owner.notifications.mark-read');
         Route::post('/mark-all-read', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'markAllAsRead'])->name('shop_owner.notifications.mark-all-read');
         Route::delete('/{id}', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'destroy'])->name('shop_owner.notifications.destroy');
+        Route::post('/{id}/unarchive', [\App\Http\Controllers\ShopOwnerNotificationController::class, 'unarchive'])->name('shop_owner.notifications.unarchive');
     });
 
     // Additional shop owner specific endpoints can be added here

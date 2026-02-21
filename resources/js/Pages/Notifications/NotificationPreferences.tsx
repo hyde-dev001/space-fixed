@@ -3,9 +3,9 @@
  * User notification settings with Phase 6 features
  */
 
-import React, { useState } from 'react';
-import { Head } from '@inertiajs/react';
-import { Settings, Bell, Mail, Volume2, Check, X, Moon, Archive, Smartphone, Clock } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Head, usePage } from '@inertiajs/react';
+import { Settings, Bell, Mail, Volume2, Check, Moon, Archive, Smartphone, Clock } from 'lucide-react';
 import { useNotificationPreferences, useUpdatePreferences } from '../../hooks/useNotifications';
 
 interface NotificationPreferencesProps {
@@ -14,14 +14,53 @@ interface NotificationPreferencesProps {
   userType?: 'customer' | 'shop_owner' | 'erp';
 }
 
+type PreferenceValue = string | number | boolean | null | undefined | Record<string, unknown>;
+type PreferenceMap = Record<string, PreferenceValue>;
+
+const coerceBoolean = (value: unknown, defaultValue = true): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === '') return false;
+  }
+
+  if (value == null) return defaultValue;
+  return Boolean(value);
+};
+
+const normalizePreferences = (raw: unknown): PreferenceMap => {
+  if (!raw || typeof raw !== 'object') return {};
+
+  const record = raw as Record<string, unknown>;
+  const nested = record.preferences && typeof record.preferences === 'object'
+    ? (record.preferences as PreferenceMap)
+    : {};
+
+  return {
+    ...nested,
+    ...record,
+  } as PreferenceMap;
+};
+
 const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({ 
   basePath = '/api/notifications',
   title = 'Notification Preferences',
   userType = 'customer'
 }) => {
+  const { auth } = usePage().props as any;
+  const userRole = auth?.user?.role;
   const { data: preferences, isLoading } = useNotificationPreferences(basePath);
   const updatePreferences = useUpdatePreferences(basePath);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [archiveDays, setArchiveDays] = useState<number | null>(null);
+  const [localPreferences, setLocalPreferences] = useState<PreferenceMap>({});
+
+  useEffect(() => {
+    setLocalPreferences(normalizePreferences(preferences));
+  }, [preferences]);
 
   // Customer notification categories
   const customerCategories = [
@@ -46,70 +85,168 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
     { key: 'low_stock', label: 'Low Stock Alerts', description: 'Inventory low stock warnings' },
   ];
 
-  // ERP notification categories
-  const erpCategories = [
+  // ERP notification categories - Base categories for all ERP staff
+  const baseErpCategories = [
+    { key: 'repair_assigned_to_me', label: 'Repair Assignments', description: 'When repairs are assigned to you' },
+    { key: 'repair_status_update', label: 'Repair Status Updates', description: 'Customer actions on your repairs' },
+    { key: 'repair_rejection_review', label: 'Rejection Reviews', description: 'Manager decisions on your rejections' },
+    { key: 'task_assigned', label: 'Task Assignments', description: 'New tasks assigned to you' },
+    { key: 'new_message', label: 'Messages', description: 'Customer and employee messages' },
+    { key: 'system_maintenance', label: 'System Alerts', description: 'System maintenance and updates' },
+  ];
+
+  // HR/Manager specific categories
+  const hrManagerCategories = [
     { key: 'employee_registered', label: 'New Employees', description: 'New employee registrations' },
     { key: 'leave_request', label: 'Leave Requests', description: 'Employee leave requests' },
     { key: 'overtime_request', label: 'Overtime Requests', description: 'Employee overtime requests' },
     { key: 'attendance_alert', label: 'Attendance Alerts', description: 'Late arrivals and absences' },
     { key: 'approval_required', label: 'Approval Requests', description: 'Items requiring approval' },
-    { key: 'system_maintenance', label: 'System Alerts', description: 'System maintenance and updates' },
-    { key: 'price_change_request', label: 'Price Change Requests', description: 'Product price change requests' },
   ];
+
+  // Finance/Manager specific categories
+  const financeManagerCategories = [
+    { key: 'price_change_request', label: 'Price Change Requests', description: 'Product price change requests' },
+    { key: 'approval_required', label: 'Approval Requests', description: 'Items requiring approval' },
+  ];
+
+  // Determine ERP categories based on user role
+  let erpCategories = [...baseErpCategories];
+  if (userType === 'erp' && (userRole === 'HR' || userRole === 'Manager')) {
+    erpCategories = [...baseErpCategories, ...hrManagerCategories];
+  }
+  if (userType === 'erp' && (userRole === 'Finance' || userRole === 'Manager')) {
+    erpCategories = [...erpCategories, ...financeManagerCategories];
+  }
 
   const categories = userType === 'shop_owner' ? shopOwnerCategories : 
                     userType === 'erp' ? erpCategories : customerCategories;
 
-  const handleToggle = (category: string, enabled: boolean) => {
-    if (!preferences) return;
+  const getCategoryPreferencesObject = (): Record<string, unknown> => {
+    const rawPreferences = localPreferences.preferences;
+    if (rawPreferences && typeof rawPreferences === 'object' && !Array.isArray(rawPreferences)) {
+      return rawPreferences as Record<string, unknown>;
+    }
 
-    const updatedPreferences = {
-      ...preferences.preferences,
-      [category]: enabled,
+    return {};
+  };
+
+  // Map category keys to actual database column names
+  const getCategoryColumnName = (categoryKey: string): string => {
+    // Map common patterns
+    const mapping: Record<string, string> = {
+      'order_created': 'browser_new_orders',
+      'order_status_changed': 'browser_order_updates',
+      'payment_received': 'browser_payment_updates',
+      'payment_failed': 'browser_payment_updates',
+      'repair_status_update': 'browser_repair_updates',
+      'repair_quote_ready': 'browser_repair_updates',
+      'new_message': 'browser_alerts',
+      'review_reminder': 'browser_alerts',
+      'new_repair_request': 'browser_repair_updates',
+      'repair_approved': 'browser_repair_updates',
+      'repair_rejected': 'browser_repair_updates',
+      'new_review': 'browser_alerts',
+      'low_stock': 'browser_alerts',
+      'repair_assigned_to_me': 'browser_order_updates',  // Use order_updates for repair assignments (assignments are like new orders for repairers)
+      'repair_rejection_review': 'browser_approvals',
+      'task_assigned': 'browser_tasks',
+      'system_maintenance': 'browser_alerts',
+      'employee_registered': 'browser_hr_updates',
+      'leave_request': 'browser_hr_updates',
+      'overtime_request': 'browser_hr_updates',
+      'attendance_alert': 'browser_hr_updates',
+      'approval_required': 'browser_approvals',
+      'price_change_request': 'browser_approvals',
+    };
+    return mapping[categoryKey] || 'browser_alerts';
+  };
+
+  const getCategoryEnabled = (categoryKey: string): boolean => {
+    const categoryPreferences = getCategoryPreferencesObject();
+    const storedCategoryValue = categoryPreferences[categoryKey];
+
+    if (storedCategoryValue !== undefined) {
+      return coerceBoolean(storedCategoryValue, true);
+    }
+
+    const columnName = getCategoryColumnName(categoryKey);
+    return coerceBoolean(localPreferences[columnName], true);
+  };
+
+  const getPreferenceFlag = (key: string, defaultValue = false): boolean => {
+    return coerceBoolean(localPreferences[key], defaultValue);
+  };
+
+  const getPreferenceString = (key: string, defaultValue: string): string => {
+    const value = localPreferences[key];
+    if (typeof value === 'string' && value.trim() !== '') return value;
+    return defaultValue;
+  };
+
+  const getPreferenceNumber = (key: string, defaultValue: number): number => {
+    const value = localPreferences[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return defaultValue;
+  };
+
+  const showSaved = () => {
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  const mutatePreference = (payload: PreferenceMap) => {
+    const previousState = localPreferences;
+
+    setLocalPreferences((prev) => ({
+      ...prev,
+      ...payload,
+    }));
+
+    updatePreferences.mutate(payload, {
+      onSuccess: () => {
+        showSaved();
+      },
+      onError: () => {
+        setLocalPreferences(previousState);
+      },
+    });
+  };
+
+  const handleToggle = (category: string, enabled: boolean) => {
+    const categoryPreferences = {
+      ...getCategoryPreferencesObject(),
     };
 
-    updatePreferences.mutate(
-      { preferences: updatedPreferences },
-      {
-        onSuccess: () => {
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
-        },
+    // Ensure every category has an explicit value to avoid shared-column side effects.
+    categories.forEach((categoryItem) => {
+      if (categoryPreferences[categoryItem.key] === undefined) {
+        categoryPreferences[categoryItem.key] = getCategoryEnabled(categoryItem.key);
       }
-    );
+    });
+
+    categoryPreferences[category] = enabled;
+
+    mutatePreference({ preferences: categoryPreferences });
   };
 
   const handleEmailDigestChange = (frequency: 'none' | 'daily' | 'weekly') => {
-    if (!preferences) return;
-
-    updatePreferences.mutate(
-      { email_digest_frequency: frequency },
-      {
-        onSuccess: () => {
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
-        },
-      }
-    );
+    mutatePreference({ email_digest_frequency: frequency });
   };
 
   const handleSoundToggle = (enabled: boolean) => {
-    if (!preferences) return;
-
-    updatePreferences.mutate(
-      { sound_enabled: enabled },
-      {
-        onSuccess: () => {
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
-        },
-      }
-    );
+    mutatePreference({ sound_enabled: enabled });
   };
+
+  const browserNotificationPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -119,34 +256,59 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
     <>
       <Head title={title} />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Settings size={32} className="text-gray-700" />
-            <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
+      <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-950">
+        {userType === 'shop_owner' && (
+          <div className="mb-2">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="inline-flex items-center px-1 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white"
+            >
+              ← Back
+            </button>
           </div>
-          <p className="text-gray-600">
+        )}
+
+        {userType === 'customer' && (
+          <div className="mb-2">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="inline-flex items-center px-1 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white"
+            >
+              ← Back
+            </button>
+          </div>
+        )}
+
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <Settings size={32} className="text-gray-700 dark:text-gray-200" />
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{title}</h1>
+          </div>
+          <p className="text-gray-600 dark:text-gray-400">
             Manage how and when you receive notifications
           </p>
         </div>
 
         {/* Success Message */}
         {saveSuccess && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3 dark:bg-green-900/20 dark:border-green-800">
             <Check size={20} className="text-green-600" />
-            <span className="text-green-800 font-medium">Preferences saved successfully!</span>
+            <span className="text-green-800 font-medium dark:text-green-300">Preferences saved successfully!</span>
           </div>
         )}
 
         {/* In-App Notifications */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="p-6 border-b border-gray-200">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 dark:bg-gray-900 dark:border-gray-700">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <Bell size={24} className="text-blue-600" />
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">In-App Notifications</h2>
-                <p className="text-sm text-gray-600">Choose which notifications you want to see</p>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">In-App Notifications</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Choose which notifications you want to see</p>
               </div>
             </div>
           </div>
@@ -154,19 +316,19 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
           <div className="p-6">
             <div className="space-y-4">
               {categories.map((category) => {
-                const isEnabled = preferences?.preferences?.[category.key] ?? true;
+                const isEnabled = getCategoryEnabled(category.key);
                 
                 return (
-                  <div key={category.key} className="flex items-start justify-between py-3 border-b border-gray-100 last:border-0">
+                  <div key={category.key} className="flex items-start justify-between py-3 border-b border-gray-100 dark:border-gray-700 last:border-0">
                     <div className="flex-1">
-                      <h3 className="text-base font-medium text-gray-900">{category.label}</h3>
-                      <p className="text-sm text-gray-600 mt-1">{category.description}</p>
+                      <h3 className="text-base font-medium text-gray-900 dark:text-white">{category.label}</h3>
+                      <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">{category.description}</p>
                     </div>
                     <button
                       onClick={() => handleToggle(category.key, !isEnabled)}
                       disabled={updatePreferences.isPending}
                       className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                        isEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                        isEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
                       } ${updatePreferences.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <span
@@ -183,13 +345,13 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
         </div>
 
         {/* Email Digest */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="p-6 border-b border-gray-200">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 dark:bg-gray-900 dark:border-gray-700">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <Mail size={24} className="text-green-600" />
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Email Digest</h2>
-                <p className="text-sm text-gray-600">Receive notification summaries via email</p>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Email Digest</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Receive notification summaries via email</p>
               </div>
             </div>
           </div>
@@ -201,7 +363,7 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
                 { value: 'daily', label: 'Daily', description: 'One email per day with all notifications' },
                 { value: 'weekly', label: 'Weekly', description: 'One email per week with all notifications' },
               ].map((option) => {
-                const isSelected = (preferences?.email_digest_frequency || 'none') === option.value;
+                const isSelected = getPreferenceString('email_digest_frequency', 'none') === option.value;
                 
                 return (
                   <button
@@ -210,14 +372,14 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
                     disabled={updatePreferences.isPending}
                     className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${
                       isSelected 
-                        ? 'border-blue-600 bg-blue-50' 
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' 
+                        : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
                     } ${updatePreferences.isPending ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-base font-medium text-gray-900">{option.label}</h3>
-                        <p className="text-sm text-gray-600 mt-1">{option.description}</p>
+                        <h3 className="text-base font-medium text-gray-900 dark:text-white">{option.label}</h3>
+                        <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">{option.description}</p>
                       </div>
                       {isSelected && (
                         <Check size={20} className="text-blue-600" />
@@ -231,13 +393,13 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
         </div>
 
         {/* Sound Preferences */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="p-6 border-b border-gray-200">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 dark:bg-gray-900 dark:border-gray-700">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <Volume2 size={24} className="text-purple-600" />
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Sound & Alerts</h2>
-                <p className="text-sm text-gray-600">Notification sound preferences</p>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Sound & Alerts</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Notification sound preferences</p>
               </div>
             </div>
           </div>
@@ -245,19 +407,19 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
           <div className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <h3 className="text-base font-medium text-gray-900">Notification Sound</h3>
-                <p className="text-sm text-gray-600 mt-1">Play a sound when new notifications arrive</p>
+                <h3 className="text-base font-medium text-gray-900 dark:text-white">Notification Sound</h3>
+                <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Play a sound when new notifications arrive</p>
               </div>
               <button
-                onClick={() => handleSoundToggle(!preferences?.sound_enabled)}
+                onClick={() => handleSoundToggle(!getPreferenceFlag('sound_enabled', false))}
                 disabled={updatePreferences.isPending}
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  preferences?.sound_enabled ? 'bg-blue-600' : 'bg-gray-200'
+                  getPreferenceFlag('sound_enabled', false) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
                 } ${updatePreferences.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <span
                   className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    preferences?.sound_enabled ? 'translate-x-5' : 'translate-x-0'
+                    getPreferenceFlag('sound_enabled', false) ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
               </button>
@@ -266,14 +428,14 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
         </div>
 
         {/* Quiet Hours Section */}
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="border-b border-gray-200">
+        <div className="bg-white shadow rounded-lg overflow-hidden dark:bg-gray-900 dark:border dark:border-gray-700">
+          <div className="border-b border-gray-200 dark:border-gray-700">
             <div className="p-6">
               <div className="flex items-center gap-3">
                 <Moon className="w-5 h-5 text-blue-600" />
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Quiet Hours</h2>
-                  <p className="text-sm text-gray-600">Suppress notifications during specific hours (e.g., sleep time)</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Quiet Hours</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Suppress notifications during specific hours (e.g., sleep time)</p>
                 </div>
               </div>
             </div>
@@ -281,48 +443,48 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
 
           <div className="p-6 space-y-4">
             {/* Enable Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg dark:bg-gray-800">
               <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-gray-500" />
+                <Clock className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                 <div>
-                  <h3 className="font-medium text-gray-900">Enable Quiet Hours</h3>
-                  <p className="text-sm text-gray-600">Mute notifications during specified time range</p>
+                  <h3 className="font-medium text-gray-900 dark:text-white">Enable Quiet Hours</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Mute notifications during specified time range</p>
                 </div>
               </div>
               <button
                 onClick={() => {
-                  updatePreferences.mutate({ quiet_hours_enabled: !preferences?.quiet_hours_enabled });
+                  mutatePreference({ quiet_hours_enabled: !getPreferenceFlag('quiet_hours_enabled', false) });
                 }}
                 disabled={updatePreferences.isPending}
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  preferences?.quiet_hours_enabled ? 'bg-blue-600' : 'bg-gray-200'
+                  getPreferenceFlag('quiet_hours_enabled', false) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
                 } ${updatePreferences.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  preferences?.quiet_hours_enabled ? 'translate-x-5' : 'translate-x-0'
+                  getPreferenceFlag('quiet_hours_enabled', false) ? 'translate-x-5' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
             {/* Time Range Pickers */}
-            {preferences?.quiet_hours_enabled && (
-              <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            {getPreferenceFlag('quiet_hours_enabled', false) && (
+              <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Start Time</label>
                   <input
                     type="time"
-                    value={preferences?.quiet_hours_start || '22:00'}
-                    onChange={(e) => updatePreferences.mutate({ quiet_hours_start: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={getPreferenceString('quiet_hours_start', '22:00')}
+                    onChange={(e) => mutatePreference({ quiet_hours_start: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">End Time</label>
                   <input
                     type="time"
-                    value={preferences?.quiet_hours_end || '08:00'}
-                    onChange={(e) => updatePreferences.mutate({ quiet_hours_end: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={getPreferenceString('quiet_hours_end', '08:00')}
+                    onChange={(e) => mutatePreference({ quiet_hours_end: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
                   />
                 </div>
               </div>
@@ -331,14 +493,14 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
         </div>
 
         {/* Auto-Archive Section */}
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="border-b border-gray-200">
+        <div className="bg-white shadow rounded-lg overflow-hidden dark:bg-gray-900 dark:border dark:border-gray-700">
+          <div className="border-b border-gray-200 dark:border-gray-700">
             <div className="p-6">
               <div className="flex items-center gap-3">
                 <Archive className="w-5 h-5 text-blue-600" />
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Auto-Archive</h2>
-                  <p className="text-sm text-gray-600">Automatically archive read notifications after a specified number of days</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Auto-Archive</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Automatically archive read notifications after a specified number of days</p>
                 </div>
               </div>
             </div>
@@ -346,44 +508,56 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
 
           <div className="p-6 space-y-4">
             {/* Enable Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg dark:bg-gray-800">
               <div>
-                <h3 className="font-medium text-gray-900">Enable Auto-Archive</h3>
-                <p className="text-sm text-gray-600">Cleanup old read notifications automatically</p>
+                <h3 className="font-medium text-gray-900 dark:text-white">Enable Auto-Archive</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Cleanup old read notifications automatically</p>
               </div>
               <button
                 onClick={() => {
-                  updatePreferences.mutate({ auto_archive_enabled: !preferences?.auto_archive_enabled });
+                  mutatePreference({ auto_archive_enabled: !getPreferenceFlag('auto_archive_enabled', false) });
                 }}
                 disabled={updatePreferences.isPending}
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  preferences?.auto_archive_enabled ? 'bg-blue-600' : 'bg-gray-200'
+                  getPreferenceFlag('auto_archive_enabled', false) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
                 } ${updatePreferences.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  preferences?.auto_archive_enabled ? 'translate-x-5' : 'translate-x-0'
+                  getPreferenceFlag('auto_archive_enabled', false) ? 'translate-x-5' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
             {/* Days Slider */}
-            {preferences?.auto_archive_enabled && (
-              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Archive after {preferences?.auto_archive_days || 30} days
+            {getPreferenceFlag('auto_archive_enabled', false) && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                <label className="block text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">
+                  Archive after {archiveDays ?? getPreferenceNumber('auto_archive_days', 30)} days
                 </label>
                 <input
                   type="range"
                   min="1"
                   max="365"
-                  value={preferences?.auto_archive_days || 30}
-                  onChange={(e) => updatePreferences.mutate({ auto_archive_days: parseInt(e.target.value) })}
+                  value={archiveDays ?? getPreferenceNumber('auto_archive_days', 30)}
+                  onChange={(e) => setArchiveDays(parseInt(e.target.value))}
+                  onMouseUp={(e) => {
+                    if (archiveDays !== null) {
+                      mutatePreference({ auto_archive_days: archiveDays });
+                      setArchiveDays(null);
+                    }
+                  }}
+                  onTouchEnd={(e) => {
+                    if (archiveDays !== null) {
+                      mutatePreference({ auto_archive_days: archiveDays });
+                      setArchiveDays(null);
+                    }
+                  }}
                   className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer"
                   style={{
-                    background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${((preferences?.auto_archive_days || 30) / 365) * 100}%, #DBEAFE ${((preferences?.auto_archive_days || 30) / 365) * 100}%, #DBEAFE 100%)`
+                    background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${((archiveDays ?? getPreferenceNumber('auto_archive_days', 30)) / 365) * 100}%, #DBEAFE ${((archiveDays ?? getPreferenceNumber('auto_archive_days', 30)) / 365) * 100}%, #DBEAFE 100%)`
                   }}
                 />
-                <div className="flex justify-between text-xs text-gray-500 mt-2">
+                <div className="flex justify-between text-xs text-gray-500 mt-2 dark:text-gray-400">
                   <span>1 day</span>
                   <span>30 days</span>
                   <span>90 days</span>
@@ -395,14 +569,14 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
         </div>
 
         {/* Browser Push Notifications Section */}
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="border-b border-gray-200">
+        <div className="bg-white shadow rounded-lg overflow-hidden dark:bg-gray-900 dark:border dark:border-gray-700">
+          <div className="border-b border-gray-200 dark:border-gray-700">
             <div className="p-6">
               <div className="flex items-center gap-3">
                 <Smartphone className="w-5 h-5 text-blue-600" />
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Browser Push Notifications</h2>
-                  <p className="text-sm text-gray-600">Receive notifications even when browser tab is inactive</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Browser Push Notifications</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Receive notifications even when browser tab is inactive</p>
                 </div>
               </div>
             </div>
@@ -410,43 +584,43 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
 
           <div className="p-6 space-y-4">
             {/* Enable Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg dark:bg-gray-800">
               <div>
-                <h3 className="font-medium text-gray-900">Enable Push Notifications</h3>
-                <p className="text-sm text-gray-600">
-                  {typeof Notification !== 'undefined' && Notification.permission === 'granted' 
+                <h3 className="font-medium text-gray-900 dark:text-white">Enable Push Notifications</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {browserNotificationPermission === 'granted' 
                     ? '✓ Permission granted' 
-                    : Notification.permission === 'denied'
+                    : browserNotificationPermission === 'denied'
                     ? '✗ Permission denied'
                     : 'Browser permission required'}
                 </p>
               </div>
               <button
                 onClick={async () => {
-                  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                  if (typeof Notification !== 'undefined' && browserNotificationPermission === 'default') {
                     const permission = await Notification.requestPermission();
                     if (permission === 'granted') {
-                      updatePreferences.mutate({ browser_push_enabled: true });
+                      mutatePreference({ browser_push_enabled: true });
                     }
                   } else {
-                    updatePreferences.mutate({ browser_push_enabled: !preferences?.browser_push_enabled });
+                    mutatePreference({ browser_push_enabled: !getPreferenceFlag('browser_push_enabled', false) });
                   }
                 }}
-                disabled={updatePreferences.isPending || (typeof Notification !== 'undefined' && Notification.permission === 'denied')}
+                disabled={updatePreferences.isPending || browserNotificationPermission === 'denied'}
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  preferences?.browser_push_enabled ? 'bg-blue-600' : 'bg-gray-200'
-                } ${updatePreferences.isPending || (typeof Notification !== 'undefined' && Notification.permission === 'denied') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  getPreferenceFlag('browser_push_enabled', false) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
+                } ${updatePreferences.isPending || browserNotificationPermission === 'denied' ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  preferences?.browser_push_enabled ? 'translate-x-5' : 'translate-x-0'
+                  getPreferenceFlag('browser_push_enabled', false) ? 'translate-x-5' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
             {/* Permission Status */}
-            {typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">
+            {browserNotificationPermission === 'denied' && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800">
+                <p className="text-sm text-red-800 dark:text-red-300">
                   ⚠️ Browser notifications are blocked. Please enable them in your browser settings.
                 </p>
               </div>
@@ -455,10 +629,11 @@ const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
         </div>
 
         {/* Info Box */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm text-blue-800">
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 dark:bg-blue-900/20 dark:border-blue-800">
+          <p className="text-sm text-blue-800 dark:text-blue-300">
             <strong>Note:</strong> Changes are saved automatically. You can update your preferences anytime.
           </p>
+        </div>
         </div>
       </div>
     </>

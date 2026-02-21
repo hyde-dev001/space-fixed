@@ -1,15 +1,16 @@
-/**
+                                /**
  * NotificationList Page Component - Phase 7 Enhanced
  * Full notification management with advanced filters, bulk actions, and Phase 6 features
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
+import Swal from 'sweetalert2';
 import { 
   Bell, Filter, Trash2, CheckCheck, AlertCircle, Settings, 
-  Search, Calendar, Archive, Download, X, ChevronDown, CheckSquare, Square 
+  Search, Calendar, Archive, Download, X, ChevronDown, CheckSquare, Square, ArchiveRestore
 } from 'lucide-react';
-import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification, type NotificationFilters } from '../../hooks/useNotifications';
+import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification, useUnarchiveNotification, type NotificationFilters } from '../../hooks/useNotifications';
 import NotificationItem from '../../Components/common/NotificationItem';
 import ExportModal from '../../Components/Notifications/ExportModal';
 
@@ -22,7 +23,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
   basePath = '/api/notifications',
   title = 'Notifications'
 }) => {
-  const { auth } = usePage().props as any;
+  const page = usePage();
+  const { auth } = page.props as any;
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -30,6 +32,16 @@ const NotificationList: React.FC<NotificationListProps> = ({
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
+  const isShopOwnerView = basePath.includes('shop-owner');
+  const isErpView = basePath.includes('hr');
+  const isCustomerView = !isShopOwnerView && !isErpView;
+  const highlightedIdFromUrl = useMemo(() => {
+    const queryString = page.url.includes('?') ? page.url.split('?')[1] : '';
+    const highlightParam = new URLSearchParams(queryString).get('highlight');
+    const parsed = Number(highlightParam);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [page.url]);
+  const [highlightedNotificationId, setHighlightedNotificationId] = useState<number | null>(highlightedIdFromUrl);
   const [filters, setFilters] = useState<NotificationFilters>({
     unread_only: false,
     action_required: false,
@@ -54,7 +66,37 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
   const markAsRead = useMarkAsRead(basePath);
   const markAllAsRead = useMarkAllAsRead(basePath, 'mark-all-read');
-  const deleteNotification = useDeleteNotification(basePath, 'delete-notification');
+  const deleteNotification = useDeleteNotification(basePath);
+  const unarchiveNotification = useUnarchiveNotification(basePath);
+
+  useEffect(() => {
+    setHighlightedNotificationId(highlightedIdFromUrl);
+  }, [highlightedIdFromUrl]);
+
+  const notifications = useMemo(() => {
+    return Array.isArray(data?.data) ? data.data : [];
+  }, [data]);
+
+  const totalNotifications = typeof data?.total === 'number' ? data.total : notifications.length;
+  const unreadCount = typeof data?.unread_count === 'number' ? data.unread_count : 0;
+  const lastPage = typeof data?.last_page === 'number' ? data.last_page : 1;
+  const from = typeof data?.from === 'number' ? data.from : notifications.length > 0 ? 1 : 0;
+  const to = typeof data?.to === 'number' ? data.to : notifications.length;
+
+  useEffect(() => {
+    if (!highlightedNotificationId || notifications.length === 0) return;
+
+    const target = document.getElementById(`notification-${highlightedNotificationId}`);
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    const timer = window.setTimeout(() => {
+      setHighlightedNotificationId(null);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightedNotificationId, notifications]);
 
   const handleFilterChange = (key: keyof NotificationFilters, value: any) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -71,10 +113,73 @@ const NotificationList: React.FC<NotificationListProps> = ({
     }
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm('Delete this notification? This action cannot be undone.')) {
-      deleteNotification.mutate(id);
-    }
+  const handleDelete = async (id: number) => {
+    const result = await Swal.fire({
+      title: 'Archive notification?',
+      text: 'You can view archived notifications anytime.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, archive it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#DC2626',
+    });
+
+    if (!result.isConfirmed) return;
+
+    deleteNotification.mutate(id, {
+      onSuccess: async () => {
+        await Swal.fire({
+          title: 'Archived!',
+          text: 'Notification moved to archives.',
+          icon: 'success',
+          timer: 1400,
+          showConfirmButton: false,
+        });
+      },
+      onError: async () => {
+        await Swal.fire({
+          title: 'Archive failed',
+          text: 'Please try again.',
+          icon: 'error',
+        });
+      },
+    });
+  };
+
+  const handleUnarchive = async (id: number) => {
+    const result = await Swal.fire({
+      title: 'Unarchive notification?',
+      text: 'This will move the notification back to active.',
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, unarchive it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563EB',
+    });
+
+    if (!result.isConfirmed) return;
+
+    unarchiveNotification.mutate(id, {
+      onSuccess: async () => {
+        setShowArchived(false);
+        handleFilterChange('archived', false);
+
+        await Swal.fire({
+          title: 'Unarchived!',
+          text: 'Notification moved to active.',
+          icon: 'success',
+          timer: 1400,
+          showConfirmButton: false,
+        });
+      },
+      onError: async () => {
+        await Swal.fire({
+          title: 'Unarchive failed',
+          text: 'Please try again.',
+          icon: 'error',
+        });
+      },
+    });
   };
 
   const handleBulkMarkAsRead = async () => {
@@ -158,8 +263,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
   };
 
   const handleSelectAll = () => {
-    if (data && data.data) {
-      const allIds = data.data.map(n => n.id);
+    if (notifications.length > 0) {
+      const allIds = notifications.map(n => n.id);
       setSelectedIds(selectedIds.length === allIds.length ? [] : allIds);
     }
   };
@@ -228,23 +333,49 @@ const NotificationList: React.FC<NotificationListProps> = ({
     <>
       <Head title={title} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-950">
+        {isShopOwnerView && (
+          <div className="mb-2">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="inline-flex items-center px-1 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white"
+            >
+              ← Back
+            </button>
+          </div>
+        )}
+
+        {isCustomerView && (
+          <div className="mb-2">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="inline-flex items-center px-1 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white"
+            >
+              ← Back
+            </button>
+          </div>
+        )}
+
+        <div className="max-w-7xl mx-auto">
+
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <Bell size={32} className="text-gray-700" />
+              <Bell size={32} className="text-gray-700 dark:text-gray-200" />
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{showArchived ? 'Archives' : title}</h1>
                 {data && (
-                  <p className="text-gray-600 mt-1">
-                    {data.unread_count > 0 ? (
+                  <p className="text-gray-600 mt-1 dark:text-gray-400">
+                    {unreadCount > 0 ? (
                       <>
-                        <span className="font-semibold text-blue-600">{data.unread_count}</span> unread
+                        <span className="font-semibold text-blue-600">{unreadCount}</span> unread
                         {' • '}
                       </>
                     ) : null}
-                    <span className="font-semibold">{data.total}</span> total
+                    <span className="font-semibold">{totalNotifications}</span> total
                     {showArchived && ' archived'}
                   </p>
                 )}
@@ -261,7 +392,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                 className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
                   bulkActionMode
                     ? 'bg-blue-600 text-white border-blue-600'
-                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800'
                 }`}
               >
                 <CheckSquare size={18} />
@@ -278,7 +409,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                 className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
                   showArchived
                     ? 'bg-gray-600 text-white border-gray-600'
-                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800'
                 }`}
               >
                 <Archive size={18} />
@@ -288,7 +419,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
               {/* Export Button */}
               <button
                 onClick={() => setShowExportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800"
               >
                 <Download size={18} />
                 Export
@@ -297,14 +428,14 @@ const NotificationList: React.FC<NotificationListProps> = ({
               {/* Settings Link */}
               <Link
                 href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : basePath.includes('hr') ? '/erp/notifications/settings' : '/notifications/settings'}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800"
               >
                 <Settings size={18} />
                 Settings
               </Link>
 
               {/* Mark All Read */}
-              {!showArchived && data && data.total > 0 && (
+              {!showArchived && totalNotifications > 0 && (
                 <button
                   onClick={handleMarkAllAsRead}
                   disabled={markAllAsRead.isPending}
@@ -320,11 +451,11 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
         {/* Bulk Action Bar */}
         {bulkActionMode && selectedIds.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 dark:bg-blue-900/20 dark:border-blue-800">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckSquare size={20} className="text-blue-600" />
-                <span className="font-medium text-blue-900">
+                <span className="font-medium text-blue-900 dark:text-blue-300">
                   {selectedIds.length} selected
                 </span>
               </div>
@@ -358,41 +489,41 @@ const NotificationList: React.FC<NotificationListProps> = ({
         )}
 
         {/* Advanced Filters */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden dark:bg-gray-900 dark:border-gray-700">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
           >
             <div className="flex items-center gap-2">
-              <Filter size={20} className="text-gray-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Advanced Filters</h2>
+              <Filter size={20} className="text-gray-600 dark:text-gray-300" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Advanced Filters</h2>
             </div>
             <ChevronDown
               size={20}
-              className={`text-gray-600 transition-transform ${showFilters ? 'rotate-180' : ''}`}
+              className={`text-gray-600 dark:text-gray-300 transition-transform ${showFilters ? 'rotate-180' : ''}`}
             />
           </button>
 
           {showFilters && (
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
+            <div className="p-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70">
               {/* Search Bar */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Search
                 </label>
                 <div className="relative">
-                  <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search in title or message..."
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                     >
                       <X size={18} />
                     </button>
@@ -403,13 +534,13 @@ const NotificationList: React.FC<NotificationListProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Category Filter */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     Category
                   </label>
                   <select
                     value={filters.category || ''}
                     onChange={(e) => handleFilterChange('category', e.target.value || undefined)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                   >
                     {categories.map(cat => (
                       <option key={cat.value} value={cat.value}>{cat.label}</option>
@@ -419,13 +550,13 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
                 {/* Priority Filter */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     Priority Level
                   </label>
                   <select
                     value={filters.priority || ''}
                     onChange={(e) => handleFilterChange('priority', e.target.value || undefined)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                   >
                     {priorities.map(pri => (
                       <option key={pri.value} value={pri.value}>{pri.label}</option>
@@ -435,39 +566,39 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
                 {/* Start Date */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     From Date
                   </label>
                   <div className="relative">
-                    <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                     <input
                       type="date"
                       value={filters.start_date || ''}
                       onChange={(e) => handleFilterChange('start_date', e.target.value || undefined)}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                     />
                   </div>
                 </div>
 
                 {/* End Date */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     To Date
                   </label>
                   <div className="relative">
-                    <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                     <input
                       type="date"
                       value={filters.end_date || ''}
                       onChange={(e) => handleFilterChange('end_date', e.target.value || undefined)}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Quick Filters */}
-              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <label className="flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -475,7 +606,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     onChange={(e) => handleFilterChange('unread_only', e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700">Unread only</span>
+                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Unread only</span>
                 </label>
 
                 <label className="flex items-center cursor-pointer">
@@ -485,7 +616,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     onChange={(e) => handleFilterChange('action_required', e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700">Action required</span>
+                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Action required</span>
                 </label>
 
                 {/* Clear Filters Button */}
@@ -515,22 +646,22 @@ const NotificationList: React.FC<NotificationListProps> = ({
         </div>
 
         {/* Notifications List */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden dark:bg-gray-900 dark:border-gray-700">
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center py-20 text-red-600">
+            <div className="flex flex-col items-center justify-center py-20 text-red-600 dark:text-red-400">
               <AlertCircle size={48} className="mb-4" />
               <p className="text-lg font-medium">Failed to load notifications</p>
-              <p className="text-sm text-gray-600 mt-2">Please try again later</p>
+              <p className="text-sm text-gray-600 mt-2 dark:text-gray-400">Please try again later</p>
             </div>
-          ) : !data || data.data.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-              <Bell size={64} className="mb-4 text-gray-300" />
-              <p className="text-lg font-medium">No notifications found</p>
-              <p className="text-sm text-gray-600 mt-2">
+          ) : notifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-500 dark:text-gray-400">
+              <Bell size={64} className="mb-4 text-gray-300 dark:text-gray-600" />
+              <p className="text-lg font-medium dark:text-white">No notifications found</p>
+              <p className="text-sm text-gray-600 mt-2 dark:text-gray-400">
                 {filters.unread_only || filters.action_required || filters.category || filters.priority || searchQuery
                   ? 'Try adjusting your filters'
                   : showArchived
@@ -542,24 +673,32 @@ const NotificationList: React.FC<NotificationListProps> = ({
             <>
               {/* Select All Checkbox */}
               {bulkActionMode && (
-                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
                   <label className="flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={data.data.length > 0 && selectedIds.length === data.data.length}
+                      checked={notifications.length > 0 && selectedIds.length === notifications.length}
                       onChange={handleSelectAll}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                     />
-                    <span className="ml-2 text-sm font-medium text-gray-700">
-                      Select all ({data.data.length})
+                    <span className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Select all ({notifications.length})
                     </span>
                   </label>
                 </div>
               )}
 
-              <div className="divide-y divide-gray-100">
-                {data.data.map((notification) => (
-                  <div key={notification.id} className="relative group hover:bg-gray-50 transition-colors">
+              <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                {notifications.map((notification) => (
+                  <div
+                    id={`notification-${notification.id}`}
+                    key={notification.id}
+                    className={`relative group transition-colors ${
+                      highlightedNotificationId === notification.id
+                        ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset dark:bg-blue-900/20'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-800/70'
+                    }`}
+                  >
                     <div className="flex items-start gap-3 px-6 py-4">
                       {/* Bulk Selection Checkbox */}
                       {bulkActionMode && (
@@ -580,18 +719,18 @@ const NotificationList: React.FC<NotificationListProps> = ({
                             {/* Priority Badge + Title */}
                             <div className="flex items-center gap-2 mb-1">
                               {notification.priority && getPriorityBadge(notification.priority)}
-                              <h3 className={`text-base font-semibold ${notification.is_read ? 'text-gray-600' : 'text-gray-900'}`}>
+                              <h3 className={`text-base font-semibold ${notification.is_read ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
                                 {notification.title}
                               </h3>
                             </div>
 
                             {/* Message */}
-                            <p className={`text-sm ${notification.is_read ? 'text-gray-500' : 'text-gray-700'} mb-2`}>
+                            <p className={`text-sm ${notification.is_read ? 'text-gray-500 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'} mb-2`}>
                               {notification.message}
                             </p>
 
                             {/* Meta Info */}
-                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                            <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                               <span>{new Date(notification.created_at).toLocaleString()}</span>
                               {notification.requires_action && (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-medium">
@@ -609,22 +748,43 @@ const NotificationList: React.FC<NotificationListProps> = ({
                           {/* Actions */}
                           {!bulkActionMode && (
                             <div className="flex items-center gap-2">
-                              {!notification.is_read && (
-                                <button
-                                  onClick={() => handleMarkAsRead(notification.id)}
-                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                  title="Mark as read"
-                                >
-                                  <CheckCheck size={16} />
-                                </button>
+                              {showArchived ? (
+                                <>
+                                  <button
+                                    onClick={() => handleUnarchive(notification.id)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors dark:hover:bg-blue-900/20"
+                                    title="Unarchive notification"
+                                  >
+                                    <ArchiveRestore size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(notification.id)}
+                                    className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors dark:hover:bg-red-900/20 dark:text-red-500"
+                                    title="Delete permanently"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  {!notification.is_read && (
+                                    <button
+                                      onClick={() => handleMarkAsRead(notification.id)}
+                                      className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                      title="Mark as read"
+                                    >
+                                      <CheckCheck size={16} />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDelete(notification.id)}
+                                    className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors dark:text-red-500"
+                                    title="Archive notification"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </>
                               )}
-                              <button
-                                onClick={() => handleDelete(notification.id)}
-                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                                title="Delete notification"
-                              >
-                                <Trash2 size={16} />
-                              </button>
                             </div>
                           )}
                         </div>
@@ -635,32 +795,32 @@ const NotificationList: React.FC<NotificationListProps> = ({
               </div>
 
               {/* Pagination */}
-              {data.last_page > 1 && (
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-                  <div className="text-sm text-gray-600">
-                    Showing <span className="font-medium">{data.from}</span> to{' '}
-                    <span className="font-medium">{data.to}</span> of{' '}
-                    <span className="font-medium">{data.total}</span> notifications
+              {lastPage > 1 && (
+                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Showing <span className="font-medium">{from}</span> to{' '}
+                    <span className="font-medium">{to}</span> of{' '}
+                    <span className="font-medium">{totalNotifications}</span> notifications
                   </div>
 
                   <div className="flex gap-2">
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
-                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Previous
                     </button>
                     
                     <div className="flex gap-1">
-                      {Array.from({ length: Math.min(5, data.last_page) }, (_, i) => {
+                      {Array.from({ length: Math.min(5, lastPage) }, (_, i) => {
                         let pageNum;
-                        if (data.last_page <= 5) {
+                        if (lastPage <= 5) {
                           pageNum = i + 1;
                         } else if (currentPage <= 3) {
                           pageNum = i + 1;
-                        } else if (currentPage >= data.last_page - 2) {
-                          pageNum = data.last_page - 4 + i;
+                        } else if (currentPage >= lastPage - 2) {
+                          pageNum = lastPage - 4 + i;
                         } else {
                           pageNum = currentPage - 2 + i;
                         }
@@ -672,7 +832,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                             className={`px-3 py-1 border rounded-lg transition-colors ${
                               currentPage === pageNum
                                 ? 'bg-blue-600 text-white border-blue-600'
-                                : 'border-gray-300 hover:bg-gray-100'
+                                : 'border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700'
                             }`}
                           >
                             {pageNum}
@@ -682,9 +842,9 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     </div>
 
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(data.last_page, prev + 1))}
-                      disabled={currentPage === data.last_page}
-                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => setCurrentPage(prev => Math.min(lastPage, prev + 1))}
+                      disabled={currentPage === lastPage}
+                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Next
                     </button>
@@ -693,6 +853,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
               )}
             </>
           )}
+        </div>
         </div>
       </div>
 

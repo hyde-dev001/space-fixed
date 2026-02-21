@@ -13,13 +13,15 @@ interface NotificationItemProps {
   onMarkAsRead?: (id: number) => void;
   onClick?: () => void;
   showActions?: boolean;
+  linkHref?: string;
 }
 
 const NotificationItem: React.FC<NotificationItemProps> = ({ 
   notification, 
   onMarkAsRead,
   onClick,
-  showActions = false
+  showActions = false,
+  linkHref
 }) => {
   const getCategoryIcon = (type: string) => {
     if (type.includes('order')) return <ShoppingCart size={20} />;
@@ -31,12 +33,12 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   };
 
   const getCategoryColor = (type: string) => {
-    if (type.includes('order')) return 'bg-blue-100 text-blue-600';
-    if (type.includes('repair')) return 'bg-orange-100 text-orange-600';
-    if (type.includes('payment')) return 'bg-green-100 text-green-600';
-    if (type.includes('message')) return 'bg-purple-100 text-purple-600';
-    if (type.includes('review')) return 'bg-yellow-100 text-yellow-600';
-    return 'bg-gray-100 text-gray-600';
+    if (type.includes('order')) return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300';
+    if (type.includes('repair')) return 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300';
+    if (type.includes('payment')) return 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-300';
+    if (type.includes('message')) return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300';
+    if (type.includes('review')) return 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-300';
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300';
   };
 
   const formatTimeAgo = (dateString: string) => {
@@ -60,10 +62,18 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
     }
   };
 
+  const handleNotificationClick = () => {
+    if (onMarkAsRead && !notification.is_read) {
+      onMarkAsRead(notification.id);
+    }
+
+    onClick?.();
+  };
+
   const content = (
     <div 
       className={`flex gap-3 p-4 transition-colors ${
-        !notification.is_read ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'
+        !notification.is_read ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800/70'
       }`}
     >
       {/* Icon */}
@@ -74,7 +84,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <h4 className={`text-sm font-medium ${!notification.is_read ? 'text-gray-900' : 'text-gray-700'}`}>
+          <h4 className={`text-sm font-medium ${!notification.is_read ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
             {notification.title}
           </h4>
           {!notification.is_read && (
@@ -82,12 +92,12 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
           )}
         </div>
         
-        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+        <p className="text-sm text-gray-600 mt-1 line-clamp-2 dark:text-gray-400">
           {notification.message}
         </p>
         
         <div className="flex items-center gap-3 mt-2">
-          <span className="text-xs text-gray-500 flex items-center gap-1">
+          <span className="text-xs text-gray-500 flex items-center gap-1 dark:text-gray-400">
             <Clock size={12} />
             {formatTimeAgo(notification.created_at)}
           </span>
@@ -106,18 +116,24 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
     </div>
   );
 
-  if (notification.action_url) {
+  const targetHref = linkHref || notification.action_url;
+
+  if (targetHref) {
     return (
       <Link 
-        href={notification.action_url}
-        onClick={onClick}
+        href={targetHref}
+        onClick={handleNotificationClick}
       >
         {content}
       </Link>
     );
   }
 
-  return content;
+  return (
+    <div onClick={handleNotificationClick}>
+      {content}
+    </div>
+  );
 };
 
 export default NotificationItem;

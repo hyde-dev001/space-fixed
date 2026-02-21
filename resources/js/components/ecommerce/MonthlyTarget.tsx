@@ -128,26 +128,26 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
               <button
                 type="button"
                 onClick={openTargetEditor}
-                className="rounded-lg border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
+                className="rounded-lg border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:text-white"
               >
                 Set Target
               </button>
               {isEditingTarget && (
-                <div className="absolute right-0 top-full z-20 mt-3 w-64 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+                <div className="absolute right-0 top-full z-20 mt-3 w-64 rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900">
                   <div className="mb-3">
-                    <p className="text-sm font-semibold text-gray-900">Update monthly target</p>
-                    <p className="text-xs text-gray-500">Set a goal for this month.</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">Update monthly target</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Set a goal for this month.</p>
                   </div>
-                  <label className="text-xs font-semibold text-gray-600">Target amount</label>
-                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2">
-                    <span className="text-xs font-semibold text-gray-500">PHP</span>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">Target amount</label>
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">PHP</span>
                     <input
                       type="number"
                       min={0}
                       step={100}
                       value={draftTarget}
                       onChange={(event) => setDraftTarget(event.target.value)}
-                      className="w-full text-sm font-semibold text-gray-800 outline-none"
+                      className="w-full text-sm font-semibold text-gray-800 outline-none dark:bg-gray-800 dark:text-white"
                     />
                   </div>
                   <div className="mt-4 flex items-center justify-end gap-2">
@@ -157,7 +157,7 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
                         setDraftTarget(String(Math.round(targetAmount)));
                         setIsEditingTarget(false);
                       }}
-                      className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-gray-300"
+                      className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600"
                     >
                       Cancel
                     </button>

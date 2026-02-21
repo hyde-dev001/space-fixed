@@ -35,6 +35,22 @@ use App\Http\Controllers\ERP\HR\HRAnalyticsController;
 use App\Http\Controllers\ERP\HR\SuspensionRequestController;
 
 /**
+ * ERP Notification Routes (All ERP users)
+ * Notifications are available to all authenticated ERP staff, regardless of department
+ */
+Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'])->group(function () {
+    Route::get('/', [NotificationController::class, 'index'])->name('hr.notifications.index');
+    Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('hr.notifications.unread_count');
+    Route::get('/stats', [NotificationController::class, 'stats'])->name('hr.notifications.stats');
+    Route::get('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'getPreferences'])->name('hr.notifications.preferences');
+    Route::put('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'updatePreferences'])->name('hr.notifications.update_preferences');
+    Route::post('/{id}/mark-as-read', [NotificationController::class, 'markAsRead'])->name('hr.notifications.mark_as_read');
+    Route::post('/mark-all-as-read', [NotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark_all_as_read');
+    Route::delete('/{id}', [NotificationController::class, 'destroy'])->name('hr.notifications.destroy');
+    Route::delete('/clear-read', [NotificationController::class, 'clearRead'])->name('hr.notifications.clear_read');
+});
+
+/**
  * HR Module Routes
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
@@ -214,20 +230,6 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
     });
 
     // ============================================
-    // NOTIFICATIONS
-    // ============================================
-    Route::prefix('notifications')->group(function () {
-        Route::get('/', [NotificationController::class, 'index'])->name('hr.notifications.index');
-        Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('hr.notifications.unread_count');
-        Route::get('/recent', [NotificationController::class, 'recent'])->name('hr.notifications.recent');
-        Route::get('/stats', [NotificationController::class, 'stats'])->name('hr.notifications.stats');
-        Route::post('/{id}/mark-as-read', [NotificationController::class, 'markAsRead'])->name('hr.notifications.mark_as_read');
-        Route::post('/mark-all-as-read', [NotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark_all_as_read');
-        Route::delete('/{id}', [NotificationController::class, 'destroy'])->name('hr.notifications.destroy');
-        Route::delete('/clear-read', [NotificationController::class, 'clearRead'])->name('hr.notifications.clear_read');
-    });
-
-    // ============================================
     // TRAINING MANAGEMENT
     // ============================================
     // TODO: Implement TrainingController
@@ -274,8 +276,8 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
 });
 
 /**
- * Staff/Manager Self-Service Routes
- * Protected by: STAFF, MANAGER, shop_owner roles
+ * Staff/Manager/Repairer Self-Service Routes
+ * Protected by: STAFF, MANAGER, REPAIRER, shop_owner roles
  */
 Route::prefix('api/staff')->middleware(['auth:user', 'old_role:Staff|Manager|Shop Owner|Repairer'])->group(function () {
     // ============================================
@@ -323,6 +325,8 @@ Route::prefix('api/staff')->middleware(['auth:user', 'old_role:Staff|Manager|Sho
         Route::get('/unread-count', [\App\Http\Controllers\ErpNotificationController::class, 'unreadCount'])->name('erp.notifications.unread-count');
         Route::get('/recent', [\App\Http\Controllers\ErpNotificationController::class, 'recent'])->name('erp.notifications.recent');
         Route::get('/stats', [\App\Http\Controllers\ErpNotificationController::class, 'stats'])->name('erp.notifications.stats');
+        Route::get('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'getPreferences'])->name('erp.notifications.preferences');
+        Route::put('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'updatePreferences'])->name('erp.notifications.update-preferences');
         Route::post('/{id}/read', [\App\Http\Controllers\ErpNotificationController::class, 'markAsRead'])->name('erp.notifications.mark-read');
         Route::post('/mark-all-read', [\App\Http\Controllers\ErpNotificationController::class, 'markAllAsRead'])->name('erp.notifications.mark-all-read');
         Route::delete('/{id}', [\App\Http\Controllers\ErpNotificationController::class, 'destroy'])->name('erp.notifications.destroy');

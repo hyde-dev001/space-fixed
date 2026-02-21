@@ -32,7 +32,8 @@ const navItems: NavItem[] = [
       </svg>
     ),
     name: "Ecommerce",
-    route: "shopOwner.ecommerce",
+    route: "shop-owner.dashboard",
+    path: "/shop-owner/dashboard",
   },
   {
     icon: (

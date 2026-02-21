@@ -1247,7 +1247,19 @@ export default function JobOrdersRepair() {
                           </button>
                           
                           {/* Phase 8: Work Progress Action Buttons */}
-                          {(order.status === "owner_approved" || order.status === "waiting_customer_confirmation" || order.status === "received" || order.status === "confirmed") && (
+                          {/* Show Mark as Received for both pickup and walk-in after acceptance */}
+                          {(order.status === "repairer_accepted" || order.status === "owner_approved" || order.status === "waiting_customer_confirmation" || order.status === "confirmed") && (
+                            <button
+                              onClick={() => handleMarkReceived(order)}
+                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors"
+                              title="Mark shoes as received at shop"
+                            >
+                              Mark as Received
+                            </button>
+                          )}
+                          
+                          {/* Show Start Work only after shoes are received */}
+                          {order.status === "received" && (
                             <button
                               onClick={() => handleStartWork(order)}
                               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
@@ -1649,21 +1661,27 @@ export default function JobOrdersRepair() {
                     </button>
                   </div>
                 )}
-                {(viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation") && viewOrder.serviceType === "pickup" && (
+                {/* After acceptance - both pickup and walk-in need to wait for physical receipt */}
+                {(viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation") && (
                   <div className="flex flex-wrap items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">💬 Discuss with Customer First</p>
-                      <p className="text-xs text-blue-700 dark:text-blue-400">Chat with customer to confirm repair details and pricing. After customer confirms, you can arrange pickup.</p>
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">💬 Request Accepted - Waiting for Shoes</p>
+                      {viewOrder.serviceType === "pickup" ? (
+                        <p className="text-xs text-blue-700 dark:text-blue-400">
+                          Contact customer to confirm details. Arrange pickup service (Lalamove, Grab, Mr. Speedy) to collect shoes from the address provided. Click "Mark as Received" once shoes arrive at your shop.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-blue-700 dark:text-blue-400">
+                          Request accepted! Customer will bring their shoes to your shop. Click "Mark as Received" once the customer drops off the shoes.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
-                {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved") && viewOrder.serviceType === "pickup" && (
-                  <div className="flex flex-wrap items-center gap-3 p-4 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-200 dark:border-cyan-800">
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-cyan-900 dark:text-cyan-300 mb-1">🚚 Ready to Arrange Pickup</p>
-                      <p className="text-xs text-cyan-700 dark:text-cyan-400 mb-2">Customer confirmed! Contact a delivery service (Lalamove, Grab, Mr. Speedy) with the address above to collect the shoes.</p>
-                      <p className="text-xs text-cyan-600 dark:text-cyan-500 font-medium">After delivery brings shoes to your shop, click "Mark as Received" below.</p>
-                    </div>
+                
+                {/* Ready to mark as received - for both pickup and walk-in */}
+                {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved" || viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation") && (
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
                       className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors shadow-sm"
@@ -1673,6 +1691,8 @@ export default function JobOrdersRepair() {
                     </button>
                   </div>
                 )}
+                
+                {/* Legacy pending status support */}
                 {viewOrder.status === "pending" && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
@@ -1680,7 +1700,20 @@ export default function JobOrdersRepair() {
                       className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors"
                       title="Mark as received"
                     >
-                      Received
+                      Mark as Received
+                    </button>
+                  </div>
+                )}
+                
+                {/* After shoes are received, show start work button */}
+                {viewOrder.status === "received" && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => handleStartWork(viewOrder)}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                      title="Start working on this repair"
+                    >
+                      Start Work
                     </button>
                   </div>
                 )}

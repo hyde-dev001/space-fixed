@@ -280,6 +280,7 @@ const UserAccessControl: React.FC = () => {
       hr: string[];
       crm: string[];
       manager: string[];
+      repairer: string[];
       staff: string[];
     };
     roles: Array<{ name: string; permissions: string[] }>;
@@ -298,16 +299,18 @@ const UserAccessControl: React.FC = () => {
     hr: boolean;
     crm: boolean;
     manager: boolean;
+    repairer: boolean;
     staff: boolean;
   }>({
     finance: true,
     hr: true,
     crm: true,
     manager: false,
+    repairer: false,
     staff: false,
   });
 
-  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'staff') => {
+  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'staff') => {
     setExpandedCategories(prev => ({
       ...prev,
       [category]: !prev[category]
@@ -320,6 +323,7 @@ const UserAccessControl: React.FC = () => {
       hr: true,
       crm: true,
       manager: true,
+      repairer: true,
       staff: true,
     });
   };
@@ -330,6 +334,7 @@ const UserAccessControl: React.FC = () => {
       hr: false,
       crm: false,
       manager: false,
+      repairer: false,
       staff: false,
     });
   };
@@ -341,6 +346,7 @@ const UserAccessControl: React.FC = () => {
       ...(availablePermissions.grouped.hr || []),
       ...(availablePermissions.grouped.crm || []),
       ...(availablePermissions.grouped.manager || []),
+      ...(availablePermissions.grouped.repairer || []),
       ...(availablePermissions.grouped.staff || []),
     ];
     const newPermissions = Array.from(new Set([...selectedPermissions, ...allPermissions]));
@@ -1903,6 +1909,81 @@ const UserAccessControl: React.FC = () => {
                         <div className="p-4 bg-white dark:bg-gray-800">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                             {availablePermissions.grouped.manager.map((permission) => {
+                              const isFromRole = selectedEmployee.rolePermissions?.includes(permission);
+                              const isSelected = selectedPermissions.includes(permission);
+                              return (
+                                <label
+                                  key={permission}
+                                  className={`flex items-center gap-2 text-sm p-2 rounded ${isFromRole ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed bg-gray-50 dark:bg-gray-900/50' : 'text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isFromRole || isSelected}
+                                    disabled={isFromRole}
+                                    onChange={() => !isFromRole && togglePermission(permission)}
+                                    className={`h-4 w-4 rounded ${isFromRole ? 'text-gray-400 border-gray-300 cursor-not-allowed opacity-50' : 'text-gray-900 dark:text-gray-100 border-gray-300 focus:ring-gray-500'}`}
+                                  />
+                                  <span className="flex-1 truncate">{permission}</span>
+                                  {isFromRole && (
+                                    <span className="text-xs text-gray-400 italic">from role</span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Repairer Module */}
+                  {availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
+                    <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleCategory('repairer')}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <svg className={`w-5 h-5 text-gray-700 dark:text-gray-300 transition-transform ${expandedCategories.repairer ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            <div className="flex items-center gap-2">
+                              <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M21 6.5a4.5 4.5 0 01-6.36 4.09l-6.8 6.8a2 2 0 11-2.83-2.83l6.8-6.8A4.5 4.5 0 1116.5 3a4.49 4.49 0 014.5 3.5z" />
+                              </svg>
+                              <span className="font-semibold text-gray-900 dark:text-white">Repairer Permissions</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
+                              {availablePermissions.grouped.repairer.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.repairer.length}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('repairer');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('repairer');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      </button>
+                      {expandedCategories.repairer && (
+                        <div className="p-4 bg-white dark:bg-gray-800">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {availablePermissions.grouped.repairer.map((permission) => {
                               const isFromRole = selectedEmployee.rolePermissions?.includes(permission);
                               const isSelected = selectedPermissions.includes(permission);
                               return (

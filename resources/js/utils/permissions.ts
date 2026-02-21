@@ -10,6 +10,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role?: string;
+  roles?: string[]; // Spatie roles
   permissions?: string[];
 }
 
@@ -121,4 +122,32 @@ export const canManageShopSettings = (auth: AuthData | undefined): boolean => {
 
 export const canViewAllAuditLogs = (auth: AuthData | undefined): boolean => {
   return hasPermission(auth, 'view-all-audit-logs');
+};
+
+/**
+ * Check if user has a specific role (Spatie)
+ */
+export const hasRole = (auth: AuthData | undefined, role: string): boolean => {
+  if (!auth || !auth.user) return false;
+  
+  // Shop owners have all roles
+  if (auth.shop_owner) return true;
+  
+  // Check Spatie roles array
+  const roles = auth.user.roles || [];
+  return roles.includes(role);
+};
+
+/**
+ * Check if user has any of the specified roles (Spatie)
+ */
+export const hasAnyRole = (auth: AuthData | undefined, roleList: string[]): boolean => {
+  if (!auth || !auth.user) return false;
+  
+  // Shop owners have all roles
+  if (auth.shop_owner) return true;
+  
+  // Check Spatie roles array
+  const roles = auth.user.roles || [];
+  return roleList.some(role => roles.includes(role));
 };

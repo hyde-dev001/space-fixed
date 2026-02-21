@@ -41,17 +41,27 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
+  const notificationsListHref = basePath.includes('shop-owner')
+    ? '/shop-owner/notifications'
+    : basePath.includes('staff') || basePath.includes('hr')
+      ? '/erp/notifications'
+      : '/notifications';
+
+  const getNotificationHref = (notification: { id: number }) => {
+    const separator = notificationsListHref.includes('?') ? '&' : '?';
+    return `${notificationsListHref}${separator}highlight=${notification.id}`;
+  };
 
   return (
     <div
       ref={dropdownRef}
-      className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[600px] flex flex-col"
+      className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[600px] flex flex-col dark:bg-gray-900 dark:border-gray-700"
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <Bell size={20} className="text-gray-600" />
-          <h3 className="text-lg font-semibold text-gray-900">
+          <Bell size={20} className="text-gray-600 dark:text-gray-300" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Notifications
           </h3>
           {unreadCount > 0 && (
@@ -66,7 +76,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
             <button
               onClick={handleMarkAllAsRead}
               disabled={markAllAsRead.isPending}
-              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors dark:text-gray-400 dark:hover:bg-blue-900/30"
               title="Mark all as read"
             >
               <CheckCheck size={18} />
@@ -74,7 +84,8 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           )}
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800"
+            title="Close notifications"
           >
             <X size={18} />
           </button>
@@ -88,16 +99,17 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-            <Bell size={48} className="mb-4 text-gray-300" />
+          <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+            <Bell size={48} className="mb-4 text-gray-300 dark:text-gray-600" />
             <p className="text-sm">No notifications yet</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-700">
             {notifications.map((notification) => (
               <NotificationItem
                 key={notification.id}
                 notification={notification}
+                linkHref={getNotificationHref(notification)}
                 onMarkAsRead={handleMarkAsRead}
                 onClick={onClose}
                 showActions={true}
@@ -109,18 +121,18 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
 
       {/* Footer */}
       {notifications.length > 0 && (
-        <div className="p-3 border-t border-gray-200">
+        <div className="p-3 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between gap-2">
             <Link
-              href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : basePath.includes('hr') ? '/erp/notifications/settings' : '/notifications/settings'}
-              className="flex-1 text-center text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+              href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : (basePath.includes('staff') || basePath.includes('hr')) ? '/erp/notifications/settings' : '/notifications/settings'}
+              className="flex-1 text-center text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors dark:text-gray-300 dark:hover:text-white"
               onClick={onClose}
             >
               Settings
             </Link>
-            <span className="text-gray-300">|</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
             <Link
-              href={basePath.includes('shop-owner') ? '/shop-owner/notifications' : basePath.includes('hr') ? '/erp/notifications' : '/notifications'}
+              href={notificationsListHref}
               className="flex-1 text-center text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
               onClick={onClose}
             >

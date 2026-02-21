@@ -320,16 +320,6 @@ const managerItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
-        <path d="M12 12v9"></path>
-      </svg>
-    ),
-    name: "Inventory Overview",
-    route: "erp.manager.inventory-overview",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
         <line x1="7" y1="7" x2="7.01" y2="7"></line>
       </svg>
@@ -363,6 +353,53 @@ const managerItems: NavItem[] = [
     ),
     name: "Repair Rejection Review",
     route: "erp.manager.repair-rejection-review",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
+        <path d="M12 12v9"></path>
+      </svg>
+    ),
+    name: "Inventory Overview",
+    route: "erp.manager.inventory-overview",
+  },
+];
+
+const managerInventoryItems: NavItem[] = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 3v18h18"></path>
+        <path d="M7 15v-4"></path>
+        <path d="M12 15V8"></path>
+        <path d="M17 15v-6"></path>
+      </svg>
+    ),
+    name: "Inventory Dashboard",
+    route: "erp.manager.inventory-dashboard",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20 16.58A5 5 0 0018 7h-1.26A8 8 0 104 16.25" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16l4 4 4-4" />
+      </svg>
+    ),
+    name: "Upload Stocks",
+    route: "erp.manager.upload-stocks",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16l3-3 3 2 4-5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 10h4" />
+      </svg>
+    ),
+    name: "Stock Movement",
+    route: "erp.manager.stock-movement",
   },
 ];
 
@@ -411,6 +448,16 @@ const staffItems: NavItem[] = [
     name: "Shoe Pricing",
     route: "erp.staff.shoe-pricing",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
+        <path d="M12 12v9"></path>
+      </svg>
+    ),
+    name: "Inventory Overview",
+    route: "erp.staff.inventory-overview",
+  },
 ];
 
 const repairItems: NavItem[] = [
@@ -454,6 +501,16 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Pricing",
     route: "erp.repairer.pricing-services",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"></path>
+        <path d="M3 8l9 5 9-5"></path>
+      </svg>
+    ),
+    name: "Stocks Overview",
+    route: "erp.staff.stocks-overview",
   },
   {
     icon: (
@@ -543,6 +600,8 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.repair-status": "/erp/staff/repair-status",
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
+    "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
+    "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
     "erp.time-in": "/erp/time-in",
@@ -573,6 +632,9 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.manager.shoe-pricing": "/erp/manager/shoe-pricing",
     "erp.manager.products": "/erp/manager/products",
     "erp.manager.inventory-overview": "/erp/manager/inventory-overview",
+    "erp.manager.inventory-dashboard": "/erp/manager/inventory-dashboard",
+    "erp.manager.upload-stocks": "/erp/manager/upload-stocks",
+    "erp.manager.stock-movement": "/erp/manager/stock-movement",
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
@@ -590,6 +652,8 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.repair-status": "/erp/staff/repair-status",
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
+    "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
+    "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
   };
@@ -824,6 +888,11 @@ const AppSidebar_ERP: React.FC = () => {
       if (item.route === "erp.staff.shoe-pricing") {
         return permissions.includes('view-pricing') || permissions.includes('edit-pricing');
       }
+
+      // Inventory Overview - visible to all STAFF users
+      if (item.route === "erp.staff.inventory-overview") {
+        return true;
+      }
       
       // Hide other items by default (no permissions)
       return false;
@@ -853,6 +922,11 @@ const AppSidebar_ERP: React.FC = () => {
       // Repair Pricing - requires repair service management permission for repairers
       if (item.route === "erp.repairer.pricing-services") {
         return permissions.includes("manage-repair-services");
+      }
+
+      // Stocks Overview - accessible to all repair users
+      if (item.route === "erp.staff.stocks-overview") {
+        return true;
       }
       
       // Repair Support - accessible to repairer role, managers, and super admins
@@ -1043,7 +1117,8 @@ const AppSidebar_ERP: React.FC = () => {
           </nav>
         )}
 
-        {(role === "STAFF" || role === "MANAGER") && (
+        {/* STAFF section - Only for STAFF role */}
+        {role === "STAFF" && (
           <nav className="mb-6">
             <div className="flex flex-col gap-4">
               <div>
@@ -1065,7 +1140,8 @@ const AppSidebar_ERP: React.FC = () => {
             </div>
           </nav>
         )}
-        {(role === "MANAGER" || role === "REPAIRER") && (
+        {/* REPAIR section - Only for REPAIRER role */}
+        {role === "REPAIRER" && (
           <nav className="mb-6">
             <div className="flex flex-col gap-4">
               <div>
@@ -1088,26 +1164,49 @@ const AppSidebar_ERP: React.FC = () => {
           </nav>
         )}
         {role === "MANAGER" && (
-          <nav className="mb-6">
-            <div className="flex flex-col gap-4">
-              <div>
-                <h2
-                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
-                    !isExpanded && !isHovered
-                      ? "lg:justify-center"
-                      : "justify-start"
-                  }`}
-                >
-                  {isExpanded || isHovered || isMobileOpen ? (
-                    "MANAGER"
-                  ) : (
-                    <HorizontaLDots className="size-6" />
-                  )}
-                </h2>
-                {renderMenuItems(managerItems, "manager")}
+          <>
+            <nav className="mb-6">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2
+                    className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                      !isExpanded && !isHovered
+                        ? "lg:justify-center"
+                        : "justify-start"
+                    }`}
+                  >
+                    {isExpanded || isHovered || isMobileOpen ? (
+                      "MANAGER"
+                    ) : (
+                      <HorizontaLDots className="size-6" />
+                    )}
+                  </h2>
+                  {renderMenuItems(managerItems, "manager")}
+                </div>
               </div>
-            </div>
-          </nav>
+            </nav>
+
+            <nav className="mb-6">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2
+                    className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                      !isExpanded && !isHovered
+                        ? "lg:justify-center"
+                        : "justify-start"
+                    }`}
+                  >
+                    {isExpanded || isHovered || isMobileOpen ? (
+                      "INVENTORY"
+                    ) : (
+                      <HorizontaLDots className="size-6" />
+                    )}
+                  </h2>
+                  {renderMenuItems(managerInventoryItems, "manager")}
+                </div>
+              </div>
+            </nav>
+          </>
         )}
         {hasHRAccess() && (
           <nav className="mb-6">

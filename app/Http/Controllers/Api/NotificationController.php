@@ -134,26 +134,39 @@ class NotificationController extends Controller
         $user = Auth::guard('user')->user();
         
         $validator = Validator::make($request->all(), [
+            // Phase 7: Granular preferences
+            'preferences' => 'nullable|array',
+            'email_digest_frequency' => 'nullable|in:none,daily,weekly',
+            'sound_enabled' => 'nullable|boolean',
+            // Customer notification toggles
+            'browser_order_updates' => 'nullable|boolean',
+            'browser_repair_updates' => 'nullable|boolean',
+            'browser_payment_updates' => 'nullable|boolean',
+            'browser_alerts' => 'nullable|boolean',
+            'email_order_updates' => 'nullable|boolean',
+            'email_repair_updates' => 'nullable|boolean',
+            'email_payment_updates' => 'nullable|boolean',
+            'email_alerts' => 'nullable|boolean',
             // Original preferences
-            'email_expense_approval' => 'boolean',
-            'email_leave_approval' => 'boolean',
-            'email_invoice_created' => 'boolean',
-            'email_delegation_assigned' => 'boolean',
-            'browser_expense_approval' => 'boolean',
-            'browser_leave_approval' => 'boolean',
-            'browser_invoice_created' => 'boolean',
-            'browser_delegation_assigned' => 'boolean',
+            'email_expense_approval' => 'nullable|boolean',
+            'email_leave_approval' => 'nullable|boolean',
+            'email_invoice_created' => 'nullable|boolean',
+            'email_delegation_assigned' => 'nullable|boolean',
+            'browser_expense_approval' => 'nullable|boolean',
+            'browser_leave_approval' => 'nullable|boolean',
+            'browser_invoice_created' => 'nullable|boolean',
+            'browser_delegation_assigned' => 'nullable|boolean',
             // Phase 6: Quiet hours
-            'quiet_hours_enabled' => 'boolean',
+            'quiet_hours_enabled' => 'nullable|boolean',
             'quiet_hours_start' => 'nullable|date_format:H:i',
             'quiet_hours_end' => 'nullable|date_format:H:i',
             // Phase 6: Browser push
-            'browser_push_enabled' => 'boolean',
+            'browser_push_enabled' => 'nullable|boolean',
             'push_subscription' => 'nullable|string',
             // Phase 6: Grouping
-            'group_notifications' => 'boolean',
+            'group_notifications' => 'nullable|boolean',
             // Phase 6: Auto-archive
-            'auto_archive_enabled' => 'boolean',
+            'auto_archive_enabled' => 'nullable|boolean',
             'auto_archive_days' => 'nullable|integer|min:1|max:365',
         ]);
 
@@ -163,6 +176,19 @@ class NotificationController extends Controller
 
         $preferences = NotificationPreference::getOrCreateForUser($user->id);
         $preferences->update($request->only([
+            'preferences',
+            'email_digest_frequency',
+            'sound_enabled',
+            // Customer notification toggles
+            'browser_order_updates',
+            'browser_repair_updates',
+            'browser_payment_updates',
+            'browser_alerts',
+            'email_order_updates',
+            'email_repair_updates',
+            'email_payment_updates',
+            'email_alerts',
+            // Original preferences
             'email_expense_approval',
             'email_leave_approval',
             'email_invoice_created',

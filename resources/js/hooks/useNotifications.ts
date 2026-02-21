@@ -30,14 +30,23 @@ export interface NotificationFilters {
 }
 
 export interface NotificationPreferences {
-    email_expense_approval: boolean;
-    email_leave_approval: boolean;
-    email_invoice_created: boolean;
-    email_delegation_assigned: boolean;
-    browser_expense_approval: boolean;
-    browser_leave_approval: boolean;
-    browser_invoice_created: boolean;
-    browser_delegation_assigned: boolean;
+    preferences?: Record<string, boolean>;
+    email_digest_frequency?: 'none' | 'daily' | 'weekly';
+    sound_enabled?: boolean;
+    quiet_hours_enabled?: boolean;
+    quiet_hours_start?: string | null;
+    quiet_hours_end?: string | null;
+    browser_push_enabled?: boolean;
+    auto_archive_enabled?: boolean;
+    auto_archive_days?: number | null;
+    email_expense_approval?: boolean;
+    email_leave_approval?: boolean;
+    email_invoice_created?: boolean;
+    email_delegation_assigned?: boolean;
+    browser_expense_approval?: boolean;
+    browser_leave_approval?: boolean;
+    browser_invoice_created?: boolean;
+    browser_delegation_assigned?: boolean;
 }
 
 const normalizeBasePath = (basePath: string) => basePath.replace(/\/$/, '');
@@ -87,7 +96,7 @@ export function useNotifications(
 
             return response.json();
         },
-        refetchInterval: 30000, // Refresh every 30 seconds
+        refetchInterval: 10000, // Refresh every 10 seconds for real-time updates
     });
 }
 
@@ -111,7 +120,7 @@ export function useUnreadCount(basePath: string = DEFAULT_NOTIFICATION_API_BASE)
             const data = await response.json();
             return data.count;
         },
-        refetchInterval: 15000, // Refresh every 15 seconds
+        refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
     });
 }
 
@@ -137,7 +146,7 @@ export function useRecentNotifications(
 
             return response.json() as Promise<Notification[]>;
         },
-        refetchInterval: 30000, // Refresh every 30 seconds
+        refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
     });
 }
 
@@ -257,6 +266,35 @@ export function useDeleteNotification(basePath: string = DEFAULT_NOTIFICATION_AP
 }
 
 /**
+ * Unarchive a notification
+ */
+export function useUnarchiveNotification(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
+    const queryClient = useQueryClient();
+    const normalizedBasePath = normalizeBasePath(basePath);
+
+    return useMutation({
+        mutationFn: async (notificationId: number) => {
+            const response = await fetch(`${normalizedBasePath}/${notificationId}/unarchive`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to unarchive notification');
+            }
+
+            return response.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notifications', normalizedBasePath] });
+        },
+    });
+}
+
+/**
  * Fetch notification preferences
  */
 export function useNotificationPreferences(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
@@ -286,7 +324,7 @@ export function useUpdatePreferences(basePath: string = DEFAULT_NOTIFICATION_API
     const normalizedBasePath = normalizeBasePath(basePath);
 
     return useMutation({
-        mutationFn: async (preferences: Partial<NotificationPreferences>) => {
+        mutationFn: async (preferences: Record<string, any>) => {
             const response = await fetch(`${normalizedBasePath}/preferences`, {
                 method: 'PUT',
                 credentials: 'include',
@@ -303,8 +341,24 @@ export function useUpdatePreferences(basePath: string = DEFAULT_NOTIFICATION_API
 
             return response.json();
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notification-preferences', normalizedBasePath] });
+        onMutate: async (newPreferences) => {
+            // Cancel any outgoing refetches to avoid overwriting our update
+            await queryClient.cancelQueries({ queryKey: ['notification-preferences', normalizedBasePath] });
+        },
+        onSuccess: (data, variables) => {
+            const serverPreferences = data && data.preferences ? data.preferences : {};
+
+            queryClient.setQueryData(
+                ['notification-preferences', normalizedBasePath],
+                (current: any) => ({
+                    ...(current || {}),
+                    ...(serverPreferences || {}),
+                    ...(variables || {}),
+                })
+            );
+        },
+        onSettled: () => {
+            // Keep UI stable after toggle; background queries will refresh on next page visit/interval.
         },
     });
 }

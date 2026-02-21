@@ -6,6 +6,8 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Models\Notification;
+use App\Models\NotificationPreference;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * ERP Notification Controller
@@ -35,12 +37,8 @@ class ErpNotificationController extends Controller
             ], 403);
         }
 
-        // Query notifications for this user, filtering by shop_id if it exists
         $query = Notification::where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            })
+            ->where('shop_id', $user->shop_owner_id)
             ->orderBy('created_at', 'desc');
 
         // Filter by read status if requested
@@ -77,10 +75,7 @@ class ErpNotificationController extends Controller
         }
 
         $count = Notification::where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            })
+            ->where('shop_id', $user->shop_owner_id)
             ->unread()
             ->count();
 
@@ -100,10 +95,7 @@ class ErpNotificationController extends Controller
         }
 
         $notifications = Notification::where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            })
+            ->where('shop_id', $user->shop_owner_id)
             ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();
@@ -127,10 +119,7 @@ class ErpNotificationController extends Controller
 
         $notification = Notification::where('id', $id)
             ->where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            })
+            ->where('shop_id', $user->shop_owner_id)
             ->first();
 
         if (!$notification) {
@@ -163,10 +152,7 @@ class ErpNotificationController extends Controller
         }
 
         $count = Notification::where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            })
+            ->where('shop_id', $user->shop_owner_id)
             ->unread()
             ->update([
                 'is_read' => true,
@@ -196,10 +182,7 @@ class ErpNotificationController extends Controller
 
         $notification = Notification::where('id', $id)
             ->where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            })
+            ->where('shop_id', $user->shop_owner_id)
             ->first();
 
         if (!$notification) {
@@ -218,6 +201,113 @@ class ErpNotificationController extends Controller
     }
 
     /**
+     * Get notification preferences
+     */
+    public function getPreferences(Request $request): JsonResponse
+    {
+        $user = $request->user('user');
+        
+        if (!$user->shop_owner_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+
+        $preferences = NotificationPreference::getOrCreateForUser($user->id);
+        return response()->json($preferences);
+    }
+
+    /**
+     * Update notification preferences
+     */
+    public function updatePreferences(Request $request): JsonResponse
+    {
+        $user = $request->user('user');
+        
+        if (!$user->shop_owner_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'preferences' => 'nullable|array',
+            'email_digest_frequency' => 'nullable|in:none,daily,weekly',
+            'sound_enabled' => 'nullable|boolean',
+            // Staff notification toggles
+            'browser_repair_updates' => 'nullable|boolean',
+            'browser_tasks' => 'nullable|boolean',
+            'browser_hr_updates' => 'nullable|boolean',
+            'browser_approvals' => 'nullable|boolean',
+            'browser_alerts' => 'nullable|boolean',
+            'browser_order_updates' => 'nullable|boolean',
+            'browser_payment_updates' => 'nullable|boolean',
+            'browser_new_orders' => 'nullable|boolean',
+            // Email preferences
+            'email_repair_updates' => 'nullable|boolean',
+            'email_tasks' => 'nullable|boolean',
+            'email_hr_updates' => 'nullable|boolean',
+            'email_approvals' => 'nullable|boolean',
+            'email_alerts' => 'nullable|boolean',
+            'email_order_updates' => 'nullable|boolean',
+            'email_payment_updates' => 'nullable|boolean',
+            'email_new_orders' => 'nullable|boolean',
+            // Phase 6 features
+            'quiet_hours_enabled' => 'nullable|boolean',
+            'quiet_hours_start' => 'nullable|date_format:H:i',
+            'quiet_hours_end' => 'nullable|date_format:H:i',
+            'browser_push_enabled' => 'nullable|boolean',
+            'auto_archive_enabled' => 'nullable|boolean',
+            'auto_archive_days' => 'nullable|integer|min:1|max:365',
+            'group_notifications' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $preferences = NotificationPreference::getOrCreateForUser($user->id);
+        $preferences->update($request->only([
+            'preferences',
+            'email_digest_frequency',
+            'sound_enabled',
+            // Staff notification toggles
+            'browser_repair_updates',
+            'browser_tasks',
+            'browser_hr_updates',
+            'browser_approvals',
+            'browser_alerts',
+            'browser_order_updates',
+            'browser_payment_updates',
+            'browser_new_orders',
+            // Email preferences
+            'email_repair_updates',
+            'email_tasks',
+            'email_hr_updates',
+            'email_approvals',
+            'email_alerts',
+            'email_order_updates',
+            'email_payment_updates',
+            'email_new_orders',
+            // Phase 6 features
+            'quiet_hours_enabled',
+            'quiet_hours_start',
+            'quiet_hours_end',
+            'browser_push_enabled',
+            'auto_archive_enabled',
+            'auto_archive_days',
+            'group_notifications',
+        ]));
+
+        return response()->json([
+            'message' => 'Preferences updated successfully',
+            'preferences' => $preferences,
+        ]);
+    }
+
+    /**
      * Get notification statistics/summary
      */
     public function stats(Request $request): JsonResponse
@@ -232,10 +322,7 @@ class ErpNotificationController extends Controller
         }
 
         $baseQuery = Notification::where('user_id', $user->id)
-            ->where(function($q) use ($user) {
-                $q->where('shop_id', $user->shop_owner_id)
-                  ->orWhereNull('shop_id');
-            });
+            ->where('shop_id', $user->shop_owner_id);
 
         $stats = [
             'total' => (clone $baseQuery)->count(),

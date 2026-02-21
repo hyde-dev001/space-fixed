@@ -284,25 +284,72 @@ class UserAccessControlController extends Controller
             ->pluck('name')
             ->toArray();
 
-        // Group permissions by module
+        // Group permissions by module - ALIGNED WITH ROLE STRUCTURE
         $grouped = [
             'finance' => [],
             'hr' => [],
             'crm' => [],
             'manager' => [],
+            'repairer' => [],
             'staff' => [],
         ];
 
         foreach ($allPermissions as $permission) {
-            if (str_contains($permission, 'expense') || str_contains($permission, 'invoice') || str_contains($permission, 'finance') || str_contains($permission, 'budget') || str_contains($permission, 'approve-payroll') || str_contains($permission, 'pricing') || str_contains($permission, 'revenue') || str_contains($permission, 'reconcile')) {
+            // Finance: Expenses, Invoices, Finance Reports, Cost Management, Pricing Approvals
+            if (str_contains($permission, 'expense') || 
+                str_contains($permission, 'invoice') || 
+                str_contains($permission, 'finance') || 
+                str_contains($permission, 'budget') || 
+                str_contains($permission, 'cost-center') || 
+                str_contains($permission, 'revenue') || 
+                str_contains($permission, 'reconcile') ||
+                str_contains($permission, 'pricing-approval') ||
+                str_contains($permission, 'approve-repair-pricing') ||
+                str_contains($permission, 'approve-shoe-pricing') ||
+                str_contains($permission, 'approve-payroll') || // Finance approves payroll
+                $permission === 'view-payroll') { // Finance views payroll for approval
                 $grouped['finance'][] = $permission;
-            } elseif (str_contains($permission, 'employee') || str_contains($permission, 'attendance') || str_contains($permission, 'payroll') || str_contains($permission, 'hr') || str_contains($permission, 'timeoff') || str_contains($permission, 'generate-payslip') || str_contains($permission, 'view-payroll') || str_contains($permission, 'process-payroll')) {
+            } 
+            // HR: Employees, Attendance, Payroll Processing, HR Reports
+            elseif (str_contains($permission, 'employee') || 
+                    str_contains($permission, 'hr') || 
+                    str_contains($permission, 'timeoff') || 
+                    str_contains($permission, 'attendance') ||
+                    str_contains($permission, 'process-payroll') || // HR processes payroll
+                    str_contains($permission, 'generate-payslip')) { // HR generates payslips
                 $grouped['hr'][] = $permission;
-            } elseif (str_contains($permission, 'customer') || str_contains($permission, 'lead') || str_contains($permission, 'opportunity') || str_contains($permission, 'crm')) {
+            } 
+            // CRM: Customers, Leads, Opportunities, CRM Conversations
+            elseif (str_contains($permission, 'customer') || 
+                    str_contains($permission, 'lead') || 
+                    str_contains($permission, 'opportunit') || // Match both opportunity and opportunities
+                    str_contains($permission, 'crm')) {
                 $grouped['crm'][] = $permission;
-            } elseif (str_contains($permission, 'user') || str_contains($permission, 'role') || str_contains($permission, 'product') || str_contains($permission, 'inventory') || str_contains($permission, 'audit') || str_contains($permission, 'system') || str_contains($permission, 'shop')) {
+            } 
+            // Manager: User Management, System Oversight, Audit Logs, Shop Settings
+            elseif (str_contains($permission, 'all-user') || // view-all-users, create-users, etc.
+                    str_contains($permission, 'user') || 
+                    str_contains($permission, 'role') || 
+                    str_contains($permission, 'all-audit') || // view-all-audit-logs
+                    str_contains($permission, 'system-report') || // view-system-reports
+                    str_contains($permission, 'shop-setting')) { // manage-shop-settings
                 $grouped['manager'][] = $permission;
-            } elseif (str_contains($permission, 'job-order') || str_contains($permission, 'dashboard')) {
+            }
+            // Repairer: Repair Services, Repairer Conversations, Repair Pricing (view only)
+            elseif (str_contains($permission, 'repairer') || 
+                    str_contains($permission, 'repair-service') ||
+                    str_contains($permission, 'repair-pricing') ||
+                    str_contains($permission, 'shoe-pricing')) { // Repairer can view pricing
+                $grouped['repairer'][] = $permission;
+            }
+            // Staff: Products, Job Orders, Basic Pricing, Attendance, Dashboard
+            elseif (str_contains($permission, 'product') || 
+                    str_contains($permission, 'inventory') ||
+                    str_contains($permission, 'job-order') || 
+                    str_contains($permission, 'pricing') || // view/edit pricing (not approvals)
+                    $permission === 'view-dashboard' ||
+                    $permission === 'view-attendance' ||
+                    $permission === 'create-attendance') {
                 $grouped['staff'][] = $permission;
             }
         }
@@ -398,6 +445,24 @@ class UserAccessControlController extends Controller
                 'permission' => 'required|string|exists:permissions,name',
             ]);
 
+            // SECURITY: Prevent managers from being assigned finance permissions
+            // Only shop owners can access finance - as per tech lead requirements
+            $financePermissions = [
+                'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
+                'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
+                'approve-payroll', 'process-payroll', // Managers can view payroll but not approve/process
+                'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
+                'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
+                'approve-repair-pricing', 'approve-shoe-pricing', 'manage-service-pricing', 'edit-pricing',
+            ];
+            
+            if ($validated['action'] === 'give' && $user->hasRole('Manager') && in_array($validated['permission'], $financePermissions)) {
+                return response()->json([
+                    'error' => 'Finance permissions cannot be assigned to managers. Only shop owners can access finance.',
+                    'forbidden_permission' => $validated['permission']
+                ], 403);
+            }
+
             if ($validated['action'] === 'give') {
                 $user->givePermissionTo($validated['permission']);
                 $message = "Permission '{$validated['permission']}' granted to {$user->name}";
@@ -491,6 +556,27 @@ class UserAccessControlController extends Controller
                 'permissions' => 'required|array',
                 'permissions.*' => 'string|exists:permissions,name',
             ]);
+
+            // SECURITY: Prevent managers from being assigned finance permissions
+            // Only shop owners can access finance - as per tech lead requirements
+            $financePermissions = [
+                'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
+                'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
+                'approve-payroll', 'process-payroll', // Managers can view payroll but not approve/process
+                'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
+                'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
+                'approve-repair-pricing', 'approve-shoe-pricing', 'manage-service-pricing', 'edit-pricing',
+            ];
+            
+            if ($user->hasRole('Manager')) {
+                $requestedFinancePerms = array_intersect($validated['permissions'], $financePermissions);
+                if (!empty($requestedFinancePerms)) {
+                    return response()->json([
+                        'error' => 'Finance permissions cannot be assigned to managers. Only shop owners can access finance.',
+                        'forbidden_permissions' => array_values($requestedFinancePerms)
+                    ], 403);
+                }
+            }
 
             // Get current direct permissions (before sync)
             $oldDirectPermissions = $user->getDirectPermissions()->pluck('name')->toArray();

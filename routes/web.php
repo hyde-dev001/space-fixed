@@ -575,7 +575,8 @@ Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function (
 });
 
 // Manager API Routes (Phase 5 - Rejection Review)
-Route::middleware('auth:user')->prefix('api/manager/repairs')->group(function () {
+// Only accessible by users with Manager role
+Route::middleware(['auth:user', 'role:Manager'])->prefix('api/manager/repairs')->group(function () {
     // Get repairs pending manager review
     Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews']);
     
@@ -973,6 +974,24 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         }
         return Inertia::render('ERP/Manager/InventoryOverview');
     })->name('inventory-overview');
+    Route::get('/upload-stocks', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/UploadInventory');
+    })->name('upload-stocks');
+    Route::get('/inventory-dashboard', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/InventoryDashboard');
+    })->name('inventory-dashboard');
+    Route::get('/stock-movement', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/StockMovement');
+    })->name('stock-movement');
     Route::get('/user-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1025,6 +1044,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         }
         return Inertia::render('ERP/repairer/uploadService');
     })->name('upload-services');
+
+    Route::get('/stocks-overview', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/repairer/repairStocksOverview');
+    })->name('stocks-overview');
     
     Route::get('/pricing-and-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1059,6 +1085,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
     Route::get('/customers', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])
         ->middleware('permission:view-customers')
         ->name('customers');
+
+    Route::get('/inventory-overview', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/Manager/InventoryOverview');
+    })->name('inventory-overview');
     
     Route::get('/attendance', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

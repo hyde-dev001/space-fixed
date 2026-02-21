@@ -529,7 +529,7 @@ const Navigation: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
                 {isAuthenticated && userIconCount > 0 && (
-                  <span className="absolute -top-1 -right-1 text-black text-xs font-bold leading-none">
+                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
                     {userIconCount}
                   </span>
                 )}
@@ -614,7 +614,7 @@ const Navigation: React.FC = () => {
                   />
                 </svg>
                 {chatIconCount > 0 && (
-                  <span className="absolute -top-1 -right-1 text-black text-xs font-bold leading-none">
+                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
                     {chatIconCount}
                   </span>
                 )}
@@ -630,7 +630,7 @@ const Navigation: React.FC = () => {
               </svg>
               {/* Cart badge (only for authenticated users) */}
               {effectiveCartCount > 0 && (
-                <span id="cart-badge" className="absolute -top-1 -right-1 text-black text-xs font-bold leading-none">
+                <span id="cart-badge" className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
                   {effectiveCartCount}
                 </span>
               )}

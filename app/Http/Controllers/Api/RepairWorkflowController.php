@@ -416,6 +416,14 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
             
+            // Check if user has Manager role
+            if (!$user->hasRole('Manager')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Manager role required.'
+                ], 403);
+            }
+            
             // Get repairs that have been rejected by repairer (all statuses related to rejection)
             $repairs = RepairRequest::with([
                 'user', 
@@ -464,6 +472,15 @@ class RepairWorkflowController extends Controller
                     'success' => false,
                     'message' => 'Unauthenticated'
                 ], 401);
+            }
+            
+            // Check if user has Manager role
+            if (!$user->hasRole('Manager')) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Manager role required.'
+                ], 403);
             }
             
             $repairRequest = RepairRequest::findOrFail($requestId);
@@ -533,6 +550,15 @@ class RepairWorkflowController extends Controller
                     'success' => false,
                     'message' => 'Unauthenticated'
                 ], 401);
+            }
+            
+            // Check if user has Manager role
+            if (!$user->hasRole('Manager')) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Manager role required.'
+                ], 403);
             }
             
             $repairRequest = RepairRequest::findOrFail($requestId);

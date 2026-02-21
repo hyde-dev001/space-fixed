@@ -71,10 +71,20 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $this->command->info('Creating simplified department roles...');
 
-        // 1. Manager Role - Full Access
+        // 1. Manager Role - Manager Pages ONLY (Oversight & Settings)
         $manager = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'user']);
-        $manager->syncPermissions(Permission::where('guard_name', 'user')->pluck('name'));
-        $this->command->info('✓ Manager role: ALL ' . $manager->permissions->count() . ' permissions');
+        $managerPermissions = [
+            // User Management (Manager's primary function)
+            'view-all-users', 'create-users', 'edit-users', 'delete-users', 'assign-roles',
+            
+            // System Oversight & Settings (Manager's oversight role)
+            'view-all-audit-logs', 'view-system-reports', 'manage-shop-settings',
+            
+            // Basic Access
+            'view-dashboard',
+        ];
+        $manager->syncPermissions($managerPermissions);
+        $this->command->info('✓ Manager role: ' . $manager->permissions->count() . ' permissions (MANAGER PAGES ONLY - No HR/CRM/Finance)');
 
         // 2. Finance Role - Full Finance Module Access
         $finance = Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']);
@@ -191,7 +201,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('Total Permissions: ' . Permission::count());
         $this->command->info('');
         $this->command->info('Available Roles:');
-        $this->command->info('  1. Manager (' . $manager->permissions->count() . ' perms) - Full system access');
+        $this->command->info('  1. Manager (' . $manager->permissions->count() . ' perms) - User Management & System Oversight ONLY');
         $this->command->info('  2. Finance (' . $finance->permissions->count() . ' perms) - Full Finance module');
         $this->command->info('  3. HR (' . $hr->permissions->count() . ' perms) - Full HR module');
         $this->command->info('  4. CRM (' . $crm->permissions->count() . ' perms) - Full CRM module');
