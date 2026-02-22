@@ -265,18 +265,8 @@ const crmItems: NavItem[] = [
         <circle cx="12" cy="7" r="4"></circle>
       </svg>
     ),
-    name: "Opportunities",
-    route: "crm.opportunities",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 10a8 8 0 1 0-18 0"></path>
-        <circle cx="12" cy="14" r="3"></circle>
-      </svg>
-    ),
-    name: "Leads",
-    route: "crm.leads",
+    name: "Customers",
+    route: "crm.customers",
   },
   {
     icon: (
@@ -286,20 +276,20 @@ const crmItems: NavItem[] = [
         <path d="M8 2v4"></path>
       </svg>
     ),
-    name: "Customers",
-    route: "crm.customers",
+    name: "Customer Support",
+    route: "crm.customer-support",
   },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 21H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h18"></path>
-        <path d="M23 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L1 7"></path>
+        <path d="M12 17l-5 3 1.5-5.5L4 10.5l5.6-.5L12 5l2.4 5 5.6.5-4.5 4 1.5 5.5z"></path>
       </svg>
     ),
-    name: "Customer Support",
-    route: "crm.customer-support",
+    name: "Customer Reviews",
+    route: "crm.customer-reviews",
   },
 ];
+
 
 const scmItems: NavItem[] = [];
 
@@ -377,7 +367,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Inventory Dashboard",
-    route: "erp.manager.inventory-dashboard",
+    route: "erp.inventory.inventory-dashboard",
   },
   {
     icon: (
@@ -388,7 +378,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Upload Stocks",
-    route: "erp.manager.upload-stocks",
+    route: "erp.inventory.upload-stocks",
   },
   {
     icon: (
@@ -399,7 +389,31 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Stock Movement",
-    route: "erp.manager.stock-movement",
+    route: "erp.inventory.stock-movement",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+        <path d="M8 8h8"></path>
+        <path d="M8 12h8"></path>
+        <path d="M8 16h5"></path>
+      </svg>
+    ),
+    name: "Product Inventory",
+    route: "erp.inventory.product-inventory",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M16 4h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4"></path>
+        <rect x="8" y="2" width="8" height="4" rx="1"></rect>
+        <path d="M8 11h8"></path>
+        <path d="M8 15h5"></path>
+      </svg>
+    ),
+    name: "Suppliers Management",
+    route: "erp.inventory.suppliers-management",
   },
 ];
 
@@ -622,10 +636,9 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.finance.audit-logs": "/erp/finance/audit-logs",
     // CRM section routes
     "crm.dashboard": "/crm",
-    "crm.opportunities": "/crm/opportunities",
-    "crm.leads": "/crm/leads",
     "crm.customers": "/crm/customers",
     "crm.customer-support": "/crm/customer-support",
+    "crm.customer-reviews": "/crm/customer-reviews",
     // Manager section routes
     "erp.manager.dashboard": "/erp/manager/dashboard",
     "erp.manager.reports": "/erp/manager/reports",
@@ -635,6 +648,12 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.manager.inventory-dashboard": "/erp/manager/inventory-dashboard",
     "erp.manager.upload-stocks": "/erp/manager/upload-stocks",
     "erp.manager.stock-movement": "/erp/manager/stock-movement",
+    "erp.manager.product-inventory": "/erp/manager/product-inventory",
+    "erp.inventory.inventory-dashboard": "/erp/inventory/inventory-dashboard",
+    "erp.inventory.upload-stocks": "/erp/inventory/upload-stocks",
+    "erp.inventory.stock-movement": "/erp/inventory/stock-movement",
+    "erp.inventory.product-inventory": "/erp/inventory/product-inventory",
+    "erp.inventory.suppliers-management": "/erp/inventory/suppliers-management",
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
@@ -738,23 +757,7 @@ const AppSidebar_ERP: React.FC = () => {
   const getHrefByRoute = (routeName?: string, params?: Record<string, any>) => {
     if (!routeName) return "#";
     
-    // First check if it's in our route paths map
-    if (allRoutePaths[routeName]) {
-      let url = allRoutePaths[routeName];
-      // Add query parameters if they exist
-      if (params && Object.keys(params).length > 0) {
-        const queryParams = new URLSearchParams(params).toString();
-        url += `?${queryParams}`;
-      }
-      return url;
-    }
-    
-    // Fallback to staff route map for legacy compatibility
-    if (routeName.startsWith && routeName.startsWith("erp.staff.")) {
-      return staffRouteMap[routeName] || "#";
-    }
-    
-    // Last resort: try to use route() helper
+    // First try to use route() helper so route-name changes stay in sync with backend
     try {
       let url = route(routeName, params || undefined);
       // If params exist but weren't processed by route(), add them manually
@@ -764,6 +767,20 @@ const AppSidebar_ERP: React.FC = () => {
       }
       return url;
     } catch {
+      // Fall back to static maps when route() is unavailable (e.g., missing Ziggy entry)
+      if (allRoutePaths[routeName]) {
+        let url = allRoutePaths[routeName];
+        if (params && Object.keys(params).length > 0) {
+          const queryParams = new URLSearchParams(params).toString();
+          url += `?${queryParams}`;
+        }
+        return url;
+      }
+
+      if (routeName.startsWith && routeName.startsWith("erp.staff.")) {
+        return staffRouteMap[routeName] || "#";
+      }
+
       return "#";
     }
   };

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Auth\Events\Registered;
 use Inertia\Inertia;
 
 /**
@@ -114,11 +115,18 @@ class ShopOwnerAuthController extends Controller
                 'business_name' => $shopOwner->business_name,
             ]);
 
+            // Send email verification notification
+            event(new Registered($shopOwner));
+
+            // Auto-login the shop owner so they can access the verification page
+            Auth::guard('shop_owner')->login($shopOwner);
+
             // Return success response
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'Registration successful! Your application is pending admin approval.',
+                    'message' => 'Registration successful! Please check your email to verify your account.',
+                    'redirect' => route('verification.notice'),
                     'shop_owner' => [
                         'id' => $shopOwner->id,
                         'business_name' => $shopOwner->business_name,
@@ -129,7 +137,10 @@ class ShopOwnerAuthController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('shop-owner.login')->with('success', 'Registration successful! Your application is pending admin approval.');
+            return redirect()->route('verification.notice')->with([
+                'success' => 'Registration successful! Please check your email to verify your account.',
+                'email' => $shopOwner->email,
+            ]);
         } catch (ValidationException $e) {
             DB::rollBack();
             \Log::warning('Shop owner registration validation failed', ['errors' => $e->errors()]);

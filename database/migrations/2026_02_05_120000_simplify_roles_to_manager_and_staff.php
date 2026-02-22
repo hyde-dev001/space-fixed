@@ -38,7 +38,7 @@ return new class extends Migration
             ->update(['role' => 'STAFF']);
         
         // NOW update the enum after all data is migrated
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('MANAGER', 'FINANCE', 'HR', 'CRM', 'REPAIRER', 'STAFF', 'SUPER_ADMIN') NULL");
+        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('MANAGER', 'FINANCE', 'HR', 'CRM', 'REPAIRER', 'INVENTORY', 'STAFF', 'SUPER_ADMIN') NULL");
 
         // Update Spatie roles - remove old department roles and reassign users
         $oldRoles = ['HR', 'CRM', 'Finance Staff', 'Finance Manager'];

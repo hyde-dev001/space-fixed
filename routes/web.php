@@ -22,9 +22,13 @@ use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ShopOwnerAuthController;
+use App\Http\Controllers\ShopOwnerPasswordSetupController;
+use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\UserProfileController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\LeaveController;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use Illuminate\Http\Request;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,6 +40,21 @@ use App\Http\Controllers\Api\LeaveController;
 | be assigned to the "web" middleware group.
 |
 */
+
+// Email Verification Routes
+Route::get('/email/verify', function () {
+    return Inertia::render('Auth/VerifyEmail');
+})->middleware('auth')->name('verification.notice');
+
+Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+    ->middleware(['signed'])
+    ->name('verification.verify');
+
+Route::post('/email/verification-notification', function (Request $request) {
+    $request->user()->sendEmailVerificationNotification();
+    
+    return back()->with('message', 'Verification link sent!');
+})->middleware(['auth', 'throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
@@ -213,6 +232,37 @@ Route::post('/shop-owner/register', [ShopOwnerAuthController::class, 'register']
 Route::post('/shop-owner/login', [ShopOwnerAuthController::class, 'login'])->name('shop-owner.login');
 Route::post('/shop-owner/logout', [ShopOwnerAuthController::class, 'logout'])->name('shop-owner.logout');
 
+// Shop Owner Pending Approval Page
+Route::get('/shop-owner/pending-approval', function () {
+    $shopOwner = Auth::guard('shop_owner')->user();
+    
+    if (!$shopOwner) {
+        return redirect()->route('shop-owner.login.form');
+    }
+    
+    // If already approved, redirect to dashboard
+    if ($shopOwner->status === 'approved' && $shopOwner->password) {
+        return redirect()->route('shop-owner.dashboard');
+    }
+    
+    return Inertia::render('Auth/PendingApproval', [
+        'shopOwner' => [
+            'email' => $shopOwner->email,
+            'business_name' => $shopOwner->business_name,
+            'status' => $shopOwner->status,
+            'email_verified_at' => $shopOwner->email_verified_at,
+            'created_at' => $shopOwner->created_at,
+            'rejection_reason' => $shopOwner->rejection_reason,
+        ]
+    ]);
+})->middleware('auth:shop_owner')->name('shop-owner.pending-approval');
+
+// Shop Owner Password Setup Routes (no authentication required - validated by token)
+Route::get('/shop-owner/setup-password', [ShopOwnerPasswordSetupController::class, 'show'])
+    ->name('shop-owner.password.setup');
+Route::post('/shop-owner/setup-password', [ShopOwnerPasswordSetupController::class, 'store'])
+    ->name('shop-owner.password.setup.store');
+
 // Shop Owner notifications page
 Route::get('/shop-owner/notifications', function () {
     return Inertia::render('Notifications/ShopOwnerNotifications');
@@ -311,8 +361,12 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     })->name('dashboard');
 
     Route::get('/products', function () {
-        return Inertia::render('ERP/STAFF/ProductManagementWithVariants');
+        return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
     })->name('products');
+
+    Route::get('/product-uploder', function () {
+        return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
+    })->name('product-uploder');
 
     Route::get('/orders', function () {
         return Inertia::render('ShopOwner/Orders');
@@ -340,6 +394,30 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::get('/history-rejection', function () {
         return Inertia::render('ShopOwner/historyRejection');
     })->name('history-rejection');
+
+    Route::get('/job-orders-repair', function () {
+        return Inertia::render('ShopOwner/service management/JobOrdersRepair');
+    })->name('job-orders-repair');
+
+    Route::get('/upload-services', function () {
+        return Inertia::render('ShopOwner/service management/uploadService');
+    })->name('upload-services');
+
+    Route::get('/job-orders-retail', function () {
+        return Inertia::render('ShopOwner/order management/JobOrders');
+    })->name('job-orders-retail');
+
+    Route::get('/customer-support', function () {
+        return Inertia::render('ShopOwner/customer management/customerSupport');
+    })->name('customer-support');
+
+    Route::get('/customers', function () {
+        return Inertia::render('ShopOwner/customer management/Customers');
+    })->name('customers');
+
+    Route::get('/customer-reviews', function () {
+        return Inertia::render('ShopOwner/customer management/CustomersReviews');
+    })->name('customer-reviews');
 
     Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
     Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
@@ -934,6 +1012,13 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:view-cu
         }
         return Inertia::render('ERP/CRM/customerSupport');
     })->middleware('permission:view-crm-conversations')->name('customer-support');
+
+    Route::get('/customer-reviews', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/CRM/CustomerReviews');
+    })->name('customer-reviews');
 });
 
 // MANAGER routes (only MANAGER can access)
@@ -968,30 +1053,38 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         }
         return Inertia::render('ERP/Manager/productUpload');
     })->name('products');
+    
+    // Inventory routes - accessible by Inventory Manager (Manager needs explicit permission)
     Route::get('/inventory-overview', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/Manager/InventoryOverview');
-    })->name('inventory-overview');
+    })->middleware('permission:view-inventory')->name('inventory-overview');
     Route::get('/upload-stocks', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/UploadInventory');
-    })->name('upload-stocks');
+    })->middleware('permission:view-inventory')->name('upload-stocks');
     Route::get('/inventory-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/InventoryDashboard');
-    })->name('inventory-dashboard');
+    })->middleware('permission:view-inventory')->name('inventory-dashboard');
     Route::get('/stock-movement', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/StockMovement');
-    })->name('stock-movement');
+    })->middleware('permission:view-stock-movements')->name('stock-movement');
+    Route::get('/product-inventory', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/ProductInventory');
+    })->middleware('permission:view-inventory')->name('product-inventory');
     Route::get('/user-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1013,6 +1106,44 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
 });
 
 // Note: Manager audit-logs route already defined above within the manager group
+
+// INVENTORY MODULE routes (accessible by Inventory Manager role or users with explicit permissions)
+Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user', 'permission:view-inventory'])->group(function () {
+    Route::get('/upload-stocks', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/UploadInventory');
+    })->name('upload-stocks');
+
+    Route::get('/inventory-dashboard', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/InventoryDashboard');
+    })->name('inventory-dashboard');
+
+    Route::get('/stock-movement', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/StockMovement');
+    })->name('stock-movement');
+
+    Route::get('/product-inventory', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/ProductInventory');
+    })->name('product-inventory');
+
+    Route::get('/suppliers-management', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/SuppliersManagement');
+    })->name('suppliers-management');
+});
 
 // STAFF routes (both MANAGER and STAFF can access)
 Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manager.staff:staff'])->group(function () {

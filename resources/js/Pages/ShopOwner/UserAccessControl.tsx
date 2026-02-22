@@ -246,6 +246,8 @@ const UserAccessControl: React.FC = () => {
     Finance: 'Finance',
     HR: 'Human Resources',
     CRM: 'CRM',
+    Repairer: 'Repairer',
+    'Inventory Manager': 'Inventory Manager',
     Staff: 'Staff',
     MANAGER: 'Manager',
     FINANCE: 'Finance',
@@ -376,8 +378,7 @@ const UserAccessControl: React.FC = () => {
     return employees.filter((employee) => {
       const matchesFilter = employeeFilter === 'all' ||
         (employeeFilter === 'recent' && employee.createdAt >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) ||
-        (employeeFilter === 'Staff' && employee.role === 'Staff') ||
-        (employeeFilter === 'Manager' && employee.role === 'Manager');
+        (employee.role === employeeFilter);
 
       const matchesSearch = employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -474,6 +475,7 @@ const UserAccessControl: React.FC = () => {
       'HR': 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
       'CRM': 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
+      'Inventory Manager': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
     };
     return styles[role] || 'bg-gray-50 border-gray-200';
@@ -505,6 +507,11 @@ const UserAccessControl: React.FC = () => {
         title: '🔧 Technical Support & Repairs',
         description: 'Handle technical support conversations, repair services, and job orders',
         permissions: 13
+      },
+      'Inventory Manager': {
+        title: '📦 Inventory Management',
+        description: 'Manage inventory, suppliers, stock movements, product management, and inventory reports',
+        permissions: 19
       },
       'Staff': {
         title: '⚙️ General Staff (Customizable)',
@@ -1002,6 +1009,11 @@ const UserAccessControl: React.FC = () => {
                 >
                   <option value="all">All</option>
                   <option value="Manager">Manager</option>
+                  <option value="Finance">Finance</option>
+                  <option value="HR">HR</option>
+                  <option value="CRM">CRM</option>
+                  <option value="Repairer">Repairer</option>
+                  <option value="Inventory Manager">Inventory Manager</option>
                   <option value="Staff">Staff</option>
                   <option value="recent">Recent (7 days)</option>
                 </select>
@@ -1429,6 +1441,7 @@ const UserAccessControl: React.FC = () => {
                             <option value="HR">Human Resources - Employees, Payroll, Attendance</option>
                             <option value="CRM">CRM - Customers, Leads, Sales</option>
                             <option value="Repairer">Repairer - Technical Support & Repairs</option>
+                            <option value="Inventory Manager">Inventory Manager - Inventory, Suppliers, Stock</option>
                             <option value="Staff">Staff - Basic Access (Customizable)</option>
                           </select>
                         </div>

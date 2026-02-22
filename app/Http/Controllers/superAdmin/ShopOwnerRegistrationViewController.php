@@ -4,10 +4,14 @@ namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ShopOwner;
+use App\Notifications\ShopOwnerApproved;
+use App\Notifications\ShopOwnerRejected;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 class ShopOwnerRegistrationViewController extends Controller
 {
@@ -45,18 +49,35 @@ class ShopOwnerRegistrationViewController extends Controller
     public function approve(Request $request, $id)
     {
         $shopOwner = ShopOwner::findOrFail($id);
+        
+        // Generate a unique token for password setup
+        $token = Str::random(64);
+        
+        // Update shop owner status and store the token
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $shopOwner->email],
+            [
+                'email' => $shopOwner->email,
+                'token' => hash('sha256', $token),
+                'created_at' => now()
+            ]
+        );
+        
         $shopOwner->update(['status' => 'approved']);
+        
+        // Send approval notification with password setup link
+        $shopOwner->notify(new ShopOwnerApproved($shopOwner, $token));
 
         // If this is an XHR/JSON request (e.g., fetch), return JSON.
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Shop owner registration approved successfully.'
+                'message' => 'Shop owner registration approved successfully. Password setup email sent.'
             ]);
         }
 
         // For Inertia form submissions, redirect back with flash message.
-        return redirect()->back()->with('success', 'Shop owner registration approved successfully.');
+        return redirect()->back()->with('success', 'Shop owner registration approved successfully. Password setup email sent.');
     }
 
     public function reject(Request $request, $id)
@@ -70,16 +91,19 @@ class ShopOwnerRegistrationViewController extends Controller
             'status' => 'rejected',
             'rejection_reason' => $validated['rejection_reason'] ?? null
         ]);
+        
+        // Send rejection notification
+        $shopOwner->notify(new ShopOwnerRejected($shopOwner, $validated['rejection_reason'] ?? null));
 
         // If this is an XHR/JSON request (e.g., fetch), return JSON.
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Shop owner registration rejected successfully.'
+                'message' => 'Shop owner registration rejected successfully. Notification email sent.'
             ]);
         }
 
         // For Inertia form submissions, redirect back with flash message.
-        return redirect()->back()->with('success', 'Shop owner registration rejected successfully.');
+        return redirect()->back()->with('success', 'Shop owner registration rejected successfully. Notification email sent.');
     }
 }

@@ -171,9 +171,27 @@ export default function ShopOwnerRegistration() {
         // Submit to backend
         router.post(route('shop-owner.register'), submitData, {
           forceFormData: true,
-          onSuccess: () => {
+          onSuccess: (page) => {
             setIsSubmitting(false);
-            setShowSuccessModal(true);
+            // Check if response contains redirect to verification
+            const props = page.props as any;
+            if (props.success) {
+              Swal.fire({
+                icon: 'success',
+                title: 'Registration Successful!',
+                html: `
+                  <p>Thank you for registering!</p>
+                  <p class="mt-3">We've sent a verification email to:</p>
+                  <p class="font-semibold text-blue-600 mt-2">${formData.email}</p>
+                  <p class="text-sm text-gray-600 mt-3">Please check your inbox and click the verification link to complete your registration.</p>
+                `,
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#3085d6',
+              });
+              // Router will automatically handle redirect to verification.notice
+            } else {
+              setShowSuccessModal(true);
+            }
           },
           onError: (errors) => {
             setIsSubmitting(false);

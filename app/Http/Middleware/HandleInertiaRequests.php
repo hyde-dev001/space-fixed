@@ -108,6 +108,13 @@ class HandleInertiaRequests extends Middleware
                     'name' => Auth::guard('shop_owner')->user()->first_name . ' ' . Auth::guard('shop_owner')->user()->last_name,
                     'business_name' => Auth::guard('shop_owner')->user()->business_name,
                     'email' => Auth::guard('shop_owner')->user()->email,
+                    'business_type' => Auth::guard('shop_owner')->user()->business_type,
+                    'registration_type' => Auth::guard('shop_owner')->user()->registration_type,
+                    'status' => Auth::guard('shop_owner')->user()->status,
+                    'is_individual' => Auth::guard('shop_owner')->user()->isIndividual(),
+                    'is_company' => Auth::guard('shop_owner')->user()->isCompany(),
+                    'can_manage_staff' => Auth::guard('shop_owner')->user()->canManageStaff(),
+                    'max_locations' => Auth::guard('shop_owner')->user()->getMaxLocations(),
                 ] : null,
 
                 'user' => Auth::guard('user')->check() ? [

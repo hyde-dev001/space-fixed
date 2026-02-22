@@ -47,6 +47,7 @@ return new class extends Migration
                 'HR',
                 'CRM',
                 'REPAIRER',
+                'INVENTORY',
                 'STAFF',
                 'SUPER_ADMIN'
             ])->nullable();

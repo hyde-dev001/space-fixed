@@ -7,6 +7,7 @@ import RecentOrders from "../../components/ecommerce/RecentOrders";
 import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import StatisticsChart from "../../components/ecommerce/StatisticsChart";
+import AccountTypeInfo from "../../components/shopOwner/AccountTypeInfo";
 
 interface DashboardStats {
   revenue: {
@@ -125,6 +126,9 @@ export default function Ecommerce() {
             Overview of your shop's ecommerce performance
           </p>
         </div>
+
+        {/* Account Type Information Banner */}
+        <AccountTypeInfo />
 
         <EcommerceMetrics stats={stats} />
 

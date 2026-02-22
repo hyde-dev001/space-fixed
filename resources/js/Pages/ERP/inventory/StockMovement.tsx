@@ -8,6 +8,7 @@ type MovementTrack = "Stock IN" | "Stock OUT" | "Adjustments" | "Returns" | "Rep
 interface StockMovementItem {
 	id: number;
 	date: string;
+	time: string;
 	product: string;
 	actionType: MovementTrack;
 	quantityChange: number;
@@ -15,16 +16,16 @@ interface StockMovementItem {
 }
 
 const stockMovements: StockMovementItem[] = [
-	{ id: 1, date: "2026-02-21", product: "Nike Air Max 270", actionType: "Stock IN", quantityChange: 40, updatedBy: "Maria Santos" },
-	{ id: 2, date: "2026-02-21", product: "Adidas Ultraboost 22", actionType: "Stock OUT", quantityChange: -3, updatedBy: "John Cruz" },
-	{ id: 3, date: "2026-02-20", product: "Cleaning Foam", actionType: "Returns", quantityChange: 2, updatedBy: "Paolo Reyes" },
-	{ id: 4, date: "2026-02-20", product: "Premium Shoelaces", actionType: "Adjustments", quantityChange: -1, updatedBy: "Maria Santos" },
-	{ id: 5, date: "2026-02-19", product: "Rubber Sole Adhesive", actionType: "Repairs usage", quantityChange: -6, updatedBy: "Kyla Mendoza" },
-	{ id: 6, date: "2026-02-19", product: "New Balance 550", actionType: "Stock OUT", quantityChange: -2, updatedBy: "John Cruz" },
-	{ id: 7, date: "2026-02-18", product: "Odor Eliminator Spray", actionType: "Stock IN", quantityChange: 18, updatedBy: "Paolo Reyes" },
-	{ id: 8, date: "2026-02-18", product: "Leather Conditioner", actionType: "Repairs usage", quantityChange: -4, updatedBy: "Kyla Mendoza" },
-	{ id: 9, date: "2026-02-17", product: "Puma RS-X", actionType: "Returns", quantityChange: 1, updatedBy: "Maria Santos" },
-	{ id: 10, date: "2026-02-17", product: "Shoe Box (Large)", actionType: "Adjustments", quantityChange: 5, updatedBy: "John Cruz" },
+	{ id: 1, date: "2026-02-21", time: "09:15 AM", product: "Nike Air Max 270", actionType: "Stock IN", quantityChange: 40, updatedBy: "Maria Santos" },
+	{ id: 2, date: "2026-02-21", time: "10:42 AM", product: "Adidas Ultraboost 22", actionType: "Stock OUT", quantityChange: -3, updatedBy: "John Cruz" },
+	{ id: 3, date: "2026-02-20", time: "01:08 PM", product: "Cleaning Foam", actionType: "Returns", quantityChange: 2, updatedBy: "Paolo Reyes" },
+	{ id: 4, date: "2026-02-20", time: "03:27 PM", product: "Premium Shoelaces", actionType: "Adjustments", quantityChange: -1, updatedBy: "Maria Santos" },
+	{ id: 5, date: "2026-02-19", time: "08:33 AM", product: "Rubber Sole Adhesive", actionType: "Repairs usage", quantityChange: -6, updatedBy: "Kyla Mendoza" },
+	{ id: 6, date: "2026-02-19", time: "11:54 AM", product: "New Balance 550", actionType: "Stock OUT", quantityChange: -2, updatedBy: "John Cruz" },
+	{ id: 7, date: "2026-02-18", time: "02:16 PM", product: "Odor Eliminator Spray", actionType: "Stock IN", quantityChange: 18, updatedBy: "Paolo Reyes" },
+	{ id: 8, date: "2026-02-18", time: "04:41 PM", product: "Leather Conditioner", actionType: "Repairs usage", quantityChange: -4, updatedBy: "Kyla Mendoza" },
+	{ id: 9, date: "2026-02-17", time: "09:50 AM", product: "Puma RS-X", actionType: "Returns", quantityChange: 1, updatedBy: "Maria Santos" },
+	{ id: 10, date: "2026-02-17", time: "12:22 PM", product: "Shoe Box (Large)", actionType: "Adjustments", quantityChange: 5, updatedBy: "John Cruz" },
 ];
 
 type MetricColor = "success" | "warning" | "info";
@@ -128,7 +129,6 @@ export default function StockMovement() {
 						<p className="text-gray-600 dark:text-gray-400">Track stock changes across purchase/restock, sales, adjustments, returns, and repair materials usage</p>
 					</div>
 					<div className="flex flex-wrap items-center justify-end gap-3">
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">Manager View</span>
 						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">Inventory Tracking</span>
 					</div>
 				</div>
@@ -182,6 +182,7 @@ export default function StockMovement() {
 							<thead className="bg-gray-50 dark:bg-gray-800/50">
 								<tr>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
+									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Time</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Action type</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Quantity change</th>
@@ -193,6 +194,7 @@ export default function StockMovement() {
 									paginatedItems.map((movement) => (
 										<tr key={movement.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.date}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.time}</td>
 											<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{movement.product}</td>
 											<td className="px-4 py-3">
 												<span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
@@ -213,7 +215,7 @@ export default function StockMovement() {
 									))
 								) : (
 									<tr>
-										<td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
 											No stock movement records found.
 										</td>
 									</tr>
@@ -222,30 +224,35 @@ export default function StockMovement() {
 						</table>
 					</div>
 
-					<div className="mt-5 flex items-center justify-between">
-						<p className="text-sm text-gray-500">
-							Showing {filteredData.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredData.length)} of {filteredData.length} entries
-						</p>
-						<div className="flex items-center gap-2">
-							<button
-								type="button"
-								onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-								disabled={currentPage === 1}
-								className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-300"
-							>
-								Previous
-							</button>
-							<span className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300">
-								{currentPage} / {totalPages}
-							</span>
-							<button
-								type="button"
-								onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-								disabled={currentPage === totalPages}
-								className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-300"
-							>
-								Next
-							</button>
+					<div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 mt-4">
+						<div className="flex items-center justify-between">
+							<div className="text-sm text-gray-700 dark:text-gray-300">
+								Showing <span className="font-medium">{filteredData.length === 0 ? 0 : startIndex + 1}</span> to <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> of <span className="font-medium">{filteredData.length}</span> items
+							</div>
+							<div className="flex gap-2">
+								<button
+									type="button"
+									onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+									disabled={currentPage === 1}
+									className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+									title="Previous page"
+								>
+									<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+									</svg>
+								</button>
+								<button
+									type="button"
+									onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+									disabled={currentPage === totalPages}
+									className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+									title="Next page"
+								>
+									<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+									</svg>
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>

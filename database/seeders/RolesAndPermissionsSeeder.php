@@ -55,6 +55,13 @@ class RolesAndPermissionsSeeder extends Seeder
             // Job Orders
             'view-job-orders', 'create-job-orders', 'edit-job-orders', 'complete-job-orders',
             
+            // Inventory Management
+            'view-inventory', 'create-inventory', 'edit-inventory', 'delete-inventory',
+            'view-suppliers', 'create-suppliers', 'edit-suppliers', 'delete-suppliers',
+            'view-stock-movements', 'create-stock-movements', 'adjust-stock',
+            'upload-inventory', 'export-inventory', 'view-inventory-reports',
+            'manage-product-inventory', 'low-stock-alerts',
+            
             // General
             'view-dashboard',
         ];
@@ -84,7 +91,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-dashboard',
         ];
         $manager->syncPermissions($managerPermissions);
-        $this->command->info('✓ Manager role: ' . $manager->permissions->count() . ' permissions (MANAGER PAGES ONLY - No HR/CRM/Finance)');
+        $this->command->info('✓ Manager role: ' . $manager->permissions->count() . ' permissions (MANAGER PAGES ONLY - No Inventory by default)');
 
         // 2. Finance Role - Full Finance Module Access
         $finance = Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']);
@@ -161,7 +168,26 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
         $this->command->info('✓ Repairer role: ' . $repairer->permissions->count() . ' permissions (Technical Support + Repair Management)');
 
-        // 6. Staff Role - Basic Access (configurable)
+        // 6. Inventory Manager Role - Full Inventory Module Access
+        $inventoryManager = Role::firstOrCreate(['name' => 'Inventory Manager', 'guard_name' => 'user']);
+        $inventoryManager->syncPermissions([
+            // Inventory Management (Full Access)
+            'view-inventory', 'create-inventory', 'edit-inventory', 'delete-inventory',
+            'manage-product-inventory', 'low-stock-alerts',
+            // Suppliers
+            'view-suppliers', 'create-suppliers', 'edit-suppliers', 'delete-suppliers',
+            // Stock Movements
+            'view-stock-movements', 'create-stock-movements', 'adjust-stock',
+            // Upload & Export
+            'upload-inventory', 'export-inventory', 'view-inventory-reports',
+            // Product Management (Related to inventory)
+            'view-products', 'create-products', 'edit-products', 'delete-products', 'manage-inventory',
+            // General
+            'view-dashboard',
+        ]);
+        $this->command->info('✓ Inventory Manager role: ' . $inventoryManager->permissions->count() . ' permissions (Full Inventory module)');
+
+        // 7. Staff Role - Basic Access (configurable)
         $staff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'user']);
         $staff->syncPermissions([
             'view-dashboard',
@@ -176,6 +202,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'delete-products',
             'view-pricing',           // Shoe pricing access
             'edit-pricing',
+            'view-inventory',         // Basic inventory viewing
+            'view-suppliers',
         ]);
         $this->command->info('✓ Staff role: ' . $staff->permissions->count() . ' base permissions (HR can add more)');
 
@@ -206,7 +234,8 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('  3. HR (' . $hr->permissions->count() . ' perms) - Full HR module');
         $this->command->info('  4. CRM (' . $crm->permissions->count() . ' perms) - Full CRM module');
         $this->command->info('  5. Repairer (' . $repairer->permissions->count() . ' perms) - Technical Support & Repairs');
-        $this->command->info('  6. Staff (' . $staff->permissions->count() . ' perms) - Basic + HR can add more');
+        $this->command->info('  6. Inventory Manager (' . $inventoryManager->permissions->count() . ' perms) - Full Inventory module');
+        $this->command->info('  7. Staff (' . $staff->permissions->count() . ' perms) - Basic + HR can add more');
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');

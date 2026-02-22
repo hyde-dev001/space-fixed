@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\OpeningHours\OpeningHours;
 use App\Enums\ShopOwnerStatus;
@@ -25,7 +26,7 @@ use App\Enums\ShopOwnerStatus;
  * 2. approved - Admin approved, shop owner can access system
  * 3. rejected - Admin rejected, may include rejection_reason
  */
-class ShopOwner extends Authenticatable
+class ShopOwner extends Authenticatable implements MustVerifyEmail
 {
     use HasFactory, Notifiable, HasRoles;
 
@@ -284,5 +285,88 @@ class ShopOwner extends Authenticatable
         $close = $this->{strtolower($day) . '_close'};
         
         return !empty($open) && !empty($close);
+    }
+
+    /**
+     * Check if this is an individual registration
+     * 
+     * @return bool
+     */
+    public function isIndividual(): bool
+    {
+        return $this->registration_type === 'individual';
+    }
+
+    /**
+     * Check if this is a company registration
+     * 
+     * @return bool
+     */
+    public function isCompany(): bool
+    {
+        return $this->registration_type === 'company';
+    }
+
+    /**
+     * Get the maximum number of locations allowed based on registration type
+     * 
+     * @return int|null Null means unlimited
+     */
+    public function getMaxLocations(): ?int
+    {
+        return $this->isIndividual() ? 1 : null; // Individual = 1, Company = unlimited
+    }
+
+    /**
+     * Check if the shop owner can add more locations
+     * 
+     * @return bool
+     */
+    public function canAddMoreLocations(): bool
+    {
+        $maxLocations = $this->getMaxLocations();
+        
+        if ($maxLocations === null) {
+            return true; // Unlimited
+        }
+        
+        // Count existing shops/locations (assuming you have a shops relationship)
+        // For now, returning true if individual has no shops yet
+        return $this->isIndividual() ? true : true;
+    }
+
+    /**
+     * Check if the shop owner can manage staff
+     * 
+     * @return bool
+     */
+    public function canManageStaff(): bool
+    {
+        return $this->isCompany();
+    }
+
+    /**
+     * Get business type display name
+     * 
+     * @return string
+     */
+    public function getBusinessTypeDisplayAttribute(): string
+    {
+        return match($this->business_type) {
+            'retail' => 'Retail',
+            'repair' => 'Repair',
+            'both (retail & repair)' => 'Both (Retail & Repair)',
+            default => ucfirst($this->business_type),
+        };
+    }
+
+    /**
+     * Get registration type display name
+     * 
+     * @return string
+     */
+    public function getRegistrationTypeDisplayAttribute(): string
+    {
+        return ucfirst($this->registration_type);
     }
 }
