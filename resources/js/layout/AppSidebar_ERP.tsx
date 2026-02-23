@@ -1214,7 +1214,7 @@ const AppSidebar_ERP: React.FC = () => {
                     }`}
                   >
                     {isExpanded || isHovered || isMobileOpen ? (
-                      "INVENTORY"
+                        "SCM"
                     ) : (
                       <HorizontaLDots className="size-6" />
                     )}

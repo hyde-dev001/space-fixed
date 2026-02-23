@@ -37,6 +37,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'gate.erp.access' => \App\Http\Middleware\GateErpAccess::class,
             'manager.staff' => \App\Http\Middleware\CheckManagerStaffAccess::class,
             'check.suspension' => \App\Http\Middleware\CheckEmployeeSuspension::class,
+            // Shop Owner Access Control
+            'check.business.type' => \App\Http\Middleware\CheckBusinessType::class,
+            'check.registration.type' => \App\Http\Middleware\CheckRegistrationType::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

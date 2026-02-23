@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('customer_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('order_id')->nullable()->constrained('orders')->onDelete('set null');
             $table->foreignId('assigned_to_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->enum('assigned_to_type', ['crm', 'repairer'])->nullable();
+            $table->enum('assigned_to_type', ['crm', 'repairer', 'shop_owner'])->nullable();
             $table->enum('status', ['open', 'in_progress', 'resolved', 'closed'])->default('open');
             $table->enum('priority', ['low', 'medium', 'high'])->default('medium');
             $table->timestamp('last_message_at')->nullable();

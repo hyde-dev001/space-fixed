@@ -65,6 +65,19 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
+        // Determine shop_owner_id and created_by based on authentication
+        $shopOwnerId = null;
+        $createdBy = null;
+        
+        // Check if authenticated as shop owner
+        if (Auth::guard('shop_owner')->check()) {
+            $shopOwnerId = Auth::guard('shop_owner')->id();
+        } elseif (Auth::guard('user')->check()) {
+            $user = Auth::guard('user')->user();
+            $createdBy = $user->id;
+            $shopOwnerId = $user->shop_owner_id;
+        }
+
         $service = RepairService::create([
             'name' => $request->name,
             'category' => $request->category,
@@ -72,7 +85,8 @@ class RepairServiceController extends Controller
             'duration' => $request->duration,
             'description' => $request->description,
             'status' => $request->status ?? 'Active',
-            'created_by' => Auth::guard('user')->id() ?? null,
+            'shop_owner_id' => $shopOwnerId,
+            'created_by' => $createdBy,
         ]);
 
         return response()->json([

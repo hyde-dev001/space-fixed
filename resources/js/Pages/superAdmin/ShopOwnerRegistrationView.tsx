@@ -81,6 +81,7 @@ interface Registration {
   businessName: string;
   businessAddress: string;
   businessType: string;
+  registrationType?: string;
   serviceType: string;
   operatingHours: OperatingHours[];
   documentUrls: string[];
@@ -170,6 +171,15 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
+
+  const formatRegistrationType = (registrationType?: string) => {
+    if (!registrationType) return 'Not specified';
+
+    return registrationType
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
 
   const handleApprove = async (id: number) => {
     const result = await Swal.fire({
@@ -603,6 +613,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                             <div>
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Business Type</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.businessType}</p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Registration Type</label>
+                              <p className="text-sm text-gray-900 dark:text-white">{formatRegistrationType(selectedRegistration.registrationType)}</p>
                             </div>
                             <div>
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Address</label>

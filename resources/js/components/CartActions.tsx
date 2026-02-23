@@ -91,11 +91,8 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
           icon: 'success',
           title: 'Added to Cart!',
           text: `${product?.name || 'Product'} has been added to your cart`,
-          showConfirmButton: false,
-          timer: 1500,
-          timerProgressBar: true,
-          toast: true,
-          position: 'top-end',
+          confirmButtonColor: '#000000',
+          showConfirmButton: true,
         });
 
         // Scroll to the cart icon

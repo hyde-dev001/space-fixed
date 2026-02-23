@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('conversation_messages', function (Blueprint $table) {
             $table->id();
             $table->foreignId('conversation_id')->constrained()->onDelete('cascade');
-            $table->enum('sender_type', ['customer', 'crm', 'repairer']);
+            $table->enum('sender_type', ['customer', 'crm', 'repairer', 'shop_owner', 'system']);
             $table->foreignId('sender_id')->constrained('users')->onDelete('cascade');
             $table->text('content')->nullable(); // Nullable because message might be image-only
             $table->json('attachments')->nullable(); // Store image URLs/paths as JSON array

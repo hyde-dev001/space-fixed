@@ -206,6 +206,24 @@ class RepairWorkflowController extends Controller
     public function myAssignedRepairs(Request $request)
     {
         try {
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if ($shopOwner) {
+                // Shop owner sees all repairs for their shop
+                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                    ->where('shop_owner_id', $shopOwner->id)
+                    ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'picked_up', 'rejected', 'cancelled', 'received', 'under-review'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+                
+                return response()->json([
+                    'success' => true,
+                    'data' => $repairs
+                ]);
+            }
+            
+            // Otherwise check for regular user (repairer)
             $user = Auth::guard('user')->user();
             
             if (!$user) {
@@ -243,9 +261,11 @@ class RepairWorkflowController extends Controller
         try {
             DB::beginTransaction();
             
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
             $user = Auth::guard('user')->user();
             
-            if (!$user) {
+            if (!$shopOwner && !$user) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -255,6 +275,71 @@ class RepairWorkflowController extends Controller
             
             $repairRequest = RepairRequest::with('user')->findOrFail($requestId);
             
+            // Handle shop owner acceptance (for individual shop owners doing repairs themselves)
+            if ($shopOwner) {
+                // Verify this repair belongs to the shop owner
+                if ($repairRequest->shop_owner_id != $shopOwner->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This repair does not belong to your shop'
+                    ], 403);
+                }
+                
+                // Verify status is new_request or assigned_to_repairer
+                if (!in_array($repairRequest->status, ['new_request', 'assigned_to_repairer'])) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair request cannot be accepted in current status'
+                    ], 400);
+                }
+                
+                // Create conversation between customer and shop owner
+                $conversation = Conversation::create([
+                    'shop_owner_id' => $repairRequest->shop_owner_id,
+                    'customer_id' => $repairRequest->user_id,
+                    'assigned_to_id' => $shopOwner->id,
+                    'assigned_to_type' => 'shop_owner',
+                    'status' => 'open',
+                    'priority' => 'medium',
+                    'last_message_at' => now(),
+                ]);
+                
+                // Determine next status based on delivery method
+                $nextStatus = $repairRequest->delivery_method === 'walk_in' 
+                    ? 'received' 
+                    : 'repairer_accepted';
+                
+                // For walk-in, auto-confirm since shoes are already at shop
+                $updateData = [
+                    'status' => $nextStatus,
+                    'conversation_id' => $conversation->id,
+                ];
+                
+                if ($repairRequest->delivery_method === 'walk_in') {
+                    $updateData['customer_confirmed_at'] = now();
+                    $updateData['received_at'] = now();
+                }
+                
+                // Update repair request
+                $repairRequest->update($updateData);
+                
+                DB::commit();
+                
+                $message = $repairRequest->delivery_method === 'walk_in' 
+                    ? 'Repair accepted. Shoes received and ready for processing.'
+                    : 'Repair accepted. Chat conversation created with customer.';
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'conversation_id' => $conversation->id,
+                    'repair' => $repairRequest->fresh(['user', 'services', 'conversation'])
+                ]);
+            }
+            
+            // Handle staff/repairer acceptance
             // Verify this repair is assigned to current user
             if ($repairRequest->assigned_repairer_id != $user->id) {
                 DB::rollBack();
@@ -332,6 +417,11 @@ class RepairWorkflowController extends Controller
     /**
      * Repairer rejects repair request (Phase 3)
      */
+    /**
+     * Reject repair request
+     * - Shop owners (individual): Can reject repairs for their shop directly (final rejection)
+     * - Repairers (company with staff): Rejection escalates to manager for review
+     */
     public function rejectRepair(Request $request, $requestId)
     {
         $request->validate([
@@ -341,6 +431,52 @@ class RepairWorkflowController extends Controller
         try {
             DB::beginTransaction();
             
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if ($shopOwner) {
+                // Individual shop owner rejecting repair directly (final rejection)
+                $repairRequest = RepairRequest::findOrFail($requestId);
+                
+                // Verify this repair belongs to the shop owner
+                if ($repairRequest->shop_owner_id != $shopOwner->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This repair does not belong to your shop'
+                    ], 403);
+                }
+                
+                // Verify status allows rejection
+                if (!in_array($repairRequest->status, ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'pending'])) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair request cannot be rejected in current status'
+                    ], 400);
+                }
+                
+                // Shop owner rejection is FINAL - uses owner_rejected status (no manager approval needed)
+                $repairRequest->update([
+                    'status' => 'owner_rejected',
+                    'owner_decision' => 'rejected',
+                    'owner_approval_notes' => $request->reason,
+                    'owner_reviewed_at' => now(),
+                    'owner_reviewed_by' => $shopOwner->id,
+                ]);
+                
+                DB::commit();
+                
+                // TODO: Send notification to customer
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair request rejected. Customer will be notified.',
+                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
+            
+            // Otherwise check for regular user (repairer) - escalates to manager
             $user = Auth::guard('user')->user();
             
             if (!$user) {
@@ -782,9 +918,11 @@ class RepairWorkflowController extends Controller
     public function startWork($id)
     {
         try {
+            // Check if authenticated as shop owner or user (staff/repairer)
+            $shopOwner = Auth::guard('shop_owner')->user();
             $user = Auth::guard('user')->user();
             
-            if (!$user) {
+            if (!$shopOwner && !$user) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthenticated'
@@ -793,10 +931,28 @@ class RepairWorkflowController extends Controller
 
             DB::beginTransaction();
             
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('assigned_repairer_id', $user->id)
-                ->whereIn('status', ['owner_approved', 'waiting_customer_confirmation', 'confirmed', 'received'])
+            // Build query based on authentication type
+            $query = RepairRequest::where('id', $id);
+            
+            if ($shopOwner) {
+                // Shop owner can start work on their own repairs
+                $query->where('shop_owner_id', $shopOwner->id);
+            } else {
+                // Staff/repairer must be assigned
+                $query->where('assigned_repairer_id', $user->id);
+            }
+            
+            $repairRequest = $query->whereIn('status', ['owner_approved', 'waiting_customer_confirmation', 'confirmed', 'received'])
                 ->firstOrFail();
+            
+            // Validate payment is completed before starting work
+            if ($repairRequest->payment_enabled && $repairRequest->payment_status !== 'completed') {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment must be completed before starting work on this repair.'
+                ], 400);
+            }
             
             $repairRequest->update([
                 'status' => 'in_progress',
@@ -928,6 +1084,36 @@ class RepairWorkflowController extends Controller
         ]);
 
         try {
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if ($shopOwner) {
+                // Shop owner can mark any repair for their shop as completed
+                DB::beginTransaction();
+                
+                $repairRequest = RepairRequest::where('id', $id)
+                    ->where('shop_owner_id', $shopOwner->id)
+                    ->where('status', 'in_progress')
+                    ->firstOrFail();
+                
+                $repairRequest->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                    'completion_notes' => $request->completion_notes,
+                ]);
+                
+                DB::commit();
+                
+                // TODO: Send notification to customer that repair is completed
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair marked as completed. Customer will be notified.',
+                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
+            
+            // Otherwise check for regular user (repairer)
             $user = Auth::guard('user')->user();
             
             if (!$user) {
@@ -979,6 +1165,37 @@ class RepairWorkflowController extends Controller
         ]);
 
         try {
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if ($shopOwner) {
+                // Shop owner can mark any repair for their shop as ready
+                DB::beginTransaction();
+                
+                $repairRequest = RepairRequest::where('id', $id)
+                    ->where('shop_owner_id', $shopOwner->id)
+                    ->whereIn('status', ['completed', 'in_progress'])
+                    ->firstOrFail();
+                
+                $repairRequest->update([
+                    'status' => 'ready_for_pickup',
+                    'ready_for_pickup_at' => now(),
+                    'completed_at' => $repairRequest->completed_at ?? now(),
+                    'pickup_instructions' => $request->pickup_instructions,
+                ]);
+                
+                DB::commit();
+                
+                // TODO: Send notification to customer to pick up their item
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Marked as ready for pickup. Customer will be notified.',
+                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
+            
+            // Otherwise check for regular user (repairer)
             $user = Auth::guard('user')->user();
             
             if (!$user) {
@@ -1027,6 +1244,58 @@ class RepairWorkflowController extends Controller
     public function markAsReceived(Request $request, $id)
     {
         try {
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if ($shopOwner) {
+                // Shop owner can mark any repair for their shop as received
+                DB::beginTransaction();
+                
+                $debugRepair = RepairRequest::find($id);
+                
+                if (!$debugRepair) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair not found'
+                    ], 404);
+                }
+                
+                // Verify repair belongs to this shop owner
+                if ($debugRepair->shop_owner_id != $shopOwner->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This repair does not belong to your shop'
+                    ], 403);
+                }
+                
+                // Check if status is valid (allowing most statuses for flexibility/error correction)
+                $invalidStatuses = ['cancelled', 'rejected', 'picked_up'];
+                if (in_array($debugRepair->status, $invalidStatuses)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair cannot be marked as received in status: ' . $debugRepair->status
+                    ], 400);
+                }
+                
+                // Update status
+                $debugRepair->update([
+                    'status' => 'received',
+                    'received_at' => now(),
+                ]);
+                
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Shoes marked as received. You can now begin the repair.',
+                    'repair' => $debugRepair->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
+            
+            // Otherwise check for regular user (repairer)
             $user = Auth::guard('user')->user();
             
             if (!$user) {
@@ -1097,6 +1366,150 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to mark as received: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Activate pickup confirmation for customer (Shop Owner or Repairer)
+     */
+    public function activatePickup(Request $request, $id)
+    {
+        try {
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if ($shopOwner) {
+                // Shop owner can activate pickup for any repair for their shop
+                DB::beginTransaction();
+                
+                $repairRequest = RepairRequest::find($id);
+                
+                if (!$repairRequest) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair not found'
+                    ], 404);
+                }
+                
+                // Verify repair belongs to this shop owner
+                if ($repairRequest->shop_owner_id != $shopOwner->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This repair does not belong to your shop'
+                    ], 403);
+                }
+                
+                // Check if status is ready_for_pickup
+                if ($repairRequest->status !== 'ready_for_pickup') {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Pickup can only be activated when repair is ready for pickup'
+                    ], 400);
+                }
+                
+                // Check if pickup is already enabled
+                if ($repairRequest->pickup_enabled) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Pickup confirmation is already activated'
+                    ], 400);
+                }
+                
+                // Enable pickup confirmation
+                $repairRequest->update([
+                    'pickup_enabled' => true,
+                    'pickup_enabled_at' => now(),
+                    'pickup_enabled_by' => $shopOwner->id,
+                ]);
+                
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pickup confirmation activated. Customer can now confirm they received their item.',
+                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
+            
+            // Otherwise check for regular user (repairer)
+            $user = Auth::guard('user')->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            DB::beginTransaction();
+            
+            $repairRequest = RepairRequest::find($id);
+            
+            if (!$repairRequest) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair not found'
+                ], 404);
+            }
+            
+            // Verify repair is assigned to this repairer
+            if ($repairRequest->assigned_repairer_id != $user->id) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair is not assigned to you'
+                ], 403);
+            }
+            
+            // Check if status is ready_for_pickup
+            if ($repairRequest->status !== 'ready_for_pickup') {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pickup can only be activated when repair is ready for pickup'
+                ], 400);
+            }
+            
+            // Check if pickup is already enabled
+            if ($repairRequest->pickup_enabled) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pickup confirmation is already activated'
+                ], 400);
+            }
+            
+            // Enable pickup confirmation
+            $repairRequest->update([
+                'pickup_enabled' => true,
+                'pickup_enabled_at' => now(),
+                'pickup_enabled_by' => $user->id,
+            ]);
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Pickup confirmation activated. Customer can now confirm they received their item.',
+                'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Activate pickup failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'repair_id' => $id
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to activate pickup: ' . $e->getMessage()
             ], 500);
         }
     }

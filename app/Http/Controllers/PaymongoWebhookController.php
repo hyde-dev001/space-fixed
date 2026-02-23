@@ -135,7 +135,7 @@ class PaymongoWebhookController extends Controller
     {
         // Update repair request payment status
         $repairRequest->update([
-            'payment_status' => 'paid',
+            'payment_status' => 'completed',
             'paymongo_payment_id' => $paymentId,
             'payment_completed_at' => now(),
         ]);

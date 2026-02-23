@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\OrderItem;
+use App\Models\RepairRequest;
 use App\Enums\OrderStatus;
 use App\Enums\ApprovalStatus;
 use Illuminate\Http\Request;
@@ -36,44 +37,85 @@ class DashboardController extends Controller
         $lastMonth = Carbon::now()->subMonth()->startOfMonth();
         $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
-        // Total Revenue (all time)
-        $totalRevenue = Order::where('shop_owner_id', $shopOwnerId)
+        // Total Revenue (all time) - Include both retail orders and repair services
+        $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', ['processing', 'shipped', 'completed'])
             ->sum('total_amount');
+        
+        $repairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
+            ->where('payment_status', 'completed')
+            ->sum('total');
+        
+        $totalRevenue = $retailRevenue + $repairRevenue;
 
-        // This Month Revenue
-        $thisMonthRevenue = Order::where('shop_owner_id', $shopOwnerId)
+        // This Month Revenue - Include both retail and repair
+        $thisMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', ['processing', 'shipped', 'completed'])
             ->whereMonth('created_at', Carbon::now()->month)
             ->whereYear('created_at', Carbon::now()->year)
             ->sum('total_amount');
+        
+        $thisMonthRepairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
+            ->where('payment_status', 'completed')
+            ->whereMonth('created_at', Carbon::now()->month)
+            ->whereYear('created_at', Carbon::now()->year)
+            ->sum('total');
+        
+        $thisMonthRevenue = $thisMonthRetailRevenue + $thisMonthRepairRevenue;
 
-        // Last Month Revenue
-        $lastMonthRevenue = Order::where('shop_owner_id', $shopOwnerId)
+        // Last Month Revenue - Include both retail and repair
+        $lastMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', ['processing', 'shipped', 'completed'])
             ->whereMonth('created_at', Carbon::now()->subMonth()->month)
             ->whereYear('created_at', Carbon::now()->subMonth()->year)
             ->sum('total_amount');
+        
+        $lastMonthRepairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
+            ->where('payment_status', 'completed')
+            ->whereMonth('created_at', Carbon::now()->subMonth()->month)
+            ->whereYear('created_at', Carbon::now()->subMonth()->year)
+            ->sum('total');
+        
+        $lastMonthRevenue = $lastMonthRetailRevenue + $lastMonthRepairRevenue;
 
         // Revenue Growth
         $revenueGrowth = $lastMonthRevenue > 0 
             ? (($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100 
             : 0;
 
-        // Total Orders
-        $totalOrders = Order::where('shop_owner_id', $shopOwnerId)->count();
+        // Total Orders (include both retail and repair)
+        $totalRetailOrders = Order::where('shop_owner_id', $shopOwnerId)->count();
+        $totalRepairOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)->count();
+        $totalOrders = $totalRetailOrders + $totalRepairOrders;
 
-        // This Month Orders
-        $thisMonthOrders = Order::where('shop_owner_id', $shopOwnerId)
+        // This Month Orders (include both retail and repair)
+        $thisMonthRetailOrders = Order::where('shop_owner_id', $shopOwnerId)
             ->whereMonth('created_at', Carbon::now()->month)
             ->whereYear('created_at', Carbon::now()->year)
             ->count();
+        
+        $thisMonthRepairOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereMonth('created_at', Carbon::now()->month)
+            ->whereYear('created_at', Carbon::now()->year)
+            ->count();
+        
+        $thisMonthOrders = $thisMonthRetailOrders + $thisMonthRepairOrders;
 
-        // Last Month Orders
-        $lastMonthOrders = Order::where('shop_owner_id', $shopOwnerId)
+        // Last Month Orders (include both retail and repair)
+        $lastMonthRetailOrders = Order::where('shop_owner_id', $shopOwnerId)
             ->whereMonth('created_at', Carbon::now()->subMonth()->month)
             ->whereYear('created_at', Carbon::now()->subMonth()->year)
             ->count();
+        
+        $lastMonthRepairOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereMonth('created_at', Carbon::now()->subMonth()->month)
+            ->whereYear('created_at', Carbon::now()->subMonth()->year)
+            ->count();
+        
+        $lastMonthOrders = $lastMonthRetailOrders + $lastMonthRepairOrders;
 
         // Orders Growth
         $ordersGrowth = $lastMonthOrders > 0 
@@ -165,18 +207,25 @@ class DashboardController extends Controller
                 ];
             });
 
-        // Revenue trend (last 7 days)
+        // Revenue trend (last 7 days) - Include both retail and repair
         $revenueTrend = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = Carbon::now()->subDays($i);
-            $revenue = Order::where('shop_owner_id', $shopOwnerId)
+            
+            $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
                 ->whereIn('status', ['processing', 'shipped', 'completed'])
                 ->whereDate('created_at', $date)
                 ->sum('total_amount');
             
+            $repairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
+                ->where('payment_status', 'completed')
+                ->whereDate('created_at', $date)
+                ->sum('total');
+            
             $revenueTrend[] = [
                 'date' => $date->format('M d'),
-                'revenue' => floatval($revenue),
+                'revenue' => floatval($retailRevenue + $repairRevenue),
             ];
         }
 

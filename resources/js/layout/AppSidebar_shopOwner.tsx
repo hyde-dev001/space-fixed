@@ -31,7 +31,7 @@ const navItems: NavItem[] = [
         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
       </svg>
     ),
-    name: "Ecommerce",
+    name: "Dashboard",
     route: "shop-owner.dashboard",
     path: "/shop-owner/dashboard",
   },
@@ -46,6 +46,28 @@ const navItems: NavItem[] = [
     ),
     name: "Calendar",
     route: "shopOwner.calendar",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <path d="M3 9h18"></path>
+        <path d="M9 21V9"></path>
+      </svg>
+    ),
+    name: "Inventory Overview",
+    route: "shop-owner.inventory-overview",
+    path: "/shop-owner/inventory-overview",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+      </svg>
+    ),
+    name: "Audit Logs",
+    route: "shop-owner.audit-logs",
+    path: "/shop-owner/audit-logs",
   },
   {
     icon: (
@@ -81,16 +103,9 @@ const navItems: NavItem[] = [
     route: "shop-owner.shop-profile",
     path: "/shop-owner/shop-profile",
   },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-      </svg>
-    ),
-    name: "Audit Logs",
-    route: "shop-owner.audit-logs",
-    path: "/shop-owner/audit-logs",
-  },
+];
+
+const approvalWorkflowItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -100,16 +115,6 @@ const navItems: NavItem[] = [
     name: "Price Approvals",
     route: "shop-owner.price-approvals",
     path: "/shop-owner/price-approvals",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-      </svg>
-    ),
-    name: "Refund Approval",
-    route: "shopOwner.refund-approvals",
-    path: "/shopOwner/refund-approvals",
   },
   {
     icon: (
@@ -139,18 +144,6 @@ const productManagementItems: NavItem[] = [
   },
   {
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 15h4.5l2.5-3.5h3.5l2.2 2.2c.8.8 1.9 1.3 3 1.3H21a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 1-1z" />
-        <path d="M8 15l1.5 1.5" />
-        <path d="M11 15l1.5 1.5" />
-      </svg>
-    ),
-    name: "Product Uploder",
-    route: "shop-owner.product-uploder",
-    path: "/shop-owner/product-uploder",
-  },
-  {
-    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
         <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -164,15 +157,40 @@ const productManagementItems: NavItem[] = [
   },
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 15h4.5l2.5-3.5h3.5l2.2 2.2c.8.8 1.9 1.3 3 1.3H21a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 1-1z" />
+        <path d="M8 15l1.5 1.5" />
+        <path d="M11 15l1.5 1.5" />
+      </svg>
+    ),
+    name: "Product Uploder",
+    route: "shop-owner.product-uploder",
+    path: "/shop-owner/product-uploder",
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9"></path>
         <path d="M15 13l-3-3m0 0l-3 3m3-3v12"></path>
       </svg>
     ),
-    name: "Upload Services",
+    name: "Services Uploder",
     route: "shop-owner.upload-services",
     path: "/shop-owner/upload-services",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+      </svg>
+    ),
+    name: "Refund Approval",
+    route: "shopOwner.refund-approvals",
+    path: "/shopOwner/refund-approvals",
+  },
+];
+
+const customerManagementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -183,6 +201,19 @@ const productManagementItems: NavItem[] = [
     name: "Customer Support",
     route: "shop-owner.customer-support",
     path: "/shop-owner/customer-support",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M9 15h6" />
+        <path d="M9 11h6" />
+      </svg>
+    ),
+    name: "Repair Support",
+    route: "shop-owner.repair-support",
+    path: "/shop-owner/repair-support",
   },
   {
     icon: (
@@ -209,19 +240,98 @@ const productManagementItems: NavItem[] = [
   },
 ];
 
-const othersItems: NavItem[] = [
-  // Future items can be added here
-];
+type MenuType = "main" | "approval" | "product" | "customer";
 
 const AppSidebar_shopOwner: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any).auth;
+  const shopOwner = auth?.shop_owner;
+  const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual";
+  const rawBusinessType = shopOwner?.business_type?.toLowerCase();
+  // Normalize business type - handle "both (retail & repair)" and "both"
+  const businessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
+  const individualAccountSectionLabel =
+    businessType === "repair"
+      ? "Repair"
+      : businessType === "retail"
+        ? "Sales"
+        : businessType === "both"
+          ? "Repair & Sales"
+          : "Sales";
+  // Company accounts only see approval items, so always show "Approval Workflow"
+  const companyAccountSectionLabel = "Approval Workflow";
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
     {}
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Check if menu item should be visible based on shop owner's registration and business type
+  const isMenuItemVisible = useCallback((menuItem: NavItem) => {
+    if (!shopOwner) return true; // Show all if no shop owner data
+
+    const registrationType = shopOwner.registration_type?.toLowerCase();
+    const rawBusinessType = shopOwner.business_type?.toLowerCase();
+    // Normalize business type - handle "both (retail & repair)" and "both"
+    const itemBusinessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
+    const isCompany = shopOwner.is_company === true;
+    const canManageStaff = shopOwner.can_manage_staff === true;
+
+    // Company-only features (require Company registration)
+    const companyOnlyRoutes = [
+      'shopOwner.user-access-control',
+      'shop-owner.price-approvals',
+      'shop-owner.repair-reject-approval',
+      'shopOwner.suspend-accounts'
+    ];
+
+    if (menuItem.route && companyOnlyRoutes.includes(menuItem.route)) {
+      return isCompany || canManageStaff;
+    }
+
+    // Operational routes - only visible to individual accounts, NOT company accounts
+    // Company accounts have staff to handle these tasks
+    const operationalRoutes = [
+      'shop-owner.job-orders-retail',
+      'shop-owner.job-orders-repair',
+      'shop-owner.product-uploder',
+      'shop-owner.upload-services'
+    ];
+
+    if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
+      // Hide from company accounts - they manage staff who do these tasks
+      if (isCompany || canManageStaff) {
+        return false;
+      }
+
+      // For individual accounts, show based on business type
+      const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
+      const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.upload-services'];
+
+      if (retailRoutes.includes(menuItem.route)) {
+        return itemBusinessType === 'retail' || itemBusinessType === 'both';
+      }
+
+      if (repairRoutes.includes(menuItem.route)) {
+        return itemBusinessType === 'repair' || itemBusinessType === 'both';
+      }
+    }
+
+    // Business type specific support/management routes
+    // Customer Support is only for retail businesses
+    if (menuItem.route === 'shop-owner.customer-support') {
+      return itemBusinessType === 'retail' || itemBusinessType === 'both';
+    }
+
+    // Repair Support is only for repair businesses
+    if (menuItem.route === 'shop-owner.repair-support') {
+      return itemBusinessType === 'repair' || itemBusinessType === 'both';
+    }
+
+    // All other items are visible to everyone
+    return true;
+  }, [shopOwner]);
 
   // Check if route is active using Inertia's route() helper
   const isActive = useCallback(
@@ -287,8 +397,14 @@ const AppSidebar_shopOwner: React.FC = () => {
     let submenuMatched = false;
     let matchedKey: string | null = null;
 
-    ["main", "others"].forEach((menuType) => {
-      const items = menuType === "main" ? navItems : othersItems;
+    ["main", "approval", "product", "customer"].forEach((menuType) => {
+      const items = menuType === "main"
+        ? navItems
+        : menuType === "approval"
+          ? approvalWorkflowItems
+          : menuType === "product"
+            ? productManagementItems
+            : customerManagementItems;
       items.forEach((nav, index) => {
         if (nav.subItems) {
           nav.subItems.forEach((subItem) => {
@@ -320,14 +436,14 @@ const AppSidebar_shopOwner: React.FC = () => {
     }
   }, [openSubmenu]);
 
-  const handleSubmenuToggle = (index: number, menuType: "main" | "others") => {
+  const handleSubmenuToggle = (index: number, menuType: MenuType) => {
     const key = `${menuType}-${index}`;
     toggleSubmenu(key);
   };
 
-  const renderMenuItems = (items: NavItem[], menuType: "main" | "others") => (
+  const renderMenuItems = (items: NavItem[], menuType: MenuType) => (
     <ul className="flex flex-col gap-4">
-      {items.map((nav, index) => (
+      {items.filter(isMenuItemVisible).map((nav, index) => (
         <li key={nav.name}>
           {nav.subItems ? (
             <button
@@ -501,7 +617,29 @@ const AppSidebar_shopOwner: React.FC = () => {
               {renderMenuItems(navItems, "main")}
             </div>
 
-            <div className="pt-2">
+            <div>
+              <h2
+                className={`${isIndividualAccount ? "mb-1" : "mb-4"} text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                    ? "lg:justify-center"
+                    : "justify-start"
+                  }`}
+              >
+                {isExpanded || isHovered || isMobileOpen ? (
+                  isIndividualAccount ? individualAccountSectionLabel : companyAccountSectionLabel
+                ) : (
+                  <HorizontaLDots className="size-6" />
+                )}
+              </h2>
+              {renderMenuItems(productManagementItems, "product")}
+            </div>
+
+            {!isIndividualAccount && (
+              <div>
+                {renderMenuItems(approvalWorkflowItems, "approval")}
+              </div>
+            )}
+
+            <div>
               <h2
                 className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
                     ? "lg:justify-center"
@@ -509,12 +647,12 @@ const AppSidebar_shopOwner: React.FC = () => {
                   }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
-                  "Product Management"
+                  "Customer Management"
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(productManagementItems, "others")}
+              {renderMenuItems(customerManagementItems, "customer")}
             </div>
           </div>
         </nav>

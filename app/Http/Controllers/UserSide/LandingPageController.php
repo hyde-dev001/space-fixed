@@ -384,11 +384,8 @@ class LandingPageController extends Controller
             $operatingHours = $tempHours;
         }
 
-        // Fetch repair services for this shop owner only (excluding only rejected ones)
-        // Get all staff members belonging to this shop owner
-        $staffUserIds = \App\Models\User::where('shop_owner_id', $shopOwner->id)->pluck('id');
-        
-        $repairServices = RepairService::whereIn('created_by', $staffUserIds)
+        // Fetch repair services for this shop owner (including services created by shop owner and their staff)
+        $repairServices = RepairService::where('shop_owner_id', $shopOwner->id)
             ->whereIn('status', ['Active', 'Under Review', 'Pending Owner Approval', 'Pending'])
             ->orderBy('category')
             ->orderBy('name')

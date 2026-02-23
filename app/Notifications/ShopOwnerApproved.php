@@ -8,9 +8,9 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-class ShopOwnerApproved extends Notification implements ShouldQueue
+class ShopOwnerApproved extends Notification // implements ShouldQueue - Disabled for immediate sending
 {
-    use Queueable;
+    // use Queueable; - Not needed when not queued
 
     protected $shopOwner;
     protected $token;

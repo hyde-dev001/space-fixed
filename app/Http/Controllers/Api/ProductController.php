@@ -43,7 +43,7 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         try {
-            $products = QueryBuilder::for(Product::class)
+            $query = QueryBuilder::for(Product::class)
                 ->allowedFilters([
                     'category',
                     AllowedFilter::exact('shop_id', 'shop_owner_id'),
@@ -53,8 +53,18 @@ class ProductController extends Controller
                 ->allowedSorts(['price', 'name', 'created_at', 'sales_count'])
                 ->defaultSort('-created_at')
                 ->where('is_active', true)
-                ->with(['shopOwner:id,first_name,last_name,business_name'])
-                ->paginate($request->get('per_page', 12));
+                ->with(['shopOwner:id,first_name,last_name,business_name,business_type']);
+
+            // Filter by business type - only show products from retail or both shops
+            $query->whereHas('shopOwner', function($q) {
+                $q->where('status', 'approved')
+                  ->where(function($subQuery) {
+                      $subQuery->where('business_type', 'retail')
+                               ->orWhere('business_type', 'both');
+                  });
+            });
+
+            $products = $query->paginate($request->get('per_page', 12));
 
             // Transform products to include full image URLs and shop owner info
             $products->getCollection()->transform(function ($product) {
@@ -396,24 +406,33 @@ class ProductController extends Controller
                 'variants.*.sku' => 'nullable|string',
             ]);
 
-            // IMPORTANT: Prevent direct price changes from STAFF members
-            // Staff must use the price approval workflow
+            // IMPORTANT: Prevent direct price changes from STAFF members working for COMPANY-type shops
+            // Staff from company-type shops must use the price approval workflow
+            // Individual shop owners and their staff can change prices directly
             if (Auth::guard('user')->check() && isset($validated['price'])) {
                 $currentPrice = $product->price;
                 $newPrice = $validated['price'];
                 
-                // If price is different, reject the direct update
+                // If price is different, check if approval is required
                 if ($newPrice != $currentPrice) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Direct price changes are not allowed. Please use the price approval workflow.',
-                        'requires_approval' => true,
-                    ], 403);
+                    // Get the shop owner to check registration type
+                    $shopOwner = \App\Models\ShopOwner::find($shopOwnerId);
+                    
+                    // Only require approval for company-type shops
+                    if ($shopOwner && $shopOwner->registration_type === 'company') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Direct price changes are not allowed for company-type shops. Please use the price approval workflow.',
+                            'requires_approval' => true,
+                        ], 403);
+                    }
+                    // Individual shop owners and their staff can proceed with price change
                 }
             }
 
-            // Shop owners can change price directly
-            // Staff can update other fields (price should be excluded by frontend if changed)
+            // Shop owners (both individual and company) can change price directly via shop_owner guard
+            // Staff from individual shops can change prices directly
+            // Staff from company shops must use approval workflow
 
             DB::beginTransaction();
             try {

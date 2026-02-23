@@ -159,6 +159,13 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     };
 
     fetchConversations();
+    
+    // Auto-refresh conversations every 2 seconds
+    const conversationInterval = setInterval(() => {
+      fetchConversations();
+    }, 2000);
+    
+    return () => clearInterval(conversationInterval);
   }, [activeFilter]);  // Re-fetch when filter changes
 
   const fetchMessages = async (conversationId: number, silent: boolean = false) => {
@@ -347,10 +354,10 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
     // Only poll if a conversation is selected
     if (selectedConversation) {
-      // Poll every 3 seconds for new messages
+      // Poll every 2 seconds for new messages
       pollingIntervalRef.current = setInterval(() => {
         fetchMessages(selectedConversation.id, true); // silent = true to avoid console spam
-      }, 3000);
+      }, 2000);
     }
 
     // Cleanup on unmount or when conversation changes

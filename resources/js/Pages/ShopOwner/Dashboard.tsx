@@ -5,3 +5,4 @@ import Ecommerce from './Ecommerce';
 export default function ShopOwnerDashboard() {
   return <Ecommerce />;
 }
+

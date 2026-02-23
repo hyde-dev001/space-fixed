@@ -151,6 +151,11 @@ const UserAccessControl: React.FC = () => {
   const flash = pageProps.flash;
   const initialEmployees = pageProps.employees;
   
+  // Get shop owner data from auth
+  const auth = pageProps.auth;
+  const shopOwner = auth?.shop_owner;
+  const businessType = shopOwner?.business_type?.toLowerCase(); // 'retail', 'repair', 'both'
+  
   // Also check for Laravel's default flash data keys
   const success = pageProps.success || flash?.success;
   const temporary_password = pageProps.temporary_password || flash?.temporary_password;
@@ -522,6 +527,28 @@ const UserAccessControl: React.FC = () => {
     
     return info[role] || { title: 'Unknown Role', description: '', permissions: 0 };
   };
+
+  // Filter available roles based on business type
+  const getAvailableRoles = () => {
+    const allRoles = [
+      { value: 'Manager', label: 'Manager - Full System Access' },
+      { value: 'Finance', label: 'Finance - Invoices, Expenses, Reports' },
+      { value: 'HR', label: 'Human Resources - Employees, Payroll, Attendance' },
+      { value: 'CRM', label: 'CRM - Customers, Leads, Sales' },
+      { value: 'Repairer', label: 'Repairer - Technical Support & Repairs' },
+      { value: 'Inventory Manager', label: 'Inventory Manager - Inventory, Suppliers, Stock' },
+      { value: 'Staff', label: 'Staff - Basic Access (Customizable)' },
+    ];
+
+    // Filter out Repairer if business type is retail only
+    if (businessType === 'retail') {
+      return allRoles.filter(role => role.value !== 'Repairer');
+    }
+
+    return allRoles;
+  };
+
+  const availableRoleOptions = getAvailableRoles();
 
   const handleAddEmployee = async () => {
     // Check required fields
@@ -1008,13 +1035,9 @@ const UserAccessControl: React.FC = () => {
                   title="Filter employees"
                 >
                   <option value="all">All</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Finance">Finance</option>
-                  <option value="HR">HR</option>
-                  <option value="CRM">CRM</option>
-                  <option value="Repairer">Repairer</option>
-                  <option value="Inventory Manager">Inventory Manager</option>
-                  <option value="Staff">Staff</option>
+                  {availableRoleOptions.map(role => (
+                    <option key={role.value} value={role.value}>{role.value}</option>
+                  ))}
                   <option value="recent">Recent (7 days)</option>
                 </select>
               </div>
@@ -1436,14 +1459,15 @@ const UserAccessControl: React.FC = () => {
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                           >
                             <option value="">Select department/role</option>
-                            <option value="Manager">Manager - Full System Access</option>
-                            <option value="Finance">Finance - Invoices, Expenses, Reports</option>
-                            <option value="HR">Human Resources - Employees, Payroll, Attendance</option>
-                            <option value="CRM">CRM - Customers, Leads, Sales</option>
-                            <option value="Repairer">Repairer - Technical Support & Repairs</option>
-                            <option value="Inventory Manager">Inventory Manager - Inventory, Suppliers, Stock</option>
-                            <option value="Staff">Staff - Basic Access (Customizable)</option>
+                            {availableRoleOptions.map(role => (
+                              <option key={role.value} value={role.value}>{role.label}</option>
+                            ))}
                           </select>
+                          {businessType === 'retail' && (
+                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                              ℹ️ Repairer role is hidden (your shop is retail-only)
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position / Job Title</label>

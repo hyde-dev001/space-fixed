@@ -7,7 +7,6 @@ import RecentOrders from "../../components/ecommerce/RecentOrders";
 import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import StatisticsChart from "../../components/ecommerce/StatisticsChart";
-import AccountTypeInfo from "../../components/shopOwner/AccountTypeInfo";
 
 interface DashboardStats {
   revenue: {
@@ -103,7 +102,7 @@ export default function Ecommerce() {
   if (loading) {
     return (
       <AppLayoutShopOwner>
-        <Head title="Ecommerce Dashboard - Shop Owner" />
+        <Head title="Dashboard - Shop Owner" />
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
@@ -116,33 +115,30 @@ export default function Ecommerce() {
 
   return (
     <AppLayoutShopOwner>
-      <Head title="Ecommerce Dashboard - Shop Owner" />
+      <Head title="Dashboard - Shop Owner" />
       <div className="space-y-6">
         <div>
           <h3 className="text-2xl font-bold text-gray-800 dark:text-white/90">
-            Ecommerce Dashboard
+            Dashboard
           </h3>
           <p className="mt-1 text-gray-500 dark:text-gray-400">
             Overview of your shop's ecommerce performance
           </p>
         </div>
 
-        {/* Account Type Information Banner */}
-        <AccountTypeInfo />
+      <EcommerceMetrics stats={stats} />
 
-        <EcommerceMetrics stats={stats} />
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <MonthlySalesChart revenueTrend={stats?.revenue_trend || []} />
+        <MonthlyTarget 
+          thisMonth={stats?.revenue.this_month || 0}
+          lastMonth={stats?.revenue.last_month || 0}
+        />
+      </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <MonthlySalesChart revenueTrend={stats?.revenue_trend || []} />
-          <MonthlyTarget 
-            thisMonth={stats?.revenue.this_month || 0}
-            lastMonth={stats?.revenue.last_month || 0}
-          />
-        </div>
+      <StatisticsChart stats={stats} />
 
-        <StatisticsChart stats={stats} />
-
-        <RecentOrders orders={stats?.recent_orders || []} />
+      <RecentOrders orders={stats?.recent_orders || []} />
       </div>
     </AppLayoutShopOwner>
   );

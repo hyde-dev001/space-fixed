@@ -20,6 +20,7 @@ class RepairService extends Model
         'description',
         'status',
         'rejection_reason',
+        'shop_owner_id',
         'created_by',
         'updated_by',
         'finance_notes',

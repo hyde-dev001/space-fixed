@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,12 @@ use Illuminate\Support\Facades\Schema;
 
 class CheckoutController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Create order from cart items
      */
@@ -292,6 +299,31 @@ class CheckoutController extends Controller
                         'customer_id' => $customerId,
                         'total' => $orderTotal,
                     ]);
+
+                    // Send notification to shop owner about new retail order
+                    try {
+                        $this->notificationService->notifyNewOrder(
+                            shopOwnerId: $shopOwnerId,
+                            orderData: [
+                                'order_id' => $order->id,
+                                'order_number' => $order->order_number,
+                                'total' => number_format($orderTotal, 2),
+                                'items_count' => count($shopItems),
+                                'customer_name' => $validated['customer_name'],
+                                'customer_email' => $validated['customer_email'],
+                            ]
+                        );
+                        Log::info('Shop owner notified of new order', [
+                            'shop_owner_id' => $shopOwnerId,
+                            'order_number' => $order->order_number,
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send shop owner notification', [
+                            'shop_owner_id' => $shopOwnerId,
+                            'order_id' => $order->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
 
                 DB::commit();

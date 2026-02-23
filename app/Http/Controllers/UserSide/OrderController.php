@@ -6,13 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Enums\OrderStatus;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class OrderController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Display user's orders
      */
@@ -108,6 +116,33 @@ class OrderController extends Controller
 
         $order->status = OrderStatus::DELIVERED;
         $order->save();
+
+        // Notify shop owner about successful delivery
+        try {
+            $this->notificationService->sendToShopOwner(
+                shopOwnerId: $order->shop_owner_id,
+                type: \App\Enums\NotificationType::ORDER_DELIVERED,
+                title: 'Order Delivered Successfully',
+                message: "Order #{$order->order_number} has been delivered to customer",
+                data: [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'customer_name' => $order->customer_name,
+                    'total' => number_format($order->total_amount, 2),
+                ],
+                actionUrl: '/shop-owner/job-orders-retail'
+            );
+            Log::info('Shop owner notified of successful delivery', [
+                'shop_owner_id' => $order->shop_owner_id,
+                'order_number' => $order->order_number,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send delivery notification to shop owner', [
+                'shop_owner_id' => $order->shop_owner_id,
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'success' => true,

@@ -14,7 +14,7 @@ type RepairOrder = {
   item: string;
   service: string;
   total: string;
-  status: "assigned_to_repairer" | "repairer_accepted" | "owner_approved" | "waiting_customer_confirmation" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "picked_up" | "under-review" | "pending" | "received" | "rejected" | "cancelled";
+  status: "new_request" | "assigned_to_repairer" | "repairer_accepted" | "owner_approved" | "waiting_customer_confirmation" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "picked_up" | "under-review" | "pending" | "received" | "rejected" | "cancelled";
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -33,6 +33,10 @@ type RepairOrder = {
   pickupPostalCode?: string;
   selectedServices?: Array<{ name: string; price?: string } | string>;
   conversation_id?: number | null;
+  payment_enabled?: boolean;
+  payment_status?: string;
+  pickup_enabled?: boolean;
+  pickup_enabled_at?: string | null;
 };
 
 type MetricCardProps = {
@@ -338,7 +342,7 @@ export default function JobOrdersRepair() {
 
     try {
       setIsLoading(true);
-      const response = await axios.get('/api/repairer/repairs');
+      const response = await axios.get('/api/shop-owner/repairs/');
 
       if (response.data.success) {
         // Map the API response to match the RepairOrder type
@@ -401,7 +405,9 @@ export default function JobOrdersRepair() {
             });
           })(),
           selectedServices: repair.services?.map((s: any) => ({ name: s.name, price: `₱${s.price}` })) || [],
-          conversation_id: repair.conversation_id
+          conversation_id: repair.conversation_id,
+          payment_enabled: repair.payment_enabled || false,
+          payment_status: repair.payment_status || 'pending'
         }));
         setOrders(mappedOrders);
       }
@@ -420,8 +426,8 @@ export default function JobOrdersRepair() {
       if (selectedTab === "all") {
         matchesTab = true;
       } else if (selectedTab === "under-review") {
-        // New Request tab includes assigned_to_repairer and under-review status
-        matchesTab = order.status === "under-review" || order.status === "assigned_to_repairer";
+        // New Request tab includes new_request, assigned_to_repairer and under-review status
+        matchesTab = order.status === "under-review" || order.status === "assigned_to_repairer" || order.status === "new_request";
       } else if (selectedTab === "pending") {
         // Pending tab includes pending, repairer_accepted, owner_approval_pending, and owner_approved
         matchesTab = order.status === "pending" || order.status === "repairer_accepted" || order.status === "owner_approval_pending" || order.status === "owner_approved";
@@ -449,7 +455,7 @@ export default function JobOrdersRepair() {
   // Calculate statistics
   const stats = useMemo(() => {
     const total = orders.length;
-    const underReview = orders.filter(o => o.status === "under-review" || o.status === "assigned_to_repairer").length;
+    const underReview = orders.filter(o => o.status === "under-review" || o.status === "assigned_to_repairer" || o.status === "new_request").length;
     const pending = orders.filter(o => o.status === "pending" || o.status === "repairer_accepted" || o.status === "owner_approval_pending" || o.status === "owner_approved").length;
     const received = orders.filter(o => o.status === "received").length;
     const inProgress = orders.filter(o => o.status === "in-progress").length;
@@ -467,6 +473,7 @@ export default function JobOrdersRepair() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
+      "new_request": "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
       "assigned_to_repairer": "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
       "under-review": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
       "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
@@ -500,7 +507,7 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repairer/repairs/${order.database_id}/mark-received`, {
+      const response = await fetch(`/api/shop-owner/repairs/${order.database_id}/mark-received`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -557,7 +564,7 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repairer/repairs/${order.database_id}/start-work`, {
+      const response = await fetch(`/api/shop-owner/repairs/${order.database_id}/start-work`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -611,7 +618,7 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     try {
-      const response = await axios.post(`/api/repairer/repairs/${orderId}/resume-work`);
+      const response = await axios.post(`/api/shop-owner/repairs/${orderId}/resume-work`);
       
       if (response.data.success) {
         await Swal.fire({
@@ -645,7 +652,7 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     try {
-      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-completed`, {
+      const response = await axios.post(`/api/shop-owner/repairs/${orderId}/mark-completed`, {
         completion_notes: ''
       });
       
@@ -681,7 +688,7 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     try {
-      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-ready`, { 
+      const response = await axios.post(`/api/shop-owner/repairs/${orderId}/mark-ready`, { 
         pickup_instructions: '' 
       });
       
@@ -698,6 +705,40 @@ export default function JobOrdersRepair() {
       await Swal.fire({
         title: 'Error',
         text: error.response?.data?.message || 'Failed to mark as ready',
+        icon: 'error',
+      });
+    }
+  };
+
+  const handleActivatePickup = async (orderId: string) => {
+    const result = await Swal.fire({
+      title: 'Activate Pickup Confirmation?',
+      text: 'This will allow the customer to confirm they have received their item.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Activate',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.post(`/api/shop-owner/repairs/${orderId}/activate-pickup`);
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Pickup Activated!',
+          text: 'Customer can now confirm they received their item.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to activate pickup',
         icon: 'error',
       });
     }
@@ -869,7 +910,7 @@ export default function JobOrdersRepair() {
 
     if (action === "accept") {
       try {
-        const response = await axios.post(`/api/repairer/repairs/${viewOrder.database_id}/accept`);
+        const response = await axios.post(`/api/shop-owner/repairs/${viewOrder.database_id}/accept`);
         
         if (response.data.success) {
           // Close modal immediately
@@ -926,7 +967,7 @@ export default function JobOrdersRepair() {
       : selectedRejectionReason;
 
     try {
-      const response = await axios.post(`/api/repairer/repairs/${rejectionTarget.database_id}/reject`, {
+      const response = await axios.post(`/api/shop-owner/repairs/${rejectionTarget.database_id}/reject`, {
         reason: fullReason
       });
       
@@ -1193,8 +1234,10 @@ export default function JobOrdersRepair() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
                           <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                            {order.status === "assigned_to_repairer"
-                              ? "new request"
+                            {order.status === "new_request"
+                              ? "New Request"
+                              : order.status === "assigned_to_repairer"
+                              ? "Assigned to Repairer"
                               : order.status === "under-review"
                               ? "Under Review"
                               : order.status === "pending"
@@ -1215,6 +1258,15 @@ export default function JobOrdersRepair() {
                               ? "Rejected"
                               : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                           </span>
+                          {order.payment_enabled && (
+                            <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${
+                              order.payment_status === 'completed' 
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' 
+                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                            }`}>
+                              {order.payment_status === 'completed' ? '💳 Paid' : '⏳ Awaiting Payment'}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
@@ -1249,10 +1301,19 @@ export default function JobOrdersRepair() {
                           {order.status === "received" && (
                             <button
                               onClick={() => handleStartWork(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                              title="Start work on this repair"
+                              disabled={order.payment_enabled && order.payment_status !== 'completed'}
+                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                order.payment_enabled && order.payment_status !== 'completed'
+                                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                  : 'text-white bg-blue-600 hover:bg-blue-700'
+                              }`}
+                              title={
+                                order.payment_enabled && order.payment_status !== 'completed'
+                                  ? 'Waiting for customer payment'
+                                  : 'Start work on this repair'
+                              }
                             >
-                              Start Work
+                              {order.payment_enabled && order.payment_status !== 'completed' ? '⏳ Awaiting Payment' : 'Start Work'}
                             </button>
                           )}
                           
@@ -1384,8 +1445,10 @@ export default function JobOrdersRepair() {
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Order {viewOrder.id}</p>
                   </div>
                   <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full ${getStatusColor(viewOrder.status)}`}>
-                    {viewOrder.status === "assigned_to_repairer"
-                      ? "new request"
+                    {viewOrder.status === "new_request"
+                      ? "New Request"
+                      : viewOrder.status === "assigned_to_repairer"
+                      ? "Assigned to Repairer"
                       : viewOrder.status === "under-review"
                       ? "Under Review"
                       : viewOrder.status === "pending"
@@ -1610,6 +1673,22 @@ export default function JobOrdersRepair() {
 
               {/* Footer */}
               <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-900/30 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
+                {viewOrder.status === "new_request" && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => handleReviewAction("accept")}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleReviewAction("reject")}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
                 {viewOrder.status === "assigned_to_repairer" && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
@@ -1707,11 +1786,16 @@ export default function JobOrdersRepair() {
                 {viewOrder.status === "ready-for-pickup" && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
-                      onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-white hover:bg-gray-100 text-black border border-black rounded-lg font-medium transition-colors"
-                      title="Activate received"
+                      onClick={() => handleActivatePickup(String(viewOrder.database_id))}
+                      disabled={viewOrder.pickup_enabled}
+                      className={`px-4 py-2 border border-black rounded-lg font-medium transition-colors ${
+                        viewOrder.pickup_enabled
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-white hover:bg-gray-100 text-black'
+                      }`}
+                      title={viewOrder.pickup_enabled ? 'Pickup already activated' : 'Activate pickup confirmation'}
                     >
-                      Activate Received
+                      {viewOrder.pickup_enabled ? '✓ Pickup Activated' : 'Activate Receive'}
                     </button>
                   </div>
                 )}

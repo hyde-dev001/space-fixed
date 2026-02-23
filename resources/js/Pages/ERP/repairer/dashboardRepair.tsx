@@ -1,4 +1,4 @@
-import { Head, Link } from "@inertiajs/react";
+import { Head } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { useEffect, useState } from "react";
 
@@ -209,12 +209,6 @@ const DashboardRepair: React.FC = () => {
 						<h1 className="mb-2 text-3xl font-bold text-gray-900">Repair Dashboard</h1>
 						<p className="text-gray-600">Overview of repair operations and activity.</p>
 					</div>
-					<Link
-						href="/erp/staff/job-orders-repair"
-						className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-gray-300 hover:text-gray-900"
-					>
-						View Job Orders Repair
-					</Link>
 				</div>
 
 				<div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">

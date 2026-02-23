@@ -6,6 +6,7 @@ import { useCart } from '../../contexts/CartContext';
 import { dispatchCartAddedEvent } from '../../types/cart-events';
 import NotificationCenter from '../../components/header/NotificationCenter';
 import NotificationBell from '../../Components/common/NotificationBell';
+import { useBadgeCounts } from '../../hooks/useBadgeCounts';
 
 const Navigation: React.FC = () => {
   const { cartCount, isLoading: cartLoading } = useCart();
@@ -21,16 +22,29 @@ const Navigation: React.FC = () => {
   const page = usePage();
   const { url } = page;
   const { auth } = page.props as any;
-  const orderStatusCount = Number((page.props as any)?.orderStatusCount ?? 0);
-  const repairStatusCount = Number((page.props as any)?.repairStatusCount ?? 0);
-  const userIconCount = Number((page.props as any)?.userIconCount ?? (orderStatusCount + repairStatusCount));
-  const chatIconCount = Number((page.props as any)?.chatIconCount ?? 0);
-  const cartIconCount = Number((page.props as any)?.cartIconCount ?? 0);
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
-  // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
   const user = auth?.user;
   const isAuthenticated = Boolean(user && !user.shop_owner_id);
+  
+  // Use live badge counts hook for authenticated users
+  const liveBadgeCounts = useBadgeCounts(isAuthenticated);
+  
+  // Use either live counts or fallback to page props
+  const orderStatusCount = isAuthenticated 
+    ? liveBadgeCounts.orderStatusCount 
+    : Number((page.props as any)?.orderStatusCount ?? 0);
+  const repairStatusCount = isAuthenticated 
+    ? liveBadgeCounts.repairStatusCount 
+    : Number((page.props as any)?.repairStatusCount ?? 0);
+  const userIconCount = isAuthenticated 
+    ? liveBadgeCounts.userIconCount 
+    : Number((page.props as any)?.userIconCount ?? (orderStatusCount + repairStatusCount));
+  const chatIconCount = isAuthenticated 
+    ? liveBadgeCounts.chatIconCount 
+    : Number((page.props as any)?.chatIconCount ?? 0);
+  const cartIconCount = Number((page.props as any)?.cartIconCount ?? 0);
+  
   const effectiveCartCount = isAuthenticated ? cartIconCount : (cartLoading ? 0 : cartCount);
 
   // Shoe categories for dropdown

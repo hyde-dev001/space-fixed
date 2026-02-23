@@ -198,6 +198,42 @@ Route::prefix('api/customer/conversations')->middleware('auth:user')->group(func
     Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'sendMessage']);
 });
 
+// Customer Badge Counts - Real-time counts for navigation header icons
+Route::get('/api/customer/badge-counts', function () {
+    if (!Auth::guard('user')->check()) {
+        return response()->json(['error' => 'Unauthorized'], 401);
+    }
+
+    $user = Auth::guard('user')->user();
+    
+    $orderStatusCount = \App\Models\Notification::query()
+        ->where('user_id', $user->id)
+        ->where('is_read', false)
+        ->whereIn('type', ['order_status_changed', 'order_delivered', 'order_cancelled'])
+        ->count();
+    
+    $repairStatusCount = \App\Models\Notification::query()
+        ->where('user_id', $user->id)
+        ->where('is_read', false)
+        ->whereIn('type', ['repair_status_updated', 'repair_completed', 'repair_ready_for_pickup'])
+        ->count();
+    
+    $chatIconCount = \App\Models\ConversationMessage::query()
+        ->whereHas('conversation', function ($query) use ($user) {
+            $query->where('customer_id', $user->id);
+        })
+        ->where('sender_type', '!=', 'customer')
+        ->where('read_at', null)
+        ->count();
+    
+    return response()->json([
+        'orderStatusCount' => $orderStatusCount,
+        'repairStatusCount' => $repairStatusCount,
+        'chatIconCount' => $chatIconCount,
+        'userIconCount' => $orderStatusCount + $repairStatusCount,
+    ]);
+})->middleware('auth:user');
+
 // User Address Management Routes
 Route::middleware('auth:user')->prefix('api/user/addresses')->group(function () {
     Route::get('/', [App\Http\Controllers\UserSide\UserAddressController::class, 'index'])->name('user.addresses.index');
@@ -342,7 +378,12 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
 Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
     Route::get('/ecommerce', [EcommerceController::class, 'index'])->name('ecommerce');
-    Route::get('/user-access-control', [UserAccessControlController::class, 'index'])->name('user-access-control');
+    
+    // User Access Control - Company only (to manage employees)
+    Route::get('/user-access-control', [UserAccessControlController::class, 'index'])
+        ->middleware('check.registration.type:company')
+        ->name('user-access-control');
+    
     // Suspend Accounts page for Shop Owner (frontend page)
     Route::get('/suspend-accounts', function () {
         return Inertia::render('ShopOwner/suspendAccount');
@@ -355,88 +396,116 @@ Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
 
 // Shop Owner Protected Routes
 Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')->group(function () {
+    // Dashboard - Available to ALL shop owners
     Route::get('/dashboard', function () {
         $shopOwner = Auth::guard('shop_owner')->user();
         return Inertia::render('ShopOwner/Dashboard', ['shop_owner' => $shopOwner]);
     })->name('dashboard');
 
-    Route::get('/products', function () {
-        return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
-    })->name('products');
+    // PRODUCT MANAGEMENT - Retail or Both only
+    Route::middleware('check.business.type:retail,both')->group(function () {
+        Route::get('/products', function () {
+            return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
+        })->name('products');
 
-    Route::get('/product-uploder', function () {
-        return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
-    })->name('product-uploder');
+        Route::get('/product-uploder', function () {
+            return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
+        })->name('product-uploder');
 
+        Route::get('/inventory-overview', function () {
+            return Inertia::render('ShopOwner/product management/InventoryOverview');
+        })->name('inventory-overview');
+    });
+
+    // SERVICE MANAGEMENT - Repair or Both only
+    Route::middleware('check.business.type:repair,both')->group(function () {
+        Route::get('/job-orders-repair', function () {
+            return Inertia::render('ShopOwner/service management/JobOrdersRepair');
+        })->name('job-orders-repair');
+
+        Route::get('/upload-services', function () {
+            return Inertia::render('ShopOwner/service management/uploadService');
+        })->name('upload-services');
+
+        Route::middleware('check.registration.type:company')->group(function () {
+            Route::get('/repair-reject-approval', function () {
+                return Inertia::render('ShopOwner/repairRejectReview');
+            })->name('repair-reject-approval');
+
+            Route::get('/history-rejection', function () {
+                return Inertia::render('ShopOwner/historyRejection');
+            })->name('history-rejection');
+        });
+    });
+
+    // ORDERS - Available to ALL
     Route::get('/orders', function () {
         return Inertia::render('ShopOwner/Orders');
     })->name('orders');
-
-    Route::get('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'index'])->name('shop-profile');
-    Route::post('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'update'])->name('shop-profile.update');
-
-    Route::get('/audit-logs', function () {
-        return Inertia::render('ShopOwner/AuditLogs');
-    })->name('audit-logs');
-
-    Route::get('/price-approvals', function () {
-        return Inertia::render('ShopOwner/PriceApprovals');
-    })->name('price-approvals');
-
-    Route::get('/refund-approvals', function () {
-        return Inertia::render('ShopOwner/refundApproval');
-    })->name('refund-approvals');
-
-    Route::get('/repair-reject-approval', function () {
-        return Inertia::render('ShopOwner/repairRejectReview');
-    })->name('repair-reject-approval');
-
-    Route::get('/history-rejection', function () {
-        return Inertia::render('ShopOwner/historyRejection');
-    })->name('history-rejection');
-
-    Route::get('/job-orders-repair', function () {
-        return Inertia::render('ShopOwner/service management/JobOrdersRepair');
-    })->name('job-orders-repair');
-
-    Route::get('/upload-services', function () {
-        return Inertia::render('ShopOwner/service management/uploadService');
-    })->name('upload-services');
 
     Route::get('/job-orders-retail', function () {
         return Inertia::render('ShopOwner/order management/JobOrders');
     })->name('job-orders-retail');
 
+    // CUSTOMERS - Available to ALL
+    Route::get('/customers', function () {
+        return Inertia::render('ShopOwner/customer management/Customers');
+    })->name('customers');
+
     Route::get('/customer-support', function () {
         return Inertia::render('ShopOwner/customer management/customerSupport');
     })->name('customer-support');
 
-    Route::get('/customers', function () {
-        return Inertia::render('ShopOwner/customer management/Customers');
-    })->name('customers');
+    Route::get('/repair-support', function () {
+        return Inertia::render('ShopOwner/customer management/repairSupport');
+    })->name('repair-support');
 
     Route::get('/customer-reviews', function () {
         return Inertia::render('ShopOwner/customer management/CustomersReviews');
     })->name('customer-reviews');
 
-    Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
-    Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
-    Route::post('/employees/{employee}/suspend', [\App\Http\Controllers\EmployeeController::class, 'suspend'])->middleware('shop.isolation')->name('employees.suspend');
-    Route::post('/employees/{employee}/activate', [\App\Http\Controllers\EmployeeController::class, 'activate'])->middleware('shop.isolation')->name('employees.activate');
-    
-    // Permission Management Routes (Phase 6)
-    Route::get('/permissions/available', [UserAccessControlController::class, 'getAvailablePermissions'])->name('permissions.available');
-    Route::get('/employees/{userId}/permissions', [UserAccessControlController::class, 'getEmployeePermissions'])->name('employees.permissions.get');
-    Route::post('/employees/{userId}/permissions', [UserAccessControlController::class, 'updateEmployeePermissions'])->name('employees.permissions.update');
-    Route::post('/employees/{userId}/permissions/sync', [UserAccessControlController::class, 'syncEmployeePermissions'])->name('employees.permissions.sync');
+    // SHOP PROFILE - Available to ALL
+    Route::get('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'index'])->name('shop-profile');
+    Route::post('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'update'])->name('shop-profile.update');
 
-    // Roles Management Routes (Phase 7)
-    Route::get('/roles/available', [UserAccessControlController::class, 'getAvailableRoles'])->name('roles.available');
-    Route::post('/employees/{userId}/roles/sync', [UserAccessControlController::class, 'syncAdditionalRoles'])->name('employees.roles.sync');
-    
-    // Position Templates Routes (Phase 6+)
-    Route::get('/position-templates', [UserAccessControlController::class, 'getPositionTemplates'])->name('position-templates.index');
-    Route::post('/employees/{userId}/apply-template', [UserAccessControlController::class, 'applyPositionTemplate'])->name('employees.apply-template');
+    // AUDIT LOGS - Available to ALL
+    Route::get('/audit-logs', function () {
+        return Inertia::render('ShopOwner/AuditLogs');
+    })->name('audit-logs');
+
+    // REFUND APPROVALS - Available to ALL
+    Route::get('/refund-approvals', function () {
+        return Inertia::render('ShopOwner/refundApproval');
+    })->name('refund-approvals');
+
+    // PRICE APPROVALS - Company only (for approving staff price changes)
+    Route::middleware('check.registration.type:company')->group(function () {
+        Route::get('/price-approvals', function () {
+            return Inertia::render('ShopOwner/PriceApprovals');
+        })->name('price-approvals');
+    });
+
+    // STAFF/EMPLOYEE MANAGEMENT - Company only
+    Route::middleware('check.registration.type:company')->group(function () {
+        Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
+        Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
+        Route::post('/employees/{employee}/suspend', [\App\Http\Controllers\EmployeeController::class, 'suspend'])->middleware('shop.isolation')->name('employees.suspend');
+        Route::post('/employees/{employee}/activate', [\App\Http\Controllers\EmployeeController::class, 'activate'])->middleware('shop.isolation')->name('employees.activate');
+        
+        // Permission Management Routes (Phase 6)
+        Route::get('/permissions/available', [UserAccessControlController::class, 'getAvailablePermissions'])->name('permissions.available');
+        Route::get('/employees/{userId}/permissions', [UserAccessControlController::class, 'getEmployeePermissions'])->name('employees.permissions.get');
+        Route::post('/employees/{userId}/permissions', [UserAccessControlController::class, 'updateEmployeePermissions'])->name('employees.permissions.update');
+        Route::post('/employees/{userId}/permissions/sync', [UserAccessControlController::class, 'syncEmployeePermissions'])->name('employees.permissions.sync');
+
+        // Roles Management Routes (Phase 7)
+        Route::get('/roles/available', [UserAccessControlController::class, 'getAvailableRoles'])->name('roles.available');
+        Route::post('/employees/{userId}/roles/sync', [UserAccessControlController::class, 'syncAdditionalRoles'])->name('employees.roles.sync');
+        
+        // Position Templates Routes (Phase 6+)
+        Route::get('/position-templates', [UserAccessControlController::class, 'getPositionTemplates'])->name('position-templates.index');
+        Route::post('/employees/{userId}/apply-template', [UserAccessControlController::class, 'applyPositionTemplate'])->name('employees.apply-template');
+    });
 });
 
 /**
@@ -650,6 +719,7 @@ Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function (
     Route::post('{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork']);
     Route::post('{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted']);
     Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
+    Route::post('{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup']);
 });
 
 // Manager API Routes (Phase 5 - Rejection Review)

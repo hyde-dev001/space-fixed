@@ -430,7 +430,37 @@ export default function JobOrdersPage() {
     setIsViewModalOpen(true);
   };
 
-  const handleConfirmShipping = async () => {
+  // Helper function to convert ETA preset to actual date
+  const calculateEtaDate = (preset: string): string => {
+    const today = new Date();
+    let daysToAdd = 3; // default
+    
+    // Extract the maximum days from the preset string
+    if (preset.includes("1-2")) daysToAdd = 2;
+    else if (preset.includes("1-3")) daysToAdd = 3;
+    else if (preset.includes("2-4")) daysToAdd = 4;
+    else if (preset.includes("3-6")) daysToAdd = 6;
+    
+    // Add days (skip weekends for business days calculation)
+    let currentDate = new Date(today);
+    let addedDays = 0;
+    
+    while (addedDays < daysToAdd) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      // Skip weekends (0 = Sunday, 6 = Saturday)
+      if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+        addedDays++;
+      }
+    }
+    
+    // Format as YYYY-MM-DD
+    return currentDate.toISOString().split('T')[0];
+  };
+
+  const handleConfirmShipping = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    
     if (!selectedOrder) return;
 
     // Validation
@@ -490,8 +520,16 @@ export default function JobOrdersPage() {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
+      
+      if (!csrfResponse.ok) {
+        throw new Error('Failed to get CSRF token');
+      }
+      
       const csrfData = await csrfResponse.json();
       const csrfToken = csrfData.csrf_token;
+
+      // Calculate actual ETA date from preset
+      const etaDate = calculateEtaDate(etaPreset);
 
       // Call API to update order status with shipping info
       const response = await fetch(`/api/shop-owner/orders/${selectedOrder.id}/status`, {
@@ -499,6 +537,7 @@ export default function JobOrdersPage() {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken,
         },
         body: JSON.stringify({
@@ -508,14 +547,31 @@ export default function JobOrdersPage() {
           carrier_name: carrierName,
           carrier_phone: carrierPhone,
           tracking_link: trackingLink || null,
-          eta: etaPreset,
+          eta: etaDate,
         })
       });
 
+      // Log the response for debugging
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers.get('content-type'));
+      
+      const responseText = await response.text();
+      console.log('Response body:', responseText);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update order shipping information');
+        // Try to parse as JSON, fallback to text
+        let errorMessage = 'Failed to update order shipping information';
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          errorMessage = responseText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
+      
+      // Parse the successful response
+      const data = JSON.parse(responseText);
 
       // Update local state
       setOrders((prev) =>
@@ -530,7 +586,7 @@ export default function JobOrdersPage() {
                 carrierPhone,
                 trackingNumber,
                 trackingLink,
-                eta: etaPreset,
+                eta: etaDate,
               }
             : o
         )
@@ -827,6 +883,7 @@ export default function JobOrdersPage() {
                       <td className="px-6 py-4 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button
+                            type="button"
                             onClick={() => handleViewOrder(order)}
                             className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                             title="View order details"
@@ -835,6 +892,7 @@ export default function JobOrdersPage() {
                           </button>
                           {order.status === "pending" && (
                             <button
+                              type="button"
                               onClick={() => handleProcessOrder(order)}
                               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                               title="Start processing"
@@ -844,6 +902,7 @@ export default function JobOrdersPage() {
                           )}
                           {order.status === "processing" && (
                             <button
+                              type="button"
                               onClick={() => handleShipOrder(order)}
                               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
                               title="Mark as shipped"
@@ -1081,12 +1140,14 @@ export default function JobOrdersPage() {
 
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
                 <button
+                  type="button"
                   onClick={handleConfirmShipping}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                 >
                   Confirm Shipping
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setIsShippingModalOpen(false);
                     setSelectedOrder(null);
@@ -1202,6 +1263,7 @@ export default function JobOrdersPage() {
 
               <div className="mt-6 flex gap-3">
                 <button
+                  type="button"
                   onClick={() => {
                     setIsViewModalOpen(false);
                     setViewOrder(null);

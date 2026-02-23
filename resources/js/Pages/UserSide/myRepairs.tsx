@@ -30,6 +30,8 @@ type RepairOrder = {
   paymongo_link_id?: string | null;
   payment_enabled?: boolean;
   payment_enabled_at?: string | null;
+  pickup_enabled?: boolean;
+  pickup_enabled_at?: string | null;
 };
 
 type ConversationShop = {
@@ -1324,10 +1326,16 @@ const MyRepairs: React.FC = () => {
                       {order.status === 'ready_for_pickup' && (
                         <button
                           type="button"
-                          disabled
-                          className="px-6 py-2.5 bg-gray-300 text-gray-500 text-sm font-medium tracking-wide rounded-md cursor-not-allowed"
+                          onClick={() => confirmPickup(order.id)}
+                          disabled={!order.pickup_enabled}
+                          className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${
+                            order.pickup_enabled
+                              ? 'bg-black text-white hover:bg-gray-800 cursor-pointer'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
+                          title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
                         >
-                          Received
+                          {order.pickup_enabled ? 'Confirm Received' : 'Awaiting Activation'}
                         </button>
                       )}
                       {order.status === 'picked_up' && (

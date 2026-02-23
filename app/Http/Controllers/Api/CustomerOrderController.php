@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -10,6 +11,12 @@ use Illuminate\Support\Facades\Log;
 
 class CustomerOrderController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Get all orders for the authenticated customer
      */
@@ -117,6 +124,33 @@ class CustomerOrderController extends Controller
                 'order_number' => $order->order_number,
                 'customer_id' => $user->id,
             ]);
+
+            // Notify shop owner about successful delivery
+            try {
+                $this->notificationService->sendToShopOwner(
+                    shopOwnerId: $order->shop_owner_id,
+                    type: \App\Enums\NotificationType::ORDER_DELIVERED,
+                    title: 'Order Delivered Successfully',
+                    message: "Order #{$order->order_number} has been delivered to customer",
+                    data: [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'customer_name' => $order->customer_name ?? 'Customer',
+                        'total' => number_format($order->total_amount, 2),
+                    ],
+                    actionUrl: '/shop-owner/job-orders-retail'
+                );
+                Log::info('Shop owner notified of successful delivery', [
+                    'shop_owner_id' => $order->shop_owner_id,
+                    'order_number' => $order->order_number,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send delivery notification to shop owner', [
+                    'shop_owner_id' => $order->shop_owner_id,
+                    'order_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

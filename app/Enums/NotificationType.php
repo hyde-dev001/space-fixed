@@ -10,6 +10,7 @@ enum NotificationType: string
     case ORDER_SHIPPED = 'order_shipped';
     case ORDER_DELIVERED = 'order_delivered';
     case ORDER_CANCELLED = 'order_cancelled';
+    case ORDER_STATUS_UPDATE = 'order_status_update';
     case REPAIR_SUBMITTED = 'repair_submitted';
     case REPAIR_ASSIGNED = 'repair_assigned';
     case REPAIR_ACCEPTED = 'repair_accepted';
@@ -71,6 +72,7 @@ enum NotificationType: string
             self::ORDER_SHIPPED => 'Order Shipped',
             self::ORDER_DELIVERED => 'Order Delivered',
             self::ORDER_CANCELLED => 'Order Cancelled',
+            self::ORDER_STATUS_UPDATE => 'Order Status Update',
             self::REPAIR_SUBMITTED => 'Repair Submitted',
             self::REPAIR_ASSIGNED => 'Repair Assigned',
             self::REPAIR_ACCEPTED => 'Repair Accepted',
@@ -129,7 +131,7 @@ enum NotificationType: string
     {
         return match($this) {
             self::ORDER_PLACED, self::ORDER_CONFIRMED, self::ORDER_SHIPPED, 
-            self::ORDER_DELIVERED, self::ORDER_CANCELLED => 'orders',
+            self::ORDER_DELIVERED, self::ORDER_CANCELLED, self::ORDER_STATUS_UPDATE => 'orders',
             
             self::REPAIR_SUBMITTED, self::REPAIR_ASSIGNED, self::REPAIR_ACCEPTED,
             self::REPAIR_REJECTED, self::REPAIR_IN_PROGRESS, self::REPAIR_COMPLETED,
@@ -166,6 +168,7 @@ enum NotificationType: string
             self::ORDER_SHIPPED,
             self::ORDER_DELIVERED,
             self::ORDER_CANCELLED,
+            self::ORDER_STATUS_UPDATE,
             self::REPAIR_SUBMITTED,
             self::REPAIR_ASSIGNED,
             self::REPAIR_ACCEPTED,
@@ -188,6 +191,7 @@ enum NotificationType: string
     {
         return in_array($this, [
             self::NEW_ORDER,
+            self::ORDER_DELIVERED,
             self::NEW_REPAIR_REQUEST,
             self::PRICE_CHANGE_REQUEST,
             self::REPAIR_SERVICE_REQUEST,

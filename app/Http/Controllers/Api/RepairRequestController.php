@@ -15,13 +15,6 @@ use App\Services\NotificationService;
 
 class RepairRequestController extends Controller
 {
-    protected $notificationService;
-
-    public function __construct(NotificationService $notificationService)
-    {
-        $this->notificationService = $notificationService;
-    }
-
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -111,15 +104,31 @@ class RepairRequestController extends Controller
             // Attach services
             $repairRequest->services()->attach($request->services);
 
+            // Get notification service
+            $notificationService = app(NotificationService::class);
+
             // Notify shop owner of new repair request
-            $this->notificationService->notifyNewRepairRequest(
-                $request->shop_owner_id,
-                [
+            if ($request->shop_owner_id) {
+                $notificationService->notifyNewRepairRequest($request->shop_owner_id, [
+                    'request_id' => $requestId,
                     'order_number' => $requestId,
-                    'service_type' => $deliveryMethod,
-                    'repair_id' => $repairRequest->id,
-                ]
-            );
+                    'customer_name' => $request->customer_name,
+                    'service_type' => $request->service_type,
+                    'total' => $request->total,
+                    'service_count' => count($request->services),
+                ]);
+
+                // If high-value repair requiring owner approval, send additional notification
+                if ($requiresOwnerApproval) {
+                    $notificationService->notifyHighValueRepairApproval($request->shop_owner_id, [
+                        'request_id' => $requestId,
+                        'order_number' => $requestId,
+                        'customer_name' => $request->customer_name,
+                        'total' => $request->total,
+                        'threshold' => $shopOwner->high_value_threshold,
+                    ]);
+                }
+            }
 
             // AUTO-ASSIGN TO REPAIRER (Phase 2)
             $this->autoAssignRepairer($repairRequest);
@@ -287,6 +296,8 @@ class RepairRequestController extends Controller
                     'paymongo_link_id' => $repair->paymongo_link_id,
                     'payment_enabled' => $repair->payment_enabled ?? false,
                     'payment_enabled_at' => $repair->payment_enabled_at ? $repair->payment_enabled_at->toISOString() : null,
+                    'pickup_enabled' => $repair->pickup_enabled ?? false,
+                    'pickup_enabled_at' => $repair->pickup_enabled_at ? $repair->pickup_enabled_at->toISOString() : null,
                 ];
             })
         ]);
@@ -698,16 +709,27 @@ class RepairRequestController extends Controller
                 $workloadCount = $repairer->active_repairs_count ?? 0;
                 \Log::info("✅ Repair {$repairRequest->request_id} auto-assigned to {$repairer->name} (ID: {$repairer->id}) - Current workload: {$workloadCount} active repairs");
                 
-                // Send notification to repairer about new assignment
-                $this->notificationService->notifyRepairerAssignment(
-                    $repairer->id,
-                    [
+                // Send notification to repairer about new assignment (ERP staff)
+                $notificationService = app(NotificationService::class);
+                $notificationService->sendToUser(
+                    userId: $repairer->id,
+                    type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
+                    title: 'New Repair Assigned',
+                    message: "Repair request {$repairRequest->request_id} has been assigned to you - {$repairRequest->customer_name}",
+                    data: [
+                        'request_id' => $repairRequest->request_id,
                         'order_number' => $repairRequest->request_id,
-                        'repair_id' => $repairRequest->id,
                         'customer_name' => $repairRequest->customer_name,
-                        'service_type' => $repairRequest->delivery_method,
+                        'shoe_type' => $repairRequest->shoe_type,
+                        'brand' => $repairRequest->brand,
+                        'total' => $repairRequest->total,
+                        'service_count' => $repairRequest->services->count(),
+                        'is_high_value' => $repairRequest->is_high_value,
+                        'delivery_method' => $repairRequest->delivery_method,
                     ],
-                    $repairRequest->shop_owner_id
+                    actionUrl: '/erp/staff/job-orders-repair',
+                    priority: $repairRequest->is_high_value ? 'high' : 'medium',
+                    requiresAction: true
                 );
                 
             } else {
@@ -784,7 +806,7 @@ class RepairRequestController extends Controller
 
         // Simulate payment completion
         $repair->update([
-            'payment_status' => 'paid',
+            'payment_status' => 'completed',
             'paymongo_payment_id' => 'TEST_PAYMENT_' . time(),
             'payment_completed_at' => now(),
         ]);

@@ -155,7 +155,7 @@ export default function UploadService() {
   const fetchServices = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/repair-services');
+      const response = await axios.get('/api/shop-owner/repair-services/');
       if (response.data.success) {
         // Format price with peso sign for display
         const formattedServices = response.data.data.map((service: any) => ({
@@ -195,7 +195,7 @@ export default function UploadService() {
       // Remove peso sign and parse price
       const priceValue = formData.price.replace(/[₱,]/g, '');
       
-      const response = await axios.post('/api/repair-services', {
+      const response = await axios.post('/api/shop-owner/repair-services/', {
         name: formData.name,
         category: formData.category,
         price: priceValue,
@@ -230,7 +230,7 @@ export default function UploadService() {
   const handleEditService = async () => {
     if (!selectedService) return;
 
-    if (!formData.name || !formData.category || !formData.duration) {
+    if (!formData.name || !formData.category || !formData.price || !formData.duration) {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
@@ -240,10 +240,10 @@ export default function UploadService() {
     }
 
     try {
-      const response = await axios.put(`/api/repair-services/${selectedService.id}`, {
+      const response = await axios.put(`/api/shop-owner/repair-services/${selectedService.id}`, {
         name: formData.name,
         category: formData.category,
-        // Price is not sent - can only be changed via pricing approval workflow
+        price: formData.price.replace(/[₱,]/g, ''),
         duration: formData.duration,
         description: formData.description,
         status: formData.status,
@@ -286,7 +286,7 @@ export default function UploadService() {
 
     if (result.isConfirmed) {
       try {
-        const response = await axios.delete(`/api/repair-services/${id}`);
+        const response = await axios.delete(`/api/shop-owner/repair-services/${id}`);
         
         if (response.data.success) {
           await fetchServices(); // Refresh the list
@@ -732,14 +732,15 @@ export default function UploadService() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Current Price
+                    Price *
                   </label>
-                  <div className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                    {selectedService.price}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Price can only be changed via Pricing & Services page
-                  </p>
+                  <input
+                    type="text"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="₱0.00"
+                  />
                 </div>
 
                 <div>

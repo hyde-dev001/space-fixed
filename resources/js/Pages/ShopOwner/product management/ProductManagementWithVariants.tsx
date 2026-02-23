@@ -209,7 +209,7 @@ export default function ProductManagement() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const productsResponse = await fetch('/api/products/my/products', {
+      const productsResponse = await fetch('/api/shop-owner/products/', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
@@ -253,7 +253,7 @@ export default function ProductManagement() {
       
       // Load color variants for this product
       try {
-        const colorVariantsResponse = await fetch(`/api/products/${product.id}/color-variants`, {
+        const colorVariantsResponse = await fetch(`/api/shop-owner/products/${product.id}/color-variants`, {
           credentials: 'include',
           headers: { 'Accept': 'application/json' }
         });
@@ -335,7 +335,7 @@ export default function ProductManagement() {
   // Helper function to load legacy variants
   const loadLegacyVariants = async (productId: number) => {
     try {
-      const response = await fetch(`/api/products/${productId}/variants`, {
+      const response = await fetch(`/api/shop-owner/products/${productId}/variants`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
@@ -517,7 +517,7 @@ export default function ProductManagement() {
             const uploadData = new FormData();
             uploadData.append('image', group.file);
 
-            const response = await fetch('/api/products/upload-image', {
+            const response = await fetch('/api/shop-owner/products/upload-image', {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -556,7 +556,7 @@ export default function ProductManagement() {
     if (editingProduct) {
       try {
         // Get existing color variants
-        const existingResponse = await fetch(`/api/products/${productId}/color-variants`, {
+        const existingResponse = await fetch(`/api/shop-owner/products/${productId}/color-variants`, {
           credentials: 'include',
           headers: { 'Accept': 'application/json' }
         });
@@ -568,7 +568,7 @@ export default function ProductManagement() {
           // Delete each existing color variant
           for (const variant of existingVariants) {
             if (variant.id) {
-              await fetch(`/api/products/${productId}/color-variants/${variant.id}`, {
+              await fetch(`/api/shop-owner/products/${productId}/color-variants/${variant.id}`, {
                 method: 'DELETE',
                 credentials: 'include',
                 headers: {
@@ -617,7 +617,7 @@ export default function ProductManagement() {
             const uploadData = new FormData();
             uploadData.append('image', image.file);
             
-            const response = await fetch('/api/products/upload-image', {
+            const response = await fetch('/api/shop-owner/products/upload-image', {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -675,7 +675,7 @@ export default function ProductManagement() {
           images: uploadedImages,
         };
 
-        const cvResponse = await fetch(`/api/products/${productId}/color-variants`, {
+        const cvResponse = await fetch(`/api/shop-owner/products/${productId}/color-variants`, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -712,7 +712,7 @@ export default function ProductManagement() {
     // Update product main_image with the first color's first image (or thumbnail if marked)
     if (firstColorFirstImage) {
       try {
-        await fetch(`/api/products/${productId}`, {
+        await fetch(`/api/shop-owner/products/${productId}`, {
           method: 'PUT',
           credentials: 'include',
           headers: {
@@ -827,19 +827,15 @@ export default function ProductManagement() {
         main_image: null, // Will be set from color variants
         additional_images: null,
         variants: variantData,
+        price: parseFloat(formData.price),
+        compare_at_price: formData.compare_at_price ? parseFloat(formData.compare_at_price) : null,
       };
 
-      productData = editingProduct
-        ? baseProductData
-        : {
-            ...baseProductData,
-            price: parseFloat(formData.price),
-            compare_at_price: formData.compare_at_price ? parseFloat(formData.compare_at_price) : null,
-          };
+      productData = baseProductData;
 
       const url = editingProduct
-        ? `/api/products/${editingProduct.id}`
-        : '/api/products/';
+        ? `/api/shop-owner/products/${editingProduct.id}`
+        : '/api/shop-owner/products/';
 
       const method = editingProduct ? 'PUT' : 'POST';
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -907,7 +903,7 @@ export default function ProductManagement() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
-      const response = await fetch(`/api/products/${id}`, {
+      const response = await fetch(`/api/shop-owner/products/${id}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: { 
@@ -1255,31 +1251,18 @@ export default function ProductManagement() {
                   </div>
 
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Price *
-                      </label>
-                      {editingProduct && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                          Managed in Shoe Pricing
-                        </span>
-                      )}
-                    </div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Price *
+                    </label>
                     <input
                       type="number"
                       step="0.01"
                       value={formData.price}
                       onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white transition-all"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                       placeholder="0.00"
                       required
-                      disabled={!!editingProduct}
                     />
-                    {editingProduct && (
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        Price updates are handled in the Shoe Pricing page.
-                      </p>
-                    )}
                   </div>
 
                   <div>
@@ -1293,7 +1276,6 @@ export default function ProductManagement() {
                       onChange={(e) => setFormData({ ...formData, compare_at_price: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                       placeholder="Original price (optional)"
-                      disabled={!!editingProduct}
                     />
                   </div>
 

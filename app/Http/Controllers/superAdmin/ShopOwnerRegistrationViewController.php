@@ -30,6 +30,7 @@ class ShopOwnerRegistrationViewController extends Controller
                     'businessName' => $shopOwner->business_name,
                     'businessAddress' => $shopOwner->business_address,
                     'businessType' => $shopOwner->business_type,
+                    'registrationType' => $shopOwner->registration_type,
                     'serviceType' => $shopOwner->business_type,
                     'operatingHours' => is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [],
                     'documentUrls' => $shopOwner->documents->map(function ($doc) {

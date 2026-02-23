@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { usePage } from '@inertiajs/react';
-import { AlertCircle, Building2, User, Store, Wrench, Info } from 'lucide-react';
+import { AlertCircle, Building2, User, Store, Wrench } from 'lucide-react';
 
 interface ShopOwnerAuth {
     id: number;
@@ -140,94 +140,6 @@ export default function AccountTypeInfo() {
                 </div>
             )}
 
-            {/* Feature Access Info */}
-            <div className="rounded-lg border border-gray-200 bg-white p-4 dark:bg-gray-800 dark:border-gray-700">
-                <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700">
-                        <Info className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                    </div>
-                    <div className="flex-1">
-                        <h4 className="font-medium text-gray-900 dark:text-gray-100">
-                            Your Features Access
-                        </h4>
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                            {/* Retail Features */}
-                            {(businessType === 'retail' || businessType === 'both (retail & repair)') && (
-                                <>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Product Inventory</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Online Store</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Order Management</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Sales Analytics</span>
-                                    </div>
-                                </>
-                            )}
-                            
-                            {/* Repair Features */}
-                            {(businessType === 'repair' || businessType === 'both (retail & repair)') && (
-                                <>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Repair Services</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Service Booking</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Repair Tracking</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <span className="text-gray-700 dark:text-gray-300">Before/After Photos</span>
-                                    </div>
-                                </>
-                            )}
-                            
-                            {/* Common Features */}
-                            <div className="flex items-center gap-2">
-                                <span className="text-green-500">✓</span>
-                                <span className="text-gray-700 dark:text-gray-300">Customer Management</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-green-500">✓</span>
-                                <span className="text-gray-700 dark:text-gray-300">Reviews & Ratings</span>
-                            </div>
-                            
-                            {/* Staff Management - Company Only */}
-                            <div className="flex items-center gap-2">
-                                <span className={isCompany ? 'text-green-500' : 'text-gray-400'}>
-                                    {isCompany ? '✓' : '✗'}
-                                </span>
-                                <span className={isCompany ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}>
-                                    Staff Management {!isCompany && '(Company only)'}
-                                </span>
-                            </div>
-                            
-                            {/* Multi-location - Company Only */}
-                            <div className="flex items-center gap-2">
-                                <span className={isCompany ? 'text-green-500' : 'text-gray-400'}>
-                                    {isCompany ? '✓' : '✗'}
-                                </span>
-                                <span className={isCompany ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}>
-                                    Multiple Locations {!isCompany && '(Company only)'}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }

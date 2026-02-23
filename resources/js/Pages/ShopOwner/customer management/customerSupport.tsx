@@ -46,13 +46,20 @@ export default function CustomerSupport() {
 
   useEffect(() => {
     fetchConversations();
+    
+    // Auto-refresh conversations every 2 seconds
+    const conversationInterval = setInterval(() => {
+      fetchConversations();
+    }, 2000);
+    
+    return () => clearInterval(conversationInterval);
   }, [statusFilter]);
 
   const fetchConversations = async () => {
     try {
       setLoading(true);
       const params = statusFilter !== "all" ? { status: statusFilter } : {};
-      const response = await axios.get("/api/crm/conversations", { params });
+      const response = await axios.get("/api/shop-owner/conversations", { params });
       
       // Handle both paginated and direct array responses
       const conversations = Array.isArray(response.data) ? response.data : (response.data.data || []);
@@ -129,12 +136,19 @@ export default function CustomerSupport() {
   useEffect(() => {
     if (selectedTicketId) {
       fetchConversationMessages(selectedTicketId);
+      
+      // Auto-refresh messages every 2 seconds
+      const messageInterval = setInterval(() => {
+        fetchConversationMessages(selectedTicketId);
+      }, 2000);
+      
+      return () => clearInterval(messageInterval);
     }
   }, [selectedTicketId]);
 
   const fetchConversationMessages = async (conversationId: number) => {
     try {
-      const response = await axios.get(`/api/crm/conversations/${conversationId}`);
+      const response = await axios.get(`/api/shop-owner/conversations/${conversationId}`);
       const conv = response.data;
       
       if (!conv || !conv.messages) {
@@ -200,7 +214,7 @@ export default function CustomerSupport() {
         });
 
         const response = await axios.post(
-          `/api/crm/conversations/${selectedTicketId}/messages`,
+          `/api/shop-owner/conversations/${selectedTicketId}/messages`,
           formData,
           {
             headers: { "Content-Type": "multipart/form-data" },
@@ -312,7 +326,7 @@ export default function CustomerSupport() {
     try {
       setIsTransferring(true);
       const response = await axios.post(
-        `/api/crm/conversations/${selectedTicketId}/transfer`,
+        `/api/shop-owner/conversations/${selectedTicketId}/transfer`,
         {
           to_department: "repairer",
           transfer_note: transferNote,
