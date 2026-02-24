@@ -240,7 +240,8 @@ class UserAccessControlController extends Controller
             }
 
             // Return back with success data - Inertia will automatically reload with fresh props
-            return back()->with([
+            // Use redirect()->back() to ensure flash data is properly set in session
+            return redirect()->back()->with([
                 'success' => true,
                 'employee' => [
                     'id' => $employee->id,
@@ -295,7 +296,7 @@ class UserAccessControlController extends Controller
         ];
 
         foreach ($allPermissions as $permission) {
-            // Finance: Expenses, Invoices, Finance Reports, Cost Management, Pricing Approvals
+            // Finance: Expenses, Invoices, Finance Reports, Cost Management, Pricing Approvals, ALL Pricing Management
             if (str_contains($permission, 'expense') || 
                 str_contains($permission, 'invoice') || 
                 str_contains($permission, 'finance') || 
@@ -306,6 +307,9 @@ class UserAccessControlController extends Controller
                 str_contains($permission, 'pricing-approval') ||
                 str_contains($permission, 'approve-repair-pricing') ||
                 str_contains($permission, 'approve-shoe-pricing') ||
+                str_contains($permission, 'repair-pricing') || // All repair pricing permissions (view/approve)
+                str_contains($permission, 'shoe-pricing') || // All shoe pricing permissions (view/approve)
+                str_contains($permission, 'pricing') || // All general pricing permissions (view/edit/manage)
                 str_contains($permission, 'approve-payroll') || // Finance approves payroll
                 $permission === 'view-payroll') { // Finance views payroll for approval
                 $grouped['finance'][] = $permission;
@@ -335,21 +339,17 @@ class UserAccessControlController extends Controller
                     str_contains($permission, 'shop-setting')) { // manage-shop-settings
                 $grouped['manager'][] = $permission;
             }
-            // Repairer: Repair Services, Repairer Conversations, Repair Pricing (view only)
+            // Repairer: ONLY Repair Services and Repairer Conversations (NO pricing permissions - those belong to Finance)
             elseif (str_contains($permission, 'repairer') || 
-                    str_contains($permission, 'repair-service') ||
-                    str_contains($permission, 'repair-pricing') ||
-                    str_contains($permission, 'shoe-pricing')) { // Repairer can view pricing
+                    str_contains($permission, 'repair-service')) {
                 $grouped['repairer'][] = $permission;
             }
-            // Staff: Products, Job Orders, Basic Pricing, Attendance, Dashboard
+            // Staff: Products, Job Orders (Retail), Inventory, Attendance, Dashboard (NO pricing - those belong to Finance)
             elseif (str_contains($permission, 'product') || 
                     str_contains($permission, 'inventory') ||
-                    str_contains($permission, 'job-order') || 
-                    str_contains($permission, 'pricing') || // view/edit pricing (not approvals)
-                    $permission === 'view-dashboard' ||
-                    $permission === 'view-attendance' ||
-                    $permission === 'create-attendance') {
+                    str_contains($permission, 'supplier') ||
+                    str_contains($permission, 'job-order') || // Job Orders for retail staff
+                    $permission === 'view-dashboard') {
                 $grouped['staff'][] = $permission;
             }
         }
@@ -587,8 +587,26 @@ class UserAccessControlController extends Controller
             // Disable automatic logging to use custom log
             activity()->disableLogging();
             
-            // Sync only direct permissions
-            $user->syncPermissions(array_merge($rolePermissions, $validated['permissions']));
+            // Sync permissions with the correct 'user' guard
+            // First clear all direct permissions
+            $user->permissions()->detach();
+            
+            // Then give the new permissions explicitly with 'user' guard
+            foreach ($validated['permissions'] as $permissionName) {
+                $permission = Permission::where('name', $permissionName)
+                    ->where('guard_name', 'user')
+                    ->first();
+                if ($permission) {
+                    $user->givePermissionTo($permission);
+                }
+            }
+            
+            // Clear Spatie permission cache for this user
+            app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+            
+            // Refresh the user model to get updated permissions
+            $user->refresh();
+            $user->load('roles', 'permissions');
             
             // Re-enable automatic logging
             activity()->enableLogging();

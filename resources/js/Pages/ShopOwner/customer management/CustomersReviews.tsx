@@ -1,5 +1,5 @@
 import { Head } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
 
@@ -7,7 +7,7 @@ type OrderType = "product" | "repair";
 type ResponseStatus = "pending" | "responded" | "in_progress";
 
 interface CustomerReview {
-  id: number;
+  id: string;
   customerName: string;
   rating: number;
   comment: string;
@@ -15,6 +15,7 @@ interface CustomerReview {
   serviceType: string;
   orderType: OrderType;
   responseStatus: ResponseStatus;
+  shopResponse?: string | null;
   createdAt: string;
 }
 
@@ -122,56 +123,29 @@ const StarIcon = ({ filled, className = "" }: { filled: boolean; className?: str
   </svg>
 );
 
-const seedReviews: CustomerReview[] = [
-  {
-    id: 1,
-    customerName: "Miguel Dela Rosa",
-    rating: 5,
-    comment: "Very smooth transaction and the staff was helpful.",
-    feedbackImages: ["/images/shop/shop1.jpg", "/images/shop/shop2.jpg"],
-    serviceType: "Product Purchase",
-    orderType: "product",
-    responseStatus: "responded",
-    createdAt: "2026-02-18",
-  },
-  {
-    id: 2,
-    customerName: "Andrea Santos",
-    rating: 4,
-    comment: "Repair quality is good, waiting time could be shorter.",
-    feedbackImages: ["/images/shop/shop3.jpg"],
-    serviceType: "Sole Reglue",
-    orderType: "repair",
-    responseStatus: "in_progress",
-    createdAt: "2026-02-19",
-  },
-  {
-    id: 3,
-    customerName: "Paolo Reyes",
-    rating: 3,
-    comment: "Delivery arrived late but product is okay.",
-    feedbackImages: ["/images/shop/shop4.jpg"],
-    serviceType: "Product Delivery",
-    orderType: "product",
-    responseStatus: "pending",
-    createdAt: "2026-02-20",
-  },
-  {
-    id: 4,
-    customerName: "Carla Dizon",
-    rating: 5,
-    comment: "Excellent customer support and quick updates.",
-    feedbackImages: ["/images/shop/shop5.jpg", "/images/shop/shop.jpg"],
-    serviceType: "Customer Support",
-    orderType: "repair",
-    responseStatus: "responded",
-    createdAt: "2026-02-21",
-  },
-];
-
 export default function CustomerReviews() {
-  const [reviews, setReviews] = useState<CustomerReview[]>(seedReviews);
+  const [reviews, setReviews] = useState<CustomerReview[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const response = await fetch("/api/shop-owner/reviews", {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("Failed to fetch reviews");
+        const data = await response.json();
+        setReviews(data.reviews ?? []);
+      } catch (err) {
+        console.error("Error fetching reviews:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReviews();
+  }, []);
   const [orderTypeFilter, setOrderTypeFilter] = useState<"all" | OrderType>("all");
   const [responseFilter, setResponseFilter] = useState<"all" | ResponseStatus>("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -265,6 +239,16 @@ export default function CustomerReviews() {
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/3">
+          {loading && (
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />
+                <p className="text-sm text-gray-500 dark:text-gray-400">Loading reviews…</p>
+              </div>
+            </div>
+          )}
+          {!loading && (
+          <>
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex w-full flex-col gap-3 md:flex-row">
               <input
@@ -388,6 +372,8 @@ export default function CustomerReviews() {
               </div>
             </div>
           )}
+          </>
+          )}
         </div>
 
         {showReviewModal && selectedReview && (
@@ -429,6 +415,13 @@ export default function CustomerReviews() {
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Feedback Comment</p>
                     <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{selectedReview.comment}</p>
                   </div>
+
+                  {selectedReview.shopResponse && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Shop Response</p>
+                      <p className="mt-2 text-sm text-green-800 dark:text-green-300">{selectedReview.shopResponse}</p>
+                    </div>
+                  )}
 
                   <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pictures</p>

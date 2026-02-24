@@ -294,4 +294,95 @@ class StaffOrderController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Activate pickup confirmation for an order
+     * 
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function activatePickup(Request $request, $id)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Check if user has STAFF or MANAGER role
+            if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $order = Order::find($id);
+            
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found'
+                ], 404);
+            }
+            
+            // Get the shop owner ID for this STAFF user
+            $shopOwnerId = $user->shop_owner_id ?? $user->id;
+            
+            // Verify order belongs to this shop
+            if ($order->shop_owner_id != $shopOwnerId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This order does not belong to your shop'
+                ], 403);
+            }
+            
+            // Check if status is shipped
+            $currentStatus = $order->status instanceof \App\Enums\OrderStatus ? $order->status->value : $order->status;
+            if ($currentStatus !== 'shipped') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pickup can only be activated when order is shipped. Current status: ' . $currentStatus
+                ], 400);
+            }
+            
+            // Check if pickup is already enabled
+            if ($order->pickup_enabled) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pickup confirmation is already activated'
+                ], 400);
+            }
+            
+            // Enable pickup confirmation
+            $order->update([
+                'pickup_enabled' => true,
+                'pickup_enabled_at' => now(),
+                'pickup_enabled_by' => $user->id,
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Pickup confirmation activated. Customer can now confirm they received their order.',
+                'order' => $order->fresh()
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error activating pickup for order: ' . $e->getMessage(), [
+                'order_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to activate pickup confirmation'
+            ], 500);
+        }
+    }
 }
+

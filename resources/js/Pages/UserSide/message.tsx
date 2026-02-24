@@ -23,6 +23,7 @@ interface Conversation {
     id: number;
     business_name: string;
     location?: string;
+    business_address?: string;
     profile_photo?: string;
     email?: string;
     phone?: string;
@@ -32,6 +33,12 @@ interface Conversation {
     repair_type: string;
     description: string;
     status: string;
+    shoe_type?: string;
+    brand?: string;
+    total?: number;
+    delivery_method?: string;
+    scheduled_dropoff_date?: string;
+    payment_status?: string;
   };
   messages?: ConversationMessage[];
 }
@@ -39,6 +46,12 @@ interface Conversation {
 interface Props {
   conversation?: Conversation | null;
   shopOwnerId?: number;
+}
+
+interface OrderProductPreview {
+  name: string;
+  quantity: string;
+  unitPrice?: string;
 }
 
 const Message: React.FC<Props> = ({ conversation: initialConversation = null, shopOwnerId }) => {
@@ -68,6 +81,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [isSending, setIsSending] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -340,9 +354,67 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     return `${shopName} ${location}`.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, selectedConversation]);
+  const parseOrderProducts = (content: string, itemsSummary: string): OrderProductPreview[] => {
+    const productsBlockMatch = content.match(/\*\*Products:\*\*\s*([\s\S]*?)(?=\n\*\*|$)/);
+
+    if (productsBlockMatch?.[1]) {
+      return productsBlockMatch[1]
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('-'))
+        .map((line) => {
+          const cleanedLine = line.replace(/^-\s*/, '').trim();
+          const productMatch = cleanedLine.match(/^(.*?)\s+x(\d+)(?:\s+\(₱?([\d,]+(?:\.\d{1,2})?)\))?$/);
+
+          if (!productMatch) {
+            return {
+              name: cleanedLine,
+              quantity: '1',
+            };
+          }
+
+          return {
+            name: productMatch[1].trim(),
+            quantity: productMatch[2].trim(),
+            unitPrice: productMatch[3]?.trim(),
+          };
+        });
+    }
+
+    if (!itemsSummary) return [];
+
+    return itemsSummary
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const summaryMatch = item.match(/^(.*?)\s+x(\d+)$/);
+        if (!summaryMatch) {
+          return {
+            name: item,
+            quantity: '1',
+          };
+        }
+        return {
+          name: summaryMatch[1].trim(),
+          quantity: summaryMatch[2].trim(),
+        };
+      });
+  };
+
+  const resolveAttachmentUrl = (path: string) => {
+    if (!path) return path;
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('blob:')) {
+      return path;
+    }
+    if (path.startsWith('/')) {
+      return path;
+    }
+    if (path.startsWith('storage/')) {
+      return `/${path}`;
+    }
+    return `/storage/${path}`;
+  };
 
   // Set up polling for real-time message updates
   useEffect(() => {
@@ -536,13 +608,10 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-black">
-                      {selectedConversation.repairRequest 
-                        ? `${selectedConversation.repairRequest.request_id} - ${selectedConversation.repairRequest.repair_type}`
-                        : selectedConversation.shopOwner?.business_name || 'Unknown Shop'
-                      }
+                      {selectedConversation.shopOwner?.business_name || 'Unknown Shop'}
                     </h2>
                     <p className="text-xs text-gray-500">
-                      {selectedConversation.shopOwner?.business_name || 'Unknown Shop'}
+                      {selectedConversation.repairRequest?.repair_type || 'General'}
                     </p>
                   </div>
                 </div>
@@ -551,7 +620,10 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4 bg-white">
+            <div 
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto px-6 py-6 space-y-4 bg-white"
+            >
               {selectedConversation && messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-3">
                   <svg className="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -566,7 +638,336 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   <p className="text-sm text-gray-400">Ask about repairs, products, or order status</p>
                 </div>
               ) : (
-                messages.map((message) => (
+                messages.map((message) => {
+                  // System messages (order notifications)
+                  if (message.sender_type === 'system') {
+                    // Parse message content to extract details
+                    const content = message.content || '';
+                    const isRepairMessage = content.includes('Repair') || content.includes('Type:**');
+                    const isOrderMessage = content.includes('Order') && (content.includes('Order Number:') || content.includes('New Order Placed'));
+                    
+                    // Extract repair details from message
+                    const typeMatch = content.match(/\*\*Type:\*\*\s*(.+?)(?=\*\*|$)/);
+                    const deliveryMatch = content.match(/\*\*Delivery:\*\*\s*(.+?)(?=\*\*|$)/);
+                    const statusMatch = content.match(/\*\*Status:\*\*\s*(.+?)(?=\*\*|$)/);
+                    
+                    const repairType = typeMatch ? typeMatch[1].trim() : 'Repair';
+                    const deliveryType = deliveryMatch ? deliveryMatch[1].trim() : '';
+                    const status = statusMatch ? statusMatch[1].trim() : '';
+                    
+                    // Extract order details from message
+                    const orderNumberMatch = content.match(/\*\*Order Number:\*\*\s*(.+?)(?=\n|$)/);
+                    const itemsMatch = content.match(/\*\*Items:\*\*\s*(.+?)(?=\n|$)/);
+                    const totalMatch = content.match(/\*\*Total:\*\*\s*₱?(.+?)(?=\n|$)/);
+                    const orderStatusMatch = content.match(/\*\*Status:\*\*\s*(.+?)(?=\n|$)/);
+                    
+                    const orderNumber = orderNumberMatch ? orderNumberMatch[1].trim() : '';
+                    const items = itemsMatch ? itemsMatch[1].trim() : '';
+                    const total = totalMatch ? totalMatch[1].trim() : '';
+                    const orderStatus = orderStatusMatch ? orderStatusMatch[1].trim() : '';
+                    const orderProducts = parseOrderProducts(content, items);
+                    const orderProductImages = (message.attachments || []).filter((attachment): attachment is string => typeof attachment === 'string' && attachment.length > 0);
+                    
+                    // Determine status badge color
+                    const getStatusColor = (status: string) => {
+                      const lowerStatus = status.toLowerCase();
+                      if (lowerStatus.includes('accepted') || lowerStatus.includes('approved')) return 'bg-green-100 text-green-800';
+                      if (lowerStatus.includes('progress') || lowerStatus.includes('processing') || lowerStatus.includes('working')) return 'bg-blue-100 text-blue-800';
+                      if (lowerStatus.includes('completed') || lowerStatus.includes('done')) return 'bg-purple-100 text-purple-800';
+                      if (lowerStatus.includes('rejected') || lowerStatus.includes('cancelled')) return 'bg-red-100 text-red-800';
+                      if (lowerStatus.includes('waiting') || lowerStatus.includes('pending')) return 'bg-yellow-100 text-yellow-800';
+                      return 'bg-gray-100 text-gray-800';
+                    };
+                    
+                    // Order Message Card
+                    if (isOrderMessage) {
+                      const shopInfo = selectedConversation?.shopOwner;
+                      
+                      return (
+                        <div key={message.id} className="flex justify-center my-6">
+                          <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
+                            {/* Header with Title and Status Badge */}
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1">
+                                <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                                  <span>New Order Placed</span>
+                                </h3>
+                                <p className="text-xs text-gray-500">
+                                  {new Date(message.created_at).toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                              </div>
+                              {orderStatus && (
+                                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusColor(orderStatus)}`}>
+                                  {orderStatus}
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Order Details Section */}
+                            <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                              {orderProducts.length > 0 && (
+                                <div className="space-y-2">
+                                  <span className="text-gray-500 text-xs font-medium">Products:</span>
+                                  <div className="space-y-2">
+                                    {orderProducts.map((product, productIndex) => {
+                                      const productImage = orderProductImages[productIndex];
+
+                                      return (
+                                        <div key={`${product.name}-${productIndex}`} className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-100">
+                                          {productImage ? (
+                                            <img
+                                              src={resolveAttachmentUrl(productImage)}
+                                              alt={product.name}
+                                              className="w-12 h-12 rounded-md object-cover"
+                                            />
+                                          ) : (
+                                            <div className="w-12 h-12 rounded-md bg-gray-100" />
+                                          )}
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                                            <p className="text-xs text-gray-500">
+                                              Qty: {product.quantity}
+                                              {product.unitPrice ? ` • ₱${product.unitPrice}` : ''}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {items && (
+                                <div className="flex items-start gap-3">
+                                  <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Items:</span>
+                                  <span className="text-sm text-gray-900 font-medium">{items}</span>
+                                </div>
+                              )}
+                              
+                              {total && (
+                                <div className="flex items-start gap-3">
+                                  <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Total:</span>
+                                  <span className="text-sm text-gray-900 font-semibold">₱{total}</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Shop Information */}
+                            {shopInfo && (
+                              <div className="border-t border-gray-100 pt-3 mb-3">
+                                <div className="flex items-center gap-3">
+                                  {shopInfo.profile_photo ? (
+                                    <img
+                                      src={`/storage/${shopInfo.profile_photo}`}
+                                      alt={shopInfo.business_name}
+                                      className="w-10 h-10 rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                                        />
+                                      </svg>
+                                    </div>
+                                  )}
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-gray-900">{shopInfo.business_name}</p>
+                                    {shopInfo.location && (
+                                      <p className="text-xs text-gray-500">{shopInfo.location}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Footer message */}
+                            <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
+                              <p className="text-xs text-blue-900 leading-relaxed">
+                                💡 Thank you for your order! We'll notify you once your items are ready for shipment.
+                              </p>
+                            </div>
+                            
+                            {/* View Button */}
+                            <button
+                              onClick={() => router.visit('/my-orders')}
+                              className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                            >
+                              View Full Details
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Repair Message Card
+                    if (isRepairMessage) {
+                      // Get additional data from conversation
+                      const repairInfo = selectedConversation?.repairRequest;
+                      const shopInfo = selectedConversation?.shopOwner;
+                      
+                      return (
+                        <div key={message.id} className="flex justify-center my-6">
+                          <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
+                            {/* Header with Title and Status Badge */}
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1">
+                                <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                                  <span>{content.includes('Accepted') ? 'Repair Order Accepted' : 'Repair Update'}</span>
+                                </h3>
+                                <p className="text-xs text-gray-500">
+                                  {new Date(message.created_at).toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                              </div>
+                              {status && (
+                                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusColor(status)}`}>
+                                  {status}
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Repair Request Details Section */}
+                            {repairInfo && (
+                              <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                <div className="flex items-start gap-3">
+                                  <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Service:</span>
+                                  <span className="text-sm text-gray-900 font-medium">{repairInfo.repair_type || repairType}</span>
+                                </div>
+                                
+                                {(repairInfo.shoe_type || repairInfo.brand) && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Item:</span>
+                                    <span className="text-sm text-gray-900">
+                                      {repairInfo.brand && <span className="font-semibold">{repairInfo.brand}</span>}
+                                      {repairInfo.brand && repairInfo.shoe_type && ' - '}
+                                      {repairInfo.shoe_type}
+                                    </span>
+                                  </div>
+                                )}
+                                
+                                {repairInfo.description && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Issue:</span>
+                                    <span className="text-sm text-gray-700 leading-relaxed">{repairInfo.description}</span>
+                                  </div>
+                                )}
+                                
+                                {(deliveryType || repairInfo.delivery_method) && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Delivery:</span>
+                                    <span className="text-sm text-gray-900 capitalize">{repairInfo.delivery_method || deliveryType}</span>
+                                  </div>
+                                )}
+                                
+                                {repairInfo.scheduled_dropoff_date && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Scheduled:</span>
+                                    <span className="text-sm text-gray-900">
+                                      {new Date(repairInfo.scheduled_dropoff_date).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </span>
+                                  </div>
+                                )}
+                                
+                                {repairInfo.total && repairInfo.total > 0 && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Estimate:</span>
+                                    <span className="text-sm text-gray-900 font-semibold">₱{repairInfo.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            
+                            {/* Shop Information */}
+                            {shopInfo && (
+                              <div className="border-t border-gray-100 pt-3 mb-3">
+                                <div className="flex items-center gap-3">
+                                  {shopInfo.profile_photo ? (
+                                    <img
+                                      src={`/storage/${shopInfo.profile_photo}`}
+                                      alt={shopInfo.business_name}
+                                      className="w-10 h-10 rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                                        />
+                                      </svg>
+                                    </div>
+                                  )}
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-gray-900">{shopInfo.business_name}</p>
+                                    {shopInfo.location && (
+                                      <p className="text-xs text-gray-500">{shopInfo.location}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Footer message */}
+                            <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
+                              <p className="text-xs text-blue-900 leading-relaxed">
+                                {content.includes('bring your item') 
+                                  ? '💡 Please bring your item to our shop at your convenience.' 
+                                  : '💡 We\'ll keep you updated on the progress of your repair.'}
+                              </p>
+                            </div>
+                            
+                            {/* View Button */}
+                            <button
+                              onClick={() => router.visit('/my-repairs')}
+                              className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                            >
+                              View Full Details
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Fallback for non-repair system messages
+                    return (
+                      <div key={message.id} className="flex justify-center my-4">
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 max-w-md text-center shadow-sm">
+                          <p className="text-xs text-gray-600 whitespace-pre-line leading-relaxed">
+                            {message.content}
+                          </p>
+                          <span className="text-xs text-gray-400 mt-2 block">
+                            {new Date(message.created_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  // Regular messages
+                  return (
                   <div
                     key={message.id}
                     className={`flex flex-col ${message.sender_type === 'customer' ? 'items-end' : 'items-start'}`}
@@ -614,7 +1015,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                       </span>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
               <div ref={messagesEndRef} />
             </div>

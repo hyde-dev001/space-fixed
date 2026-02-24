@@ -137,16 +137,13 @@ class ProductReviewController extends Controller
             // Handle image uploads
             $imagePaths = [];
             if ($request->hasFile('images')) {
-                // Ensure directory exists
-                Storage::makeDirectory('public/reviews');
-                
                 foreach ($request->file('images') as $index => $image) {
                     if ($image && $image->isValid()) {
                         $filename = 'review_' . $user->id . '_' . $productId . '_' . time() . '_' . $index . '.' . $image->getClientOriginalExtension();
-                        $path = $image->storeAs('public/reviews', $filename);
+                        // Store in public disk, reviews directory
+                        $path = $image->storeAs('reviews', $filename, 'public');
                         if ($path) {
-                            // Use the direct storage route instead of Storage::url()
-                            $imagePaths[] = '/storage/reviews/' . $filename;
+                            $imagePaths[] = '/storage/' . $path;
                         }
                     }
                 }

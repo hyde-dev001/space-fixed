@@ -216,7 +216,7 @@ class RepairRequest extends Model
                 'user_id' => $repair->user_id,
                 'type' => 'repair_status_update',
                 'title' => 'Repair Status Updated',
-                'message' => "Repair {$repair->request_id} is now {$statusLabel}.",
+                'message' => "Repair is now {$statusLabel}.",
                 'data' => [
                     'repair_id' => $repair->id,
                     'request_id' => $repair->request_id,

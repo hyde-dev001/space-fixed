@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { BellIcon, XMarkIcon, CheckIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { BellIcon, XMarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { BellIcon as BellSolidIcon } from '@heroicons/react/24/solid';
 import {
     useNotifications,
     useUnreadCount,
     useMarkAsRead,
-    useMarkAllAsRead,
     useDeleteNotification,
     type Notification,
 } from '@/hooks/useNotifications';
@@ -14,7 +13,6 @@ import { Link } from '@inertiajs/react';
 interface NotificationCenterProps {
     apiBasePath?: string;
     viewAllHref?: string;
-    markAllPath?: string;
     containerClassName?: string;
     triggerClassName?: string;
     iconClassName?: string;
@@ -25,7 +23,6 @@ interface NotificationCenterProps {
 export default function NotificationCenter({
     apiBasePath = '/api/notifications',
     viewAllHref = '/erp/notifications',
-    markAllPath = 'read-all',
     containerClassName = 'relative',
     triggerClassName = 'relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
     iconClassName = 'h-6 w-6 text-gray-600 dark:text-gray-300',
@@ -38,7 +35,6 @@ export default function NotificationCenter({
     const { data: unreadCount = 0 } = useUnreadCount(apiBasePath);
     const { data: notificationsData, isLoading } = useNotifications(showUnreadOnly, 1, apiBasePath);
     const markAsRead = useMarkAsRead(apiBasePath);
-    const markAllAsRead = useMarkAllAsRead(apiBasePath, markAllPath);
     const deleteNotification = useDeleteNotification(apiBasePath);
 
     const notifications = notificationsData?.notifications || [];
@@ -56,10 +52,6 @@ export default function NotificationCenter({
     const handleDelete = (e: React.MouseEvent, notificationId: number) => {
         e.stopPropagation();
         deleteNotification.mutate(notificationId);
-    };
-
-    const handleMarkAllAsRead = () => {
-        markAllAsRead.mutate();
     };
 
     const formatTimeAgo = (dateString: string) => {
@@ -118,15 +110,6 @@ export default function NotificationCenter({
                         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h3>
                             <div className="flex items-center gap-2">
-                                {unreadCount > 0 && (
-                                    <button
-                                        onClick={handleMarkAllAsRead}
-                                        className="text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1"
-                                    >
-                                        <CheckIcon className="h-4 w-4" />
-                                        Mark all read
-                                    </button>
-                                )}
                                 <button
                                     onClick={() => setIsOpen(false)}
                                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"

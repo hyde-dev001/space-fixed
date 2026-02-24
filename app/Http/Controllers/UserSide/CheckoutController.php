@@ -300,6 +300,114 @@ class CheckoutController extends Controller
                         'total' => $orderTotal,
                     ]);
 
+                    // Create or find conversation and send automatic message to customer
+                    try {
+                        $conversation = \App\Models\Conversation::firstOrCreate(
+                            [
+                                'shop_owner_id' => $shopOwnerId,
+                                'customer_id' => $customerId,
+                            ],
+                            [
+                                'status' => 'open',
+                                'priority' => 'medium',
+                                'assigned_to_type' => 'crm',
+                                'last_message_at' => now(),
+                            ]
+                        );
+
+                        // Update conversation with order_id if not set
+                        if (!$conversation->order_id) {
+                            $conversation->update([
+                                'order_id' => $order->id,
+                                'last_message_at' => now(),
+                            ]);
+                        }
+
+                        // Send automatic system message about the order
+                        $itemsSummary = collect($shopItems)->map(function($shopItem) {
+                            $item = $shopItem['item'];
+                            $product = $shopItem['product'];
+                            return "{$product->name} x{$item['qty']}";
+                        })->take(3)->join(', ');
+
+                        $productLines = collect($shopItems)->map(function ($shopItem) {
+                            $item = $shopItem['item'];
+                            $product = $shopItem['product'];
+
+                            $unitPrice = isset($item['price']) ? (float) $item['price'] : 0;
+                            return "- {$product->name} x{$item['qty']} (₱" . number_format($unitPrice, 2) . ")";
+                        })->take(5)->values();
+
+                        $resolveProductImageUrl = function (?string $imagePath): ?string {
+                            if (!$imagePath) {
+                                return null;
+                            }
+
+                            if (str_starts_with($imagePath, 'http://') || str_starts_with($imagePath, 'https://')) {
+                                return $imagePath;
+                            }
+
+                            if (str_starts_with($imagePath, '/storage/')) {
+                                return $imagePath;
+                            }
+
+                            if (str_starts_with($imagePath, 'storage/')) {
+                                return '/' . $imagePath;
+                            }
+
+                            return '/storage/products/' . ltrim($imagePath, '/');
+                        };
+
+                        $productImageUrls = collect($shopItems)->map(function ($shopItem) use ($resolveProductImageUrl) {
+                            $item = $shopItem['item'];
+                            $product = $shopItem['product'];
+
+                            $options = isset($item['options'])
+                                ? (is_string($item['options']) ? json_decode($item['options'], true) : $item['options'])
+                                : [];
+
+                            $candidateImage = $options['image'] ?? $item['image'] ?? $product->main_image_url ?? $product->main_image;
+
+                            return $resolveProductImageUrl($candidateImage);
+                        })->filter()->take(5)->values()->toArray();
+                        
+                        if (count($shopItems) > 3) {
+                            $itemsSummary .= ' and ' . (count($shopItems) - 3) . ' more';
+                        }
+
+                        $systemMessage = "🛍️ **New Order Placed**\n\n";
+                        $systemMessage .= "**Order Number:** {$order->order_number}\n";
+                        $systemMessage .= "**Items:** {$itemsSummary}\n";
+                        if ($productLines->isNotEmpty()) {
+                            $systemMessage .= "**Products:**\n";
+                            $systemMessage .= $productLines->join("\n") . "\n";
+                        }
+                        $systemMessage .= "**Total:** ₱" . number_format($orderTotal, 2) . "\n";
+                        $systemMessage .= "**Status:** Processing\n\n";
+                        $systemMessage .= "Thank you for your order! We'll notify you once your items are ready for shipment.";
+
+                        $messageRecord = \App\Models\ConversationMessage::create([
+                            'conversation_id' => $conversation->id,
+                            'sender_type' => 'system',
+                            'sender_id' => $shopOwnerId,
+                            'content' => $systemMessage,
+                            'attachments' => count($productImageUrls) > 0 ? $productImageUrls : null,
+                        ]);
+
+                        // Update conversation last message time
+                        $conversation->update(['last_message_at' => $messageRecord->created_at]);
+
+                        Log::info('Order conversation created and message sent', [
+                            'conversation_id' => $conversation->id,
+                            'order_id' => $order->id,
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to create order conversation/message', [
+                            'order_id' => $order->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+
                     // Send notification to shop owner about new retail order
                     try {
                         $this->notificationService->notifyNewOrder(
@@ -319,6 +427,30 @@ class CheckoutController extends Controller
                         ]);
                     } catch (\Exception $e) {
                         Log::error('Failed to send shop owner notification', [
+                            'shop_owner_id' => $shopOwnerId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+
+                    // Send notification to all staff with order management permissions
+                    try {
+                        $staffNotified = $this->notificationService->notifyAllStaffNewOrder(
+                            shopOwnerId: $shopOwnerId,
+                            orderData: [
+                                'order_id' => $order->id,
+                                'order_number' => $order->order_number,
+                                'total' => number_format($orderTotal, 2),
+                                'items_count' => count($shopItems),
+                                'customer_name' => $validated['customer_name'],
+                                'customer_email' => $validated['customer_email'],
+                            ]
+                        );
+                        Log::info("Notified {$staffNotified} staff members of new order", [
+                            'shop_owner_id' => $shopOwnerId,
+                            'order_number' => $order->order_number,
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send staff notifications', [
                             'shop_owner_id' => $shopOwnerId,
                             'order_id' => $order->id,
                             'error' => $e->getMessage(),

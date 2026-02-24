@@ -52,21 +52,28 @@ export default function RepairSupport() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isFetchingConversationsRef = useRef(false);
 
   useEffect(() => {
-    fetchConversations();
+    fetchConversations(false);
     
     // Auto-refresh conversations every 2 seconds
     const conversationInterval = setInterval(() => {
-      fetchConversations();
+      fetchConversations(true);
     }, 2000);
     
     return () => clearInterval(conversationInterval);
   }, [statusFilter]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (silent = false) => {
+    if (isFetchingConversationsRef.current) return;
+
     try {
-      setLoading(true);
+      isFetchingConversationsRef.current = true;
+      if (!silent) {
+        setLoading(true);
+      }
+
       const params = statusFilter !== "all" ? { status: statusFilter } : {};
       const response = await axios.get("/api/shop-owner/conversations", { params });
       
@@ -80,42 +87,41 @@ export default function RepairSupport() {
         return;
       }
       
-      const formattedConversations = conversationsData.map((conv: any) => {
-        // Preserve existing messages if this conversation is already loaded
-        const existingConv = conversations.find((c) => c.id === conv.id);
-        return {
-          id: conv.id,
-          customerId: conv.customer?.id,
-          customerName: conv.customer?.name || "Unknown",
-          customerAvatar: getInitials(conv.customer?.name || "Unknown"),
-          customerRole: conv.customer?.email || "",
-          lastMessage: conv.messages?.[0]?.content || "No messages yet",
-          lastMessageTime: formatTime(conv.last_message_at),
-          status: "active",
-          messages: existingConv?.messages || [], // Keep existing messages
-          priority: conv.priority,
-          conversationStatus: conv.status,
-          repairRequest: conv.repairRequest,
-        };
+      setConversations((prevConversations) => {
+        return conversationsData.map((conv: any) => {
+          const existingConv = prevConversations.find((c) => c.id === conv.id);
+          return {
+            id: conv.id,
+            customerId: conv.customer?.id,
+            customerName: conv.customer?.name || "Unknown",
+            customerAvatar: getInitials(conv.customer?.name || "Unknown"),
+            customerRole: conv.customer?.email || "",
+            lastMessage: conv.messages?.[0]?.content || "No messages yet",
+            lastMessageTime: formatTime(conv.last_message_at),
+            status: "active",
+            messages: existingConv?.messages || [],
+            priority: conv.priority,
+            conversationStatus: conv.status,
+            repairRequest: conv.repairRequest,
+          };
+        });
       });
-      
-      setConversations(formattedConversations);
-      
-      // Only update selection if current selection is not in the new list
-      if (selectedConversationId && formattedConversations.find((c) => c.id === selectedConversationId)) {
-        // Keep current selection if it's still in the filtered list
-      } else if (formattedConversations.length > 0) {
-        // Select first conversation only if no current selection
-        setSelectedConversationId(formattedConversations[0].id);
-      } else {
-        setSelectedConversationId(null);
-      }
+
+      setSelectedConversationId((prevSelectedId) => {
+        if (prevSelectedId && conversationsData.find((conv: any) => conv.id === prevSelectedId)) {
+          return prevSelectedId;
+        }
+        return conversationsData.length > 0 ? conversationsData[0].id : null;
+      });
     } catch (error) {
       console.error("Error fetching conversations:", error);
       setConversations([]);
       setSelectedConversationId(null);
     } finally {
-      setLoading(false);
+      isFetchingConversationsRef.current = false;
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -612,43 +618,6 @@ export default function RepairSupport() {
                   </div>
                 </div>
                 
-                {/* Activate Payment Button */}
-                {selectedConversation.repairRequest && 
-                 (selectedConversation.repairRequest.status === 'repairer_accepted' || 
-                  selectedConversation.repairRequest.status === 'received' ||
-                  selectedConversation.repairRequest.status === 'completed' || 
-                  selectedConversation.repairRequest.status === 'ready_for_pickup') && (
-                  <button
-                    onClick={handleActivatePayment}
-                    disabled={activatingPayment || selectedConversation.repairRequest.payment_enabled}
-                    className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center gap-2 ${
-                      selectedConversation.repairRequest.payment_enabled
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : activatingPayment
-                        ? 'bg-green-400 text-white cursor-not-allowed'
-                        : 'bg-green-500 hover:bg-green-600 text-white'
-                    }`}
-                    title={
-                      selectedConversation.repairRequest.payment_enabled
-                        ? 'Payment already activated'
-                        : 'Activate payment for this repair'
-                    }
-                  >
-                    {activatingPayment ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Activating...
-                      </span>
-                    ) : selectedConversation.repairRequest.payment_enabled ? (
-                      "✓ Payment Activated"
-                    ) : (
-                      "Activate Payment"
-                    )}
-                  </button>
-                )}
               </div>
 
               {/* Messages */}
@@ -659,7 +628,25 @@ export default function RepairSupport() {
                   </div>
                 ) : (
                   <>
-                    {selectedConversation.messages.map((message) => (
+                    {selectedConversation.messages.map((message) => {
+                    // System messages (order notifications)
+                    if (message.sender === 'system' || (message as any).sender_type === 'system') {
+                      return (
+                        <div key={message.id} className="flex justify-center my-4">
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 max-w-md text-center shadow-sm">
+                            <p className="text-xs text-blue-800 whitespace-pre-line leading-relaxed">
+                              {message.content}
+                            </p>
+                            <span className="text-xs text-blue-400 mt-2 block">
+                              {message.timestamp}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Regular messages
+                    return (
                       <div
                         key={message.id}
                         className={`flex flex-col ${message.sender === "shop_owner" ? "items-end" : "items-start"}`}
@@ -710,7 +697,8 @@ export default function RepairSupport() {
                           </span>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
                     <div ref={messagesEndRef} />
                   </>
                 )}

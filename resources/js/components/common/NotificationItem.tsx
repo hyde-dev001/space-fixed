@@ -5,14 +5,13 @@
 
 import React from 'react';
 import { Link } from '@inertiajs/react';
-import { Check, Clock, AlertCircle, ShoppingCart, Wrench, CreditCard, MessageSquare, Star } from 'lucide-react';
+import { Clock, AlertCircle, ShoppingCart, Wrench, CreditCard, MessageSquare, Star } from 'lucide-react';
 import type { Notification } from '../../hooks/useNotifications';
 
 interface NotificationItemProps {
   notification: Notification;
   onMarkAsRead?: (id: number) => void;
   onClick?: () => void;
-  showActions?: boolean;
   linkHref?: string;
 }
 
@@ -20,7 +19,6 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   notification, 
   onMarkAsRead,
   onClick,
-  showActions = false,
   linkHref
 }) => {
   const getCategoryIcon = (type: string) => {
@@ -52,14 +50,6 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
     if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
     
     return date.toLocaleDateString();
-  };
-
-  const handleMarkAsRead = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (onMarkAsRead && !notification.is_read) {
-      onMarkAsRead(notification.id);
-    }
   };
 
   const handleNotificationClick = () => {
@@ -101,16 +91,6 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
             <Clock size={12} />
             {formatTimeAgo(notification.created_at)}
           </span>
-          
-          {showActions && !notification.is_read && onMarkAsRead && (
-            <button
-              onClick={handleMarkAsRead}
-              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium"
-            >
-              <Check size={12} />
-              Mark as read
-            </button>
-          )}
         </div>
       </div>
     </div>

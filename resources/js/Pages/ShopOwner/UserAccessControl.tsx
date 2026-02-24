@@ -193,6 +193,9 @@ const UserAccessControl: React.FC = () => {
 
   // Check for flash data with employee credentials
   useEffect(() => {
+    // Debug log to help troubleshoot
+    console.log('Flash data check:', { success, temporary_password, employee });
+    
     if (success && temporary_password) {
       const tempPass = temporary_password;
       const email = employee?.email || 'N/A';
@@ -1114,6 +1117,7 @@ const UserAccessControl: React.FC = () => {
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-2">
                             <button
+                              type="button"
                               onClick={() => openPermissionModal(employee)}
                               className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors duration-200"
                               title="Manage Permissions"
@@ -1123,6 +1127,7 @@ const UserAccessControl: React.FC = () => {
                               </svg>
                             </button>
                             <button
+                              type="button"
                               onClick={() => openEditEmployeeModal(employee)}
                               className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200"
                               title="Edit Employee"
@@ -1321,6 +1326,7 @@ const UserAccessControl: React.FC = () => {
                       })}
 
                       <button
+                        type="button"
                         onClick={() => setCurrentPage((prev) => Math.min(prev + 1, Math.ceil(filteredUsers.length / itemsPerPage)))}
                         disabled={currentPage === Math.ceil(filteredUsers.length / itemsPerPage)}
                         className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

@@ -2,7 +2,6 @@ import { Head } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
-import Swal from "sweetalert2";
 
 interface Message {
   id: number;
@@ -47,8 +46,6 @@ export default function RepairerSupport() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [activatedPayNowTicketIds, setActivatedPayNowTicketIds] = useState<number[]>([]);
-  const [activatingPayNowTicketId, setActivatingPayNowTicketId] = useState<number | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -320,61 +317,6 @@ export default function RepairerSupport() {
     ticket.customerName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleActivatePayNow = async () => {
-    if (!selectedTicketId) return;
-    if (activatedPayNowTicketIds.includes(selectedTicketId)) return;
-
-    const confirmation = await Swal.fire({
-      title: "Activate Pay Now?",
-      text: "This will enable the customer to proceed with payment.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: "Yes, activate",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#111827",
-      cancelButtonColor: "#9CA3AF",
-    });
-
-    if (!confirmation.isConfirmed) return;
-
-    try {
-      setActivatingPayNowTicketId(selectedTicketId);
-      const response = await axios.post(`/api/repairer/conversations/${selectedTicketId}/activate-payment`);
-
-      if (response.data.success) {
-        setActivatedPayNowTicketIds((prev) =>
-          prev.includes(selectedTicketId) ? prev : [...prev, selectedTicketId]
-        );
-        await Swal.fire({
-          icon: "success",
-          title: "Activated",
-          text: response.data.message || "Pay Now has been activated successfully.",
-          confirmButtonColor: "#111827",
-        });
-      } else {
-        setNotification({
-          type: 'error',
-          message: 'Failed to activate payment. Please try again.'
-        });
-        setTimeout(() => setNotification(null), 3000);
-      }
-    } catch (error) {
-      console.error('Error activating payment:', error);
-      setNotification({ 
-        type: 'error', 
-        message: 'Failed to activate payment. Please try again.' 
-      });
-      setTimeout(() => setNotification(null), 3000);
-    } finally {
-      setActivatingPayNowTicketId(null);
-    }
-  };
-
-  const isSelectedTicketPayNowActivated =
-    selectedTicketId !== null && activatedPayNowTicketIds.includes(selectedTicketId);
-  const isActivatingSelectedTicketPayNow =
-    selectedTicketId !== null && activatingPayNowTicketId === selectedTicketId;
-
   return (
     <AppLayoutERP hideHeader={!!fullscreenImage}>
       
@@ -510,15 +452,12 @@ export default function RepairerSupport() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between">
                         <h3 className="font-semibold text-black text-sm truncate">
-                          {ticket.repairRequest 
-                            ? `${ticket.repairRequest.request_id} - ${ticket.repairRequest.repair_type}`
-                            : ticket.customerName
-                          }
+                          {ticket.customerName}
                         </h3>
                         <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{ticket.lastMessageTime}</span>
                       </div>
                       <p className="text-xs text-gray-500 truncate">
-                        {ticket.customerName} • {ticket.customerRole}
+                        {ticket.repairRequest?.repair_type || ticket.customerRole}
                       </p>
                       {ticket.transferredFrom && (
                         <p className="text-xs text-blue-600 font-medium mt-0.5">
@@ -548,35 +487,16 @@ export default function RepairerSupport() {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-black">
-                      {selectedTicket.repairRequest 
-                        ? `${selectedTicket.repairRequest.request_id} - ${selectedTicket.repairRequest.repair_type}`
-                        : selectedTicket.customerName
-                      }
+                      {selectedTicket.customerName}
                     </h2>
                     <p className="text-xs text-gray-500">
-                      {selectedTicket.customerName} • {getStatusText(selectedTicket.status)}
+                      {selectedTicket.repairRequest?.repair_type || selectedTicket.customerRole} • {getStatusText(selectedTicket.status)}
                     </p>
                   </div>
                 </div>
                 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 relative z-20">
-                  <button
-                    onClick={handleActivatePayNow}
-                    disabled={isSelectedTicketPayNowActivated || isActivatingSelectedTicketPayNow}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                      isSelectedTicketPayNowActivated || isActivatingSelectedTicketPayNow
-                        ? "bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed"
-                        : "bg-white text-black border-black hover:bg-black hover:text-white"
-                    }`}
-                    title="Activate Pay Now"
-                  >
-                    {isActivatingSelectedTicketPayNow
-                      ? "Activating..."
-                      : isSelectedTicketPayNowActivated
-                        ? "Pay Now Activated"
-                        : "Activate Pay Now"}
-                  </button>
                   {selectedTicket.transferNote && (
                     <button
                       onClick={() => setShowTransferNoteModal(true)}
@@ -599,7 +519,25 @@ export default function RepairerSupport() {
                   </div>
                 ) : (
                   <>
-                    {selectedTicket.messages.map((message) => (
+                    {selectedTicket.messages.map((message) => {
+                    // System messages (order notifications)
+                    if (message.sender === 'system' || (message as any).sender_type === 'system') {
+                      return (
+                        <div key={message.id} className="flex justify-center my-4">
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 max-w-md text-center shadow-sm">
+                            <p className="text-xs text-blue-800 whitespace-pre-line leading-relaxed">
+                              {message.content}
+                            </p>
+                            <span className="text-xs text-blue-400 mt-2 block">
+                              {message.timestamp}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Regular messages
+                    return (
                       <div
                         key={message.id}
                         className={`flex flex-col ${message.sender === "repairer" ? "items-end" : "items-start"}`}
@@ -650,7 +588,8 @@ export default function RepairerSupport() {
                           </span>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
                     <div ref={messagesEndRef} />
                   </>
                 )}

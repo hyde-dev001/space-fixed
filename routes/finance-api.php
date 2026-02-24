@@ -38,9 +38,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-f
 
 /**
  * Finance Module Routes - General Operations
- * Accessible by users with any Finance permissions
+ * Accessible by users with any Finance permissions (including pricing approvals)
  */
-Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-expenses|view-invoices|view-finance-audit-logs', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-expenses|view-invoices|view-finance-audit-logs|view-pricing-approvals|approve-shoe-pricing|approve-repair-pricing', 'shop.isolation'])->group(function () {
 
     // ============================================
     // EXPENSES

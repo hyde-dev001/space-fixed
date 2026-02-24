@@ -169,6 +169,64 @@ const Checkout: React.FC = () => {
       setCustomerEmail(user.email || '');
       loadAddresses();
     }
+    
+    // Check if returning from successful payment and remove only purchased items
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentSuccess = urlParams.get('payment_success');
+    const orderId = urlParams.get('order_id');
+    
+    if (paymentSuccess === 'true' && orderId) {
+      // Get the items that were purchased from sessionStorage
+      const checkoutDataStr = sessionStorage.getItem('checkoutData');
+      if (checkoutDataStr) {
+        try {
+          const checkoutData = JSON.parse(checkoutDataStr);
+          const purchasedItemIds = checkoutData.selected_item_ids || checkoutData.items.map((item: any) => item.id);
+          
+          // Remove only the purchased items from cart
+          if (user) {
+            // Remove from database
+            Promise.all(
+              purchasedItemIds.map((itemId: string) =>
+                fetch('/api/cart/remove', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                  },
+                  body: JSON.stringify({ id: itemId }),
+                })
+              )
+            ).then(() => {
+              // Clear sessionStorage checkout data
+              sessionStorage.removeItem('checkoutData');
+              // Reload cart to show remaining items
+              loadCart();
+              // Remove query params from URL
+              window.history.replaceState({}, '', window.location.pathname);
+            });
+          } else {
+            // Remove from localStorage
+            const raw = localStorage.getItem('ss_cart');
+            if (raw) {
+              const cart = JSON.parse(raw);
+              const remainingCart = cart.filter((item: any) => !purchasedItemIds.includes(String(item.id)));
+              localStorage.setItem('ss_cart', JSON.stringify(remainingCart));
+              // Clear sessionStorage checkout data
+              sessionStorage.removeItem('checkoutData');
+              // Reload cart to show remaining items
+              loadCart();
+              // Remove query params from URL
+              window.history.replaceState({}, '', window.location.pathname);
+            }
+          }
+        } catch (e) {
+          console.error('Error processing post-payment cart cleanup:', e);
+        }
+      }
+    }
   }, [user]);
 
   useEffect(() => {
@@ -887,6 +945,9 @@ const Checkout: React.FC = () => {
     // Get the selected address details if using structured address
     const selectedAddress = addresses.find(addr => addr.id === selectedAddressId);
     
+    // Store the IDs of selected items for later removal after successful payment
+    const selectedItemIds = selectedCartItems.map(item => item.id);
+    
     // Prepare checkout data - ensure pid is properly included
     const checkoutData = {
       items: selectedCartItems.map(item => ({
@@ -914,6 +975,8 @@ const Checkout: React.FC = () => {
       shipping_postal_code: selectedAddress?.postal_code || null,
       shipping_address_line: selectedAddress?.address || null,
       payment_method: 'paymongo',
+      // Store selected item IDs so we know which items to remove after successful payment
+      selected_item_ids: selectedItemIds,
     };
     
     // Store checkout data in sessionStorage for the payment page

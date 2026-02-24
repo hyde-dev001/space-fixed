@@ -36,7 +36,7 @@ class ConversationController extends Controller
                 }, 'messages' => function ($q) {
                     $q->latest()->limit(1);
                 }, 'repairRequest' => function ($q) {
-                    $q->select('id', 'conversation_id', 'request_id', 'shoe_type', 'brand', 'description', 'status');
+                    $q->select('id', 'conversation_id', 'request_id', 'shoe_type', 'brand', 'description', 'status', 'total', 'delivery_method', 'scheduled_dropoff_date', 'payment_status');
                 }, 'order']);
             
             // Apply type filter
@@ -90,6 +90,12 @@ class ConversationController extends Controller
                             'repair_type' => $repairType,
                             'description' => $conversation->repairRequest->description ?? '',
                             'status' => $conversation->repairRequest->status ?? '',
+                            'shoe_type' => $conversation->repairRequest->shoe_type ?? null,
+                            'brand' => $conversation->repairRequest->brand ?? null,
+                            'total' => $conversation->repairRequest->total ?? null,
+                            'delivery_method' => $conversation->repairRequest->delivery_method ?? null,
+                            'scheduled_dropoff_date' => $conversation->repairRequest->scheduled_dropoff_date ?? null,
+                            'payment_status' => $conversation->repairRequest->payment_status ?? null,
                         ];
                     }
                     

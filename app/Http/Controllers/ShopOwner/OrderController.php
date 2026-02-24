@@ -215,7 +215,9 @@ class OrderController extends Controller
         Log::info('Shop owner updated order status', [
             'order_id' => $id,
             'order_number' => $order->order_number,
+            'old_status' => $order->getOriginal('status'),
             'new_status' => $request->status,
+            'final_status_in_db' => $order->fresh()->status,
             'shop_owner_id' => $shopOwner->id,
         ]);
 
@@ -231,4 +233,84 @@ class OrderController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Activate pickup confirmation for an order
+     * 
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function activatePickup(Request $request, $id)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if (!$shopOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $order = Order::find($id);
+            
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found'
+                ], 404);
+            }
+            
+            // Verify order belongs to this shop owner
+            if ($order->shop_owner_id != $shopOwner->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This order does not belong to your shop'
+                ], 403);
+            }
+            
+            // Check if status is shipped
+            $currentStatus = $order->status instanceof \App\Enums\OrderStatus ? $order->status->value : $order->status;
+            if ($currentStatus !== 'shipped') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pickup can only be activated when order is shipped. Current status: ' . $currentStatus
+                ], 400);
+            }
+            
+            // Check if pickup is already enabled
+            if ($order->pickup_enabled) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pickup confirmation is already activated'
+                ], 400);
+            }
+            
+            // Enable pickup confirmation
+            $order->update([
+                'pickup_enabled' => true,
+                'pickup_enabled_at' => now(),
+                'pickup_enabled_by' => $shopOwner->id,
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Pickup confirmation activated. Customer can now confirm they received their order.',
+                'order' => $order->fresh()
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error activating pickup for order: ' . $e->getMessage(), [
+                'order_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to activate pickup confirmation'
+            ], 500);
+        }
+    }
 }
+

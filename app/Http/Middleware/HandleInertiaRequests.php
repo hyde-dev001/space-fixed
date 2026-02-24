@@ -48,16 +48,36 @@ class HandleInertiaRequests extends Middleware
         $cartIconCount = 0;
 
         if ($isCustomer) {
+            $orderTypes = [
+                'order_placed',
+                'order_confirmed',
+                'order_shipped',
+                'order_delivered',
+                'order_cancelled',
+                'order_status_update',
+            ];
+
+            $repairTypes = [
+                'repair_submitted',
+                'repair_assigned',
+                'repair_accepted',
+                'repair_rejected',
+                'repair_in_progress',
+                'repair_completed',
+                'repair_ready_pickup',
+                'repair_status_update',
+            ];
+
             $orderStatusCount = Notification::query()
                 ->where('user_id', $user->id)
                 ->where('is_read', false)
-                ->where('type', 'order_status_update')
+                ->whereIn('type', $orderTypes)
                 ->count();
 
             $repairStatusCount = Notification::query()
                 ->where('user_id', $user->id)
                 ->where('is_read', false)
-                ->where('type', 'repair_status_update')
+                ->whereIn('type', $repairTypes)
                 ->count();
 
             $chatIconCount = ConversationMessage::query()

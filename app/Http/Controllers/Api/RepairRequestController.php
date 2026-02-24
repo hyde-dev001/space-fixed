@@ -130,6 +130,18 @@ class RepairRequestController extends Controller
                 }
             }
 
+            // Notify all staff with repair order permissions
+            if ($request->shop_owner_id) {
+                $notificationService->notifyAllStaffNewRepair($request->shop_owner_id, [
+                    'request_id' => $requestId,
+                    'order_number' => $requestId,
+                    'customer_name' => $request->customer_name,
+                    'service_type' => $request->service_type,
+                    'total' => $request->total,
+                    'service_count' => count($request->services),
+                ]);
+            }
+
             // AUTO-ASSIGN TO REPAIRER (Phase 2)
             $this->autoAssignRepairer($repairRequest);
 
@@ -619,6 +631,7 @@ class RepairRequestController extends Controller
      * Auto-assign repair request to available repairer (Phase 2)
      * Uses workload-based round-robin for fair distribution
      * Called automatically when repair request is created
+     * ONLY assigns to users with Repairer ROLE (not permission-based)
      */
     private function autoAssignRepairer(RepairRequest $repairRequest)
     {
@@ -646,37 +659,7 @@ class RepairRequestController extends Controller
                 ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
                 ->first();
             
-            // FALLBACK STRATEGY 2: If no repairer with role, try any staff with repair permissions
-            if (!$repairer) {
-                $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                    ->whereHas('employee', function($query) {
-                        $query->where('status', 'active');
-                    })
-                    ->whereHas('permissions', function($query) {
-                        $query->whereIn('name', [
-                            'view-repair-services',
-                            'manage-repair-services',
-                            'view-job-orders',
-                            'create-job-orders',
-                            'view-repairer-conversations',
-                            'send-repairer-messages'
-                        ]);
-                    })
-                    ->where('status', 'active')
-                    ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
-                        $query->whereIn('status', [
-                            'assigned_to_repairer',
-                            'repairer_accepted',
-                            'in_progress',
-                            'awaiting_parts'
-                        ]);
-                    }])
-                    ->having('active_repairs_count', '<', 15)
-                    ->orderBy('active_repairs_count', 'asc')
-                    ->first();
-            }
-            
-            // FALLBACK STRATEGY 3: If all repairers at capacity, assign to least busy anyway
+            // FALLBACK STRATEGY 2: If all repairers at capacity, assign to least busy anyway (role-based only)
             if (!$repairer) {
                 $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
                     ->whereHas('employee', function($query) {

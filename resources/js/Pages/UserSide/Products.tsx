@@ -14,7 +14,8 @@ type Product = {
   description?: string | null;
   shop_owner?: {
     id: number;
-    name: string;
+    name?: string;
+    business_name?: string;
   };
 };
 
@@ -170,7 +171,17 @@ const Products: React.FC<Props> = () => {
                       
                       {p.shop_owner && (
                         <p className="text-xs text-gray-500 mb-2">
-                          by <span className="font-medium">{p.shop_owner.name}</span>
+                          Sold by{' '}
+                          <span
+                            className="font-medium text-black hover:underline"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              window.location.href = `/shop-profile/${p.shop_owner?.id}`;
+                            }}
+                          >
+                            {p.shop_owner.business_name || p.shop_owner.name || 'Shop'}
+                          </span>
                         </p>
                       )}
                       

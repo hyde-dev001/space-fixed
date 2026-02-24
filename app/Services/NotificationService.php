@@ -294,7 +294,7 @@ class NotificationService
             userId: $userId,
             type: NotificationType::REPAIR_STATUS_UPDATE,
             title: 'Repair Status Updated',
-            message: "Repair #{$repairData['order_number']}: {$message}",
+            message: $message,
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -309,7 +309,7 @@ class NotificationService
             userId: $userId,
             type: NotificationType::REPAIR_ASSIGNED,
             title: 'Repair Request Assigned',
-            message: "Your repair request #{$repairData['order_number']} has been assigned to our repairer.",
+            message: "Your repair request has been assigned to our repairer.",
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -340,7 +340,7 @@ class NotificationService
             userId: $userId,
             type: NotificationType::REPAIR_REJECTED,
             title: 'Repair Request Rejected',
-            message: "We're unable to process repair #{$repairData['order_number']}. {$reason}",
+            message: "We're unable to process your repair request. {$reason}",
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -355,7 +355,7 @@ class NotificationService
             userId: $userId,
             type: NotificationType::REPAIR_IN_PROGRESS,
             title: 'Repair Work Started',
-            message: "Your repair #{$repairData['order_number']} is now being worked on.",
+            message: "Your repair is now being worked on.",
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -370,7 +370,7 @@ class NotificationService
             userId: $userId,
             type: NotificationType::REPAIR_COMPLETED,
             title: 'Repair Completed!',
-            message: "Your repair #{$repairData['order_number']} has been completed successfully!",
+            message: "Your repair has been completed successfully!",
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -385,7 +385,7 @@ class NotificationService
             userId: $userId,
             type: NotificationType::REPAIR_READY_PICKUP,
             title: 'Ready for Pickup!',
-            message: "Your repaired shoes are ready for pickup! Order #{$repairData['order_number']}",
+            message: "Your repaired shoes are ready for pickup!",
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -533,9 +533,17 @@ class NotificationService
 
     /**
      * Notify shop owner of new order
+     * Only sends notification to individual shop owners, not companies
      */
     public function notifyNewOrder(int $shopOwnerId, array $orderData): ?Notification
     {
+        // Check if shop owner is individual type
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
+            Log::info("Skipping new order notification for shop owner #{$shopOwnerId} - not an individual registration type");
+            return null;
+        }
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::NEW_ORDER,
@@ -548,14 +556,22 @@ class NotificationService
 
     /**
      * Notify shop owner of new repair request
+     * Only sends notification to individual shop owners, not companies
      */
     public function notifyNewRepairRequest(int $shopOwnerId, array $repairData): ?Notification
     {
+        // Check if shop owner is individual type
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
+            Log::info("Skipping new repair request notification for shop owner #{$shopOwnerId} - not an individual registration type");
+            return null;
+        }
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::NEW_REPAIR_REQUEST,
             title: 'New Repair Request',
-            message: "New repair request #{$repairData['order_number']} - {$repairData['service_type']}",
+            message: "New repair request - {$repairData['service_type']}",
             data: $repairData,
             actionUrl: '/shop-owner/orders'
         );
@@ -584,7 +600,7 @@ class NotificationService
                     userId: $repairer->id,
                     type: NotificationType::NEW_REPAIR_REQUEST,
                     title: 'New Repair Request',
-                    message: "New repair request #{$repairData['order_number']} - {$repairData['service_type']}",
+                    message: "New repair request - {$repairData['service_type']}",
                     data: $repairData,
                     actionUrl: '/erp/staff/job-orders-repair',
                     shopId: $shopOwnerId,
@@ -596,10 +612,110 @@ class NotificationService
                 }
             }
 
-            Log::info("Notified {$notifiedCount} repairers about new repair request #{$repairData['order_number']}");
+            Log::info("Notified {$notifiedCount} repairers about new repair request");
             return $notifiedCount;
         } catch (\Exception $e) {
             Log::error('Failed to notify repairers: ' . $e->getMessage(), [
+                'shop_owner_id' => $shopOwnerId,
+                'repair_data' => $repairData
+            ]);
+            return 0;
+        }
+    }
+
+    /**
+     * Notify all active staff with order management permissions about new order
+     */
+    public function notifyAllStaffNewOrder(int $shopOwnerId, array $orderData): int
+    {
+        try {
+            // Find all active staff with view-job-orders permission (via role or direct)
+            $staffMembers = User::where('shop_owner_id', $shopOwnerId)
+                ->whereHas('employee', function($query) {
+                    $query->where('status', 'active');
+                })
+                ->whereHas('roles', function($query) {
+                    $query->where('name', 'Staff');
+                })
+                ->where('status', 'active')
+                ->get()
+                ->filter(function($user) {
+                    // Check if user has permission (from role or direct)
+                    return $user->hasPermissionTo('view-job-orders');
+                });
+
+            $notifiedCount = 0;
+            foreach ($staffMembers as $staff) {
+                $notification = $this->sendToUser(
+                    userId: $staff->id,
+                    type: NotificationType::NEW_ORDER,
+                    title: 'New Order Received',
+                    message: "New order #{$orderData['order_number']} - ₱{$orderData['total']} ({$orderData['items_count']} items)",
+                    data: $orderData,
+                    actionUrl: '/erp/staff/job-orders-retail',
+                    shopId: $shopOwnerId,
+                    priority: 'high'
+                );
+                
+                if ($notification) {
+                    $notifiedCount++;
+                }
+            }
+
+            Log::info("Notified {$notifiedCount} staff members about new order");
+            return $notifiedCount;
+        } catch (\Exception $e) {
+            Log::error('Failed to notify staff: ' . $e->getMessage(), [
+                'shop_owner_id' => $shopOwnerId,
+                'order_data' => $orderData
+            ]);
+            return 0;
+        }
+    }
+
+    /**
+     * Notify all active staff with order management permissions about new repair request
+     */
+    public function notifyAllStaffNewRepair(int $shopOwnerId, array $repairData): int
+    {
+        try {
+            // Find all active staff with view-job-orders permission (via role or direct)
+            $staffMembers = User::where('shop_owner_id', $shopOwnerId)
+                ->whereHas('employee', function($query) {
+                    $query->where('status', 'active');
+                })
+                ->whereHas('roles', function($query) {
+                    $query->where('name', 'Staff');
+                })
+                ->where('status', 'active')
+                ->get()
+                ->filter(function($user) {
+                    // Check if user has permission (from role or direct)
+                    return $user->hasPermissionTo('view-job-orders');
+                });
+
+            $notifiedCount = 0;
+            foreach ($staffMembers as $staff) {
+                $notification = $this->sendToUser(
+                    userId: $staff->id,
+                    type: NotificationType::NEW_REPAIR_REQUEST,
+                    title: 'New Repair Request',
+                    message: "New repair request #{$repairData['order_number']} - {$repairData['service_type']}",
+                    data: $repairData,
+                    actionUrl: '/erp/staff/job-orders-repair',
+                    shopId: $shopOwnerId,
+                    priority: 'high'
+                );
+                
+                if ($notification) {
+                    $notifiedCount++;
+                }
+            }
+
+            Log::info("Notified {$notifiedCount} staff members about new repair request");
+            return $notifiedCount;
+        } catch (\Exception $e) {
+            Log::error('Failed to notify staff about repair: ' . $e->getMessage(), [
                 'shop_owner_id' => $shopOwnerId,
                 'repair_data' => $repairData
             ]);
@@ -646,7 +762,7 @@ class NotificationService
             shopOwnerId: $shopOwnerId,
             type: NotificationType::HIGH_VALUE_APPROVAL,
             title: 'High-Value Repair Approval',
-            message: "Repair #{$repairData['order_number']} (₱{$repairData['total']}) requires your approval",
+            message: "Repair (₱{$repairData['total']}) requires your approval",
             data: $repairData,
             actionUrl: '/shop-owner/repair-reject-approval'
         );
@@ -724,7 +840,7 @@ class NotificationService
             userId: $repairerId,
             type: NotificationType::REPAIR_ASSIGNED_TO_ME,
             title: 'New Repair Assigned',
-            message: "Repair request {$repairData['order_number']} has been assigned to you.",
+            message: "Repair request has been assigned to you.",
             data: $repairData,
             actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId
@@ -740,7 +856,7 @@ class NotificationService
             userId: $managerId,
             type: NotificationType::REPAIR_REJECTION_REVIEW,
             title: 'Repair Rejection Review Required',
-            message: "Repairer rejected repair {$repairData['order_number']}: {$repairData['reason']}",
+            message: "Repairer rejected repair: {$repairData['reason']}",
             data: $repairData,
             actionUrl: '/erp/manager/repair-rejection-review',
             shopId: $shopId
@@ -756,7 +872,7 @@ class NotificationService
             userId: $repairerId,
             type: NotificationType::REPAIR_REJECTION_REVIEW,
             title: 'Rejection Approved',
-            message: "Your rejection of repair {$repairData['order_number']} has been approved by the manager.",
+            message: "Your repair rejection has been approved by the manager.",
             data: $repairData,
             actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId
@@ -772,7 +888,7 @@ class NotificationService
             userId: $repairerId,
             type: NotificationType::REPAIR_REJECTION_REVIEW,
             title: 'Rejection Overridden',
-            message: "Your rejection of repair {$repairData['order_number']} has been overridden. The repair has been reassigned.",
+            message: "Your repair rejection has been overridden. The repair has been reassigned.",
             data: $repairData,
             actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId

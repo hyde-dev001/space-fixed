@@ -159,8 +159,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-repair-services', 'manage-repair-services',
             // Pricing (View only)
             'view-repair-pricing', 'view-shoe-pricing',
-            // Job Orders
-            'view-job-orders', 'create-job-orders', 'edit-job-orders', 'complete-job-orders',
             // Attendance
             'view-attendance', 'create-attendance',
             // General
@@ -191,7 +189,6 @@ class RolesAndPermissionsSeeder extends Seeder
         $staff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'user']);
         $staff->syncPermissions([
             'view-dashboard',
-            'view-attendance',        // Can log their own attendance
             'view-job-orders',        // Job Orders Retail access
             'create-job-orders',
             'edit-job-orders',

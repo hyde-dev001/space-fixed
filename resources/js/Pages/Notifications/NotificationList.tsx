@@ -13,6 +13,7 @@ import {
 import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification, useUnarchiveNotification, type NotificationFilters } from '../../hooks/useNotifications';
 import NotificationItem from '../../Components/common/NotificationItem';
 import ExportModal from '../../Components/Notifications/ExportModal';
+import type { Notification } from '../../hooks/useNotifications';
 
 interface NotificationListProps {
   basePath?: string;
@@ -50,6 +51,12 @@ const NotificationList: React.FC<NotificationListProps> = ({
     end_date: undefined,
     archived: false,
   });
+
+  const notificationsListHref = basePath.includes('shop-owner')
+    ? '/shop-owner/notifications'
+    : basePath.includes('staff') || basePath.includes('hr')
+      ? '/erp/notifications'
+      : '/notifications';
 
   const { data, isLoading, error } = useNotifications(
     filters.unread_only,
@@ -105,6 +112,64 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
   const handleMarkAsRead = (id: number) => {
     markAsRead.mutate(id);
+  };
+
+  const getNotificationHref = (notification: Notification) => {
+    if (basePath.includes('staff') && notification.type?.includes('repair')) {
+      const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
+      return `/erp/staff/job-orders-repair?highlightRepair=${repairId}`;
+    }
+
+    if (basePath.includes('shop-owner') && notification.type?.includes('repair')) {
+      const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
+      return `/shop-owner/job-orders-repair?highlightRepair=${repairId}`;
+    }
+
+    if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {
+      const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
+      return `/my-repairs?highlightRepair=${repairId}`;
+    }
+
+    if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('order')) {
+      const orderId = notification.data?.order_id || notification.id;
+      return `/my-orders?highlightOrder=${orderId}`;
+    }
+
+    const type = notification.type?.toLowerCase() || '';
+    const data = notification.data || {};
+
+    const isRepairNotification = type.includes('repair') || data.repair_id || data.repair_request_id;
+    if (isRepairNotification) {
+      const repairId = data.repair_id ?? data.repair_request_id;
+      if (basePath.includes('shop-owner')) {
+        return repairId ? `/shop-owner/job-orders-repair?highlightRepair=${repairId}` : '/shop-owner/job-orders-repair';
+      }
+      if (basePath.includes('staff')) {
+        return repairId ? `/erp/staff/job-orders-repair?highlightRepair=${repairId}` : '/erp/staff/job-orders-repair';
+      }
+      return repairId ? `/my-repairs?highlightRepair=${repairId}` : '/my-repairs';
+    }
+
+    const isOrderNotification = type.includes('order') || data.order_id;
+    if (isOrderNotification) {
+      const orderId = data.order_id;
+      return orderId ? `/my-orders?highlightOrder=${orderId}` : '/my-orders';
+    }
+
+    return notification.action_url || notificationsListHref;
+  };
+
+  const handleNotificationNavigate = (notification: Notification) => {
+    if (bulkActionMode) return;
+
+    if (!notification.is_read) {
+      handleMarkAsRead(notification.id);
+    }
+
+    const href = getNotificationHref(notification);
+    if (href) {
+      window.location.href = href;
+    }
   };
 
   const handleMarkAllAsRead = () => {
@@ -264,7 +329,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
   const handleSelectAll = () => {
     if (notifications.length > 0) {
-      const allIds = notifications.map(n => n.id);
+      const allIds = notifications.map((n: Notification) => n.id);
       setSelectedIds(selectedIds.length === allIds.length ? [] : allIds);
     }
   };
@@ -689,7 +754,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
               )}
 
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                {notifications.map((notification) => (
+                {notifications.map((notification: Notification) => (
                   <div
                     id={`notification-${notification.id}`}
                     key={notification.id}
@@ -697,7 +762,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
                       highlightedNotificationId === notification.id
                         ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset dark:bg-blue-900/20'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-800/70'
-                    }`}
+                    } ${!bulkActionMode ? 'cursor-pointer' : ''}`}
+                    onClick={() => handleNotificationNavigate(notification)}
                   >
                     <div className="flex items-start gap-3 px-6 py-4">
                       {/* Bulk Selection Checkbox */}
@@ -707,6 +773,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                             type="checkbox"
                             checked={selectedIds.includes(notification.id)}
                             onChange={() => handleToggleSelect(notification.id)}
+                            onClick={(e) => e.stopPropagation()}
                             className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
@@ -751,14 +818,20 @@ const NotificationList: React.FC<NotificationListProps> = ({
                               {showArchived ? (
                                 <>
                                   <button
-                                    onClick={() => handleUnarchive(notification.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUnarchive(notification.id);
+                                    }}
                                     className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors dark:hover:bg-blue-900/20"
                                     title="Unarchive notification"
                                   >
                                     <ArchiveRestore size={16} />
                                   </button>
                                   <button
-                                    onClick={() => handleDelete(notification.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete(notification.id);
+                                    }}
                                     className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors dark:hover:bg-red-900/20 dark:text-red-500"
                                     title="Delete permanently"
                                   >
@@ -769,7 +842,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
                                 <>
                                   {!notification.is_read && (
                                     <button
-                                      onClick={() => handleMarkAsRead(notification.id)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMarkAsRead(notification.id);
+                                      }}
                                       className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                       title="Mark as read"
                                     >
@@ -777,7 +853,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => handleDelete(notification.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete(notification.id);
+                                    }}
                                     className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors dark:text-red-500"
                                     title="Archive notification"
                                   >

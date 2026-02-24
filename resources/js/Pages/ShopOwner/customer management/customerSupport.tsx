@@ -33,7 +33,8 @@ export default function CustomerSupport() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -45,19 +46,19 @@ export default function CustomerSupport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchConversations();
+    fetchConversations(false);
     
-    // Auto-refresh conversations every 2 seconds
+    // Auto-refresh conversations every 3 seconds (background, no loading spinner)
     const conversationInterval = setInterval(() => {
-      fetchConversations();
-    }, 2000);
+      fetchConversations(true);
+    }, 3000);
     
     return () => clearInterval(conversationInterval);
   }, [statusFilter]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (isBackgroundPoll = false) => {
     try {
-      setLoading(true);
+      if (!isBackgroundPoll) setLoading(true);
       const params = statusFilter !== "all" ? { status: statusFilter } : {};
       const response = await axios.get("/api/shop-owner/conversations", { params });
       
@@ -71,41 +72,42 @@ export default function CustomerSupport() {
         return;
       }
       
-      const conversationsData = conversations.map((conv: any) => {
-        // Preserve existing messages if this ticket is already loaded
-        const existingTicket = tickets.find((t) => t.id === conv.id);
-        return {
-          id: conv.id,
-          customerId: conv.customer?.id,
-          customerName: conv.customer?.name || "Unknown",
-          customerAvatar: getInitials(conv.customer?.name || "Unknown"),
-          customerRole: conv.customer?.email || "",
-          lastMessage: conv.messages?.[0]?.content || "No messages yet",
-          lastMessageTime: formatTime(conv.last_message_at),
-          status: "active",
-          messages: existingTicket?.messages || [], // Keep existing messages
-          priority: conv.priority,
-          conversationStatus: conv.status,
-        };
+      setTickets((prevTickets) => {
+        const conversationsData = conversations.map((conv: any) => {
+          // Preserve existing messages if this ticket is already loaded
+          const existingTicket = prevTickets.find((t) => t.id === conv.id);
+          return {
+            id: conv.id,
+            customerId: conv.customer?.id,
+            customerName: conv.customer?.name || "Unknown",
+            customerAvatar: getInitials(conv.customer?.name || "Unknown"),
+            customerRole: conv.customer?.email || "",
+            lastMessage: conv.messages?.[0]?.content || "No messages yet",
+            lastMessageTime: formatTime(conv.last_message_at),
+            status: "active",
+            messages: existingTicket?.messages || [], // Keep existing messages
+            priority: conv.priority,
+            conversationStatus: conv.status,
+          };
+        });
+        return conversationsData;
       });
-      
-      setTickets(conversationsData);
-      
+
       // Only update selection if current selection is not in the new list
-      if (selectedTicketId && conversationsData.find((t) => t.id === selectedTicketId)) {
-        // Keep current selection if it's still in the filtered list
-      } else if (conversationsData.length > 0) {
-        // Select first conversation only if no current selection
-        setSelectedTicketId(conversationsData[0].id);
-      } else {
-        setSelectedTicketId(null);
-      }
+      setSelectedTicketId((prevId) => {
+        const updatedConvIds = conversations.map((c: any) => c.id);
+        if (prevId && updatedConvIds.includes(prevId)) return prevId;
+        return conversations.length > 0 ? conversations[0].id : null;
+      });
     } catch (error) {
       console.error("Error fetching conversations:", error);
-      setTickets([]);
-      setSelectedTicketId(null);
+      if (!isBackgroundPoll) {
+        setTickets([]);
+        setSelectedTicketId(null);
+      }
     } finally {
       setLoading(false);
+      setInitialLoad(false);
     }
   };
 
@@ -453,7 +455,7 @@ export default function CustomerSupport() {
 
             {/* Ticket List */}
             <div className="flex-1 overflow-y-auto">
-              {loading ? (
+              {initialLoad ? (
                 <div className="flex items-center justify-center h-full text-gray-500">
                   <div className="text-center">
                     <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

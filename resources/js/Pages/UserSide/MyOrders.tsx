@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from './Navigation';
 import Swal from 'sweetalert2';
@@ -32,6 +32,7 @@ type Order = {
   carrier_company?: string;
   tracking_link?: string;
   eta?: string;
+  pickup_enabled?: boolean;
 };
 
 interface MyOrdersProps {
@@ -42,6 +43,7 @@ const MyOrders: React.FC = () => {
   const { orders: initialOrders } = usePage<MyOrdersProps>().props;
   const [orders, setOrders] = useState<Order[]>(initialOrders || []);
   const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled'>('all');
+  const [highlightOrderId, setHighlightOrderId] = useState<number | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
   const [cancelTargetOrderItemId, setCancelTargetOrderItemId] = useState<number | null>(null);
@@ -56,6 +58,63 @@ const MyOrders: React.FC = () => {
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('');
   const [refundNote, setRefundNote] = useState<string>('');
+
+  const mapStatusToTab = (status: string): 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled' => {
+    switch (status) {
+      case 'pending':
+        return 'pending';
+      case 'processing':
+        return 'processing';
+      case 'to_ship':
+      case 'shipped':
+        return 'shipped';
+      case 'completed':
+      case 'delivered':
+        return 'completed';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return 'all';
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const highlightParam = params.get('highlightOrder') || params.get('highlight');
+
+    if (!highlightParam) {
+      return;
+    }
+
+    const parsedId = Number(highlightParam);
+    if (Number.isNaN(parsedId)) {
+      return;
+    }
+
+    setHighlightOrderId(parsedId);
+  }, []);
+
+  useEffect(() => {
+    if (!highlightOrderId || orders.length === 0) {
+      return;
+    }
+
+    const targetOrder = orders.find((order) => order.id === highlightOrderId);
+    if (!targetOrder) {
+      return;
+    }
+
+    setSelectedTab(mapStatusToTab(targetOrder.status));
+
+    const scrollTimer = window.setTimeout(() => {
+      const targetElement = document.querySelector(`[data-order-id="${highlightOrderId}"]`);
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 200);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [highlightOrderId, orders]);
 
   const confirmDelivery = async (orderId: number) => {
     const result = await Swal.fire({
@@ -523,17 +582,15 @@ const MyOrders: React.FC = () => {
                 (order.items || []).map((item, idx) => (
                   <div
                     key={`${order.id}-${item.id ?? idx}`}
-                    className="border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                    data-order-id={order.id}
+                    className={`border overflow-hidden hover:shadow-lg transition-shadow duration-300 ${
+                      highlightOrderId === order.id ? 'border-black bg-gray-50/30' : 'border-gray-200'
+                    }`}
                   >
                     {/* Order Header */}
                     <div className="bg-white px-8 py-5 border-b border-gray-200">
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-8">
-                          <div>
-                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Number</p>
-                            <p className="font-semibold text-black text-lg">{order.order_number}</p>
-                          </div>
-                          <div className="h-10 w-px bg-gray-200"></div>
                           <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
                             <p className="text-sm text-black">
@@ -641,9 +698,15 @@ const MyOrders: React.FC = () => {
                         {(order.status === 'shipped' || order.status === 'to_ship') && (
                           <button
                             onClick={() => confirmDelivery(order.id)}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                            disabled={!order.pickup_enabled}
+                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${
+                              order.pickup_enabled
+                                ? 'bg-black text-white hover:bg-gray-800 cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                            title={order.pickup_enabled ? 'Confirm you have received your order' : 'Waiting for shop to activate receive'}
                           >
-                            CONFIRM RECEIVED
+                            {order.pickup_enabled ? 'CONFIRM RECEIVED' : 'AWAITING ACTIVATION'}
                           </button>
                         )}
                         {order.status === 'delivered' && (

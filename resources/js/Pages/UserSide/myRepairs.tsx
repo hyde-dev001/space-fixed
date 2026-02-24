@@ -145,6 +145,7 @@ const MyRepairs: React.FC = () => {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState<RepairTab>('new_request');
+  const [highlightRepairId, setHighlightRepairId] = useState<number | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<string>('');
@@ -190,6 +191,77 @@ const MyRepairs: React.FC = () => {
     if (!conversationId) return 0;
     return conversationUnreadCounts[conversationId] ?? 0;
   };
+
+  const mapRepairStatusToTab = (status: RepairStatus): RepairTab => {
+    switch (status) {
+      case 'new_request':
+      case 'assigned_to_repairer':
+        return 'new_request';
+      case 'pending':
+      case 'repairer_accepted':
+      case 'waiting_customer_confirmation':
+      case 'owner_approval_pending':
+      case 'owner_approved':
+        return 'pending';
+      case 'received':
+        return 'received';
+      case 'in_progress':
+      case 'awaiting_parts':
+        return 'in_progress';
+      case 'completed':
+        return 'completed';
+      case 'ready_for_pickup':
+        return 'ready_for_pickup';
+      case 'picked_up':
+        return 'picked_up';
+      case 'cancelled':
+        return 'cancelled';
+      case 'rejected':
+      case 'repairer_rejected':
+      case 'owner_rejected':
+        return 'rejected';
+      default:
+        return 'new_request';
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const highlightParam = params.get('highlightRepair') || params.get('highlight');
+
+    if (!highlightParam) {
+      return;
+    }
+
+    const parsedId = Number(highlightParam);
+    if (Number.isNaN(parsedId)) {
+      return;
+    }
+
+    setHighlightRepairId(parsedId);
+  }, []);
+
+  useEffect(() => {
+    if (!highlightRepairId || orders.length === 0) {
+      return;
+    }
+
+    const targetRepair = orders.find((order) => order.id === highlightRepairId);
+    if (!targetRepair) {
+      return;
+    }
+
+    setSelectedTab(mapRepairStatusToTab(targetRepair.status));
+
+    const scrollTimer = window.setTimeout(() => {
+      const targetElement = document.querySelector(`[data-repair-id="${highlightRepairId}"]`);
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 200);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [highlightRepairId, orders]);
 
   useEffect(() => {
     // Check if user just returned from payment
@@ -289,7 +361,7 @@ const MyRepairs: React.FC = () => {
                 
                 // Check if payment was confirmed
                 const updatedRepair = response.data.data.find((o: RepairOrder) => o.id === parseInt(pendingRepairId));
-                if (updatedRepair && updatedRepair.payment_status === 'paid') {
+                if (updatedRepair && (updatedRepair.payment_status === 'paid' || updatedRepair.payment_status === 'completed')) {
                   paymentConfirmed = true;
                 }
               }
@@ -812,6 +884,7 @@ const MyRepairs: React.FC = () => {
       Boolean(order.conversation_id) &&
       order.delivery_method !== 'walk_in' &&
       order.payment_status !== 'paid' &&
+      order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
       !processingPayment
     ) {
@@ -1097,17 +1170,15 @@ const MyRepairs: React.FC = () => {
               {filteredOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                  data-repair-id={order.id}
+                  className={`border overflow-hidden hover:shadow-lg transition-shadow duration-300 ${
+                    highlightRepairId === order.id ? 'border-black bg-gray-50/30' : 'border-gray-200'
+                  }`}
                 >
                   {/* Order Header */}
                   <div className="bg-white px-8 py-5 border-b border-gray-200">
                     <div className="flex flex-wrap items-center justify-between gap-4">
                       <div className="flex items-center gap-8">
-                        <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Number</p>
-                          <p className="font-semibold text-black text-lg">{order.order_number}</p>
-                        </div>
-                        <div className="h-10 w-px bg-gray-200"></div>
                         <div>
                           <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
                           <p className="text-sm text-black">
@@ -1224,7 +1295,7 @@ const MyRepairs: React.FC = () => {
                     {/* Action Buttons */}
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
                       {/* Chat with Repairer and Pay Now - For Pickup/Delivery Only (Not Walk-in) */}
-                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && order.payment_status !== 'paid' && (
+                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
                           <Link
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
@@ -1296,7 +1367,7 @@ const MyRepairs: React.FC = () => {
                         </>
                       )}
                       
-                      {order.status === 'pending' && order.payment_status !== 'paid' && (
+                      {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
                           <button
                             onClick={() => handlePayNow(order.id)}
@@ -1335,7 +1406,7 @@ const MyRepairs: React.FC = () => {
                           }`}
                           title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
                         >
-                          {order.pickup_enabled ? 'Confirm Received' : 'Awaiting Activation'}
+                          {order.pickup_enabled ? 'Confirm Received' : 'Received'}
                         </button>
                       )}
                       {order.status === 'picked_up' && (

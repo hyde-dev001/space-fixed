@@ -39,6 +39,10 @@ class Order extends Model
         'product',
         'quantity',
         'total',
+        // Pickup confirmation fields
+        'pickup_enabled',
+        'pickup_enabled_at',
+        'pickup_enabled_by',
     ];
 
     protected $casts = [
@@ -47,6 +51,8 @@ class Order extends Model
         'total_amount' => 'decimal:2',
         'quantity' => 'integer',
         'invoice_generated' => 'boolean',
+        'pickup_enabled' => 'boolean',
+        'pickup_enabled_at' => 'datetime',
     ];
 
     /**

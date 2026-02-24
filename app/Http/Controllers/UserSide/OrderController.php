@@ -35,7 +35,14 @@ class OrderController extends Controller
         Notification::query()
             ->where('user_id', $user->id)
             ->where('is_read', false)
-            ->where('type', 'order_status_update')
+            ->whereIn('type', [
+                'order_placed',
+                'order_confirmed',
+                'order_shipped',
+                'order_delivered',
+                'order_cancelled',
+                'order_status_update',
+            ])
             ->update([
                 'is_read' => true,
                 'read_at' => now(),
@@ -79,6 +86,7 @@ class OrderController extends Controller
                     'carrier_company' => $order->carrier_company,
                     'tracking_link' => $order->tracking_link,
                     'eta' => $order->eta,
+                    'pickup_enabled' => $order->pickup_enabled ?? false,
                 ];
             });
 

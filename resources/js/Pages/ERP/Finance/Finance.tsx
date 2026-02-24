@@ -108,8 +108,11 @@ export default function FinancePage() {
           return <Expense />;
           
         case "repair-pricing":
-          // Check pricing permissions
-          if (!hasAnyPermission(auth, ['view-pricing', 'edit-pricing', 'manage-service-pricing'])) {
+          // Check pricing permissions - accept both generic and specific pricing permissions
+          if (!hasAnyPermission(auth, [
+            'view-pricing', 'edit-pricing', 'manage-service-pricing',
+            'view-repair-pricing', 'approve-repair-pricing', 'view-pricing-approvals'
+          ])) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">
@@ -123,8 +126,11 @@ export default function FinancePage() {
           return <RepairPriceApproval />;
           
         case "shoe-pricing":
-          // Check pricing permissions
-          if (!hasAnyPermission(auth, ['view-pricing', 'edit-pricing', 'manage-service-pricing'])) {
+          // Check pricing permissions - accept both generic and specific pricing permissions
+          if (!hasAnyPermission(auth, [
+            'view-pricing', 'edit-pricing', 'manage-service-pricing',
+            'view-shoe-pricing', 'approve-shoe-pricing', 'view-pricing-approvals'
+          ])) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">

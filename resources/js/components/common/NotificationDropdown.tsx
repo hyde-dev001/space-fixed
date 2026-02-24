@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Link } from '@inertiajs/react';
-import { X, Check, CheckCheck, Bell } from 'lucide-react';
+import { X, Bell, CheckCheck } from 'lucide-react';
 import { useRecentNotifications, useMarkAsRead, useMarkAllAsRead } from '../../hooks/useNotifications';
 import NotificationItem from './NotificationItem';
 
@@ -18,7 +18,8 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { data: notifications = [], isLoading } = useRecentNotifications(10, basePath);
   const markAsRead = useMarkAsRead(basePath);
-  const markAllAsRead = useMarkAllAsRead(basePath, 'mark-all-read');
+  const markAllPath = basePath === '/api/notifications' ? 'read-all' : 'mark-all-read';
+  const markAllAsRead = useMarkAllAsRead(basePath, markAllPath);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -37,6 +38,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   };
 
   const handleMarkAllAsRead = () => {
+    if (unreadCount === 0 || markAllAsRead.isPending) return;
     markAllAsRead.mutate();
   };
 
@@ -47,9 +49,48 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       ? '/erp/notifications'
       : '/notifications';
 
-  const getNotificationHref = (notification: { id: number }) => {
-    const separator = notificationsListHref.includes('?') ? '&' : '?';
-    return `${notificationsListHref}${separator}highlight=${notification.id}`;
+  const getNotificationHref = (notification: { id: number; type?: string; data?: any; action_url?: string | null }) => {
+    // Repairer: repair_assigned notifications go to Job Orders Repair page
+    if (basePath.includes('staff') && notification.type?.includes('repair')) {
+      const repairId = notification.data?.repair_id || notification.id;
+      return `/erp/staff/job-orders-repair?highlightRepair=${repairId}`;
+    }
+
+    // Shop owner: repair notifications go to Job Orders Repair page
+    if (basePath.includes('shop-owner') && notification.type?.includes('repair')) {
+      const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
+      return `/shop-owner/job-orders-repair?highlightRepair=${repairId}`;
+    }
+
+    // Customer: repair notifications go to my-repairs
+    if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {
+      const repairId = notification.data?.repair_id || notification.id;
+      return `/my-repairs?highlightRepair=${repairId}`;
+    }
+
+    // Customer: order notifications go to my-orders
+    if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('order')) {
+      const orderId = notification.data?.order_id || notification.id;
+      return `/my-orders?highlightOrder=${orderId}`;
+    }
+
+    // Default fallback: go to notifications page with highlight string; data?: Record<string, any>; action_url?: string | null }) => {
+    const type = notification.type?.toLowerCase() || '';
+    const data = notification.data || {};
+
+    const isRepairNotification = type.includes('repair') || data.repair_id || data.repair_request_id;
+    if (isRepairNotification) {
+      const repairId = data.repair_id ?? data.repair_request_id;
+      return repairId ? `/my-repairs?highlightRepair=${repairId}` : '/my-repairs';
+    }
+
+    const isOrderNotification = type.includes('order') || data.order_id;
+    if (isOrderNotification) {
+      const orderId = data.order_id;
+      return orderId ? `/my-orders?highlightOrder=${orderId}` : '/my-orders';
+    }
+
+    return notification.action_url || notificationsListHref;
   };
 
   return (
@@ -72,16 +113,14 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
         </div>
         
         <div className="flex items-center gap-2">
-          {unreadCount > 0 && (
-            <button
-              onClick={handleMarkAllAsRead}
-              disabled={markAllAsRead.isPending}
-              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors dark:text-gray-400 dark:hover:bg-blue-900/30"
-              title="Mark all as read"
-            >
-              <CheckCheck size={18} />
-            </button>
-          )}
+          <button
+            onClick={handleMarkAllAsRead}
+            disabled={unreadCount === 0 || markAllAsRead.isPending}
+            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed dark:text-gray-400 dark:hover:text-blue-400 dark:hover:bg-gray-800"
+            title="Mark all as read"
+          >
+            <CheckCheck size={18} />
+          </button>
           <button
             onClick={onClose}
             className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800"
@@ -112,7 +151,6 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
                 linkHref={getNotificationHref(notification)}
                 onMarkAsRead={handleMarkAsRead}
                 onClick={onClose}
-                showActions={true}
               />
             ))}
           </div>

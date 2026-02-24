@@ -40,6 +40,7 @@ use App\Http\Controllers\ERP\HR\SuspensionRequestController;
  */
 Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'])->group(function () {
     Route::get('/', [NotificationController::class, 'index'])->name('hr.notifications.index');
+    Route::get('/recent', [NotificationController::class, 'recent'])->name('hr.notifications.recent');
     Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('hr.notifications.unread_count');
     Route::get('/stats', [NotificationController::class, 'stats'])->name('hr.notifications.stats');
     Route::get('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'getPreferences'])->name('hr.notifications.preferences');

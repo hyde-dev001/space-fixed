@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PriceChangeRequest;
 use App\Models\Product;
 use App\Enums\PriceChangeStatus;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -331,6 +332,15 @@ class PriceChangeRequestController extends Controller
 
         $shopOwnerId = $priceChangeRequest->shop_owner_id;
         $metrics = $this->calculateMetrics($shopOwnerId, 'finance');
+
+        // Notify shop owner about price change approval
+        $notificationService = app(NotificationService::class);
+        $notificationService->notifyPriceChangeRequest($shopOwnerId, [
+            'product_name' => $priceChangeRequest->product->product_name ?? 'Product',
+            'old_price' => number_format($priceChangeRequest->current_price, 2),
+            'new_price' => number_format($priceChangeRequest->proposed_price, 2),
+            'request_id' => $priceChangeRequest->id,
+        ]);
 
         return response()->json([
             'success' => true,

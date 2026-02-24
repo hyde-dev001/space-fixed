@@ -29,11 +29,9 @@ export default function ShopOwnerDropdown() {
   };
 
   const businessTypeInfo = getBusinessTypeInfo();
-
   function toggleDropdown() {
     setIsOpen(!isOpen);
   }
-
   function closeDropdown() {
     setIsOpen(false);
   }
@@ -219,6 +217,29 @@ export default function ShopOwnerDropdown() {
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => {
+            closeDropdown();
+            router.visit('/shop-owner/shop-profile');
+          }}
+          className="flex items-center gap-3 px-3 py-2.5 mt-2 font-medium text-gray-700 rounded-lg group text-sm hover:bg-gray-100 w-full dark:text-gray-300 dark:hover:bg-gray-700 transition mx-2"
+        >
+          <svg
+            className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 8a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"></path>
+            <path d="M6.5 17a6.5 6.5 0 0 1 11 0"></path>
+          </svg>
+          Shop Profile
+        </button>
+
+        <div className="mx-2 mt-2 border-t border-gray-200 dark:border-gray-700" />
 
         <button
           onClick={handleLogout}

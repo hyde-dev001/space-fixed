@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import Navigation from './Navigation';
+import Swal from 'sweetalert2';
 
 type ProfileData = {
 	firstName: string;
@@ -87,7 +88,12 @@ const CustomerProfile: React.FC = () => {
 			preserveScroll: true,
 			onSuccess: () => {
 				setIsSubmitting(false);
-				window.alert('Profile photo updated successfully!');
+				Swal.fire({
+					icon: 'success',
+					title: 'Photo uploaded!',
+					text: 'Your profile picture has been updated successfully.',
+					confirmButtonColor: '#111827',
+				});
 			},
 			onError: (errors) => {
 				setIsSubmitting(false);
@@ -98,7 +104,19 @@ const CustomerProfile: React.FC = () => {
 		});
 	};
 
-	const savePersonalEdit = () => {
+	const savePersonalEdit = async () => {
+		const result = await Swal.fire({
+			title: 'Save changes?',
+			text: 'Are you sure you want to save your personal information?',
+			icon: 'question',
+			showCancelButton: true,
+			confirmButtonText: 'Save',
+			cancelButtonText: 'Cancel',
+			confirmButtonColor: '#111827',
+		});
+
+		if (!result.isConfirmed) return;
+
 		setIsSubmitting(true);
 		const formData = new FormData();
 		formData.append('first_name', profileData.firstName);
@@ -131,7 +149,19 @@ const CustomerProfile: React.FC = () => {
 		setIsEditingPersonal(false);
 	};
 
-	const saveAddressEdit = () => {
+	const saveAddressEdit = async () => {
+		const result = await Swal.fire({
+			title: 'Save changes?',
+			text: 'Are you sure you want to save your address?',
+			icon: 'question',
+			showCancelButton: true,
+			confirmButtonText: 'Save',
+			cancelButtonText: 'Cancel',
+			confirmButtonColor: '#111827',
+		});
+
+		if (!result.isConfirmed) return;
+
 		setIsSubmitting(true);
 		const formData = new FormData();
 		formData.append('first_name', profileData.firstName);
@@ -238,9 +268,6 @@ const CustomerProfile: React.FC = () => {
 										disabled={isSubmitting}
 									/>
 								</label>
-								{photoPreview && photoPreview !== user.profile_photo_url && (
-									<span className="text-xs text-green-600">Photo uploaded!</span>
-								)}
 							</div>
 						</div>
 					</div>

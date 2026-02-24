@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
-use App\Http\Controllers\ShopOwner\CalendarController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\UserSide\LandingPageController;
@@ -206,16 +205,36 @@ Route::get('/api/customer/badge-counts', function () {
 
     $user = Auth::guard('user')->user();
     
+    $orderTypes = [
+        'order_placed',
+        'order_confirmed',
+        'order_shipped',
+        'order_delivered',
+        'order_cancelled',
+        'order_status_update',
+    ];
+
+    $repairTypes = [
+        'repair_submitted',
+        'repair_assigned',
+        'repair_accepted',
+        'repair_rejected',
+        'repair_in_progress',
+        'repair_completed',
+        'repair_ready_pickup',
+        'repair_status_update',
+    ];
+
     $orderStatusCount = \App\Models\Notification::query()
         ->where('user_id', $user->id)
         ->where('is_read', false)
-        ->whereIn('type', ['order_status_changed', 'order_delivered', 'order_cancelled'])
+        ->whereIn('type', $orderTypes)
         ->count();
     
     $repairStatusCount = \App\Models\Notification::query()
         ->where('user_id', $user->id)
         ->where('is_read', false)
-        ->whereIn('type', ['repair_status_updated', 'repair_completed', 'repair_ready_for_pickup'])
+        ->whereIn('type', $repairTypes)
         ->count();
     
     $chatIconCount = \App\Models\ConversationMessage::query()
@@ -376,7 +395,6 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
 
 // Shop Owner Routes
 Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
-    Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
     Route::get('/ecommerce', [EcommerceController::class, 'index'])->name('ecommerce');
     
     // User Access Control - Company only (to manage employees)
@@ -554,6 +572,8 @@ Route::middleware('auth:user')->prefix('api/staff')->group(function () {
         ->middleware('permission:edit-job-orders');
     Route::post('orders/{id}/complete', [\App\Http\Controllers\Api\StaffOrderController::class, 'complete'])
         ->middleware('permission:complete-job-orders');
+    Route::post('orders/{id}/activate-pickup', [\App\Http\Controllers\Api\StaffOrderController::class, 'activatePickup'])
+        ->middleware('permission:edit-job-orders');
 });
 
 // Product API Routes (public and shop owner)
@@ -720,6 +740,9 @@ Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function (
     Route::post('{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted']);
     Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
     Route::post('{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup']);
+    
+    // Activate payment for specific repair request
+    Route::post('{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair']);
 });
 
 // Manager API Routes (Phase 5 - Rejection Review)
@@ -1016,7 +1039,7 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Finance pages
-Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:view-expenses|view-invoices|approve-expenses'])->group(function () {
+Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:view-expenses|view-invoices|approve-expenses|view-pricing-approvals|approve-shoe-pricing|approve-repair-pricing'])->group(function () {
     Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1230,14 +1253,14 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/dashboardRepair');
-    })->middleware('permission:view-job-orders')->name('repair-dashboard');
+    })->middleware('permission:view-job-orders|view-repair-services')->name('repair-dashboard');
     
     Route::get('/job-orders-repair', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/JobOrdersRepair');
-    })->middleware('permission:view-job-orders')->name('job-orders-repair');
+    })->middleware('permission:view-job-orders|view-repair-services')->name('job-orders-repair');
     
     Route::get('/upload-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

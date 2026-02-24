@@ -10,7 +10,6 @@ import { NavigationItem, ShopOwnerAccess } from '@/types/shopOwner';
 import {
     canAccessProducts,
     canAccessServices,
-    canAccessCalendar,
     canAccessStaffManagement,
     canAccessPriceApprovals,
 } from '@/utils/shopOwnerAccess';
@@ -72,14 +71,6 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             path: '/shop-owner/customers',
             icon: '👥',
             visible: true,
-        },
-
-        // Calendar - Repair or Both only
-        {
-            label: 'Calendar',
-            path: '/shop-owner/calendar',
-            icon: '📅',
-            visible: canAccessCalendar(access),
         },
 
         // Shop Profile - Always visible

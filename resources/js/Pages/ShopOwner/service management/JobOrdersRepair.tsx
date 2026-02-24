@@ -693,6 +693,9 @@ export default function JobOrdersRepair() {
       });
       
       if (response.data.success) {
+        setIsViewModalOpen(false);
+        setViewOrder(null);
+
         await Swal.fire({
           title: 'Ready for Pickup!',
           text: 'Customer will be notified to pick up their item.',
@@ -727,6 +730,23 @@ export default function JobOrdersRepair() {
       const response = await axios.post(`/api/shop-owner/repairs/${orderId}/activate-pickup`);
       
       if (response.data.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            String(o.database_id) === orderId
+              ? { ...o, pickup_enabled: true, pickup_enabled_at: new Date().toISOString() }
+              : o
+          )
+        );
+
+        setViewOrder((prev) =>
+          prev && String(prev.database_id) === orderId
+            ? { ...prev, pickup_enabled: true, pickup_enabled_at: new Date().toISOString() }
+            : prev
+        );
+
+        setIsViewModalOpen(false);
+        setViewOrder(null);
+
         await Swal.fire({
           title: 'Pickup Activated!',
           text: 'Customer can now confirm they received their item.',
@@ -739,6 +759,40 @@ export default function JobOrdersRepair() {
       await Swal.fire({
         title: 'Error',
         text: error.response?.data?.message || 'Failed to activate pickup',
+        icon: 'error',
+      });
+    }
+  };
+
+  const handleActivatePayment = async (orderId: string) => {
+    const result = await Swal.fire({
+      title: 'Activate Payment?',
+      text: 'This will allow the customer to pay for this specific repair.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Activate Payment',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.post(`/api/shop-owner/repairs/${orderId}/activate-payment`);
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Payment Activated!',
+          text: 'Customer can now pay for this repair.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to activate payment',
         icon: 'error',
       });
     }
@@ -1264,7 +1318,7 @@ export default function JobOrdersRepair() {
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' 
                                 : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
                             }`}>
-                              {order.payment_status === 'completed' ? '💳 Paid' : '⏳ Awaiting Payment'}
+                              {order.payment_status === 'completed' ? 'Paid' : 'Awaiting Payment'}
                             </span>
                           )}
                         </div>
@@ -1284,70 +1338,6 @@ export default function JobOrdersRepair() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          
-                          {/* Phase 8: Work Progress Action Buttons */}
-                          {/* Show Mark as Received for both pickup and walk-in after acceptance */}
-                          {(order.status === "repairer_accepted" || order.status === "owner_approved" || order.status === "waiting_customer_confirmation" || order.status === "confirmed") && (
-                            <button
-                              onClick={() => handleMarkReceived(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors"
-                              title="Mark shoes as received at shop"
-                            >
-                              Mark as Received
-                            </button>
-                          )}
-                          
-                          {/* Show Start Work only after shoes are received */}
-                          {order.status === "received" && (
-                            <button
-                              onClick={() => handleStartWork(order)}
-                              disabled={order.payment_enabled && order.payment_status !== 'completed'}
-                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                                order.payment_enabled && order.payment_status !== 'completed'
-                                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                                  : 'text-white bg-blue-600 hover:bg-blue-700'
-                              }`}
-                              title={
-                                order.payment_enabled && order.payment_status !== 'completed'
-                                  ? 'Waiting for customer payment'
-                                  : 'Start work on this repair'
-                              }
-                            >
-                              {order.payment_enabled && order.payment_status !== 'completed' ? '⏳ Awaiting Payment' : 'Start Work'}
-                            </button>
-                          )}
-                          
-                          {order.status === "in-progress" && (
-                            <>
-                              <button
-                                onClick={() => handleMarkReady(order.database_id)}
-                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                                title="Mark as ready for pickup"
-                              >
-                                Ready for Pickup
-                              </button>
-                            </>
-                          )}
-                          
-                          {order.status === "awaiting_parts" && (
-                            <button
-                              onClick={() => handleResumeWork(order.database_id)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                              title="Resume work (parts arrived)"
-                            >
-                              Resume Work
-                            </button>
-                          )}
-                          
-                          {order.status === "completed" && (
-                            <button
-                              onClick={() => handleMarkReady(order.database_id)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                              title="Mark as ready for pickup"
-                            >
-                              Mark Ready for Pickup
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -1613,7 +1603,7 @@ export default function JobOrdersRepair() {
                           )}
                           <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-700">
                             <p className="text-xs text-amber-800 dark:text-amber-400 font-medium">
-                              📋 Instructions: Contact a delivery service (Lalamove, Grab, etc.) to collect the shoes from this address and bring them to your shop.
+                               Instructions: Contact a delivery service (Lalamove, Grab, etc.) to collect the shoes from this address and bring them to your shop.
                             </p>
                           </div>
                         </div>
@@ -1750,11 +1740,20 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+                      className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors shadow-sm"
                       title="Mark shoes as received at shop"
                     >
                       Mark as Received
                     </button>
+                    {!viewOrder.payment_enabled && (
+                      <button
+                        onClick={() => handleActivatePayment(String(viewOrder.database_id))}
+                        className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors shadow-sm"
+                        title="Activate payment for this repair"
+                      >
+                         Activate Payment
+                      </button>
+                    )}
                   </div>
                 )}
                 
@@ -1763,10 +1762,31 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors"
+                      className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors"
                       title="Mark as received"
                     >
                       Mark as Received
+                    </button>
+                    {!viewOrder.payment_enabled && (
+                      <button
+                        onClick={() => handleActivatePayment(String(viewOrder.database_id))}
+                        className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors"
+                        title="Activate payment for this repair"
+                      >
+                        💳 Activate Payment
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {viewOrder.status === "received" && !viewOrder.payment_enabled && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => handleActivatePayment(String(viewOrder.database_id))}
+                      className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors"
+                      title="Activate payment for this repair"
+                    >
+                      💳 Activate Payment
                     </button>
                   </div>
                 )}
@@ -1783,20 +1803,37 @@ export default function JobOrdersRepair() {
                     </button>
                   </div>
                 )}
-                {viewOrder.status === "ready-for-pickup" && (
+
+                {(viewOrder.status === "in-progress" || viewOrder.status === "completed") && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
+                      onClick={() => handleMarkReady(String(viewOrder.database_id))}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                      title="Mark as ready for pickup"
+                    >
+                      Ready for Pickup
+                    </button>
+                  </div>
+                )}
+                {viewOrder.status === "ready-for-pickup" && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {(() => {
+                      const isPickupActivated = Boolean(viewOrder.pickup_enabled || viewOrder.pickup_enabled_at);
+                      return (
+                    <button
                       onClick={() => handleActivatePickup(String(viewOrder.database_id))}
-                      disabled={viewOrder.pickup_enabled}
+                      disabled={isPickupActivated}
                       className={`px-4 py-2 border border-black rounded-lg font-medium transition-colors ${
-                        viewOrder.pickup_enabled
+                        isPickupActivated
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           : 'bg-white hover:bg-gray-100 text-black'
                       }`}
-                      title={viewOrder.pickup_enabled ? 'Pickup already activated' : 'Activate pickup confirmation'}
+                      title={isPickupActivated ? 'Pickup already activated' : 'Activate pickup confirmation'}
                     >
-                      {viewOrder.pickup_enabled ? '✓ Pickup Activated' : 'Activate Receive'}
+                      {isPickupActivated ? '✓ Pickup Activated' : 'Activate Receive'}
                     </button>
+                      );
+                    })()}
                   </div>
                 )}
                 <button

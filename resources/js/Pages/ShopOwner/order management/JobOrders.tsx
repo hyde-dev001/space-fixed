@@ -3,6 +3,7 @@ import Swal from "sweetalert2";
 import { Head } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
 import ErrorModal from "../../../components/common/ErrorModal";
+import axios from "axios";
 
 type OrderItem = {
   id: number;
@@ -40,6 +41,8 @@ type Order = {
   quantity: number;
   shopName?: string;
   product?: string;
+  pickup_enabled?: boolean;
+  pickup_enabled_at?: string | null;
 };
 
 type MetricCardProps = {
@@ -263,6 +266,8 @@ export default function JobOrdersPage() {
           quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
           shopName: order.shop?.shop_name || undefined,
           product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
+          pickup_enabled: order.pickup_enabled || false,
+          pickup_enabled_at: order.pickup_enabled_at || null,
         }));
         
         setOrders(mappedOrders);
@@ -573,24 +578,61 @@ export default function JobOrdersPage() {
       // Parse the successful response
       const data = JSON.parse(responseText);
 
-      // Update local state
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === selectedOrder.id
-            ? {
-                ...o,
-                status: "shipped",
-                shippedAt: new Date().toLocaleString(),
-                carrierCompany,
-                carrierName,
-                carrierPhone,
-                trackingNumber,
-                trackingLink,
-                eta: etaDate,
-              }
-            : o
-        )
-      );
+      // Refresh orders list from server to ensure we have the latest data
+      try {
+        const ordersResponse = await fetch('/api/shop-owner/orders', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (ordersResponse.ok) {
+          const ordersData = await ordersResponse.json();
+          const mappedOrders: Order[] = ordersData.map((order: any) => ({
+            id: order.id,
+            order_number: order.order_number,
+            customer: order.customer_name,
+            email: order.customer_email,
+            phone: order.customer_phone,
+            shippingAddress: order.shipping_address,
+            total: order.total_amount,
+            paymentStatus: order.payment_status,
+            status: order.status,
+            orderedAt: order.created_at,
+            items: order.items || [],
+            quantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+            product: order.items?.[0]?.product_name || '',
+            carrierCompany: order.carrier_company,
+            trackingNumber: order.tracking_number,
+            trackingLink: order.tracking_link,
+            eta: order.eta,
+            pickup_enabled: order.pickup_enabled || false,
+            pickup_enabled_at: order.pickup_enabled_at || null,
+          }));
+          setOrders(mappedOrders);
+        }
+      } catch (fetchError) {
+        console.error('Error refreshing orders:', fetchError);
+        // Still update local state even if refresh fails
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === selectedOrder.id
+              ? {
+                  ...o,
+                  status: "shipped",
+                  shippedAt: new Date().toLocaleString(),
+                  carrierCompany,
+                  carrierName,
+                  carrierPhone,
+                  trackingNumber,
+                  trackingLink,
+                  eta: etaDate,
+                }
+              : o
+          )
+        );
+      }
 
       // Close modal
       setIsShippingModalOpen(false);
@@ -618,6 +660,97 @@ export default function JobOrdersPage() {
         icon: "error",
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
+      });
+    }
+  };
+
+  const handleActivatePickup = async (orderId: number) => {
+    const result = await Swal.fire({
+      title: 'Activate Pickup Confirmation?',
+      text: 'This will allow the customer to confirm they have received their order.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Activate',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      // Fetch fresh CSRF token
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (!csrfResponse.ok) {
+        throw new Error('Failed to get CSRF token');
+      }
+      
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrf_token;
+
+      const response = await axios.post(`/api/shop-owner/orders/${orderId}/activate-pickup`, {}, {
+        headers: {
+          'X-CSRF-TOKEN': csrfToken,
+        },
+        withCredentials: true,
+      });
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Pickup Activated!',
+          text: 'Customer can now confirm they received their order.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        
+        // Refresh orders list
+        const ordersResponse = await fetch('/api/shop-owner/orders', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (ordersResponse.ok) {
+          const data = await ordersResponse.json();
+          const mappedOrders: Order[] = data.map((order: any) => ({
+            id: order.id,
+            order_number: order.order_number,
+            customer: order.customer_name,
+            email: order.customer_email,
+            phone: order.customer_phone,
+            shippingAddress: order.shipping_address,
+            total: order.total_amount,
+            paymentStatus: order.payment_status,
+            status: order.status,
+            orderedAt: order.created_at,
+            items: order.items || [],
+            quantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+            product: order.items?.[0]?.product_name || '',
+            carrierCompany: order.carrier_company,
+            trackingNumber: order.tracking_number,
+            trackingLink: order.tracking_link,
+            eta: order.eta,
+            pickup_enabled: order.pickup_enabled || false,
+            pickup_enabled_at: order.pickup_enabled_at || null,
+          }));
+          setOrders(mappedOrders);
+          
+          // Update viewOrder if it's the same order
+          if (viewOrder && viewOrder.id === orderId) {
+            const updatedOrder = mappedOrders.find(o => o.id === orderId);
+            if (updatedOrder) setViewOrder(updatedOrder);
+          }
+        }
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to activate pickup',
+        icon: 'error',
       });
     }
   };
@@ -809,14 +942,13 @@ export default function JobOrdersPage() {
                     />
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Order ID
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Customer
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gr
-                  ay-300">
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Product
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Size
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Quantity
@@ -851,13 +983,6 @@ export default function JobOrdersPage() {
                         />
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {order.id}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
                         <div>
                           <div className="text-sm font-medium text-gray-900 dark:text-white">{order.customer}</div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">{order.email}</div>
@@ -865,6 +990,13 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.product}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          {order.items && order.items.length > 0
+                            ? order.items.map((item: OrderItem) => item.size || '-').join(', ')
+                            : '-'}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.quantity}</span>
@@ -1214,19 +1346,54 @@ export default function JobOrdersPage() {
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Order Purchase</p>
                   <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Product</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.product}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Quantity</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.quantity}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Total</span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.total}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
+                    {viewOrder.items && viewOrder.items.length > 1 ? (
+                      // Multiple items — show each item
+                      <>
+                        {viewOrder.items.map((item: OrderItem, idx: number) => (
+                          <div key={idx} className="pb-2 mb-2 border-b border-gray-200 dark:border-gray-700 last:border-0 last:mb-0 last:pb-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Product</span>
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">{item.product_name}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Size</span>
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">{item.size || '-'}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Qty</span>
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">{item.quantity}</span>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Total</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.total}</span>
+                        </div>
+                      </>
+                    ) : (
+                      // Single item
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Product</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.product}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Size</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {viewOrder.items?.[0]?.size || '-'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Quantity</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.quantity}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Total</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.total}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Ordered At</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.orderedAt}</span>
                     </div>
@@ -1262,6 +1429,21 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="mt-6 flex gap-3">
+                {viewOrder.status === "shipped" && (
+                  <button
+                    type="button"
+                    onClick={() => handleActivatePickup(viewOrder.id)}
+                    disabled={viewOrder.pickup_enabled}
+                    className={`px-4 py-2 border border-black rounded-lg font-medium transition-colors ${
+                      viewOrder.pickup_enabled
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-white hover:bg-gray-100 text-black'
+                    }`}
+                    title={viewOrder.pickup_enabled ? 'Pickup already activated' : 'Activate pickup confirmation'}
+                  >
+                    {viewOrder.pickup_enabled ? '✓ Pickup Activated' : 'Activate Receive'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

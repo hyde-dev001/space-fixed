@@ -8,6 +8,7 @@ use App\Models\RepairRequest;
 use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
@@ -295,41 +296,63 @@ class RepairWorkflowController extends Controller
                     ], 400);
                 }
                 
-                // Create conversation between customer and shop owner
-                $conversation = Conversation::create([
-                    'shop_owner_id' => $repairRequest->shop_owner_id,
-                    'customer_id' => $repairRequest->user_id,
-                    'assigned_to_id' => $shopOwner->id,
-                    'assigned_to_type' => 'shop_owner',
-                    'status' => 'open',
-                    'priority' => 'medium',
-                    'last_message_at' => now(),
-                ]);
+                // Find or create conversation between customer and shop owner
+                $conversation = Conversation::firstOrCreate(
+                    [
+                        'shop_owner_id' => $repairRequest->shop_owner_id,
+                        'customer_id' => $repairRequest->user_id,
+                    ],
+                    [
+                        'assigned_to_id' => $shopOwner->id,
+                        'assigned_to_type' => 'shop_owner',
+                        'status' => 'open',
+                        'priority' => 'medium',
+                        'last_message_at' => now(),
+                    ]
+                );
+                
+                // Update last message time
+                $conversation->update(['last_message_at' => now()]);
                 
                 // Determine next status based on delivery method
+                // Walk-in: Customer needs to confirm/bring item → 'pending'
+                // Pickup: Awaiting pickup confirmation → 'repairer_accepted'
                 $nextStatus = $repairRequest->delivery_method === 'walk_in' 
-                    ? 'received' 
+                    ? 'pending' 
                     : 'repairer_accepted';
                 
-                // For walk-in, auto-confirm since shoes are already at shop
-                $updateData = [
+                // Update repair request
+                $repairRequest->update([
                     'status' => $nextStatus,
                     'conversation_id' => $conversation->id,
-                ];
+                ]);
                 
-                if ($repairRequest->delivery_method === 'walk_in') {
-                    $updateData['customer_confirmed_at'] = now();
-                    $updateData['received_at'] = now();
-                }
+                // Send automatic system message about the repair
+                $repairType = $repairRequest->repair_type ?? 'Repair';
+                $deliveryMethod = $repairRequest->delivery_method === 'walk_in' ? 'Walk-in' : 'Pickup';
+                $systemMessage = "🔧 **New Repair Order Accepted**\n\n";
+                $systemMessage .= "**Type:** {$repairType}\n";
+                $systemMessage .= "**Delivery:** {$deliveryMethod}\n";
+                $systemMessage .= "**Status:** " . ($nextStatus === 'pending' ? 'Waiting for item drop-off' : 'Accepted') . "\n\n";
+                $systemMessage .= $repairRequest->delivery_method === 'walk_in' 
+                    ? "Please bring your item to our shop at your convenience." 
+                    : "We'll pick up your item as scheduled.";
                 
-                // Update repair request
-                $repairRequest->update($updateData);
+                $messageRecord = ConversationMessage::create([
+                    'conversation_id' => $conversation->id,
+                    'sender_type' => 'system',
+                    'sender_id' => $shopOwner->id,
+                    'content' => $systemMessage,
+                ]);
+                
+                // Update conversation last message time to trigger refresh
+                $conversation->update(['last_message_at' => $messageRecord->created_at]);
                 
                 DB::commit();
                 
                 $message = $repairRequest->delivery_method === 'walk_in' 
-                    ? 'Repair accepted. Shoes received and ready for processing.'
-                    : 'Repair accepted. Chat conversation created with customer.';
+                    ? 'Repair accepted. Waiting for customer to bring the item in.'
+                    : 'Repair accepted. Chat conversation updated with customer.';
                 
                 return response()->json([
                     'success' => true,
@@ -358,45 +381,68 @@ class RepairWorkflowController extends Controller
                 ], 400);
             }
             
-            // Create conversation between customer and repairer
-            $conversation = Conversation::create([
-                'shop_owner_id' => $repairRequest->shop_owner_id,
-                'customer_id' => $repairRequest->user_id,
+            // Find or create conversation between customer and shop owner
+            $conversation = Conversation::firstOrCreate(
+                [
+                    'shop_owner_id' => $repairRequest->shop_owner_id,
+                    'customer_id' => $repairRequest->user_id,
+                ],
+                [
+                    'assigned_to_id' => $user->id,
+                    'assigned_to_type' => 'repairer',
+                    'status' => 'open',
+                    'priority' => 'medium',
+                    'last_message_at' => now(),
+                ]
+            );
+            
+            // Update conversation assignment to current repairer
+            $conversation->update([
                 'assigned_to_id' => $user->id,
                 'assigned_to_type' => 'repairer',
-                'status' => 'open',
-                'priority' => 'medium',
                 'last_message_at' => now(),
             ]);
             
             // Determine next status based on delivery method
-            // Walk-in: Customer is present, skip customer confirmation, go straight to received
-            // Pickup/Delivery: Customer must confirm remotely
+            // Walk-in: Customer needs to confirm/bring item → 'pending'
+            // Pickup: Awaiting pickup confirmation → 'repairer_accepted'
             $nextStatus = $repairRequest->delivery_method === 'walk_in' 
-                ? 'received' 
+                ? 'pending' 
                 : 'repairer_accepted';
             
-            // For walk-in, auto-confirm since shoes are already at shop
-            $updateData = [
+            // Update repair request
+            $repairRequest->update([
                 'status' => $nextStatus,
                 'conversation_id' => $conversation->id,
-            ];
+            ]);
             
-            if ($repairRequest->delivery_method === 'walk_in') {
-                $updateData['customer_confirmed_at'] = now();
-                $updateData['received_at'] = now();
-            }
+            // Send automatic system message about the repair
+            $repairType = $repairRequest->repair_type ?? 'Repair';
+            $deliveryMethod = $repairRequest->delivery_method === 'walk_in' ? 'Walk-in' : 'Pickup';
+            $repairerName = $user->name ?? 'Repairer';
+            $systemMessage = "🔧 **Repair Order Accepted by {$repairerName}**\n\n";
+            $systemMessage .= "**Type:** {$repairType}\n";
+            $systemMessage .= "**Delivery:** {$deliveryMethod}\n";
+            $systemMessage .= "**Status:** " . ($nextStatus === 'pending' ? 'Waiting for item drop-off' : 'Accepted') . "\n\n";
+            $systemMessage .= $repairRequest->delivery_method === 'walk_in' 
+                ? "Please bring your item to our shop at your convenience." 
+                : "We'll pick up your item as scheduled.";
             
-            // Update repair request
-            $repairRequest->update($updateData);
+            $messageRecord = ConversationMessage::create([
+                'conversation_id' => $conversation->id,
+                'sender_type' => 'system',
+                'sender_id' => $user->id,
+                'content' => $systemMessage,
+            ]);
+            
+            // Update conversation last message time to trigger refresh
+            $conversation->update(['last_message_at' => $messageRecord->created_at]);
             
             DB::commit();
             
-            // TODO: Send notification to customer
-            
             $message = $repairRequest->delivery_method === 'walk_in' 
-                ? 'Repair accepted. Shoes received and ready for processing.'
-                : 'Repair accepted. Chat conversation created with customer.';
+                ? 'Repair accepted. Waiting for customer to bring the item in.'
+                : 'Repair accepted. Chat conversation updated with customer.';
             
             return response()->json([
                 'success' => true,
@@ -1725,6 +1771,87 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch rejection history: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Activate payment for a specific repair request (Phase 9 - Unified Chat Solution)
+     */
+    public function activatePaymentForRepair(Request $request, $id)
+    {
+        try {
+            // Check if authenticated as shop owner first
+            $shopOwner = Auth::guard('shop_owner')->user();
+            $user = Auth::guard('user')->user();
+            
+            if (!$shopOwner && !$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+            
+            // Get the repair request
+            if ($shopOwner) {
+                $repairRequest = RepairRequest::where('id', $id)
+                    ->where('shop_owner_id', $shopOwner->id)
+                    ->firstOrFail();
+            } else {
+                // For repairer, verify they're assigned to this repair
+                $repairRequest = RepairRequest::where('id', $id)
+                    ->where(function($query) use ($user) {
+                        $query->where('assigned_repairer_id', $user->id)
+                              ->orWhere('shop_owner_id', $user->shop_owner_id);
+                    })
+                    ->firstOrFail();
+            }
+            
+            // Check if payment is already enabled
+            if ($repairRequest->payment_enabled) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payment is already enabled for this repair',
+                    'repair' => $repairRequest
+                ]);
+            }
+            
+            // Verify repair is in a state where payment can be activated
+            // Typically after repairer accepts or during received/in_progress status
+            $validStatuses = ['repairer_accepted', 'received', 'pending', 'in_progress'];
+            if (!in_array($repairRequest->status, $validStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment can only be activated for repairs in accepted, received, pending, or in-progress status'
+                ], 400);
+            }
+            
+            // Enable payment
+            $repairRequest->update([
+                'payment_enabled' => true,
+                'payment_enabled_at' => now(),
+                'payment_enabled_by' => $shopOwner ? $shopOwner->id : $user->id,
+            ]);
+            
+            \Log::info('Payment activated for repair request', [
+                'user_id' => $shopOwner ? $shopOwner->id : $user->id,
+                'user_type' => $shopOwner ? 'shop_owner' : 'repairer',
+                'repair_request_id' => $repairRequest->id,
+            ]);
+            
+            // Send notification to customer
+            // TODO: Implement notification logic
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment has been activated successfully. Customer can now pay for this repair.',
+                'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to activate payment: ' . $e->getMessage()
             ], 500);
         }
     }

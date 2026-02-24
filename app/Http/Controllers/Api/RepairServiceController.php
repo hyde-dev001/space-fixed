@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -16,6 +17,14 @@ class RepairServiceController extends Controller
     public function index(Request $request)
     {
         $query = RepairService::query();
+
+        // Filter by shop_owner_id based on authentication
+        if (Auth::guard('shop_owner')->check()) {
+            $query->where('shop_owner_id', Auth::guard('shop_owner')->id());
+        } elseif (Auth::guard('user')->check()) {
+            $user = Auth::guard('user')->user();
+            $query->where('shop_owner_id', $user->shop_owner_id);
+        }
 
         // Filter by status if provided
         if ($request->has('status') && $request->status !== 'all') {
@@ -188,6 +197,12 @@ class RepairServiceController extends Controller
     {
         $query = RepairService::with(['creator', 'updater', 'financeReviewer', 'ownerReviewer']);
 
+        // Filter by shop_owner_id
+        if (Auth::guard('user')->check()) {
+            $user = Auth::guard('user')->user();
+            $query->where('shop_owner_id', $user->shop_owner_id);
+        }
+
         // Always return all statuses for metrics calculation on frontend
         // The frontend will handle filtering for display
         $query->whereIn('status', ['Under Review', 'Pending Owner Approval', 'Active', 'Rejected']);
@@ -286,6 +301,14 @@ class RepairServiceController extends Controller
             'finance_reviewed_at' => now(),
         ]);
 
+        // Notify shop owner about repair service price approval
+        $notificationService = app(NotificationService::class);
+        $notificationService->notifyRepairServiceRequest($service->shop_owner_id, [
+            'service_name' => $service->name,
+            'price' => number_format($service->price, 2),
+            'service_id' => $service->id,
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => 'Service approved by Finance. Pending Shop Owner approval.',
@@ -337,7 +360,10 @@ class RepairServiceController extends Controller
      */
     public function ownerPending()
     {
+        $shopOwnerId = Auth::guard('shop_owner')->id();
+        
         $services = RepairService::where('status', 'Pending Owner Approval')
+            ->where('shop_owner_id', $shopOwnerId)
             ->with(['creator', 'updater'])
             ->orderBy('updated_at', 'desc')
             ->get();
@@ -353,7 +379,10 @@ class RepairServiceController extends Controller
      */
     public function ownerAll()
     {
+        $shopOwnerId = Auth::guard('shop_owner')->id();
+        
         $services = RepairService::whereIn('status', ['Pending Owner Approval', 'Active', 'Rejected'])
+            ->where('shop_owner_id', $shopOwnerId)
             ->with(['creator', 'updater'])
             ->orderBy('updated_at', 'desc')
             ->get();

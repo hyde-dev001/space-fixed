@@ -33,6 +33,8 @@ type RepairOrder = {
   pickupPostalCode?: string;
   selectedServices?: Array<{ name: string; price?: string } | string>;
   conversation_id?: number | null;
+  payment_enabled?: boolean;
+  payment_status?: string;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
 };
@@ -315,6 +317,7 @@ export default function JobOrdersRepair() {
   const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [highlightRepairId, setHighlightRepairId] = useState<number | null>(null);
   const itemsPerPage = 10;
 
   // Predefined rejection reasons
@@ -338,6 +341,39 @@ export default function JobOrdersRepair() {
       </AppLayoutERP>
     );
   }
+
+  // Parse highlight parameter from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const highlightParam = params.get('highlightRepair') || params.get('highlight');
+
+    if (!highlightParam) {
+      return;
+    }
+
+    const parsedId = Number(highlightParam);
+    if (Number.isNaN(parsedId)) {
+      return;
+    }
+
+    setHighlightRepairId(parsedId);
+  }, []);
+
+  // Scroll to and highlight repair when ID changes
+  useEffect(() => {
+    if (!highlightRepairId || orders.length === 0) {
+      return;
+    }
+
+    const scrollTimer = window.setTimeout(() => {
+      const targetElement = document.querySelector(`[data-repair-id="${highlightRepairId}"]`);
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 200);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [highlightRepairId, orders]);
 
   // Fetch repair requests from backend
   useEffect(() => {
@@ -416,7 +452,11 @@ export default function JobOrdersRepair() {
             });
           })(),
           selectedServices: repair.services?.map((s: any) => ({ name: s.name, price: `₱${s.price}` })) || [],
-          conversation_id: repair.conversation_id
+          conversation_id: repair.conversation_id,
+          payment_enabled: repair.payment_enabled || false,
+          payment_status: repair.payment_status || 'pending',
+          pickup_enabled: repair.pickup_enabled || false,
+          pickup_enabled_at: repair.pickup_enabled_at || null
         }));
         setOrders(mappedOrders);
       }
@@ -748,6 +788,40 @@ export default function JobOrdersRepair() {
       await Swal.fire({
         title: 'Error',
         text: error.response?.data?.message || 'Failed to activate pickup',
+        icon: 'error',
+      });
+    }
+  };
+
+  const handleActivatePayment = async (orderId: string) => {
+    const result = await Swal.fire({
+      title: 'Activate Payment?',
+      text: 'This will allow the customer to pay for this specific repair.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Activate Payment',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.post(`/api/repairer/repairs/${orderId}/activate-payment`);
+      
+      if (response.data.success) {
+        await Swal.fire({
+          title: 'Payment Activated!',
+          text: 'Customer can now pay for this repair.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+        fetchOrders();
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to activate payment',
         icon: 'error',
       });
     }
@@ -1196,9 +1270,6 @@ export default function JobOrdersRepair() {
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Repair ID
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Customer
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -1224,10 +1295,13 @@ export default function JobOrdersRepair() {
               <tbody className="bg-white dark:bg-white/[0.02] divide-y divide-gray-200 dark:divide-gray-800">
                 {paginatedOrders.length > 0 ? (
                   paginatedOrders.map((order) => (
-                    <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{order.id}</span>
-                      </td>
+                    <tr 
+                      key={order.id} 
+                      data-repair-id={order.database_id}
+                      className={`hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors ${
+                        highlightRepairId === order.database_id ? 'border-l-4 border-l-black bg-gray-50 dark:bg-gray-900/50' : ''
+                      }`}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm">
                           <div className="font-medium text-gray-900 dark:text-white">{order.customer}</div>
@@ -1267,6 +1341,15 @@ export default function JobOrdersRepair() {
                               ? "Rejected"
                               : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                           </span>
+                          {order.payment_enabled && (
+                            <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${
+                              order.payment_status === 'completed' 
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' 
+                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                            }`}>
+                              {order.payment_status === 'completed' ? '💳 Paid' : '⏳ Awaiting Payment'}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
@@ -1301,10 +1384,30 @@ export default function JobOrdersRepair() {
                           {order.status === "received" && (
                             <button
                               onClick={() => handleStartWork(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                              title="Start work on this repair"
+                              disabled={order.payment_enabled && order.payment_status !== 'completed'}
+                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                order.payment_enabled && order.payment_status !== 'completed'
+                                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                  : 'text-white bg-blue-600 hover:bg-blue-700'
+                              }`}
+                              title={
+                                order.payment_enabled && order.payment_status !== 'completed'
+                                  ? 'Waiting for customer payment'
+                                  : 'Start work on this repair'
+                              }
                             >
-                              Start Work
+                              {order.payment_enabled && order.payment_status !== 'completed' ? '⏳ Awaiting Payment' : 'Start Work'}
+                            </button>
+                          )}
+                          
+                          {/* Activate Payment Button - Show for repairs that need payment enabled */}
+                          {(order.status === "repairer_accepted" || order.status === "received" || order.status === "pending") && !order.payment_enabled && (
+                            <button
+                              onClick={() => handleActivatePayment(order.database_id)}
+                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                              title="Activate payment for this repair"
+                            >
+                              💳 Activate Payment
                             </button>
                           )}
                           
@@ -1345,7 +1448,7 @@ export default function JobOrdersRepair() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center">
+                    <td colSpan={7} className="px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No repair orders found</p>
                     </td>
                   </tr>
