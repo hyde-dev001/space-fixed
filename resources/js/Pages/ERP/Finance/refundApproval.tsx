@@ -367,11 +367,7 @@ export default function RefundApproval() {
 
 	useEffect(() => {
 		const hasRoleAccess = userRole === "Manager" || userRole === "Finance";
-		const hasPermissionAccess =
-			hasPermission(auth, "view-pricing") ||
-			hasPermission(auth, "edit-pricing") ||
-			hasPermission(auth, "manage-service-pricing") ||
-			hasPermission(auth, "manage-pricing");
+		const hasPermissionAccess = hasPermission(auth, "access-refund-approval");
 
 		if (!hasRoleAccess && !hasPermissionAccess) {
 			Swal.fire({

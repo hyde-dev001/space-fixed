@@ -84,6 +84,7 @@ class OrderController extends Controller
                     'customer_phone' => $order->customer_phone,
                     'tracking_number' => $order->tracking_number,
                     'carrier_company' => $order->carrier_company,
+                    'carrier_name' => $order->carrier_name,
                     'tracking_link' => $order->tracking_link,
                     'eta' => $order->eta,
                     'pickup_enabled' => $order->pickup_enabled ?? false,

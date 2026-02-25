@@ -510,6 +510,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::post('/employees/{employee}/suspend', [\App\Http\Controllers\EmployeeController::class, 'suspend'])->middleware('shop.isolation')->name('employees.suspend');
         Route::post('/employees/{employee}/activate', [\App\Http\Controllers\EmployeeController::class, 'activate'])->middleware('shop.isolation')->name('employees.activate');
         
+        // Get allowed roles based on business type
+        Route::get('/roles/allowed', [UserAccessControlController::class, 'getAllowedRoles'])->name('roles.allowed');
+        
         // Permission Management Routes (Phase 6)
         Route::get('/permissions/available', [UserAccessControlController::class, 'getAvailablePermissions'])->name('permissions.available');
         Route::get('/employees/{userId}/permissions', [UserAccessControlController::class, 'getEmployeePermissions'])->name('employees.permissions.get');
@@ -565,15 +568,15 @@ Route::get('/api/csrf-token', function () {
 // Staff API Routes (session-based authentication)
 Route::middleware('auth:user')->prefix('api/staff')->group(function () {
     Route::get('orders', [\App\Http\Controllers\Api\StaffOrderController::class, 'index'])
-        ->middleware('permission:view-job-orders');
+        ->middleware('permission:access-staff-job-orders');
     Route::get('orders/{id}', [\App\Http\Controllers\Api\StaffOrderController::class, 'show'])
-        ->middleware('permission:view-job-orders');
+        ->middleware('permission:access-staff-job-orders');
     Route::patch('orders/{id}/status', [\App\Http\Controllers\Api\StaffOrderController::class, 'updateStatus'])
-        ->middleware('permission:edit-job-orders');
+        ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/complete', [\App\Http\Controllers\Api\StaffOrderController::class, 'complete'])
-        ->middleware('permission:complete-job-orders');
+        ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/activate-pickup', [\App\Http\Controllers\Api\StaffOrderController::class, 'activatePickup'])
-        ->middleware('permission:edit-job-orders');
+        ->middleware('permission:access-staff-job-orders');
 });
 
 // Product API Routes (public and shop owner)
@@ -588,43 +591,43 @@ Route::prefix('api/products')->group(function () {
     // Shop Owner & Staff routes (authenticated - accepts both auth:user and auth:shop_owner)
     Route::middleware('auth:user,shop_owner')->group(function () {
         Route::get('my/products', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])
-            ->middleware('permission:view-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])
-            ->middleware('permission:create-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::put('{id}', [\App\Http\Controllers\Api\ProductController::class, 'update'])
-            ->middleware('permission:edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::delete('{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])
-            ->middleware('permission:delete-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])
-            ->middleware('permission:create-products|edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::get('{id}/variants', [\App\Http\Controllers\Api\ProductController::class, 'getVariants'])
-            ->middleware('permission:view-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         
         // Price Change Request - Staff must create approval request instead of direct update
         Route::post('price-change-request', [\App\Http\Controllers\Api\ProductController::class, 'createPriceChangeRequest'])
-            ->middleware('permission:view-pricing');
+            ->middleware('permission:access-shoe-pricing');
         Route::post('{id}/request-price-change', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'store'])
-            ->middleware('permission:view-pricing');
+            ->middleware('permission:access-shoe-pricing');
         
         // Color Variant Management
         Route::get('{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'getColorVariants'])
-            ->middleware('permission:view-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'storeColorVariant'])
-            ->middleware('permission:create-products|edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::put('{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariant'])
-            ->middleware('permission:edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::delete('{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariant'])
-            ->middleware('permission:delete-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         
         // Color Variant Image Management
         Route::post('{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])
-            ->middleware('permission:create-products|edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::put('{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariantImage'])
-            ->middleware('permission:edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::delete('{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])
-            ->middleware('permission:delete-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('{productId}/color-variants/{colorVariantId}/images/reorder', [\App\Http\Controllers\Api\ProductController::class, 'reorderColorVariantImages'])
-            ->middleware('permission:edit-products');
+            ->middleware('permission:access-product-upload-staff|access-product-management');
     });
 });
 
@@ -640,23 +643,23 @@ Route::prefix('api/repair-services')->group(function () {
     Route::middleware('auth:user')->group(function () {
         // Create repair service (Staff, Manager, and Repairer)
         Route::post('/', [\App\Http\Controllers\Api\RepairServiceController::class, 'store'])
-            ->middleware('permission:create-products|edit-products|manage-repair-services');
+            ->middleware('permission:access-upload-service|access-pricing-services');
         
         // Update repair service (Staff, Manager, and Repairer)
         Route::put('{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'update'])
-            ->middleware('permission:edit-products|manage-repair-services');
+            ->middleware('permission:access-upload-service|access-pricing-services');
         
         // Delete repair service (Staff, Manager, and Repairer)
         Route::delete('{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'destroy'])
-            ->middleware('permission:delete-products|manage-repair-services');
+            ->middleware('permission:access-upload-service|access-pricing-services');
         
         // Finance approval routes
         Route::get('finance/pending', [\App\Http\Controllers\Api\RepairServiceController::class, 'financePending'])
-            ->middleware('permission:approve-expenses');
+            ->middleware('permission:access-repair-price-approval');
         Route::post('{id}/finance/approve', [\App\Http\Controllers\Api\RepairServiceController::class, 'financeApprove'])
-            ->middleware('permission:approve-expenses');
+            ->middleware('permission:access-repair-price-approval');
         Route::post('{id}/finance/reject', [\App\Http\Controllers\Api\RepairServiceController::class, 'financeReject'])
-            ->middleware('permission:approve-expenses');
+            ->middleware('permission:access-repair-price-approval');
     });
 });
 
@@ -1018,7 +1021,7 @@ Route::middleware(['auth:user', 'check.suspension'])->get('/erp/time-in', functi
     return Inertia::render('ERP/STAFF/TimeIn');
 })->name('erp.time-in');
 
-Route::middleware(['auth:user', 'check.suspension', 'permission:view-employees|view-attendance'])->get('/erp/hr', function () {
+Route::middleware(['auth:user', 'check.suspension', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records'])->get('/erp/hr', function () {
     if (Auth::guard('user')->user()?->force_password_change) {
         return redirect()->route('erp.profile');
     }
@@ -1031,7 +1034,7 @@ Route::get('/erp/hr/audit-logs', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/HR/AuditLogs');
-})->middleware(['auth:user', 'permission:view-hr-audit-logs'])->name('erp.hr.audit-logs');
+})->middleware(['auth:user', 'permission:access-audit-logs'])->name('erp.hr.audit-logs');
 
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/erp/profile', [UserProfileController::class, 'show'])->name('erp.profile');
@@ -1039,7 +1042,7 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Finance pages
-Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:view-expenses|view-invoices|approve-expenses|view-pricing-approvals|approve-shoe-pricing|approve-repair-pricing'])->group(function () {
+Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval'])->group(function () {
     Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1062,7 +1065,7 @@ Route::get('/erp/finance/audit-logs', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/Finance/AuditLogs');
-})->middleware(['auth:user', 'permission:view-finance-audit-logs'])->name('erp.finance.audit-logs');
+})->middleware(['auth:user', 'permission:access-audit-logs'])->name('erp.finance.audit-logs');
 
 // Approval Workflow page removed (frontend page deleted)
 
@@ -1071,10 +1074,10 @@ Route::get('/create-invoice', function () {
         return redirect()->route('erp.profile');
     }
     return redirect('/finance?section=create-invoice');
-})->middleware(['auth:user', 'permission:create-invoices'])->name('finance.create-invoice');
+})->middleware(['auth:user', 'permission:access-finance-invoices'])->name('finance.create-invoice');
 
 // CRM routes
-Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:view-customers|view-leads'])->group(function () {
+Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-crm-dashboard|access-crm-customers'])->group(function () {
     Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1104,7 +1107,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:view-cu
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/CRM/customerSupport');
-    })->middleware('permission:view-crm-conversations')->name('customer-support');
+    })->middleware('permission:access-customer-support')->name('customer-support');
 
     Route::get('/customer-reviews', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1153,31 +1156,31 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/Manager/InventoryOverview');
-    })->middleware('permission:view-inventory')->name('inventory-overview');
+    })->middleware('permission:access-inventory-overview')->name('inventory-overview');
     Route::get('/upload-stocks', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/UploadInventory');
-    })->middleware('permission:view-inventory')->name('upload-stocks');
+    })->middleware('permission:access-upload-inventory')->name('upload-stocks');
     Route::get('/inventory-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/InventoryDashboard');
-    })->middleware('permission:view-inventory')->name('inventory-dashboard');
+    })->middleware('permission:access-inventory-dashboard')->name('inventory-dashboard');
     Route::get('/stock-movement', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/StockMovement');
-    })->middleware('permission:view-stock-movements')->name('stock-movement');
+    })->middleware('permission:access-stock-movement')->name('stock-movement');
     Route::get('/product-inventory', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/ProductInventory');
-    })->middleware('permission:view-inventory')->name('product-inventory');
+    })->middleware('permission:access-product-inventory')->name('product-inventory');
     Route::get('/user-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1246,21 +1249,21 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/JobOrders');
-    })->middleware('permission:view-job-orders')->name('job-orders');
+    })->middleware('permission:access-staff-job-orders')->name('job-orders');
 
     Route::get('/repair-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/dashboardRepair');
-    })->middleware('permission:view-job-orders|view-repair-services')->name('repair-dashboard');
+    })->middleware('permission:access-repairer-dashboard')->name('repair-dashboard');
     
     Route::get('/job-orders-repair', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/JobOrdersRepair');
-    })->middleware('permission:view-job-orders|view-repair-services')->name('job-orders-repair');
+    })->middleware('permission:access-repair-job-orders')->name('job-orders-repair');
     
     Route::get('/upload-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1281,33 +1284,33 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/PricingAndServices');
-    })->middleware('permission:view-pricing|edit-pricing|manage-repair-services')->name('pricing-services');
+    })->middleware('permission:access-pricing-services')->name('pricing-services');
     
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/shoePricing');
-    })->middleware('permission:view-pricing')->name('shoe-pricing');
+    })->middleware('permission:access-shoe-pricing')->name('shoe-pricing');
     
     Route::get('/repair-status', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/RepairStatus');
-    })->middleware('permission:view-job-orders')->name('repair-status');
+    })->middleware('permission:access-repair-job-orders')->name('repair-status');
     
     Route::get('/products', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/ProductManagementWithVariants');
-    })->middleware('permission:view-products')->name('products');
+    })->middleware('permission:access-product-upload-staff')->name('products');
     Route::get('/payments', function () {
         return redirect()->route('erp.staff.products');
     });
     Route::get('/customers', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])
-        ->middleware('permission:view-customers')
+        ->middleware('permission:access-staff-customers')
         ->name('customers');
 
     Route::get('/inventory-overview', function () {
@@ -1322,7 +1325,7 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/timeIn');
-    })->middleware('permission:view-attendance')->name('attendance');
+    })->middleware('permission:access-staff-time-in')->name('attendance');
 });
 
 // Repairer Support Route - Accessible to users with repairer conversation permissions
@@ -1331,7 +1334,7 @@ Route::get('/erp/staff/repairer-support', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/repairer/repairerSupport');
-})->middleware(['auth:user', 'permission:view-repairer-conversations'])->name('erp.repairer.support');
+})->middleware(['auth:user', 'permission:access-repairer-support'])->name('erp.repairer.support');
 
 // Repairer Pricing Route - Accessible to users with repair service management permissions
 Route::get('/erp/repairer/pricing-and-services', function () {
@@ -1339,7 +1342,7 @@ Route::get('/erp/repairer/pricing-and-services', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/repairer/PricingAndServices');
-})->middleware(['auth:user', 'permission:manage-repair-services'])->name('erp.repairer.pricing-services');
+})->middleware(['auth:user', 'permission:access-pricing-services'])->name('erp.repairer.pricing-services');
 
 // Common Routes (for testing/development)
 Route::group([], function () {
@@ -1418,13 +1421,13 @@ Route::prefix('api/leave')->name('api.leave.')->middleware(['auth:user'])->group
     
     // Manager routes
     Route::get('/pending/all', [LeaveController::class, 'pending'])
-        ->middleware('old_role:Manager|Finance Manager|Super Admin|Shop Owner')
+        ->middleware('old_role:Manager,Finance Manager,Super Admin,Shop Owner')
         ->name('pending');
     Route::post('/{id}/approve', [LeaveController::class, 'approve'])
-        ->middleware('old_role:Manager|Finance Manager|Super Admin|Shop Owner')
+        ->middleware('old_role:Manager,Finance Manager,Super Admin,Shop Owner')
         ->name('approve');
     Route::post('/{id}/reject', [LeaveController::class, 'reject'])
-        ->middleware('old_role:Manager|Finance Manager|Super Admin|Shop Owner')
+        ->middleware('old_role:Manager,Finance Manager,Super Admin,Shop Owner')
         ->name('reject');
 });
 

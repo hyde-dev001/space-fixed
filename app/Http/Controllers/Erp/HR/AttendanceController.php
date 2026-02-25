@@ -405,14 +405,9 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        // Check if user has staff role using Spatie permissions
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+        // All authenticated employees can check in (no role restriction)
+        if (!$user) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
         // Use shop timezone for all date/time operations
@@ -586,14 +581,9 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        // Check if user has staff role using Spatie permissions
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+        // All authenticated employees can check out (no role restriction)
+        if (!$user) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
         // Use shop timezone for all date/time operations
@@ -712,12 +702,8 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
+        // All authenticated employees can check their status (no role restriction)
+        if (!$user) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -773,14 +759,9 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        // Check if user has staff role using Spatie permissions
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+        // All authenticated employees can view their attendance records (no role restriction)
+        if (!$user) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
         // Find or create employee record
@@ -803,7 +784,9 @@ class AttendanceController extends Controller
             ]);
         }
 
+        // Query attendance records for this employee only (with shop_owner_id for data isolation)
         $query = AttendanceRecord::where('employee_id', $employee->id)
+            ->where('shop_owner_id', $user->shop_owner_id)
             ->orderBy('date', 'desc');
 
         // Apply date filters

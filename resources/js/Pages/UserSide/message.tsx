@@ -132,11 +132,16 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
         
         // Handle both array and object with data property
         const conversationsList = Array.isArray(data) ? data : (data.data || []);
-        setConversations(conversationsList);
+        const sortedConversations = [...conversationsList].sort((a, b) => {
+          const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+          const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+          return bTime - aTime;
+        });
+        setConversations(sortedConversations);
         
         // If no initial conversation but shopOwnerId was provided, create/fetch that conversation
         if (!selectedConversation && shopOwnerId) {
-          const existingConv = conversationsList.find((c: Conversation) => c.shop_owner_id === shopOwnerId);
+          const existingConv = sortedConversations.find((c: Conversation) => c.shop_owner_id === shopOwnerId);
           if (existingConv) {
             console.log('Found existing conversation for shop owner:', existingConv);
             setSelectedConversation(existingConv);
@@ -146,9 +151,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
             // Create new conversation
             createConversation(shopOwnerId);
           }
-        } else if (initialConversation && conversationsList.length > 0) {
+        } else if (initialConversation && sortedConversations.length > 0) {
           // If initial conversation was provided, try to find it in the fetched list
-          const foundConv = conversationsList.find((c: Conversation) => c.id === initialConversation.id);
+          const foundConv = sortedConversations.find((c: Conversation) => c.id === initialConversation.id);
           if (foundConv) {
             console.log('Found initial conversation in list:', foundConv);
             setSelectedConversation(foundConv);
@@ -157,11 +162,11 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
             console.log('Initial conversation not found, using it anyway');
             fetchMessages(initialConversation.id);
           }
-        } else if (conversationsList.length > 0) {
+        } else if (sortedConversations.length > 0) {
           // Auto-select first conversation if no specific one was requested
-          console.log('Auto-selecting first conversation:', conversationsList[0]);
-          setSelectedConversation(conversationsList[0]);
-          fetchMessages(conversationsList[0].id);
+          console.log('Auto-selecting first conversation:', sortedConversations[0]);
+          setSelectedConversation(sortedConversations[0]);
+          fetchMessages(sortedConversations[0].id);
         } else {
           console.log('No conversations available');
         }
@@ -213,7 +218,12 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       
       // Handle both array and object with data property
       const messagesList = Array.isArray(data) ? data : (data.data || []);
-      setMessages(messagesList);
+      const sortedMessages = [...messagesList].sort((a, b) => {
+        const aTime = new Date(a.created_at).getTime();
+        const bTime = new Date(b.created_at).getTime();
+        return aTime - bTime;
+      });
+      setMessages(sortedMessages);
     } catch (error) {
       if (!silent) {
         console.error('Failed to fetch messages:', error);
@@ -416,6 +426,35 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     return `/storage/${path}`;
   };
 
+  const getInitials = (value: string) => {
+    return value
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0].toUpperCase())
+      .join('') || 'U';
+  };
+
+  const renderAvatar = (name: string, photoUrl?: string, tone: 'customer' | 'shop' = 'shop') => {
+    if (photoUrl) {
+      return (
+        <img
+          src={photoUrl}
+          alt={name}
+          className="w-7 h-7 rounded-full object-cover"
+        />
+      );
+    }
+
+    const bgClass = tone === 'customer' ? 'bg-gray-900 text-white' : 'bg-blue-100 text-blue-700';
+
+    return (
+      <div className={`w-7 h-7 rounded-full ${bgClass} flex items-center justify-center text-[11px] font-semibold`}>
+        {getInitials(name)}
+      </div>
+    );
+  };
+
   // Set up polling for real-time message updates
   useEffect(() => {
     // Clear any existing interval
@@ -440,6 +479,24 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       }
     };
   }, [selectedConversation]);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+    });
+  };
+
+  useEffect(() => {
+    if (selectedConversation) {
+      scrollToBottom('auto');
+    }
+  }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [messages.length]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -639,6 +696,15 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                 </div>
               ) : (
                 messages.map((message) => {
+                  const shopName = selectedConversation?.shopOwner?.business_name || 'Shop';
+                  const shopAvatarUrl = selectedConversation?.shopOwner?.profile_photo
+                    ? `/storage/${selectedConversation.shopOwner.profile_photo}`
+                    : undefined;
+                  const customerName = auth?.user?.name || auth?.user?.full_name || 'You';
+                  const customerAvatarUrl = auth?.user?.profile_photo
+                    ? `/storage/${auth.user.profile_photo}`
+                    : undefined;
+
                   // System messages (order notifications)
                   if (message.sender_type === 'system') {
                     // Parse message content to extract details
@@ -684,7 +750,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                       const shopInfo = selectedConversation?.shopOwner;
                       
                       return (
-                        <div key={message.id} className="flex justify-center my-6">
+                        <div key={message.id} className="flex items-start gap-3 my-6">
+                          {renderAvatar(shopName, shopAvatarUrl, 'shop')}
                           <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
                             {/* Header with Title and Status Badge */}
                             <div className="flex items-start justify-between mb-4">
@@ -816,7 +883,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                       const shopInfo = selectedConversation?.shopOwner;
                       
                       return (
-                        <div key={message.id} className="flex justify-center my-6">
+                        <div key={message.id} className="flex items-start gap-3 my-6">
+                          {renderAvatar(shopName, shopAvatarUrl, 'shop')}
                           <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
                             {/* Header with Title and Status Badge */}
                             <div className="flex items-start justify-between mb-4">
@@ -953,8 +1021,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     
                     // Fallback for non-repair system messages
                     return (
-                      <div key={message.id} className="flex justify-center my-4">
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 max-w-md text-center shadow-sm">
+                      <div key={message.id} className="flex items-start gap-3 my-4">
+                        {renderAvatar(shopName, shopAvatarUrl, 'shop')}
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 max-w-md shadow-sm">
                           <p className="text-xs text-gray-600 whitespace-pre-line leading-relaxed">
                             {message.content}
                           </p>
@@ -968,53 +1037,60 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   
                   // Regular messages
                   return (
-                  <div
-                    key={message.id}
-                    className={`flex flex-col ${message.sender_type === 'customer' ? 'items-end' : 'items-start'}`}
-                  >
-                    {message.attachments && message.attachments.length > 0 ? (
-                      <div>
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {message.attachments.map((img, idx) => (
-                            <img
-                              key={idx}
-                              src={img}
-                              alt={`Attachment ${idx + 1}`}
-                              className="rounded-lg max-w-[150px] max-h-[150px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => setFullscreenImage(img)}
-                            />
-                          ))}
-                        </div>
-                        {message.content && (
-                          <div
-                            className={
-                              message.sender_type === 'customer'
-                                ? 'bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm'
-                                : 'bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm'
-                            }
-                          >
-                            <p className="break-words text-sm leading-relaxed">{message.content}</p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                          message.sender_type === 'customer'
-                            ? 'bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
-                            : 'bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
-                        }`}
-                      >
-                        <p className="break-words text-sm leading-relaxed">{message.content}</p>
-                      </div>
-                    )}
+                    <div
+                      key={message.id}
+                      className={`flex ${message.sender_type === 'customer' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`flex items-start gap-2 ${message.sender_type === 'customer' ? 'flex-row-reverse' : ''}`}>
+                        {message.sender_type === 'customer'
+                          ? renderAvatar(customerName, customerAvatarUrl, 'customer')
+                          : renderAvatar(shopName, shopAvatarUrl, 'shop')}
+                        <div className={`flex flex-col ${message.sender_type === 'customer' ? 'items-end' : 'items-start'}`}>
+                          {message.attachments && message.attachments.length > 0 ? (
+                            <div>
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {message.attachments.map((img, idx) => (
+                                  <img
+                                    key={idx}
+                                    src={img}
+                                    alt={`Attachment ${idx + 1}`}
+                                    className="rounded-lg max-w-[150px] max-h-[150px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => setFullscreenImage(img)}
+                                  />
+                                ))}
+                              </div>
+                              {message.content && (
+                                <div
+                                  className={
+                                    message.sender_type === 'customer'
+                                      ? 'bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm'
+                                      : 'bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm'
+                                  }
+                                >
+                                  <p className="break-words text-sm leading-relaxed">{message.content}</p>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div
+                              className={`max-w-xs lg:max-w-md xl:max-w-lg ${
+                                message.sender_type === 'customer'
+                                  ? 'bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
+                                  : 'bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
+                              }`}
+                            >
+                              <p className="break-words text-sm leading-relaxed">{message.content}</p>
+                            </div>
+                          )}
 
-                    <div className={`mt-2 ${message.sender_type === 'customer' ? 'text-right' : 'text-left'}`}>
-                      <span className="text-xs text-gray-400" style={{ fontSize: '11px' }}>
-                        {new Date(message.created_at).toLocaleTimeString()}
-                      </span>
+                          <div className={`mt-2 ${message.sender_type === 'customer' ? 'text-right' : 'text-left'}`}>
+                            <span className="text-xs text-gray-400" style={{ fontSize: '11px' }}>
+                              {new Date(message.created_at).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
                   );
                 })
               )}

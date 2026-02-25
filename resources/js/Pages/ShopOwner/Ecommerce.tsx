@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../layout/AppLayout_shopOwner";
@@ -63,6 +63,7 @@ interface DashboardStats {
 }
 
 export default function Ecommerce() {
+  const { auth } = usePage().props as any;
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -85,6 +86,7 @@ export default function Ecommerce() {
       }
 
       const data = await response.json();
+      
       setStats(data);
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -125,7 +127,6 @@ export default function Ecommerce() {
             Overview of your shop's ecommerce performance
           </p>
         </div>
-
       <EcommerceMetrics stats={stats} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

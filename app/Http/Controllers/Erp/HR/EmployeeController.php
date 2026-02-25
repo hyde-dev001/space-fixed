@@ -141,22 +141,25 @@ class EmployeeController extends Controller
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
                 'shop_owner_id' => $user->shop_owner_id,
-                'role' => $request->department, // Use department as role (Manager, Finance, HR, CRM, Staff)
+                'role' => $request->role ?? $request->department, // Use role field or department as fallback
                 'position' => $request->position ?? null,
                 'password' => Hash::make($temporaryPassword),
                 'force_password_change' => true,
             ]);
 
-            // Assign Spatie role based on department
+            // Assign Spatie role based on department or role field
             $roleMap = [
                 'Manager' => 'Manager',
                 'Finance' => 'Finance',
                 'HR' => 'HR',
                 'CRM' => 'CRM',
                 'Staff' => 'Staff',
+                'Repairer' => 'Repairer',
             ];
             
-            $spatieRole = $roleMap[$request->department] ?? 'Staff';
+            // Use role field if provided, otherwise use department
+            $roleValue = $request->role ?? $request->department;
+            $spatieRole = $roleMap[$roleValue] ?? 'Staff';
             $newUser->assignRole($spatieRole);
 
             // Create initial leave balance

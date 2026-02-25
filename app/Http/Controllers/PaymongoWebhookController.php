@@ -99,6 +99,19 @@ class PaymongoWebhookController extends Controller
             'paid_at' => now(),
         ]);
 
+        // Log payment processing
+        activity()
+            ->performedOn($order)
+            ->withProperties([
+                'order_number' => $order->order_number,
+                'customer_name' => $order->customer_name ?? 'N/A',
+                'amount_paid' => $order->total_amount,
+                'payment_id' => $paymentId,
+                'payment_method' => 'PayMongo',
+                'payment_status' => 'paid',
+            ])
+            ->log("Order payment processed: {$order->order_number} - ₱{$order->total_amount}");
+
         // Update associated invoice to paid status if exists
         if ($order->invoice_id) {
             $invoice = Invoice::find($order->invoice_id);
@@ -139,6 +152,19 @@ class PaymongoWebhookController extends Controller
             'paymongo_payment_id' => $paymentId,
             'payment_completed_at' => now(),
         ]);
+
+        // Log payment processing
+        activity()
+            ->performedOn($repairRequest)
+            ->withProperties([
+                'request_id' => $repairRequest->request_id,
+                'customer_name' => $repairRequest->customer_name,
+                'amount_paid' => $repairRequest->total,
+                'payment_id' => $paymentId,
+                'payment_method' => 'PayMongo',
+                'payment_status' => 'completed',
+            ])
+            ->log("Repair payment processed: {$repairRequest->request_id} - ₱{$repairRequest->total}");
 
         // Determine next status based on approval requirements
         if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {

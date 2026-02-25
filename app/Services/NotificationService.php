@@ -6,6 +6,7 @@ use App\Models\Notification;
 use App\Models\NotificationPreference;
 use App\Models\User;
 use App\Models\ShopOwner;
+use App\Models\Order;
 use App\Enums\NotificationType;
 use App\Mail\NotificationEmail;
 use Illuminate\Support\Facades\Mail;
@@ -674,6 +675,52 @@ class NotificationService
     }
 
     /**
+     * Notify a specific staff member about order assignment
+     * Used when order is auto-assigned or manually assigned to a staff
+     */
+    public function notifyAssignedStaff(Order $order, User $staff): ?Notification
+    {
+        try {
+            $orderData = [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
+                'total' => number_format($order->total_amount, 2),
+                'status' => $order->status,
+                'assignment_method' => $order->assignment_method ?? 'auto',
+                'assigned_staff_id' => $staff->id, // Include for reference
+                'assigned_to' => $staff->name, // Include staff name for clarity
+            ];
+
+            $notification = $this->sendToUser(
+                userId: $staff->id,
+                type: NotificationType::ORDER_ASSIGNED,
+                title: 'Order Assigned to You',
+                message: "You've been assigned order #{$order->order_number} - ₱{$orderData['total']}",
+                data: $orderData,
+                actionUrl: '/erp/staff/job-orders-retail',
+                shopId: $order->shop_owner_id,
+                priority: 'high'
+            );
+
+            Log::info('Notified staff about order assignment', [
+                'staff_id' => $staff->id,
+                'staff_name' => $staff->name,
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+            ]);
+
+            return $notification;
+        } catch (\Exception $e) {
+            Log::error('Failed to notify assigned staff: ' . $e->getMessage(), [
+                'staff_id' => $staff->id,
+                'order_id' => $order->id,
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Notify all active staff with order management permissions about new repair request
      */
     public function notifyAllStaffNewRepair(int $shopOwnerId, array $repairData): int
@@ -740,9 +787,17 @@ class NotificationService
 
     /**
      * Notify shop owner of repair service approval request
+     * Only sends notification to individual shop owners, not companies
      */
     public function notifyRepairServiceRequest(int $shopOwnerId, array $serviceData): ?Notification
     {
+        // Check if shop owner is individual type
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
+            Log::info("Skipping repair service request notification for shop owner #{$shopOwnerId} - not an individual registration type");
+            return null;
+        }
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::REPAIR_SERVICE_REQUEST,
@@ -755,9 +810,17 @@ class NotificationService
 
     /**
      * Notify shop owner of high-value repair needing approval
+     * Only sends notification to individual shop owners, not companies
      */
     public function notifyHighValueRepairApproval(int $shopOwnerId, array $repairData): ?Notification
     {
+        // Check if shop owner is individual type
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
+            Log::info("Skipping high-value repair approval notification for shop owner #{$shopOwnerId} - not an individual registration type");
+            return null;
+        }
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::HIGH_VALUE_APPROVAL,
@@ -770,9 +833,17 @@ class NotificationService
 
     /**
      * Notify shop owner of refund request
+     * Only sends notification to individual shop owners, not companies
      */
     public function notifyRefundRequest(int $shopOwnerId, array $refundData): ?Notification
     {
+        // Check if shop owner is individual type
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
+            Log::info("Skipping refund request notification for shop owner #{$shopOwnerId} - not an individual registration type");
+            return null;
+        }
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::REFUND_REQUEST,
@@ -815,9 +886,17 @@ class NotificationService
 
     /**
      * Notify shop owner of customer message
+     * Only sends notification to individual shop owners, not companies
      */
     public function notifyCustomerMessage(int $shopOwnerId, array $messageData): ?Notification
     {
+        // Check if shop owner is individual type
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
+            Log::info("Skipping customer message notification for shop owner #{$shopOwnerId} - not an individual registration type");
+            return null;
+        }
+
         $actionUrl = $messageData['action_url'] ?? '/shop-owner/messages';
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,

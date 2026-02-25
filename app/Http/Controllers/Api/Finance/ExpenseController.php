@@ -163,6 +163,21 @@ class ExpenseController extends Controller
             'approval_notes' => $request->input('approval_notes'),
         ]);
 
+        // Activity log with business context
+        activity()
+            ->causedBy(Auth::user())
+            ->performedOn($expense)
+            ->withProperties([
+                'reference' => $expense->reference,
+                'category' => $expense->category,
+                'vendor' => $expense->vendor,
+                'amount' => $expense->amount,
+                'approval_notes' => $request->input('approval_notes'),
+                'approved_by_name' => Auth::user()->name,
+                'approved_by_role' => Auth::user()->role ?? 'Finance Staff',
+            ])
+            ->log('Expense approved');
+
         $this->audit('approve_expense', $expense->id, ['status' => 'approved']);
 
         return response()->json($expense);
@@ -199,6 +214,21 @@ class ExpenseController extends Controller
             'approved_at' => now(),
             'approval_notes' => $request->input('approval_notes'),
         ]);
+
+        // Activity log with business context and rejection reason
+        activity()
+            ->causedBy(Auth::user())
+            ->performedOn($expense)
+            ->withProperties([
+                'reference' => $expense->reference,
+                'category' => $expense->category,
+                'vendor' => $expense->vendor,
+                'amount' => $expense->amount,
+                'rejection_reason' => $request->input('approval_notes'),
+                'rejected_by_name' => Auth::user()->name,
+                'rejected_by_role' => Auth::user()->role ?? 'Finance Staff',
+            ])
+            ->log('Expense rejected');
 
         $this->audit('reject_expense', $expense->id, ['status' => 'rejected']);
 
@@ -240,6 +270,19 @@ class ExpenseController extends Controller
                 $account->update(['balance' => $newBalance]);
             }
 
+            // Activity log for posting with journal entry details
+            activity()
+                ->causedBy(Auth::user())
+                ->performedOn($expense)
+                ->withProperties([
+                    'reference' => $expense->reference,
+                    'category' => $expense->category,
+                    'amount' => $expense->amount,
+                    'journal_entry_id' => $entry->id,
+                    'posted_by_name' => Auth::user()->name,
+                ])
+                ->log('Expense posted to ledger');
+
             $this->audit('post_expense', $expense->id, ['status' => 'posted']);
 
             DB::commit();
@@ -258,6 +301,23 @@ class ExpenseController extends Controller
         if (!in_array($expense->status, ['draft', 'submitted', 'rejected'])) {
             return response()->json(['message' => 'Only unposted expenses can be deleted'], 422);
         }
+
+        // Store expense details before deletion for logging
+        $expenseDetails = [
+            'reference' => $expense->reference,
+            'category' => $expense->category,
+            'vendor' => $expense->vendor,
+            'amount' => $expense->amount,
+            'status' => $expense->status,
+            'date' => $expense->date,
+        ];
+
+        // Activity log before deletion
+        activity()
+            ->causedBy(Auth::user())
+            ->performedOn($expense)
+            ->withProperties($expenseDetails)
+            ->log('Expense deleted');
 
         $expense->delete();
         $this->audit('delete_expense', $expense->id, ['status' => $expense->status]);

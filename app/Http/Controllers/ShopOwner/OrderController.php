@@ -210,12 +210,32 @@ class OrderController extends Controller
             $order->eta = $request->eta;
         }
         
+        // Store old status before save
+        $oldStatus = $order->getOriginal('status');
+        
         $order->save();
+
+        // Log the status change with business context
+        activity()
+            ->causedBy($shopOwner)
+            ->performedOn($order)
+            ->withProperties([
+                'order_number' => $order->order_number,
+                'customer_name' => $order->customer_name ?? 'N/A',
+                'old_status' => $oldStatus,
+                'new_status' => $request->status,
+                'total_amount' => $order->total_amount,
+                'updated_by_name' => $shopOwner->shop_name,
+                'updated_by_role' => 'Shop Owner',
+                'tracking_number' => $request->tracking_number,
+                'carrier_company' => $request->carrier_company,
+            ])
+            ->log("Order status updated from {$oldStatus} to {$request->status}");
 
         Log::info('Shop owner updated order status', [
             'order_id' => $id,
             'order_number' => $order->order_number,
-            'old_status' => $order->getOriginal('status'),
+            'old_status' => $oldStatus,
             'new_status' => $request->status,
             'final_status_in_db' => $order->fresh()->status,
             'shop_owner_id' => $shopOwner->id,

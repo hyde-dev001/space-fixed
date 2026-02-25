@@ -184,10 +184,10 @@ export default function UploadService() {
     fetchServices();
   }, []);
 
-  // Check authorization - Shop staff/managers/repairers or users with edit-products permission
+  // Check authorization - Shop staff/managers/repairers or users with access-upload-service permission
   // Note: Super admin does NOT have access - this is shop-level operation only
   const hasRoleAccess = userRole === "STAFF" || userRole === "MANAGER" || userRole === "REPAIRER";
-  const hasPermissionAccess = hasPermission(auth, 'edit-products') || hasPermission(auth, 'create-products');
+  const hasPermissionAccess = hasPermission(auth, 'access-upload-service');
   
   if (!hasRoleAccess && !hasPermissionAccess) {
     return (

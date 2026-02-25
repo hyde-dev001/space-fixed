@@ -1740,8 +1740,13 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors shadow-sm"
-                      title="Mark shoes as received at shop"
+                      disabled={viewOrder.payment_status !== 'completed'}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${
+                        viewOrder.payment_status === 'completed'
+                          ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+                          : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
+                      }`}
+                      title={viewOrder.payment_status === 'completed' ? 'Mark shoes as received at shop' : 'Waiting for customer payment'}
                     >
                       Mark as Received
                     </button>
@@ -1762,8 +1767,13 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors"
-                      title="Mark as received"
+                      disabled={viewOrder.payment_status !== 'completed'}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        viewOrder.payment_status === 'completed'
+                          ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+                          : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
+                      }`}
+                      title={viewOrder.payment_status === 'completed' ? 'Mark as received' : 'Waiting for customer payment'}
                     >
                       Mark as Received
                     </button>

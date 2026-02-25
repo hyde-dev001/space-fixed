@@ -145,7 +145,7 @@ class ShopOwnerSeeder extends Seeder
                     'thursday' => ['open' => '08:00', 'close' => '17:00'],
                     'friday' => ['open' => '08:00', 'close' => '17:00'],
                     'saturday' => ['open' => '08:00', 'close' => '14:00'],
-                    'sunday' => ['open' => '00:00', 'close' => '00:00'], // Closed
+                    'sunday' => ['open' => '00:00', 'close' => '00:00'],
                 ]),
                 'status' => 'approved',
                 'rejection_reason' => null,
@@ -173,7 +173,7 @@ class ShopOwnerSeeder extends Seeder
                     'thursday' => ['open' => '07:00', 'close' => '19:00'],
                     'friday' => ['open' => '07:00', 'close' => '19:00'],
                     'saturday' => ['open' => '08:00', 'close' => '16:00'],
-                    'sunday' => ['open' => '00:00', 'close' => '00:00'], // Closed
+                    'sunday' => ['open' => '00:00', 'close' => '00:00'],
                 ]),
                 'status' => 'approved',
                 'rejection_reason' => null,

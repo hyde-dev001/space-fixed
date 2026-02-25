@@ -17,6 +17,12 @@ export default function UserDropdown() {
   const userName = user?.name || "User";
   const userEmail = user?.email || "user@solespace.com";
   const userRole = (() => {
+    // Prefer Spatie role over database role column for better display
+    if (user?.roles && user.roles.length > 0) {
+      // Use the first Spatie role (most specific role)
+      return user.roles[0];
+    }
+    // Fallback to database role column
     if (!user?.role) return "User";
     if (user.role === "super_admin") return "Super Admin";
     if (user.role === "shop_owner") return "Shop Owner";

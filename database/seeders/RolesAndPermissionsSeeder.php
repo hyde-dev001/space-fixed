@@ -13,57 +13,79 @@ class RolesAndPermissionsSeeder extends Seeder
         // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        $this->command->info('Creating department-based roles with permissions...');
+        $this->command->info('Creating simplified page-based permissions...');
 
-        // ===== ALL PERMISSIONS =====
+        // ===== SIMPLIFIED PAGE-LEVEL PERMISSIONS =====
+        // Each permission grants full access to a specific page/module
+        // No more scattered CRUD permissions
         
         $allPermissions = [
-            // Finance
-            'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
-            'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
-            'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
-            'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
+            // ===== FINANCE MODULE =====
+            'access-finance-dashboard',
+            'access-finance-expenses',
+            'access-finance-invoices',
+            'access-approval-workflow',
+            'access-payslip-approval',
+            'access-refund-approval',
+            'access-repair-price-approval',
+            'access-shoe-price-approval',
             
-            // Pricing Approvals
-            'view-pricing-approvals', 'approve-repair-pricing', 'approve-shoe-pricing',
-            'view-repair-pricing', 'view-shoe-pricing', 'manage-service-pricing',
+            // ===== HR MODULE =====
+            'access-hr-dashboard',
+            'access-employee-directory',
+            'access-attendance-records',
+            'access-leave-approvals',
+            'access-overtime-approvals',
+            'access-payslip-generation',
+            'access-view-payslip',
             
-            // HR
-            'view-employees', 'create-employees', 'edit-employees', 'delete-employees', 'approve-employee-changes',
-            'view-attendance', 'create-attendance', 'edit-attendance', 'approve-timeoff',
-            'view-payroll', 'process-payroll', 'approve-payroll', 'generate-payslip',
-            'view-hr-reports', 'export-hr-reports', 'view-hr-audit-logs',
+            // ===== CRM MODULE =====
+            'access-crm-dashboard',
+            'access-crm-customers',
+            'access-customer-support',
+            'access-customer-reviews',
+            'access-crm-messages',
             
-            // CRM
-            'view-customers', 'create-customers', 'edit-customers', 'delete-customers',
-            'view-leads', 'create-leads', 'edit-leads', 'convert-leads', 'assign-leads',
-            'view-opportunities', 'create-opportunities', 'edit-opportunities', 'close-opportunities',
-            'view-crm-reports', 'export-crm-reports', 'view-crm-audit-logs',
-            // CRM Conversations
-            'view-crm-conversations', 'send-crm-messages', 'transfer-crm-conversations', 'update-crm-conversation-status',
+            // ===== MANAGER MODULE =====
+            'access-manager-dashboard',
+            'access-audit-logs',
+            'access-manager-reports',
+            'access-inventory-overview',
+            'access-product-upload-manager',
+            'access-repair-reject-review',
+            'access-suspend-account',
             
-            // Repairer
-            'view-repairer-conversations', 'send-repairer-messages', 'transfer-repairer-conversations', 'update-repairer-conversation-status',
-            'view-repair-services', 'manage-repair-services',
+            // ===== REPAIRER MODULE =====
+            'access-repairer-dashboard',
+            'access-repair-job-orders',
+            'access-pricing-services',
+            'access-repairer-support',
+            'access-repair-stocks',
+            'access-upload-service',
             
-            // Management
-            'view-all-users', 'create-users', 'edit-users', 'delete-users', 'assign-roles',
-            'view-products', 'create-products', 'edit-products', 'delete-products', 'manage-inventory',
-            'view-pricing', 'edit-pricing', 'manage-service-pricing',
-            'view-all-audit-logs', 'view-system-reports', 'manage-shop-settings',
+            // ===== INVENTORY MODULE =====
+            'access-inventory-dashboard',
+            'access-product-inventory',
+            'access-stock-movement',
+            'access-suppliers-management',
+            'access-upload-inventory',
+            'view-inventory', // Required for erp/inventory route group
             
-            // Job Orders
-            'view-job-orders', 'create-job-orders', 'edit-job-orders', 'complete-job-orders',
+            // ===== STAFF MODULE =====
+            'access-staff-dashboard',
+            'access-staff-job-orders',
+            'access-product-management',
+            'access-product-upload-staff',
+            'access-shoe-pricing',
+            'access-staff-time-in',
+            'access-staff-leave',
+            'access-color-variant-manager',
+            'access-staff-customers',
             
-            // Inventory Management
-            'view-inventory', 'create-inventory', 'edit-inventory', 'delete-inventory',
-            'view-suppliers', 'create-suppliers', 'edit-suppliers', 'delete-suppliers',
-            'view-stock-movements', 'create-stock-movements', 'adjust-stock',
-            'upload-inventory', 'export-inventory', 'view-inventory-reports',
-            'manage-product-inventory', 'low-stock-alerts',
-            
-            // General
-            'view-dashboard',
+            // ===== COMMON/GLOBAL =====
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ];
 
         foreach ($allPermissions as $permission) {
@@ -72,137 +94,139 @@ class RolesAndPermissionsSeeder extends Seeder
             );
         }
 
-        $this->command->info('Created ' . count($allPermissions) . ' permissions.');
+        $this->command->info('Created ' . count($allPermissions) . ' simplified page-based permissions.');
 
-        // ===== CREATE SIMPLIFIED DEPARTMENT ROLES =====
+        // ===== CREATE ROLE ASSIGNMENTS =====
 
-        $this->command->info('Creating simplified department roles...');
+        $this->command->info('Assigning simplified permissions to roles...');
 
-        // 1. Manager Role - Manager Pages ONLY (Oversight & Settings)
+        // 1. Manager Role - Full System Access & User Management
         $manager = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'user']);
-        $managerPermissions = [
-            // User Management (Manager's primary function)
-            'view-all-users', 'create-users', 'edit-users', 'delete-users', 'assign-roles',
-            
-            // System Oversight & Settings (Manager's oversight role)
-            'view-all-audit-logs', 'view-system-reports', 'manage-shop-settings',
-            
-            // Basic Access
-            'view-dashboard',
-        ];
-        $manager->syncPermissions($managerPermissions);
-        $this->command->info('✓ Manager role: ' . $manager->permissions->count() . ' permissions (MANAGER PAGES ONLY - No Inventory by default)');
+        $manager->syncPermissions([
+            // Manager Pages
+            'access-manager-dashboard',
+            'access-audit-logs',
+            'access-manager-reports',
+            'access-inventory-overview',
+            'access-product-upload-manager',
+            'access-repair-reject-review',
+            'access-suspend-account',
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
+        ]);
+        $this->command->info('✓ Manager role: ' . $manager->permissions->count() . ' permissions (Manager pages + System oversight)');
 
         // 2. Finance Role - Full Finance Module Access
         $finance = Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']);
         $finance->syncPermissions([
-            // Expenses
-            'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
-            // Invoices
-            'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
-            // Payroll Approvals (Finance must approve before HR releases)
-            'view-payroll', 'approve-payroll',
-            // Reports & Audit
-            'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
-            // Advanced Finance
-            'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
-            // Pricing Management (Repair & Shoe Pricing)
-            'view-pricing', 'edit-pricing', 'manage-service-pricing',
-            // Pricing Approvals
-            'view-pricing-approvals', 'approve-repair-pricing', 'approve-shoe-pricing',
-            'view-repair-pricing', 'view-shoe-pricing',
-            // General
-            'view-dashboard',
+            // Finance Pages
+            'access-finance-dashboard',
+            'access-finance-expenses',
+            'access-finance-invoices',
+            'access-approval-workflow',
+            'access-payslip-approval',
+            'access-refund-approval',
+            'access-repair-price-approval',
+            'access-shoe-price-approval',
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ]);
-        $this->command->info('✓ Finance role: ' . $finance->permissions->count() . ' permissions (Full Finance module + Payroll Approval + Pricing Approvals)');
+        $this->command->info('✓ Finance role: ' . $finance->permissions->count() . ' permissions (Full Finance module)');
 
         // 3. HR Role - Full HR Module Access
         $hr = Role::firstOrCreate(['name' => 'HR', 'guard_name' => 'user']);
         $hr->syncPermissions([
-            // Employee Management
-            'view-employees', 'create-employees', 'edit-employees', 'delete-employees', 'approve-employee-changes',
-            // Attendance & Leave
-            'view-attendance', 'create-attendance', 'edit-attendance', 'approve-timeoff',
-            // Payroll
-            'view-payroll', 'process-payroll', 'generate-payslip',
-            // Reports & Audit
-            'view-hr-reports', 'export-hr-reports', 'view-hr-audit-logs',
-            // General
-            'view-dashboard',
+            // HR Pages
+            'access-hr-dashboard',
+            'access-employee-directory',
+            'access-attendance-records',
+            'access-leave-approvals',
+            'access-overtime-approvals',
+            'access-payslip-generation',
+            'access-view-payslip',
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ]);
         $this->command->info('✓ HR role: ' . $hr->permissions->count() . ' permissions (Full HR module)');
 
         // 4. CRM Role - Full CRM Module Access
         $crm = Role::firstOrCreate(['name' => 'CRM', 'guard_name' => 'user']);
         $crm->syncPermissions([
-            // Customers
-            'view-customers', 'create-customers', 'edit-customers', 'delete-customers',
-            // Leads
-            'view-leads', 'create-leads', 'edit-leads', 'convert-leads', 'assign-leads',
-            // Opportunities
-            'view-opportunities', 'create-opportunities', 'edit-opportunities', 'close-opportunities',
-            // CRM Conversations (Customer Support)
-            'view-crm-conversations', 'send-crm-messages', 'transfer-crm-conversations', 'update-crm-conversation-status',
-            // Reports & Audit
-            'view-crm-reports', 'export-crm-reports', 'view-crm-audit-logs',
-            // General
-            'view-dashboard',
+            // CRM Pages
+            'access-crm-dashboard',
+            'access-crm-customers',
+            'access-customer-support',
+            'access-customer-reviews',
+            'access-crm-messages',
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ]);
-        $this->command->info('✓ CRM role: ' . $crm->permissions->count() . ' permissions (Full CRM module + Customer Support)');
+        $this->command->info('✓ CRM role: ' . $crm->permissions->count() . ' permissions (Full CRM module)');
 
-        // 5. Repairer Role - Technical Support & Repair Management
+        // 5. Repairer Role - Full Repairer Module Access
         $repairer = Role::firstOrCreate(['name' => 'Repairer', 'guard_name' => 'user']);
         $repairer->syncPermissions([
-            // Repairer Conversations (Technical Support)
-            'view-repairer-conversations', 'send-repairer-messages', 'transfer-repairer-conversations', 'update-repairer-conversation-status',
-            // Repair Services
-            'view-repair-services', 'manage-repair-services',
-            // Pricing (View only)
-            'view-repair-pricing', 'view-shoe-pricing',
-            // Attendance
-            'view-attendance', 'create-attendance',
-            // General
-            'view-dashboard',
+            // Repairer Pages
+            'access-repairer-dashboard',
+            'access-repair-job-orders',
+            'access-pricing-services',
+            'access-repairer-support',
+            'access-repair-stocks',
+            'access-upload-service',
+            // Time & Attendance
+            'access-staff-time-in',
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ]);
-        $this->command->info('✓ Repairer role: ' . $repairer->permissions->count() . ' permissions (Technical Support + Repair Management)');
+        $this->command->info('✓ Repairer role: ' . $repairer->permissions->count() . ' permissions (Full Repairer module)');
 
         // 6. Inventory Manager Role - Full Inventory Module Access
         $inventoryManager = Role::firstOrCreate(['name' => 'Inventory Manager', 'guard_name' => 'user']);
         $inventoryManager->syncPermissions([
-            // Inventory Management (Full Access)
-            'view-inventory', 'create-inventory', 'edit-inventory', 'delete-inventory',
-            'manage-product-inventory', 'low-stock-alerts',
-            // Suppliers
-            'view-suppliers', 'create-suppliers', 'edit-suppliers', 'delete-suppliers',
-            // Stock Movements
-            'view-stock-movements', 'create-stock-movements', 'adjust-stock',
-            // Upload & Export
-            'upload-inventory', 'export-inventory', 'view-inventory-reports',
-            // Product Management (Related to inventory)
-            'view-products', 'create-products', 'edit-products', 'delete-products', 'manage-inventory',
-            // General
-            'view-dashboard',
+            // Inventory Pages
+            'access-inventory-dashboard',
+            'access-product-inventory',
+            'access-stock-movement',
+            'access-suppliers-management',
+            'access-upload-inventory',
+            'access-inventory-overview',
+            'view-inventory', // Required for erp/inventory route group
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ]);
         $this->command->info('✓ Inventory Manager role: ' . $inventoryManager->permissions->count() . ' permissions (Full Inventory module)');
 
-        // 7. Staff Role - Basic Access (configurable)
+        // 7. Staff Role - Staff Module Access
         $staff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'user']);
         $staff->syncPermissions([
-            'view-dashboard',
-            'view-job-orders',        // Job Orders Retail access
-            'create-job-orders',
-            'edit-job-orders',
-            'complete-job-orders',
-            'view-products',          // Product management access
-            'create-products',
-            'edit-products',
-            'delete-products',
-            'view-pricing',           // Shoe pricing access
-            'edit-pricing',
-            'view-inventory',         // Basic inventory viewing
-            'view-suppliers',
+            // Staff Pages
+            'access-staff-dashboard',
+            'access-staff-job-orders',
+            'access-product-management',
+            'access-product-upload-staff',
+            'access-shoe-pricing',
+            'access-staff-time-in',
+            'access-staff-leave',
+            'access-color-variant-manager',
+            'access-staff-customers',
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
         ]);
-        $this->command->info('✓ Staff role: ' . $staff->permissions->count() . ' base permissions (HR can add more)');
+        $this->command->info('✓ Staff role: ' . $staff->permissions->count() . ' permissions (Staff module + Basic access)');
 
         // ===== SHOP OWNER GUARD =====
         
@@ -220,19 +244,19 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $this->command->info('');
         $this->command->info('========================================');
-        $this->command->info('✅ SIMPLIFIED DEPARTMENT ROLES CREATED!');
+        $this->command->info('✅ SIMPLIFIED PAGE-BASED ROLES CREATED!');
         $this->command->info('========================================');
         $this->command->info('Total Roles: ' . Role::where('guard_name', 'user')->count());
         $this->command->info('Total Permissions: ' . Permission::count());
         $this->command->info('');
         $this->command->info('Available Roles:');
-        $this->command->info('  1. Manager (' . $manager->permissions->count() . ' perms) - User Management & System Oversight ONLY');
+        $this->command->info('  1. Manager (' . $manager->permissions->count() . ' perms) - Manager pages + System oversight');
         $this->command->info('  2. Finance (' . $finance->permissions->count() . ' perms) - Full Finance module');
         $this->command->info('  3. HR (' . $hr->permissions->count() . ' perms) - Full HR module');
         $this->command->info('  4. CRM (' . $crm->permissions->count() . ' perms) - Full CRM module');
-        $this->command->info('  5. Repairer (' . $repairer->permissions->count() . ' perms) - Technical Support & Repairs');
+        $this->command->info('  5. Repairer (' . $repairer->permissions->count() . ' perms) - Full Repairer module');
         $this->command->info('  6. Inventory Manager (' . $inventoryManager->permissions->count() . ' perms) - Full Inventory module');
-        $this->command->info('  7. Staff (' . $staff->permissions->count() . ' perms) - Basic + HR can add more');
+        $this->command->info('  7. Staff (' . $staff->permissions->count() . ' perms) - Staff module + Basic access');
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');

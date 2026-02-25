@@ -19,9 +19,20 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use App\Models\PositionTemplate;
 use App\Models\PositionTemplatePermission;
+use App\Services\BusinessAccessControlService;
 
 class UserAccessControlController extends Controller
 {
+    /**
+     * Business Access Control Service
+     */
+    protected BusinessAccessControlService $accessControl;
+
+    public function __construct(BusinessAccessControlService $accessControl)
+    {
+        $this->accessControl = $accessControl;
+    }
+
     /**
      * Display the user access control page.
      */
@@ -33,21 +44,29 @@ class UserAccessControlController extends Controller
         if (!$shopOwner) {
             return redirect()->route('shop-owner.login.form');
         }
+
+        // SECURITY: Individual accounts cannot access staff management
+        if (!$this->accessControl->canManageStaff($shopOwner)) {
+            return redirect()->route('shop-owner.dashboard')
+                ->with('error', 'Staff management is only available for Company accounts. Upgrade your account to manage employees.')
+                ->with('upgrade_prompt', true);
+        }
         
         // Fetch employees for this shop owner with their user account role and permissions
         $employees = Employee::where('shop_owner_id', $shopOwner->id)
-            ->with('user:id,email,role,phone,address')
+            ->with('user')
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function($employee) {
                 $user = $employee->user;
+                $roleName = $user?->getRoleNames()->first() ?? null;
                 return [
                     'id' => $employee->id,
                     'name' => $employee->name,
                     'email' => $employee->email,
                     'phone' => $employee->phone ?? $user?->phone ?? null,
                     'address' => $user?->address ?? null,
-                    'role' => $user?->role ?? 'STAFF',
+                    'role' => $roleName ?? $employee->department ?? 'Staff',
                     'status' => $employee->status,
                     'createdAt' => $employee->created_at,
                     'salary' => $employee->salary ?? 0,
@@ -56,12 +75,12 @@ class UserAccessControlController extends Controller
                     'department' => $employee->department,
                     // Include Spatie permissions
                     'userId' => $user?->id,
-                    'roleName' => $user?->getRoleNames()->first() ?? null,
+                    'roleName' => $roleName,
                     'permissions' => $user?->getAllPermissions()->pluck('name')->toArray() ?? [],
                     'rolePermissions' => $user?->getPermissionsViaRoles()->pluck('name')->toArray() ?? [],
                     'directPermissions' => $user?->getDirectPermissions()->pluck('name')->toArray() ?? [],
                     // Include role information
-                    'primaryRole' => $user?->role ?? 'Staff',
+                    'primaryRole' => $roleName ?? $employee->department ?? 'Staff',
                     'additionalRoles' => $user?->additional_roles ?? [],
                 ];
             });
@@ -81,6 +100,13 @@ class UserAccessControlController extends Controller
             
             if (!$shopOwner) {
                 return back()->withErrors(['error' => 'Not authenticated as shop owner']);
+            }
+
+            // SECURITY: Check if shop owner can manage staff (company only)
+            if (!$this->accessControl->canManageStaff($shopOwner)) {
+                return back()->withErrors([
+                    'error' => 'Staff management is only available for Company accounts. Individual accounts cannot create employees.'
+                ])->with('upgrade_prompt', true);
             }
 
             $validated = $request->validate([
@@ -106,6 +132,14 @@ class UserAccessControlController extends Controller
 
             // Normalize role to uppercase to match database enum
             $validated['role'] = strtoupper($validated['role']);
+
+            // SECURITY: Validate role creation based on business type
+            $roleValidation = $this->accessControl->validateRoleCreation($validated['role'], $shopOwner);
+            if (!$roleValidation['allowed']) {
+                return back()->withErrors([
+                    'role' => $roleValidation['reason']
+                ])->withInput();
+            }
 
             // Assign to shop owner's shop
             $validated['shop_owner_id'] = $shopOwner->id;
@@ -241,6 +275,7 @@ class UserAccessControlController extends Controller
 
             // Return back with success data - Inertia will automatically reload with fresh props
             // Use redirect()->back() to ensure flash data is properly set in session
+            // Add timestamp to ensure uniqueness and trigger useEffect on each creation
             return redirect()->back()->with([
                 'success' => true,
                 'employee' => [
@@ -250,6 +285,7 @@ class UserAccessControlController extends Controller
                 ],
                 'user_id' => $user->id,
                 'temporary_password' => $temporaryPassword,
+                'timestamp' => now()->timestamp, // Unique identifier for each creation
             ]);
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors());
@@ -285,7 +321,7 @@ class UserAccessControlController extends Controller
             ->pluck('name')
             ->toArray();
 
-        // Group permissions by module - ALIGNED WITH ROLE STRUCTURE
+        // Group permissions by module - SIMPLIFIED PAGE-BASED STRUCTURE
         $grouped = [
             'finance' => [],
             'hr' => [],
@@ -293,64 +329,79 @@ class UserAccessControlController extends Controller
             'manager' => [],
             'repairer' => [],
             'staff' => [],
+            'common' => [],
         ];
 
         foreach ($allPermissions as $permission) {
-            // Finance: Expenses, Invoices, Finance Reports, Cost Management, Pricing Approvals, ALL Pricing Management
-            if (str_contains($permission, 'expense') || 
-                str_contains($permission, 'invoice') || 
-                str_contains($permission, 'finance') || 
-                str_contains($permission, 'budget') || 
-                str_contains($permission, 'cost-center') || 
-                str_contains($permission, 'revenue') || 
-                str_contains($permission, 'reconcile') ||
-                str_contains($permission, 'pricing-approval') ||
-                str_contains($permission, 'approve-repair-pricing') ||
-                str_contains($permission, 'approve-shoe-pricing') ||
-                str_contains($permission, 'repair-pricing') || // All repair pricing permissions (view/approve)
-                str_contains($permission, 'shoe-pricing') || // All shoe pricing permissions (view/approve)
-                str_contains($permission, 'pricing') || // All general pricing permissions (view/edit/manage)
-                str_contains($permission, 'approve-payroll') || // Finance approves payroll
-                $permission === 'view-payroll') { // Finance views payroll for approval
+            // Finance Module: access-finance-* permissions
+            if (str_starts_with($permission, 'access-finance-') ||
+                str_contains($permission, 'payslip-approval') ||
+                str_contains($permission, 'refund-approval') ||
+                str_contains($permission, 'repair-price-approval') ||
+                str_contains($permission, 'shoe-price-approval') ||
+                str_contains($permission, 'approval-workflow')) {
                 $grouped['finance'][] = $permission;
             } 
-            // HR: Employees, Attendance, Payroll Processing, HR Reports
-            elseif (str_contains($permission, 'employee') || 
-                    str_contains($permission, 'hr') || 
-                    str_contains($permission, 'timeoff') || 
-                    str_contains($permission, 'attendance') ||
-                    str_contains($permission, 'process-payroll') || // HR processes payroll
-                    str_contains($permission, 'generate-payslip')) { // HR generates payslips
+            // HR Module: access-hr-* permissions
+            elseif (str_starts_with($permission, 'access-hr-') ||
+                    str_contains($permission, 'employee-directory') ||
+                    str_contains($permission, 'attendance-records') ||
+                    str_contains($permission, 'leave-approval') ||
+                    str_contains($permission, 'overtime-approval') ||
+                    str_contains($permission, 'payslip-generation') ||
+                    str_contains($permission, 'view-payslip')) {
                 $grouped['hr'][] = $permission;
             } 
-            // CRM: Customers, Leads, Opportunities, CRM Conversations
-            elseif (str_contains($permission, 'customer') || 
-                    str_contains($permission, 'lead') || 
-                    str_contains($permission, 'opportunit') || // Match both opportunity and opportunities
-                    str_contains($permission, 'crm')) {
+            // CRM Module: access-crm-* permissions
+            elseif (str_starts_with($permission, 'access-crm-') ||
+                    str_contains($permission, 'customer-support') ||
+                    str_contains($permission, 'customer-reviews')) {
                 $grouped['crm'][] = $permission;
             } 
-            // Manager: User Management, System Oversight, Audit Logs, Shop Settings
-            elseif (str_contains($permission, 'all-user') || // view-all-users, create-users, etc.
-                    str_contains($permission, 'user') || 
-                    str_contains($permission, 'role') || 
-                    str_contains($permission, 'all-audit') || // view-all-audit-logs
-                    str_contains($permission, 'system-report') || // view-system-reports
-                    str_contains($permission, 'shop-setting')) { // manage-shop-settings
+            // Manager Module: access-manager-* permissions
+            elseif (str_starts_with($permission, 'access-manager-') ||
+                    str_contains($permission, 'audit-logs') ||
+                    str_contains($permission, 'manager-reports') ||
+                    str_contains($permission, 'inventory-overview') ||
+                    str_contains($permission, 'product-upload-manager') ||
+                    str_contains($permission, 'repair-reject-review') ||
+                    str_contains($permission, 'suspend-account')) {
                 $grouped['manager'][] = $permission;
             }
-            // Repairer: ONLY Repair Services and Repairer Conversations (NO pricing permissions - those belong to Finance)
-            elseif (str_contains($permission, 'repairer') || 
-                    str_contains($permission, 'repair-service')) {
+            // Repairer Module: access-repairer-* permissions
+            elseif (str_starts_with($permission, 'access-repairer-') ||
+                    str_contains($permission, 'repair-job-orders') ||
+                    str_contains($permission, 'pricing-services') ||
+                    str_contains($permission, 'repairer-support') ||
+                    str_contains($permission, 'repair-stocks') ||
+                    str_contains($permission, 'upload-service')) {
                 $grouped['repairer'][] = $permission;
             }
-            // Staff: Products, Job Orders (Retail), Inventory, Attendance, Dashboard (NO pricing - those belong to Finance)
-            elseif (str_contains($permission, 'product') || 
-                    str_contains($permission, 'inventory') ||
-                    str_contains($permission, 'supplier') ||
-                    str_contains($permission, 'job-order') || // Job Orders for retail staff
-                    $permission === 'view-dashboard') {
+            // Staff Module: access-staff-* permissions
+            elseif (str_starts_with($permission, 'access-staff-') ||
+                    str_contains($permission, 'staff-job-orders') ||
+                    str_contains($permission, 'product-management') ||
+                    str_contains($permission, 'product-upload-staff') ||
+                    str_contains($permission, 'shoe-pricing') ||
+                    str_contains($permission, 'staff-time-in') ||
+                    str_contains($permission, 'staff-leave') ||
+                    str_contains($permission, 'color-variant-manager') ||
+                    str_contains($permission, 'staff-customers')) {
                 $grouped['staff'][] = $permission;
+            }
+            // Inventory Module: access-inventory-* permissions
+            elseif (str_starts_with($permission, 'access-inventory-') ||
+                    str_contains($permission, 'product-inventory') ||
+                    str_contains($permission, 'stock-movement') ||
+                    str_contains($permission, 'suppliers-management') ||
+                    str_contains($permission, 'upload-inventory')) {
+                $grouped['staff'][] = $permission; // Group with staff for now
+            }
+            // Common/Global permissions
+            elseif (str_contains($permission, 'global-search') ||
+                    str_contains($permission, 'notification-center') ||
+                    str_contains($permission, 'access-profile')) {
+                $grouped['common'][] = $permission;
             }
         }
 
@@ -938,6 +989,44 @@ class UserAccessControlController extends Controller
             return response()->json(['error' => $e->errors()], 422);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to apply template: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get allowed roles for the authenticated shop owner
+     * Based on business type and registration type
+     */
+    public function getAllowedRoles()
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if (!$shopOwner) {
+                return response()->json(['error' => 'Not authenticated'], 401);
+            }
+
+            // Check if shop owner can manage staff
+            if (!$this->accessControl->canManageStaff($shopOwner)) {
+                return response()->json([
+                    'allowed_roles' => [],
+                    'can_manage_staff' => false,
+                    'message' => 'Staff management is only available for Company accounts.',
+                    'upgrade_required' => true,
+                ]);
+            }
+
+            $allowedRoles = $this->accessControl->getAllowedRoles($shopOwner);
+            $restrictedFeatures = $this->accessControl->getRestrictedFeatures($shopOwner);
+
+            return response()->json([
+                'allowed_roles' => $allowedRoles,
+                'can_manage_staff' => true,
+                'business_type' => $shopOwner->business_type,
+                'registration_type' => $shopOwner->registration_type,
+                'restricted_features' => $restrictedFeatures,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to fetch allowed roles: ' . $e->getMessage()], 500);
         }
     }
 }

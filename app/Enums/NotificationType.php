@@ -41,6 +41,7 @@ enum NotificationType: string
     case INVOICE_CREATED = 'invoice_created';
     case DELEGATION_ASSIGNED = 'delegation_assigned';
     case TASK_ASSIGNED = 'task_assigned';
+    case ORDER_ASSIGNED = 'order_assigned';
     case REPAIR_ASSIGNED_TO_ME = 'repair_assigned_to_me';
     case REPAIR_REJECTION_REVIEW = 'repair_rejection_review';
     case TRAINING_ASSIGNED = 'training_assigned';
@@ -103,6 +104,7 @@ enum NotificationType: string
             self::INVOICE_CREATED => 'Invoice Created',
             self::DELEGATION_ASSIGNED => 'Delegation Assigned',
             self::TASK_ASSIGNED => 'Task Assigned',
+            self::ORDER_ASSIGNED => 'Order Assigned',
             self::REPAIR_ASSIGNED_TO_ME => 'Repair Assigned',
             self::REPAIR_REJECTION_REVIEW => 'Repair Rejection Review',
             self::TRAINING_ASSIGNED => 'Training Assigned',

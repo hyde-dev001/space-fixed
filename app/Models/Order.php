@@ -43,6 +43,11 @@ class Order extends Model
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
+        // Staff assignment fields
+        'assigned_staff_id',
+        'assigned_at',
+        'assignment_method',
+        'assigned_by',
     ];
 
     protected $casts = [
@@ -77,6 +82,22 @@ class Order extends Model
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    /**
+     * Get the staff member assigned to process this order
+     */
+    public function assignedStaff(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_staff_id');
+    }
+
+    /**
+     * Get the user who manually assigned this order (if applicable)
+     */
+    public function assignedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_by');
     }
 
     /**

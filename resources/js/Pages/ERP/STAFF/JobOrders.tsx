@@ -4,7 +4,6 @@ import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
-import axios from "axios";
 
 type OrderItem = {
   id: number;
@@ -28,6 +27,7 @@ type Order = {
   shippingAddress: string;
   total: string;
   paymentStatus: string;
+  paymentMethod?: string;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
   eta?: string;
   orderedAt: string;
@@ -256,6 +256,7 @@ export default function JobOrdersPage() {
           shippingAddress: order.shipping_address || '',
           total: `₱${parseFloat(order.total_amount || 0).toLocaleString()}`,
           paymentStatus: order.payment_status || 'pending',
+          paymentMethod: order.payment_method || '',
           status: order.status as any,
           eta: order.eta || undefined,
           orderedAt: new Date(order.created_at).toLocaleString(),
@@ -370,6 +371,14 @@ export default function JobOrdersPage() {
     return colors[status] || "bg-gray-100 text-gray-800";
   };
 
+  const getPaymentMethodLabel = (paymentMethod?: string) => {
+    const normalized = (paymentMethod || '').toLowerCase();
+    if (normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery') {
+      return 'Cash on Delivery (COD)';
+    }
+    return 'Online Payment';
+  };
+
   const handleProcessOrder = async (order: Order) => {
     const result = await Swal.fire({
       title: "Process this order?",
@@ -433,7 +442,7 @@ export default function JobOrdersPage() {
   const handleShipOrder = (order: Order) => {
     setSelectedOrder(order);
     setEta("");
-    setEtaPreset("");
+    setEtaPreset(order.eta || "1-2 business days");
     // Prepopulate if values already exist (view-only for shipped orders)
     setCarrierCompany(order.carrierCompany || "");
     setCarrierName(order.carrierName || "");
@@ -502,6 +511,30 @@ export default function JobOrdersPage() {
       return;
     }
 
+    const trackingLinkValue = trackingLink.trim();
+
+    if (!trackingLinkValue) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please enter a Tracking Link",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    try {
+      new URL(trackingLinkValue);
+    } catch {
+      await Swal.fire({
+        title: "Invalid Tracking Link",
+        text: "Please enter a valid URL (include https://)",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     try {
       // Fetch fresh CSRF token
       const csrfResponse = await fetch('/api/csrf-token', {
@@ -525,7 +558,7 @@ export default function JobOrdersPage() {
           carrier_company: carrierCompany,
           carrier_name: carrierName,
           carrier_phone: carrierPhone,
-          tracking_link: trackingLink || null,
+          tracking_link: trackingLinkValue,
           eta: etaPreset,
         })
       });
@@ -555,6 +588,7 @@ export default function JobOrdersPage() {
             shippingAddress: order.shipping_address,
             total: order.total_amount,
             paymentStatus: order.payment_status,
+            paymentMethod: order.payment_method || '',
             status: order.status,
             orderedAt: order.created_at,
             items: order.items || [],
@@ -664,6 +698,7 @@ export default function JobOrdersPage() {
             shippingAddress: order.shipping_address,
             total: order.total_amount,
             paymentStatus: order.payment_status,
+            paymentMethod: order.payment_method || '',
             status: order.status,
             orderedAt: order.created_at,
             items: order.items || [],
@@ -1059,7 +1094,7 @@ export default function JobOrdersPage() {
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
               </div>
@@ -1096,8 +1131,7 @@ export default function JobOrdersPage() {
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select ETA</option>
+                        >
                       <option value="1-2 business days">1-2 business days</option>
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
@@ -1107,14 +1141,14 @@ export default function JobOrdersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Carrier Company *
+                      Shipping Company *
                     </label>
                     <select
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select carrier</option>
+                      <option value="">Select shipping</option>
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
@@ -1124,30 +1158,28 @@ export default function JobOrdersPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Carrier Name *
+                        Rider Name *
                       </label>
                       <input
                         type="text"
                         value={carrierName}
                         onChange={(e) => setCarrierName(e.target.value)}
-                        placeholder="Rider name"
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Carrier Phone *
+                        Rider Phone *
                       </label>
                       <input
                         type="tel"
                         value={carrierPhone}
                         onChange={(e) => {
                           // Allow digits only and limit to 10 characters
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
                           setCarrierPhone(digits);
                         }}
-                        maxLength={10}
-                        placeholder="9XXXXXXXXX (10 digits)"
+                        maxLength={11}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -1159,7 +1191,6 @@ export default function JobOrdersPage() {
                       type="text"
                       value={trackingNumber}
                       onChange={(e) => setTrackingNumber(e.target.value)}
-                      placeholder="Enter tracking number provided by courier"
                       disabled={selectedOrder.status === 'shipped'}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -1167,22 +1198,22 @@ export default function JobOrdersPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link (optional)</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
                     <input
                       type="url"
                       value={trackingLink}
                       onChange={(e) => setTrackingLink(e.target.value)}
-                      placeholder="https://tracking.example.com/track/..."
+                      required
                       disabled={selectedOrder.status === 'shipped'}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Optional link so customers can track delivery in real time.</p>
+                    <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Auto Message
+                        Message
                       </label>
                       <button
                         type="button"
@@ -1237,11 +1268,11 @@ export default function JobOrdersPage() {
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4">
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6">
-              <div className="flex items-start justify-between mb-4">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">Order Details</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{viewOrder.id}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">#{viewOrder.order_number} • ID {viewOrder.id}</p>
                 </div>
                 <button
                   onClick={() => {
@@ -1257,7 +1288,7 @@ export default function JobOrdersPage() {
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="px-6 py-5 overflow-y-auto space-y-5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Full Name</p>
@@ -1270,6 +1301,14 @@ export default function JobOrdersPage() {
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Email</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Type</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{getPaymentMethodLabel(viewOrder.paymentMethod)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Status</p>
+                    <p className="text-sm text-gray-900 dark:text-white capitalize">{viewOrder.paymentStatus || '-'}</p>
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>
@@ -1335,7 +1374,7 @@ export default function JobOrdersPage() {
                 )}
               </div>
 
-              <div className="mt-6 flex gap-3">
+              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
                 {viewOrder.status === "shipped" && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}

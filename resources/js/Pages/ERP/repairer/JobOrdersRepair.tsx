@@ -1320,7 +1320,7 @@ export default function JobOrdersRepair() {
                             {order.status === "new_request"
                               ? "New Request"
                               : order.status === "assigned_to_repairer"
-                              ? "Assigned to Repairer"
+                              ? "New"
                               : order.status === "under-review"
                               ? "Under Review"
                               : order.status === "pending"
@@ -1341,15 +1341,6 @@ export default function JobOrdersRepair() {
                               ? "Rejected"
                               : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                           </span>
-                          {order.payment_enabled && (
-                            <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${
-                              order.payment_status === 'completed' 
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' 
-                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
-                            }`}>
-                              {order.payment_status === 'completed' ? '💳 Paid' : '⏳ Awaiting Payment'}
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
@@ -1369,17 +1360,6 @@ export default function JobOrdersRepair() {
                           </button>
                           
                           {/* Phase 8: Work Progress Action Buttons */}
-                          {/* Show Mark as Received for both pickup and walk-in after acceptance */}
-                          {(order.status === "repairer_accepted" || order.status === "owner_approved" || order.status === "waiting_customer_confirmation" || order.status === "confirmed") && (
-                            <button
-                              onClick={() => handleMarkReceived(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors"
-                              title="Mark shoes as received at shop"
-                            >
-                              Mark as Received
-                            </button>
-                          )}
-                          
                           {/* Show Start Work only after shoes are received */}
                           {order.status === "received" && (
                             <button
@@ -1396,20 +1376,10 @@ export default function JobOrdersRepair() {
                                   : 'Start work on this repair'
                               }
                             >
-                              {order.payment_enabled && order.payment_status !== 'completed' ? '⏳ Awaiting Payment' : 'Start Work'}
+                              Start Work
                             </button>
                           )}
                           
-                          {/* Activate Payment Button - Show for repairs that need payment enabled */}
-                          {(order.status === "repairer_accepted" || order.status === "received" || order.status === "pending") && !order.payment_enabled && (
-                            <button
-                              onClick={() => handleActivatePayment(order.database_id)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-                              title="Activate payment for this repair"
-                            >
-                              💳 Activate Payment
-                            </button>
-                          )}
                           
                           {order.status === "in-progress" && (
                             <>
@@ -1542,7 +1512,7 @@ export default function JobOrdersRepair() {
                     {viewOrder.status === "new_request"
                       ? "New Request"
                       : viewOrder.status === "assigned_to_repairer"
-                      ? "Assigned to Repairer"
+                      ? "New"
                       : viewOrder.status === "under-review"
                       ? "Under Review"
                       : viewOrder.status === "pending"
@@ -1823,29 +1793,29 @@ export default function JobOrdersRepair() {
                   </div>
                 )}
                 
-                {/* Ready to mark as received - for both pickup and walk-in */}
-                {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved" || viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation") && (
+                {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved" || viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation" || viewOrder.status === "pending") && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors shadow-sm"
-                      title="Mark shoes as received at shop"
+                      disabled={viewOrder.payment_status !== 'completed'}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        viewOrder.payment_status === 'completed'
+                          ? 'bg-white hover:bg-gray-100 text-gray-900 border border-gray-900'
+                          : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
+                      }`}
+                      title={viewOrder.payment_status === 'completed' ? 'Mark shoes as received at shop' : 'Waiting for customer payment'}
                     >
                       Mark as Received
                     </button>
-                  </div>
-                )}
-                
-                {/* Legacy pending status support */}
-                {viewOrder.status === "pending" && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => handleMarkReceived(viewOrder)}
-                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors"
-                      title="Mark as received"
-                    >
-                      Mark as Received
-                    </button>
+                    {!viewOrder.payment_enabled && (
+                      <button
+                        onClick={() => handleActivatePayment(viewOrder.database_id)}
+                        className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
+                        title="Activate payment for this repair"
+                      >
+                        Activate Payment
+                      </button>
+                    )}
                   </div>
                 )}
                 

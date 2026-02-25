@@ -714,6 +714,22 @@ class CheckoutController extends Controller
                 'notes' => "Auto-generated from Order #{$order->order_number}",
             ]);
 
+            // Log payment processing for online payment methods
+            if (in_array($paymentMethod, $onlinePaymentMethods)) {
+                activity()
+                    ->performedOn($order)
+                    ->withProperties([
+                        'order_number' => $order->order_number,
+                        'customer_name' => $order->customer_name,
+                        'amount_paid' => $order->total_amount,
+                        'payment_method' => ucfirst($paymentMethod),
+                        'payment_status' => 'paid',
+                        'invoice_reference' => $reference,
+                        'auto_processed' => true,
+                    ])
+                    ->log("Order payment processed: {$order->order_number} - ₱" . number_format($order->total_amount, 2));
+            }
+
             // Get default revenue account (if finance module is set up)
             $revenueAccount = null;
             // Account model not yet implemented - leave account_id as null for now

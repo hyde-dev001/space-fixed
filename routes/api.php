@@ -131,7 +131,7 @@ Route::prefix('finance/public')->group(function () {
  * Protected by session-based authentication and role-based middleware
  * TODO: Migrate frontend to use routes/finance-api.php
  */
-Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff|Finance Manager|Manager|Staff', 'shop.isolation'])->prefix('finance')->group(function () {
+Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manager,Manager,Staff', 'shop.isolation'])->prefix('finance')->group(function () {
     // Financial Reports
     Route::prefix('reports')->group(function () {
         Route::get('balance-sheet', [FinancialReportController::class, 'balanceSheet']);
@@ -226,26 +226,26 @@ Route::middleware(['web', 'auth:user'])->prefix('media')->group(function () {
  * CRM Conversation Routes - Shop staff managing customer conversations
  * NOTE: Customer conversation routes have been moved to routes/web.php for proper session handling
  */
-Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:view-crm-conversations'])->group(function () {
+Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
     Route::get('/', [\App\Http\Controllers\API\CRM\ConversationController::class, 'index']);
     Route::get('/{conversation}', [\App\Http\Controllers\API\CRM\ConversationController::class, 'show']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\CRM\ConversationController::class, 'sendMessage'])->middleware('permission:send-crm-messages');
-    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\CRM\ConversationController::class, 'transfer'])->middleware('permission:transfer-crm-conversations');
-    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updateStatus'])->middleware('permission:update-crm-conversation-status');
-    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updatePriority'])->middleware('permission:update-crm-conversation-status');
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\CRM\ConversationController::class, 'sendMessage']);
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\CRM\ConversationController::class, 'transfer']);
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updateStatus']);
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updatePriority']);
 });
 
 /**
  * Repairer Conversation Routes - Repair technicians handling technical support
  */
-Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permission:view-repairer-conversations'])->group(function () {
+Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permission:access-repairer-support'])->group(function () {
     Route::get('/', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'index']);
     Route::get('/{conversation}', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'show']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'sendMessage'])->middleware('permission:send-repairer-messages');
-    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'transfer'])->middleware('permission:transfer-repairer-conversations');
-    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updateStatus'])->middleware('permission:update-repairer-conversation-status');
-    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updatePriority'])->middleware('permission:update-repairer-conversation-status');
-    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'activatePayment'])->middleware('permission:send-repairer-messages');
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'sendMessage']);
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'transfer']);
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updateStatus']);
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updatePriority']);
+    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'activatePayment']);
 });
 
 /**

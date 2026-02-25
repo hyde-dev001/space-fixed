@@ -32,6 +32,8 @@ interface CheckoutData {
   payment_method: string;
 }
 
+type PaymentMethod = 'paymongo' | 'cod';
+
 const Payment: React.FC = () => {
   const { auth } = usePage().props as any;
   const user = auth?.user;
@@ -46,6 +48,7 @@ const Payment: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [billingAddressSame, setBillingAddressSame] = useState(true);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('paymongo');
 
   // Local state for editable fields
   const [customerEmail, setCustomerEmail] = useState('');
@@ -95,6 +98,7 @@ const Payment: React.FC = () => {
         };
 
         setCheckoutData(data);
+        setSelectedPaymentMethod('paymongo');
         setCustomerName(data.customer_name);
         setCustomerEmail(data.customer_email);
         setCustomerPhone(data.customer_phone);
@@ -107,6 +111,7 @@ const Payment: React.FC = () => {
         try {
           const data = JSON.parse(stored);
           setCheckoutData(data);
+          setSelectedPaymentMethod(data.payment_method === 'cod' ? 'cod' : 'paymongo');
           // Sync local state with loaded data
           setCustomerEmail(data.customer_email || '');
           setCustomerName(data.customer_name || '');
@@ -191,6 +196,7 @@ const Payment: React.FC = () => {
         };
 
         setCheckoutData(data);
+        setSelectedPaymentMethod('paymongo');
         setCustomerName(data.customer_name);
         setCustomerEmail(data.customer_email);
         setCustomerPhone(data.customer_phone);
@@ -250,7 +256,7 @@ const Payment: React.FC = () => {
         shipping_barangay: shippingBarangay,
         shipping_postal_code: shippingPostalCode,
         shipping_address_line: shippingAddressLine,
-        payment_method: 'paymongo',
+        payment_method: selectedPaymentMethod,
       };
 
       console.log('Creating order with data:', orderData);
@@ -273,6 +279,21 @@ const Payment: React.FC = () => {
 
       const orderResult = await orderResponse.json();
       console.log('Order created successfully:', orderResult);
+
+      const orderId = orderResult.order?.id || orderResult.order_id;
+      sessionStorage.setItem('pendingOrderId', orderId);
+
+      if (selectedPaymentMethod === 'cod') {
+        setIsProcessing(false);
+        await Swal.fire({
+          icon: 'success',
+          title: 'Order Placed',
+          text: 'Your Cash on Delivery order has been placed successfully.',
+          confirmButtonColor: '#000000',
+        });
+        router.visit('/my-orders');
+        return;
+      }
 
       // Now create PayMongo payment link
       const response = await fetch('/api/paymongo-proxy', {
@@ -301,7 +322,6 @@ const Payment: React.FC = () => {
       }
 
       // Update order with PayMongo link ID
-      const orderId = orderResult.order?.id || orderResult.order_id;
       await fetch(`/api/orders/${orderId}/update-payment-link`, {
         method: 'POST',
         credentials: 'include',
@@ -312,9 +332,6 @@ const Payment: React.FC = () => {
         },
         body: JSON.stringify({ paymongo_link_id: linkId }),
       });
-
-      // Store order info for tracking
-      sessionStorage.setItem('pendingOrderId', orderId);
 
       // Redirect to PayMongo payment page
       window.location.href = checkoutUrl;
@@ -568,27 +585,69 @@ const Payment: React.FC = () => {
                 <h3 className="text-lg font-semibold text-black mb-3">Payment</h3>
                 <p className="text-sm text-gray-600 mb-4">All transactions are secure and encrypted.</p>
 
-                <div className="border border-gray-400 rounded-t p-3 mb-0" style={{ borderBottom: 'none' }}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-black">Secure Payments via PayMongo</span>
-                    <div className="flex items-center gap-2">
-                      {/* Visa */}
-                      <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
-                        <img src="/images/payment-logo/visa.png" alt="Visa" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
-                      </span>
-                      {/* GCash */}
-                      <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
-                        <img src="/images/payment-logo/GCASH.png" alt="GCash" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
-                      </span>
-                      {/* Maya */}
-                      <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
-                        <img src="/images/payment-logo/MAYA.png" alt="Maya" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
-                      </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 w-full">
+                  <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                    <input
+                      type="radio"
+                      name="payment-method"
+                      value="paymongo"
+                      checked={selectedPaymentMethod === 'paymongo'}
+                      onChange={() => setSelectedPaymentMethod('paymongo')}
+                      className="w-4 h-4 mt-1"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-black">Online Payment</span>
+                      <p className="text-xs text-gray-600">Pay securely via PayMongo.</p>
                     </div>
-                  </div>
+                  </label>
+
+                  <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                    <input
+                      type="radio"
+                      name="payment-method"
+                      value="cod"
+                      checked={selectedPaymentMethod === 'cod'}
+                      onChange={() => setSelectedPaymentMethod('cod')}
+                      className="w-4 h-4 mt-1"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-black">Cash on Delivery (COD)</span>
+                      <p className="text-xs text-gray-600">Pay in cash when your order arrives.</p>
+                    </div>
+                  </label>
                 </div>
-                <div className="border border-gray-400 border-t-0 rounded-b bg-gray-50 px-2 py-3 text-center text-sm text-black">
-                  You'll be redirected to Secure Payments via PayMongo to complete your purchase.
+
+                <div className="w-full">
+                {selectedPaymentMethod === 'paymongo' ? (
+                  <>
+                    <div className="border border-gray-400 rounded-t p-3 mb-0" style={{ borderBottom: 'none' }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-black">Secure Payments via PayMongo</span>
+                        <div className="flex items-center gap-2">
+                          {/* Visa */}
+                          <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
+                            <img src="/images/payment-logo/visa.png" alt="Visa" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
+                          </span>
+                          {/* GCash */}
+                          <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
+                            <img src="/images/payment-logo/GCASH.png" alt="GCash" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
+                          </span>
+                          {/* Maya */}
+                          <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
+                            <img src="/images/payment-logo/MAYA.png" alt="Maya" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="border border-gray-400 border-t-0 rounded-b bg-gray-50 px-2 py-3 text-center text-sm text-black">
+                      You'll be redirected to Secure Payments via PayMongo to complete your purchase.
+                    </div>
+                  </>
+                ) : (
+                  <div className="border border-gray-400 rounded bg-gray-50 px-3 py-3 text-sm text-black">
+                    You selected Cash on Delivery. Payment will be collected when your order is delivered.
+                  </div>
+                )}
                 </div>
               </div>
 
@@ -704,7 +763,7 @@ const Payment: React.FC = () => {
                   isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
-                {isProcessing ? 'Processing...' : 'Pay now'}
+                {isProcessing ? 'Processing...' : selectedPaymentMethod === 'cod' ? 'Place order' : 'Pay now'}
               </button>
 
               {payError && (

@@ -436,7 +436,54 @@ class ProductController extends Controller
 
             DB::beginTransaction();
             try {
+                // Track changes for logging
+                $changes = [];
+                $oldStock = $product->stock_quantity;
+                $oldPrice = $product->price;
+                
                 $product->update($validated);
+
+                // Log stock quantity changes
+                if (isset($validated['stock_quantity']) && $oldStock != $validated['stock_quantity']) {
+                    $changes['stock_quantity'] = [
+                        'old' => $oldStock,
+                        'new' => $validated['stock_quantity'],
+                        'change' => $validated['stock_quantity'] - $oldStock,
+                    ];
+                    
+                    activity()
+                        ->causedBy($user)
+                        ->performedOn($product)
+                        ->withProperties([
+                            'product_name' => $product->name,
+                            'old_stock' => $oldStock,
+                            'new_stock' => $validated['stock_quantity'],
+                            'stock_change' => $validated['stock_quantity'] - $oldStock,
+                            'updated_by_name' => $user->name ?? $user->shop_name,
+                            'updated_by_role' => Auth::guard('shop_owner')->check() ? 'Shop Owner' : ($user->role ?? 'Staff'),
+                        ])
+                        ->log("Stock level adjusted: {$product->name} - {$oldStock} → {$validated['stock_quantity']}");
+                }
+
+                // Log price changes (if allowed - already validated above)
+                if (isset($validated['price']) && $oldPrice != $validated['price']) {
+                    $changes['price'] = [
+                        'old' => $oldPrice,
+                        'new' => $validated['price'],
+                    ];
+                    
+                    activity()
+                        ->causedBy($user)
+                        ->performedOn($product)
+                        ->withProperties([
+                            'product_name' => $product->name,
+                            'old_price' => $oldPrice,
+                            'new_price' => $validated['price'],
+                            'updated_by_name' => $user->name ?? $user->shop_name,
+                            'updated_by_role' => Auth::guard('shop_owner')->check() ? 'Shop Owner' : ($user->role ?? 'Staff'),
+                        ])
+                        ->log("Product price updated: {$product->name} - ₱{$oldPrice} → ₱{$validated['price']}");
+                }
 
                 // Update variants if provided
                 if (isset($validated['variants']) && is_array($validated['variants'])) {
@@ -462,6 +509,7 @@ class ProductController extends Controller
                 Log::info('Product updated with variants', [
                     'product_id' => $product->id,
                     'shop_owner_id' => $user->id,
+                    'changes' => $changes,
                 ]);
 
                 return response()->json([

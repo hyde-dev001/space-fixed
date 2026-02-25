@@ -267,32 +267,40 @@ export default function ShopOwnerAuditLogs() {
   // Format detailed description with context
   const formatDetailedDescription = (log: ActivityLog): string => {
     const causerName = log.causer?.name || 'Unknown User';
+    const causerRole = log.causer?.role ? ` (${log.causer.role})` : '';
     const subjectType = formatSubjectType(log.subject_type);
-    const subjectId = log.subject_id || '';
     
     const changes = log.changes || {};
     const changedFields = Object.keys(changes);
     
+    // Get entity name from properties if available
+    const entityName = log.properties?.attributes?.name || 
+                       log.properties?.attributes?.reference || 
+                       log.properties?.attributes?.order_number || 
+                       log.properties?.attributes?.title || '';
+    
+    const entityDisplay = entityName ? ` "${entityName}"` : '';
+    
     switch (log.event) {
       case 'created':
-        return `${causerName} created ${subjectType} #${subjectId}`;
+        return `${causerName}${causerRole} created a new ${subjectType}${entityDisplay}`;
       
       case 'updated':
         if (changedFields.length === 1) {
           const field = changedFields[0].replace(/_/g, ' ');
           const oldVal = formatValue(changes[changedFields[0]].old);
           const newVal = formatValue(changes[changedFields[0]].new);
-          return `${causerName} updated the ${field} of ${subjectType} #${subjectId} from ${oldVal} to ${newVal}`;
+          return `${causerName}${causerRole} updated ${subjectType}${entityDisplay} - Changed ${field} from ${oldVal} to ${newVal}`;
         } else if (changedFields.length > 1) {
-          return `${causerName} updated ${changedFields.length} fields in ${subjectType} #${subjectId}`;
+          return `${causerName}${causerRole} updated ${subjectType}${entityDisplay} - Modified ${changedFields.length} fields`;
         }
-        return `${causerName} updated ${subjectType} #${subjectId}`;
+        return `${causerName}${causerRole} updated ${subjectType}${entityDisplay}`;
       
       case 'deleted':
-        return `${causerName} deleted ${subjectType} #${subjectId}`;
+        return `${causerName}${causerRole} deleted ${subjectType}${entityDisplay}`;
       
       default:
-        return log.description || `${causerName} performed ${log.event} on ${subjectType} #${subjectId}`;
+        return log.description || `${causerName}${causerRole} performed ${log.event} on ${subjectType}${entityDisplay}`;
     }
   };
 
@@ -390,7 +398,7 @@ export default function ShopOwnerAuditLogs() {
         <div class="text-left">
           ${causerHtml}
           <p class="mb-2 text-sm"><strong>Date:</strong> ${new Date(log.created_at).toLocaleString()}</p>
-          <p class="mb-4 text-sm"><strong>Subject:</strong> ${formatSubjectType(log.subject_type)} (ID: ${log.subject_id || 'N/A'})</p>
+          <p class="mb-4 text-sm"><strong>Subject Type:</strong> ${formatSubjectType(log.subject_type)}</p>
           ${diffHtml}
           ${metadataHtml}
         </div>
@@ -413,7 +421,24 @@ export default function ShopOwnerAuditLogs() {
   const formatSubjectType = (type: string | null) => {
     if (!type) return 'N/A';
     const parts = type.split('\\');
-    return parts[parts.length - 1];
+    const typeName = parts[parts.length - 1];
+    
+    // Convert to user-friendly names
+    const friendlyNames: Record<string, string> = {
+      'Product': 'Product',
+      'Expense': 'Expense',
+      'Invoice': 'Invoice',
+      'User': 'Employee',
+      'Employee': 'Employee',
+      'Order': 'Order',
+      'Customer': 'Customer',
+      'RepairService': 'Repair Service',
+      'LeaveRequest': 'Leave Request',
+      'Attendance': 'Attendance',
+      'Payroll': 'Payroll',
+    };
+    
+    return friendlyNames[typeName] || typeName;
   };
 
   return (
@@ -609,17 +634,6 @@ export default function ShopOwnerAuditLogs() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <p className="text-sm text-gray-900">{formatSubjectType(log.subject_type)}</p>
-                            {subjectUrl ? (
-                              <a 
-                                href={subjectUrl} 
-                                className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                                title="View this item"
-                              >
-                                ID: {log.subject_id || 'N/A'} →
-                              </a>
-                            ) : (
-                              <p className="text-xs text-gray-500">ID: {log.subject_id || 'N/A'}</p>
-                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <p className="text-sm text-gray-900">{new Date(log.created_at).toLocaleDateString()}</p>

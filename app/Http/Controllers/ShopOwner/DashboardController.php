@@ -29,6 +29,48 @@ class DashboardController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
+        // Company registration type should access revenue via ERP
+        // Individual registration type gets revenue on shop owner dashboard
+        if ($shopOwner->isCompany()) {
+            return response()->json([
+                'message' => 'Company shop owners should access revenue data through ERP',
+                'registration_type' => 'company',
+                'redirect_to_erp' => true,
+                'revenue' => [
+                    'total' => 0,
+                    'this_month' => 0,
+                    'last_month' => 0,
+                    'growth' => 0,
+                    'average_order' => 0,
+                ],
+                'orders' => [
+                    'total' => 0,
+                    'this_month' => 0,
+                    'last_month' => 0,
+                    'growth' => 0,
+                    'pending' => 0,
+                    'processing' => 0,
+                    'shipped' => 0,
+                    'completed' => 0,
+                ],
+                'products' => [
+                    'total' => 0,
+                    'active' => 0,
+                    'low_stock' => 0,
+                    'out_of_stock' => 0,
+                ],
+                'customers' => [
+                    'total' => 0,
+                    'unique' => 0,
+                    'guests' => 0,
+                    'repeat' => 0,
+                ],
+                'top_products' => [],
+                'recent_orders' => [],
+                'revenue_trend' => [],
+            ]);
+        }
+
         $shopOwnerId = $shopOwner->id;
 
         // Get date ranges
@@ -39,7 +81,7 @@ class DashboardController extends Controller
 
         // Total Revenue (all time) - Include both retail orders and repair services
         $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed'])
+            ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
             ->sum('total_amount');
         
         $repairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
@@ -51,7 +93,7 @@ class DashboardController extends Controller
 
         // This Month Revenue - Include both retail and repair
         $thisMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed'])
+            ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
             ->whereMonth('created_at', Carbon::now()->month)
             ->whereYear('created_at', Carbon::now()->year)
             ->sum('total_amount');
@@ -67,7 +109,7 @@ class DashboardController extends Controller
 
         // Last Month Revenue - Include both retail and repair
         $lastMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed'])
+            ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
             ->whereMonth('created_at', Carbon::now()->subMonth()->month)
             ->whereYear('created_at', Carbon::now()->subMonth()->year)
             ->sum('total_amount');
@@ -167,7 +209,7 @@ class DashboardController extends Controller
             ->selectRaw('SUM(subtotal) as total_revenue')
             ->whereHas('order', function($query) use ($shopOwnerId) {
                 $query->where('shop_owner_id', $shopOwnerId)
-                    ->whereIn('status', ['processing', 'shipped', 'completed'])
+                    ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
                     ->where('created_at', '>=', Carbon::now()->subDays(30));
             })
             ->groupBy('product_id', 'product_name', 'product_slug', 'product_image')
@@ -213,7 +255,7 @@ class DashboardController extends Controller
             $date = Carbon::now()->subDays($i);
             
             $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', ['processing', 'shipped', 'completed'])
+                ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
                 ->whereDate('created_at', $date)
                 ->sum('total_amount');
             

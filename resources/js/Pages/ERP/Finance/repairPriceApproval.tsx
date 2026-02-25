@@ -227,7 +227,7 @@ export default function RepairPriceApproval() {
   useEffect(() => {
     // Allow access for Manager (full access) and Finance role
     const hasRoleAccess = userRole === 'Manager' || userRole === 'Finance';
-    const hasPermissionAccess = hasPermission(auth, 'view-pricing') || hasPermission(auth, 'edit-pricing') || hasPermission(auth, 'manage-service-pricing') || hasPermission(auth, 'manage-pricing');
+    const hasPermissionAccess = hasPermission(auth, 'access-repair-price-approval');
     
     if (!hasRoleAccess && !hasPermissionAccess) {
       Swal.fire({

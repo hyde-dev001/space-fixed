@@ -6,6 +6,7 @@ import axios from "axios";
 interface Message {
   id: number;
   sender: "customer" | "repairer";
+  senderType?: string;
   senderName: string;
   content: string;
   timestamp: string;
@@ -133,21 +134,95 @@ export default function RepairerSupport() {
     return `${days} days`;
   };
 
+  const resolveAttachmentUrl = (path: string) => {
+    if (!path) return path;
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('blob:')) {
+      return path;
+    }
+    if (path.startsWith('/')) {
+      return path;
+    }
+    if (path.startsWith('storage/')) {
+      return `/${path}`;
+    }
+    return `/storage/${path}`;
+  };
+
+  const parseOrderProducts = (content: string, itemsSummary: string): Array<{ name: string; quantity: string; unitPrice?: string }> => {
+    const productsBlockMatch = content.match(/\*\*Products:\*\*\s*([\s\S]*?)(?=\n\*\*|$)/);
+
+    if (productsBlockMatch?.[1]) {
+      return productsBlockMatch[1]
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('-'))
+        .map((line) => {
+          const cleanedLine = line.replace(/^-\s*/, '').trim();
+          const productMatch = cleanedLine.match(/^(.*?)\s+x(\d+)(?:\s+\(₱?([\d,]+(?:\.\d{1,2})?)\))?$/);
+
+          if (!productMatch) {
+            return {
+              name: cleanedLine,
+              quantity: '1',
+            };
+          }
+
+          return {
+            name: productMatch[1].trim(),
+            quantity: productMatch[2].trim(),
+            unitPrice: productMatch[3]?.trim(),
+          };
+        });
+    }
+
+    if (!itemsSummary) return [];
+
+    return itemsSummary
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const summaryMatch = item.match(/^(.*?)\s+x(\d+)$/);
+        if (!summaryMatch) {
+          return {
+            name: item,
+            quantity: '1',
+          };
+        }
+        return {
+          name: summaryMatch[1].trim(),
+          quantity: summaryMatch[2].trim(),
+        };
+      });
+  };
+
+  const renderAvatar = (label: string, tone: 'customer' | 'repairer') => {
+    const classes = tone === 'repairer'
+      ? 'bg-gray-900 text-white'
+      : 'bg-blue-100 text-blue-700';
+
+    return (
+      <div className={`w-7 h-7 rounded-full ${classes} flex items-center justify-center text-[11px] font-semibold`}>
+        {label}
+      </div>
+    );
+  };
+
   useEffect(() => {
     if (selectedTicketId) {
-      fetchConversationMessages(selectedTicketId);
-      
+      fetchConversationMessages(selectedTicketId, true);
+
       // Set up auto-refresh to poll for new messages every 3 seconds
       const pollInterval = setInterval(() => {
-        fetchConversationMessages(selectedTicketId);
+        fetchConversationMessages(selectedTicketId, false);
       }, 3000);
-      
+
       // Clean up interval on unmount or when conversation changes
       return () => clearInterval(pollInterval);
     }
   }, [selectedTicketId]);
 
-  const fetchConversationMessages = async (conversationId: number) => {
+  const fetchConversationMessages = async (conversationId: number, scrollAfterLoad = false) => {
     try {
       const response = await axios.get(`/api/repairer/conversations/${conversationId}`);
       const conv = response.data;
@@ -165,6 +240,7 @@ export default function RepairerSupport() {
       const messages = (Array.isArray(conv.messages) ? conv.messages : []).map((msg: any) => ({
         id: msg.id,
         sender: msg.sender_type === "customer" ? "customer" : "repairer",
+        senderType: msg.sender_type,
         senderName: msg.sender_type === "customer" ? (conv.customer?.name || "Customer") : "You",
         content: msg.content || "",
         timestamp: new Date(msg.created_at).toLocaleTimeString("en-US", {
@@ -180,6 +256,12 @@ export default function RepairerSupport() {
           ticket.id === conversationId ? { ...ticket, messages } : ticket
         )
       );
+
+      if (scrollAfterLoad) {
+        setTimeout(() => {
+          scrollToBottom();
+        }, 0);
+      }
     } catch (error) {
       console.error("Error fetching messages:", error);
       // Set empty messages on error
@@ -196,10 +278,6 @@ export default function RepairerSupport() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [selectedTicket?.messages]);
 
   const handleSendMessage = async () => {
     if ((newMessage.trim() || selectedImages.length > 0) && selectedTicket) {
@@ -520,47 +598,217 @@ export default function RepairerSupport() {
                 ) : (
                   <>
                     {selectedTicket.messages.map((message) => {
-                    // System messages (order notifications)
-                    if (message.sender === 'system' || (message as any).sender_type === 'system') {
-                      return (
-                        <div key={message.id} className="flex justify-center my-4">
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 max-w-md text-center shadow-sm">
-                            <p className="text-xs text-blue-800 whitespace-pre-line leading-relaxed">
-                              {message.content}
-                            </p>
-                            <span className="text-xs text-blue-400 mt-2 block">
-                              {message.timestamp}
-                            </span>
+                    const customerName = selectedTicket.customerName || "Customer";
+                    const customerAvatar = selectedTicket.customerAvatar || getInitials(customerName);
+                    const repairerAvatar = getInitials("You");
+
+                    // System messages (order/repair notifications)
+                    if (message.senderType === 'system') {
+                      const content = message.content || '';
+                      const isRepairMessage = content.includes('Repair') || content.includes('Type:**');
+                      const isOrderMessage = content.includes('New Order Placed') || content.includes('Order Number:');
+
+                      const typeMatch = content.match(/\*\*Type:\*\*\s*(.+?)(?=\*\*|$)/);
+                      const deliveryMatch = content.match(/\*\*Delivery:\*\*\s*(.+?)(?=\*\*|$)/);
+                      const statusMatch = content.match(/\*\*Status:\*\*\s*(.+?)(?=\*\*|$)/);
+
+                      const repairType = typeMatch ? typeMatch[1].trim() : 'Repair';
+                      const deliveryType = deliveryMatch ? deliveryMatch[1].trim() : '';
+                      const status = statusMatch ? statusMatch[1].trim() : '';
+
+                      const orderNumberMatch = content.match(/\*\*Order Number:\*\*\s*(.+?)(?=\n|$)/);
+                      const itemsMatch = content.match(/\*\*Items:\*\*\s*(.+?)(?=\n|$)/);
+                      const totalMatch = content.match(/\*\*Total:\*\*\s*₱?(.+?)(?=\n|$)/);
+                      const orderStatusMatch = content.match(/\*\*Status:\*\*\s*(.+?)(?=\n|$)/);
+
+                      const orderNumber = orderNumberMatch ? orderNumberMatch[1].trim() : '';
+                      const items = itemsMatch ? itemsMatch[1].trim() : '';
+                      const total = totalMatch ? totalMatch[1].trim() : '';
+                      const orderStatus = orderStatusMatch ? orderStatusMatch[1].trim() : '';
+                      const orderProducts = parseOrderProducts(content, items);
+                      const orderProductImages = (message.images || []).filter((img) => typeof img === 'string' && img.length > 0);
+
+                      const getOrderStatusColor = (value: string) => {
+                        const normalized = value.toLowerCase();
+                        if (normalized.includes('pending')) return 'bg-yellow-100 text-yellow-800';
+                        if (normalized.includes('processing')) return 'bg-blue-100 text-blue-800';
+                        if (normalized.includes('shipped')) return 'bg-purple-100 text-purple-800';
+                        if (normalized.includes('delivered')) return 'bg-green-100 text-green-800';
+                        if (normalized.includes('cancel')) return 'bg-red-100 text-red-800';
+                        return 'bg-gray-100 text-gray-800';
+                      };
+
+                      if (isOrderMessage) {
+                        return (
+                          <div key={message.id} className="flex justify-end my-6">
+                            <div className="flex items-start gap-3 flex-row-reverse">
+                              {renderAvatar(repairerAvatar, 'repairer')}
+                            <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1">
+                                  <h3 className="text-base font-semibold text-gray-900 mb-1">New Order Placed</h3>
+                                  <p className="text-xs text-gray-500">{message.timestamp}</p>
+                                </div>
+                                {orderStatus && (
+                                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getOrderStatusColor(orderStatus)}`}>
+                                    {orderStatus}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                {orderNumber && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Order #:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{orderNumber}</span>
+                                  </div>
+                                )}
+
+                                {orderProducts.length > 0 && (
+                                  <div className="space-y-2">
+                                    <span className="text-gray-500 text-xs font-medium">Products:</span>
+                                    <div className="space-y-2">
+                                      {orderProducts.map((product, productIndex) => {
+                                        const productImage = orderProductImages[productIndex];
+
+                                        return (
+                                          <div key={`${product.name}-${productIndex}`} className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-100">
+                                            {productImage ? (
+                                              <img
+                                                src={resolveAttachmentUrl(productImage)}
+                                                alt={product.name}
+                                                className="w-12 h-12 rounded-md object-cover"
+                                              />
+                                            ) : (
+                                              <div className="w-12 h-12 rounded-md bg-gray-100" />
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                                              <p className="text-xs text-gray-500">
+                                                Qty: {product.quantity}
+                                                {product.unitPrice ? ` • ₱${product.unitPrice}` : ''}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {items && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Items:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{items}</span>
+                                  </div>
+                                )}
+
+                                {total && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Total:</span>
+                                    <span className="text-sm text-gray-900 font-semibold">₱{total}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="bg-blue-50 rounded-lg px-3 py-2.5">
+                                <p className="text-xs text-blue-900 leading-relaxed">
+                                  Thank you for your order. We will notify you once your items are ready for shipment.
+                                </p>
+                              </div>
+                            </div>
+                            </div>
                           </div>
-                        </div>
-                      );
+                        );
+                      }
+
+                      if (isRepairMessage) {
+                        return (
+                          <div key={message.id} className="flex justify-end my-6">
+                            <div className="flex items-start gap-3 flex-row-reverse">
+                              {renderAvatar(repairerAvatar, 'repairer')}
+                            <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1">
+                                  <h3 className="text-base font-semibold text-gray-900 mb-1">Repair Order Accepted</h3>
+                                  <p className="text-xs text-gray-500">{message.timestamp}</p>
+                                </div>
+                                {status && (
+                                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-800">
+                                    {status}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                <div className="flex items-start gap-3">
+                                  <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Service:</span>
+                                  <span className="text-sm text-gray-900 font-medium">{repairType}</span>
+                                </div>
+                                {deliveryType && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Delivery:</span>
+                                    <span className="text-sm text-gray-900">{deliveryType}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="bg-blue-50 rounded-lg px-3 py-2.5">
+                                <p className="text-xs text-blue-900 leading-relaxed">
+                                  We will keep you updated on the progress of your repair.
+                                </p>
+                              </div>
+                            </div>
+                            </div>
+                          </div>
+                        );
+                      }
                     }
-                    
+
                     // Regular messages
                     return (
                       <div
                         key={message.id}
-                        className={`flex flex-col ${message.sender === "repairer" ? "items-end" : "items-start"}`}
+                        className={`flex ${message.sender === "repairer" ? "justify-end" : "justify-start"}`}
                       >
-                        {message.images && message.images.length > 0 ? (
-                          <div>
-                            <div className="flex flex-wrap gap-2 mb-2">
-                              {message.images.map((img, idx) => (
-                                <img
-                                  key={idx}
-                                  src={img}
-                                  alt={`Attachment ${idx + 1}`}
-                                  className="rounded-lg max-w-37.5 max-h-37.5 object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => setFullscreenImage(img)}
-                                />
-                              ))}
-                            </div>
-                            {message.content && (
+                        <div className={`flex items-start gap-2 ${message.sender === "repairer" ? "flex-row-reverse" : ""}`}>
+                          {message.sender === "repairer"
+                            ? renderAvatar(repairerAvatar, 'repairer')
+                            : renderAvatar(customerAvatar, 'customer')}
+                          <div className={`flex flex-col ${message.sender === "repairer" ? "items-end" : "items-start"}`}>
+                            {message.images && message.images.length > 0 ? (
+                              <div>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                  {message.images.map((img, idx) => (
+                                    <img
+                                      key={idx}
+                                      src={resolveAttachmentUrl(img)}
+                                      alt={`Attachment ${idx + 1}`}
+                                      className="rounded-lg max-w-[150px] max-h-[150px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={() => setFullscreenImage(resolveAttachmentUrl(img))}
+                                    />
+                                  ))}
+                                </div>
+                                {message.content && (
+                                  <div
+                                    className={
+                                      message.sender === "repairer"
+                                        ? "bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm"
+                                        : "bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm"
+                                    }
+                                  >
+                                    <p className="wrap-break-word text-sm leading-relaxed">
+                                      {message.content}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
                               <div
-                                className={`${
+                                className={`max-w-xs lg:max-w-md xl:max-w-lg ${
                                   message.sender === "repairer"
-                                    ? "bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm"
-                                    : "bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm"
+                                    ? "bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
+                                    : "bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
                                 }`}
                               >
                                 <p className="wrap-break-word text-sm leading-relaxed">
@@ -568,24 +816,12 @@ export default function RepairerSupport() {
                                 </p>
                               </div>
                             )}
+                            <div className={`mt-2 ${message.sender === "repairer" ? "text-right" : "text-left"}`}>
+                              <span className={`text-[11px] ${message.sender === "repairer" ? "text-gray-400" : "text-gray-500"}`}>
+                                {message.timestamp}
+                              </span>
+                            </div>
                           </div>
-                        ) : (
-                          <div
-                            className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                              message.sender === "repairer"
-                                ? "bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
-                                : "bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
-                            }`}
-                          >
-                            <p className="wrap-break-word text-sm leading-relaxed">
-                              {message.content}
-                            </p>
-                          </div>
-                        )}
-                        <div className={`mt-2 ${message.sender === "repairer" ? "text-right" : "text-left"}`}>
-                          <span className={`text-[11px] ${message.sender === "repairer" ? "text-gray-400" : "text-gray-500"}`}>
-                            {message.timestamp}
-                          </span>
                         </div>
                       </div>
                     );

@@ -408,6 +408,20 @@ class PriceChangeRequestController extends Controller
             'finance_rejection_reason' => $request->reason,
         ]);
 
+        // Activity log with rejection reason
+        activity()
+            ->causedBy(Auth::user())
+            ->performedOn($priceChangeRequest)
+            ->withProperties([
+                'product_name' => $priceChangeRequest->product_name,
+                'current_price' => $priceChangeRequest->current_price,
+                'proposed_price' => $priceChangeRequest->proposed_price,
+                'rejection_reason' => $request->reason,
+                'rejected_by_name' => Auth::user()->name,
+                'rejected_by_role' => Auth::user()->role ?? 'Finance Staff',
+            ])
+            ->log('Product price change rejected by Finance');
+
         $shopOwnerId = $priceChangeRequest->shop_owner_id;
         $metrics = $this->calculateMetrics($shopOwnerId, 'finance');
 
@@ -470,6 +484,7 @@ class PriceChangeRequestController extends Controller
         try {
             // Update product price
             $product = Product::findOrFail($priceChangeRequest->product_id);
+            $oldPrice = $product->price;
             $product->update([
                 'price' => $priceChangeRequest->proposed_price,
             ]);
@@ -480,6 +495,20 @@ class PriceChangeRequestController extends Controller
                 'owner_reviewed_by' => $shopOwner->id,
                 'owner_reviewed_at' => now(),
             ]);
+
+            // Activity log for final approval and price change application
+            activity()
+                ->causedBy($shopOwner)
+                ->performedOn($product)
+                ->withProperties([
+                    'product_name' => $product->name,
+                    'old_price' => $oldPrice,
+                    'new_price' => $priceChangeRequest->proposed_price,
+                    'price_change_request_id' => $priceChangeRequest->id,
+                    'approved_by_name' => $shopOwner->name,
+                    'approval_level' => 'Shop Owner (Final)',
+                ])
+                ->log('Product price change approved and applied by Shop Owner');
 
             DB::commit();
 
@@ -558,6 +587,20 @@ class PriceChangeRequestController extends Controller
             'owner_reviewed_at' => now(),
             'owner_rejection_reason' => $request->reason,
         ]);
+
+        // Activity log for final rejection
+        activity()
+            ->causedBy($shopOwner)
+            ->performedOn($priceChangeRequest)
+            ->withProperties([
+                'product_name' => $priceChangeRequest->product_name,
+                'current_price' => $priceChangeRequest->current_price,
+                'proposed_price' => $priceChangeRequest->proposed_price,
+                'rejection_reason' => $request->reason,
+                'rejected_by_name' => $shopOwner->name,
+                'rejection_level' => 'Shop Owner (Final)',
+            ])
+            ->log('Product price change rejected by Shop Owner (Final Decision)');
 
         $metrics = $this->calculateMetrics($shopOwner->id, 'shop_owner');
 

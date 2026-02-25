@@ -56,7 +56,7 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
  */
-Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|view-attendance|view-payroll', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-view-payslip', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -161,7 +161,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
     // ============================================
     // PAYSLIP APPROVALS (Finance approval before HR release)
     // ============================================
-    Route::prefix('payslip-approvals')->middleware(['permission:approve-payroll'])->group(function () {
+    Route::prefix('payslip-approvals')->middleware(['permission:access-payslip-approval'])->group(function () {
         Route::get('/', [PayrollController::class, 'getPayslipsForApproval'])->name('hr.payslip_approval.index');
         Route::get('/{id}', [PayrollController::class, 'getPayslipForApproval'])->name('hr.payslip_approval.show');
         Route::post('/{id}/approve', [PayrollController::class, 'approvePayslip'])->name('hr.payslip_approval.approve');
@@ -277,10 +277,11 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:view-employees|vie
 });
 
 /**
- * Staff/Manager/Repairer Self-Service Routes
- * Protected by: STAFF, MANAGER, REPAIRER, shop_owner roles
+ * Staff Self-Service Routes - Attendance, Leave, Overtime
+ * Accessible to ALL authenticated employees (no role restriction)
+ * All employees need to clock in/out regardless of their role
  */
-Route::prefix('api/staff')->middleware(['auth:user', 'old_role:Staff|Manager|Shop Owner|Repairer'])->group(function () {
+Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
     // ============================================
     // SELF-SERVICE ATTENDANCE
     // ============================================

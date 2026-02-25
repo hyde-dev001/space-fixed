@@ -344,6 +344,11 @@ export const EmployeeManagement: React.FC<{
   const pageProps = usePage().props as any;
   const flash = pageProps.flash;
   
+  // Get shop owner data from auth for business type filtering
+  const auth = pageProps.auth;
+  const shopOwner = auth?.shop_owner;
+  const businessType = shopOwner?.business_type?.toLowerCase(); // 'retail', 'repair', 'both'
+  
   // Check for flash data with employee credentials
   const success = pageProps.success || flash?.success;
   const temporary_password = pageProps.temporary_password || flash?.temporary_password;
@@ -1185,20 +1190,24 @@ export const EmployeeManagement: React.FC<{
       return;
     }
 
-    // Show confirmation dialog before closing modal
-    const result = await Swal.fire({
-      title: 'Add Employee',
-      text: `Are you sure you want to add ${addEmployeeForm.firstName} ${addEmployeeForm.lastName} as an employee in ${addEmployeeForm.department}?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#3085d6',
-      cancelButtonColor: '#d33',
-      confirmButtonText: 'Yes, add it!'
-    });
+    // Close modal FIRST to prevent blocking navigation
+    setIsAddEmployeeOpen(false);
+    setIsAdding(true);
 
-    if (result.isConfirmed) {
-      setIsAddEmployeeOpen(false);
-      setIsAdding(true);
+    // Show confirmation dialog AFTER closing modal with small delay
+    setTimeout(async () => {
+      const result = await Swal.fire({
+        title: 'Add Employee',
+        text: `Are you sure you want to add ${addEmployeeForm.firstName} ${addEmployeeForm.lastName} as an employee in ${addEmployeeForm.department}?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, add it!'
+      });
+
+      if (result.isConfirmed) {
+        setIsAdding(true);
         
         // Use HR API endpoint with user guard authentication
         try {
@@ -1219,6 +1228,7 @@ export const EmployeeManagement: React.FC<{
               phone: addEmployeeForm.phone,
               position: addEmployeeForm.position || 'General Staff',
               department: addEmployeeForm.department || 'General',
+              role: addEmployeeForm.department || 'Staff',
               salary: parseFloat(addEmployeeForm.salary) || 0,
               hireDate: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
               location: addEmployeeForm.location,
@@ -1313,7 +1323,10 @@ export const EmployeeManagement: React.FC<{
             confirmButtonColor: '#ef4444'
           });
         }
-    }
+      } else {
+        setIsAdding(false);
+      }
+    }, 100);
   };
 
   return (
@@ -2331,8 +2344,8 @@ export const EmployeeManagement: React.FC<{
                       </div>
                     )}
 
-                    {/* Repairer Module */}
-                    {availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
+                    {/* Repairer Module - Only show if business type is not retail-only */}
+                    {businessType !== 'retail' && availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                         <div className="flex">
                           <button

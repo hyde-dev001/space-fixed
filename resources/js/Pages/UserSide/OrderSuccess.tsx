@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import Navigation from './Navigation';
 
 interface Order {
@@ -14,6 +14,16 @@ interface Order {
 export default function OrderSuccess() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const redirectTimer = window.setTimeout(() => {
+      router.visit('/my-orders');
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(redirectTimer);
+    };
+  }, []);
 
   useEffect(() => {
     // Get pending order ID from session storage

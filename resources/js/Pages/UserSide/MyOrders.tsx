@@ -30,6 +30,7 @@ type Order = {
   shipping_address?: string;
   tracking_number?: string;
   carrier_company?: string;
+  carrier_name?: string;
   tracking_link?: string;
   eta?: string;
   pickup_enabled?: boolean;
@@ -678,6 +679,45 @@ const MyOrders: React.FC = () => {
                         </div>
                       </div>
 
+                      {(order.status === 'shipped' || order.status === 'to_ship') && (
+                        <div className="mt-6 pt-6 border-t border-gray-200">
+                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
+                              <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Company </p>
+                              <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Name </p>
+                              <p className="text-sm text-black font-medium">{order.carrier_name || '-'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number </p>
+                              <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
+                            </div>
+                            <div className="md:col-span-2">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
+                              {order.tracking_link ? (
+                                <a
+                                  href={order.tracking_link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sm text-black underline break-all"
+                                >
+                                  {order.tracking_link}
+                                </a>
+                              ) : (
+                                <p className="text-sm text-black font-medium">-</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Order Actions */}
                       <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
                         {order.status === 'pending' && (
@@ -706,7 +746,7 @@ const MyOrders: React.FC = () => {
                             }`}
                             title={order.pickup_enabled ? 'Confirm you have received your order' : 'Waiting for shop to activate receive'}
                           >
-                            {order.pickup_enabled ? 'CONFIRM RECEIVED' : 'AWAITING ACTIVATION'}
+                            {order.pickup_enabled ? 'RECEIVED' : 'RECEIVED'}
                           </button>
                         )}
                         {order.status === 'delivered' && (

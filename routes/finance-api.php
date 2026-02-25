@@ -24,7 +24,7 @@ use App\Http\Controllers\Api\RepairServiceController;
  * Finance Module Routes - Audit Logs (requires view-finance-audit-logs permission)
  * Restricted to users with audit log permissions for security/compliance
  */
-Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-finance-audit-logs', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-audit-logs', 'shop.isolation'])->group(function () {
     // ============================================
     // AUDIT LOGS (permission: view-finance-audit-logs)
     // ============================================
@@ -40,7 +40,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-f
  * Finance Module Routes - General Operations
  * Accessible by users with any Finance permissions (including pricing approvals)
  */
-Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-expenses|view-invoices|view-finance-audit-logs|view-pricing-approvals|approve-shoe-pricing|approve-repair-pricing', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval', 'shop.isolation'])->group(function () {
 
     // ============================================
     // EXPENSES
@@ -72,8 +72,8 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-e
         Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.invoices.update');
         Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.invoices.destroy');
         
-        // Post to ledger (requires approve-expenses permission)
-        Route::middleware('permission:approve-expenses')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.invoices.post');
+        // Post to ledger (requires access-finance-invoices permission)
+        Route::middleware('permission:access-finance-invoices')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.invoices.post');
     });
 
     // ============================================
@@ -106,7 +106,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:view-e
  * These routes map to the same controllers as the main finance routes
  * but use the /api/finance/session prefix (used by frontend code)
  */
-Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permission:view-expenses|view-invoices|view-finance-audit-logs', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices', 'shop.isolation'])->group(function () {
     
     // ============================================
     // EXPENSES (Session-based)
@@ -119,8 +119,8 @@ Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permissio
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.session.expenses.destroy');
         Route::get('/{id}/receipt/download', [ExpenseController::class, 'downloadReceipt'])->name('finance.session.expenses.download');
         
-        // Approval actions (requires approve-expenses permission)
-        Route::middleware('permission:approve-expenses')->group(function () {
+        // Approval actions (requires access-finance-expenses permission)
+        Route::middleware('permission:access-finance-expenses')->group(function () {
             Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.session.expenses.approve');
             Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.session.expenses.reject');
             Route::post('/{id}/post', [ExpenseController::class, 'post'])->name('finance.session.expenses.post');
@@ -138,7 +138,7 @@ Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permissio
         Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.session.invoices.update');
         Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.session.invoices.destroy');
         
-        // Post to ledger (requires approve-expenses permission)
-        Route::middleware('permission:approve-expenses')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.session.invoices.post');
+        // Post to ledger (requires access-finance-invoices permission)
+        Route::middleware('permission:access-finance-invoices')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.session.invoices.post');
     });
 });

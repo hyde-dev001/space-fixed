@@ -532,7 +532,7 @@ const repairItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
       </svg>
     ),
-    name: "Repair Support",
+    name: "Chat",
     route: "erp.repairer.support",
   },
   {
@@ -821,41 +821,50 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Filter finance items based on user permissions
   const getFilteredFinanceItems = () => {
-    return financeItems.filter((item) => {
-      // Dashboard - show if user has any finance permission
+    return financeItems.map(item => ({ ...item })).filter((item) => {
+      // Dashboard - check simplified permission
       if (item.route === "finance.dashboard") {
-        return hasFinanceAccess();
+        return permissions.includes('access-finance-dashboard');
       }
       
-      // Invoices - requires invoice permissions
+      // Invoices - check simplified permission
       if (item.route === "finance.index" && item.params?.section === "invoice-generation") {
-        return permissions.includes('view-invoices') || permissions.includes('create-invoices') || 
-               permissions.includes('edit-invoices') || permissions.includes('delete-invoices') ||
-               permissions.includes('send-invoices');
+        return permissions.includes('access-finance-invoices');
       }
       
-      // Expenses - requires expense permissions
+      // Expenses - check simplified permission
       if (item.route === "finance.index" && item.params?.section === "expense-tracking") {
-        return permissions.includes('view-expenses') || permissions.includes('create-expenses') || 
-               permissions.includes('edit-expenses') || permissions.includes('delete-expenses') ||
-               permissions.includes('approve-expenses');
+        return permissions.includes('access-finance-expenses');
       }
       
-      // Pricing Approvals - requires pricing permissions
+      // Pricing Approvals - check simplified permissions and filter submenu
       if (item.name === "Pricing Approvals") {
-        return permissions.includes('view-pricing-approvals') || 
-               permissions.includes('approve-repair-pricing') || permissions.includes('approve-shoe-pricing') ||
-               permissions.includes('view-repair-pricing') || permissions.includes('view-shoe-pricing');
+        const hasAnyPricingPermission = permissions.includes('access-repair-price-approval') || permissions.includes('access-shoe-price-approval');
+        
+        if (hasAnyPricingPermission && item.subItems) {
+          // Filter submenu items based on specific permissions
+          item.subItems = item.subItems.filter((subItem) => {
+            if (subItem.name === "Repair Pricing Approval") {
+              return permissions.includes('access-repair-price-approval');
+            }
+            if (subItem.name === "Shoe Pricing Approval") {
+              return permissions.includes('access-shoe-price-approval');
+            }
+            return false;
+          });
+        }
+        
+        return hasAnyPricingPermission;
       }
       
-      // Refund Approval - requires approval permissions
+      // Refund Approval - check simplified permission
       if (item.route === "finance.index" && item.params?.section === "refund-approvals") {
-        return permissions.includes('approve-expenses') || permissions.includes('view-invoices');
+        return permissions.includes('access-refund-approval');
       }
       
-      // Payslip Approvals - requires payroll approval permissions
+      // Payslip Approvals - check simplified permission
       if (item.route === "finance.index" && item.params?.section === "payslip-approvals") {
-        return permissions.includes('approve-payroll') || permissions.includes('view-payroll');
+        return permissions.includes('access-payslip-approval');
       }
       
       // Don't show items without matching permissions
@@ -866,26 +875,32 @@ const AppSidebar_ERP: React.FC = () => {
   // Check if user has any finance permissions
   const hasFinanceAccess = () => {
     const financePermissions = [
-      'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
-      'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
-      'view-pricing-approvals', 'approve-repair-pricing', 'approve-shoe-pricing',
-      'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
-      'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts'
+      'access-finance-dashboard',
+      'access-finance-expenses',
+      'access-finance-invoices',
+      'access-approval-workflow',
+      'access-payslip-approval',
+      'access-refund-approval',
+      'access-repair-price-approval',
+      'access-shoe-price-approval',
     ];
     return financePermissions.some(perm => permissions.includes(perm));
   };
 
-  // Check if user has HR role or HR-specific permissions (not just view-payroll which Finance has for approval)
+  // Check if user has HR role or HR-specific permissions
   const hasHRAccess = () => {
     // Check for HR role first
     if (roles.includes('HR')) return true;
     
-    // Or check for HR-specific permissions (excluding view-payroll and approve-payroll which Finance has)
+    // Or check for HR-specific simplified permissions
     const hrSpecificPermissions = [
-      'view-employees', 'create-employees', 'edit-employees', 'delete-employees', 'approve-employee-changes',
-      'view-attendance', 'edit-attendance', 'approve-timeoff',
-      'process-payroll', 'generate-payslip',
-      'view-hr-reports', 'export-hr-reports', 'view-hr-audit-logs'
+      'access-hr-dashboard',
+      'access-employee-directory',
+      'access-attendance-records',
+      'access-leave-approvals',
+      'access-overtime-approvals',
+      'access-payslip-generation',
+      'access-view-payslip',
     ];
     return hrSpecificPermissions.some(perm => permissions.includes(perm));
   };
@@ -893,11 +908,11 @@ const AppSidebar_ERP: React.FC = () => {
   // Check if user has any CRM permissions
   const hasCRMAccess = () => {
     const crmPermissions = [
-      'view-customers', 'create-customers', 'edit-customers', 'delete-customers',
-      'view-leads', 'create-leads', 'edit-leads', 'convert-leads', 'assign-leads',
-      'view-opportunities', 'create-opportunities', 'edit-opportunities', 'close-opportunities',
-      'view-crm-reports', 'export-crm-reports', 'view-crm-audit-logs',
-      'view-crm-conversations', 'send-crm-messages', 'transfer-crm-conversations', 'update-crm-conversation-status'
+      'access-crm-dashboard',
+      'access-crm-customers',
+      'access-customer-support',
+      'access-customer-reviews',
+      'access-crm-messages',
     ];
     return crmPermissions.some(perm => permissions.includes(perm));
   };
@@ -912,30 +927,82 @@ const AppSidebar_ERP: React.FC = () => {
     return roles.includes('Repairer') || role === "REPAIRER" || role === "Repairer";
   };
 
+  // Check if user has Inventory Manager role or Manager with inventory permissions
+  const hasInventoryAccess = () => {
+    // Check for Inventory Manager role
+    if (roles.includes('Inventory Manager')) return true;
+    
+    // Or Manager role (already has access through manager section)
+    if (role === "MANAGER" || roles.includes('Manager')) return true;
+    
+    // Or check for inventory-specific permissions
+    const inventoryPermissions = [
+      'view-inventory',
+      'access-inventory-dashboard',
+      'access-product-inventory',
+      'access-stock-movement',
+      'access-suppliers-management',
+      'access-upload-inventory',
+    ];
+    return inventoryPermissions.some(perm => permissions.includes(perm));
+  };
+
   // Filter HR items based on user permissions
   const getFilteredHRItems = () => {
-    return navItems.filter((item) => {
-      // Dashboard - show if user has any HR permission
+    return navItems.map(item => ({ ...item })).filter((item) => {
+      // Dashboard - check simplified permission
       if (item.route === "erp.hr" && item.params?.section === "overview") {
-        return hasHRAccess();
+        return permissions.includes('access-hr-dashboard');
       }
       
-      // Employees - requires employee management permissions
+      // Employees - check simplified permission
       if (item.route === "erp.hr" && item.params?.section === "employees") {
-        return permissions.includes('view-employees') || permissions.includes('create-employees') || 
-               permissions.includes('edit-employees') || permissions.includes('delete-employees') ||
-               permissions.includes('approve-employee-changes');
+        return permissions.includes('access-employee-directory');
       }
       
-      // Attendance Monitoring - requires attendance permissions
+      // Attendance Monitoring - check simplified permissions and filter submenu
       if (item.name === "Attendance Monitoring") {
-        return permissions.includes('view-attendance') || permissions.includes('edit-attendance') || 
-               permissions.includes('approve-timeoff');
+        const hasAnyAttendancePermission = permissions.includes('access-attendance-records') || 
+               permissions.includes('access-leave-approvals') || 
+               permissions.includes('access-overtime-approvals');
+        
+        if (hasAnyAttendancePermission && item.subItems) {
+          // Filter submenu items based on specific permissions
+          item.subItems = item.subItems.filter((subItem) => {
+            if (subItem.name === "View Attendance") {
+              return permissions.includes('access-attendance-records');
+            }
+            if (subItem.name === "Leave Requests") {
+              return permissions.includes('access-leave-approvals');
+            }
+            if (subItem.name === "Overtime Requests") {
+              return permissions.includes('access-overtime-approvals');
+            }
+            return false;
+          });
+        }
+        
+        return hasAnyAttendancePermission;
       }
       
-      // Payroll - requires HR role or payroll processing permissions (not just view-payroll which Finance has)
+      // Payroll - check simplified permissions and filter submenu
       if (item.name === "Payroll") {
-        return roles.includes('HR') || permissions.includes('process-payroll') || permissions.includes('generate-payslip');
+        const hasAnyPayrollPermission = permissions.includes('access-payslip-generation') || permissions.includes('access-view-payslip');
+        
+        if (hasAnyPayrollPermission && item.subItems) {
+          // Filter submenu items based on specific permissions
+          item.subItems = item.subItems.filter((subItem) => {
+            if (subItem.name === "View Slip") {
+              return permissions.includes('access-view-payslip');
+            }
+            if (subItem.name === "Generate Slip") {
+              return permissions.includes('access-payslip-generation');
+            }
+            return false;
+          });
+        }
+        
+        return hasAnyPayrollPermission;
       }
       
       // Don't show items without matching permissions
@@ -946,31 +1013,29 @@ const AppSidebar_ERP: React.FC = () => {
   // Filter staff items based on user permissions
   const getFilteredStaffItems = () => {
     return staffItems.filter((item) => {
-      // Dashboard - only for Staff role
+      // Dashboard - check simplified permission
       if (item.route === "erp.staff.dashboard") {
-        return roles.includes('Staff');
+        return permissions.includes('access-staff-dashboard');
       }
       
-      // Job Orders - requires job order permissions
+      // Job Orders - check simplified permission
       if (item.route === "erp.staff.job-orders") {
-        return permissions.includes('view-job-orders') || permissions.includes('create-job-orders') || 
-               permissions.includes('edit-job-orders') || permissions.includes('complete-job-orders');
+        return permissions.includes('access-staff-job-orders');
       }
       
-      // Products - requires product permissions
+      // Products - check simplified permission
       if (item.route === "erp.staff.products") {
-        return permissions.includes('view-products') || permissions.includes('create-products') || 
-               permissions.includes('edit-products') || permissions.includes('delete-products');
+        return permissions.includes('access-product-upload-staff') || permissions.includes('access-product-management');
       }
       
-      // Shoe Pricing - requires Staff role AND pricing permissions
+      // Shoe Pricing - check simplified permission
       if (item.route === "erp.staff.shoe-pricing") {
-        return roles.includes('Staff') && (permissions.includes('view-pricing') || permissions.includes('edit-pricing'));
+        return permissions.includes('access-shoe-pricing');
       }
 
-      // Inventory Overview - only for Staff role
+      // Inventory Overview - check if user has Staff role or permission
       if (item.route === "erp.staff.inventory-overview") {
-        return roles.includes('Staff');
+        return roles.includes('Staff') || permissions.includes('access-staff-dashboard');
       }
       
       // Hide other items by default (no permissions)
@@ -981,38 +1046,34 @@ const AppSidebar_ERP: React.FC = () => {
   // Filter repair items based on user permissions
   const getFilteredRepairItems = () => {
     return repairItems.filter((item) => {
-      // Repair Dashboard - requires job order or repair service permissions
+      // Repair Dashboard - check simplified permission
       if (item.route === "erp.staff.repair-dashboard") {
-        return permissions.includes('view-job-orders') || permissions.includes('create-job-orders') || 
-               permissions.includes('edit-job-orders') || permissions.includes('complete-job-orders') ||
-               permissions.includes('view-repair-services') || permissions.includes('manage-repair-services');
+        return permissions.includes('access-repairer-dashboard');
       }
 
-      // Job Orders Repair - requires job order or repair service permissions
+      // Job Orders Repair - check simplified permission
       if (item.route === "erp.staff.job-orders-repair") {
-        return permissions.includes('view-job-orders') || permissions.includes('create-job-orders') || 
-               permissions.includes('edit-job-orders') || permissions.includes('complete-job-orders') ||
-               permissions.includes('view-repair-services') || permissions.includes('manage-repair-services');
+        return permissions.includes('access-repair-job-orders');
       }
       
-      // Upload Services - requires Repairer role or repair service management permissions
+      // Upload Services - check simplified permission
       if (item.route === "erp.staff.upload-services") {
-        return roles.includes('Repairer') || permissions.includes('manage-repair-services') || permissions.includes('create-repair-services');
+        return permissions.includes('access-upload-service');
       }
       
-      // Repair Pricing - requires repair service management permission for repairers
+      // Repair Pricing - check simplified permission
       if (item.route === "erp.repairer.pricing-services") {
-        return permissions.includes("manage-repair-services");
+        return permissions.includes('access-pricing-services');
       }
 
-      // Stocks Overview - accessible to all repair users
+      // Stocks Overview - check simplified permission
       if (item.route === "erp.staff.stocks-overview") {
-        return true;
+        return permissions.includes('access-repair-stocks');
       }
       
-      // Repair Support - accessible to repairer role, managers, and super admins
+      // Repair Support - check simplified permission
       if (item.route === "erp.repairer.support") {
-        return role === 'REPAIRER' || role === 'Repairer' || role === 'MANAGER' || role === 'Manager' || role === 'SUPER_ADMIN';
+        return permissions.includes('access-repairer-support');
       }
       
       // Hide other items by default (no permissions)
@@ -1264,7 +1325,9 @@ const AppSidebar_ERP: React.FC = () => {
                 </div>
               </div>
             </nav>
-
+          </>
+        )}
+        {hasInventoryAccess() && (
             <nav className="mb-6">
               <div className="flex flex-col gap-4">
                 <div>
@@ -1285,7 +1348,6 @@ const AppSidebar_ERP: React.FC = () => {
                 </div>
               </div>
             </nav>
-          </>
         )}
         {hasHRAccess() && (
           <nav className="mb-6">

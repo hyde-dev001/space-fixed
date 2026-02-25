@@ -203,7 +203,7 @@ export default function ERPPricingAndServices() {
     // Check authorization - Shop staff/managers/repairers or users with appropriate permissions
     // Note: Super admin does NOT have access - this is shop-level operation only
     const hasRoleAccess = userRole === "STAFF" || userRole === "MANAGER" || userRole === "REPAIRER";
-    const hasPermissionAccess = hasPermission(auth, 'edit-products') || hasPermission(auth, 'view-pricing') || hasPermission(auth, 'manage-repair-services');
+    const hasPermissionAccess = hasPermission(auth, 'access-pricing-services');
     
     if (!hasRoleAccess && !hasPermissionAccess) {
       Swal.fire({

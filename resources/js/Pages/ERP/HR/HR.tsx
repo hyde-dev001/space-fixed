@@ -22,10 +22,13 @@ export default function HRPage() {
   // Check if user has any HR permissions
   const hasHRAccess = () => {
     const hrPermissions = [
-      'view-employees', 'create-employees', 'edit-employees', 'delete-employees',
-      'view-attendance', 'mark-attendance', 'edit-attendance',
-      'view-leave-requests', 'approve-leave-requests', 'manage-leave-requests',
-      'view-payroll', 'generate-payroll', 'edit-payroll', 'approve-payroll'
+      'access-hr-dashboard',
+      'access-employee-directory',
+      'access-attendance-records',
+      'access-leave-approvals',
+      'access-overtime-approvals',
+      'access-payslip-generation',
+      'access-view-payslip'
     ];
     const hasAccess = userRole === 'Manager' || hrPermissions.some(perm => permissions.includes(perm));
     

@@ -182,6 +182,22 @@ class RepairServiceController extends Controller
             ], 404);
         }
 
+        // Store service details before deletion for logging
+        $serviceDetails = [
+            'service_name' => $service->name,
+            'category' => $service->category,
+            'price' => $service->price,
+            'duration' => $service->duration,
+            'status' => $service->status,
+        ];
+
+        // Activity log before deletion
+        activity()
+            ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
+            ->performedOn($service)
+            ->withProperties($serviceDetails)
+            ->log('Repair service deleted');
+
         $service->delete();
 
         return response()->json([
@@ -301,6 +317,20 @@ class RepairServiceController extends Controller
             'finance_reviewed_at' => now(),
         ]);
 
+        // Activity log with business context
+        activity()
+            ->causedBy(Auth::guard('user')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'category' => $service->category,
+                'price' => $service->price,
+                'finance_notes' => $request->notes,
+                'approved_by_name' => Auth::guard('user')->user()->name,
+                'approved_by_role' => Auth::guard('user')->user()->role ?? 'Finance Staff',
+            ])
+            ->log('Repair service price approved by Finance - Forwarded to Shop Owner');
+
         // Notify shop owner about repair service price approval
         $notificationService = app(NotificationService::class);
         $notificationService->notifyRepairServiceRequest($service->shop_owner_id, [
@@ -347,6 +377,20 @@ class RepairServiceController extends Controller
             'finance_reviewed_by' => Auth::guard('user')->id(),
             'finance_reviewed_at' => now(),
         ]);
+
+        // Activity log with rejection reason
+        activity()
+            ->causedBy(Auth::guard('user')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'category' => $service->category,
+                'price' => $service->price,
+                'rejection_reason' => $request->reason,
+                'rejected_by_name' => Auth::guard('user')->user()->name,
+                'rejected_by_role' => Auth::guard('user')->user()->role ?? 'Finance Staff',
+            ])
+            ->log('Repair service price rejected by Finance');
 
         return response()->json([
             'success' => true,
@@ -426,6 +470,19 @@ class RepairServiceController extends Controller
             'owner_reviewed_at' => now(),
         ]);
 
+        // Activity log for final approval
+        activity()
+            ->causedBy(Auth::guard('shop_owner')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'category' => $service->category,
+                'price' => $service->price,
+                'approved_by_name' => Auth::guard('shop_owner')->user()->name,
+                'approval_level' => 'Shop Owner (Final)',
+            ])
+            ->log('Repair service price final approval - Service activated');
+
         return response()->json([
             'success' => true,
             'message' => 'Service price change approved and applied.',
@@ -464,7 +521,21 @@ class RepairServiceController extends Controller
             'owner_reviewed_by' => Auth::guard('shop_owner')->id(),
             'owner_reviewed_at' => now(),
         ]);
-
+        
+        // Activity log for final rejection
+        activity()
+            ->causedBy(Auth::guard('shop_owner')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'category' => $service->category,
+                'price' => $service->price,
+                'rejection_reason' => $request->reason,  // Fixed: use $request->reason instead of rejection_reason
+                'rejected_by_name' => Auth::guard('shop_owner')->user()->name,
+                'rejection_level' => 'Shop Owner (Final)',
+            ])
+            ->log('Repair service price rejected by Shop Owner (Final Decision)');
+        
         return response()->json([
             'success' => true,
             'message' => 'Service price change rejected.',

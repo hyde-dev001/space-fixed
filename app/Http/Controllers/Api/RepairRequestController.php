@@ -233,6 +233,9 @@ class RepairRequestController extends Controller
         try {
             $repairRequest = RepairRequest::where('request_id', $requestId)->firstOrFail();
             
+            // Store old status before update
+            $oldStatus = $repairRequest->status;
+            
             $repairRequest->status = $request->status;
             
             if ($request->status === 'in-progress' && !$repairRequest->started_at) {
@@ -244,6 +247,24 @@ class RepairRequestController extends Controller
             }
             
             $repairRequest->save();
+
+            // Log the status change with business context
+            $user = Auth::guard('user')->user();
+            activity()
+                ->causedBy($user)
+                ->performedOn($repairRequest)
+                ->withProperties([
+                    'request_id' => $repairRequest->request_id,
+                    'customer_name' => $repairRequest->customer_name,
+                    'old_status' => $oldStatus,
+                    'new_status' => $request->status,
+                    'total_amount' => $repairRequest->total,
+                    'updated_by_name' => $user ? $user->name : 'System',
+                    'updated_by_role' => $user ? $user->role : 'System',
+                    'started_at' => $request->status === 'in-progress' ? now()->toDateTimeString() : null,
+                    'completed_at' => $request->status === 'ready-for-pickup' ? now()->toDateTimeString() : null,
+                ])
+                ->log("Repair job status updated from {$oldStatus} to {$request->status}");
 
             return response()->json([
                 'success' => true,
