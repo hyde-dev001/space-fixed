@@ -163,4 +163,12 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::post('/{id}/transfer', [\App\Http\Controllers\Api\ConversationController::class, 'transferShopOwner'])->name('shop_owner.conversations.transfer');
         Route::post('/{id}/activate-payment', [\App\Http\Controllers\Api\ConversationController::class, 'activatePaymentShopOwner'])->name('shop_owner.conversations.activate-payment');
     });
+
+    // ============================================
+    // USER ACCESS CONTROL / EMPLOYEE MANAGEMENT (Shop Owner)
+    // ============================================
+    Route::prefix('employees')->group(function () {
+        Route::post('/{userId}/regenerate-invite', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'regenerateInvite'])->name('shop_owner.employees.regenerate_invite');
+        Route::post('/{userId}/send-invitation-email', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'sendInvitationEmail'])->name('shop_owner.employees.send_invitation_email');
+    });
 });

@@ -115,7 +115,7 @@ class SuperAdminUserManagementController extends Controller
             });
 
         // Return paginated payload for Inertia (items already transformed via through())
-        return Inertia::render('superAdmin/SuperAdminUserManagement', [
+        return Inertia::render('superAdmin/Users/SuperAdminUserManagement', [
             'users' => $users,
         ]);
     }

@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AuditLog;
+use App\Mail\EmployeeInvitation;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -14,8 +15,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class EmployeeController extends Controller
 {
@@ -94,8 +97,9 @@ class EmployeeController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Generate temporary password
-        $temporaryPassword = Str::random(10);
+        // Generate invitation token instead of temporary password
+        $inviteToken = Str::random(64);
+        $inviteExpiresAt = Carbon::now()->addDays(7);
 
         // Map camelCase to snake_case for database
         $firstName = $request->firstName ?? $request->first_name ?? '';
@@ -103,7 +107,7 @@ class EmployeeController extends Controller
         $fullName = trim($firstName . ' ' . $lastName);
         
         // Create both Employee and User atomically
-        [$employee, $newUser] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $temporaryPassword) {
+        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt) {
             $data = [
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
@@ -132,7 +136,7 @@ class EmployeeController extends Controller
 
             $employee = Employee::create($data);
 
-            // Create User account for employee
+            // Create User account for employee with invitation token (no password yet)
             $newUser = User::create([
                 'name' => $fullName,
                 'first_name' => $firstName,
@@ -143,8 +147,11 @@ class EmployeeController extends Controller
                 'shop_owner_id' => $user->shop_owner_id,
                 'role' => $request->role ?? $request->department, // Use role field or department as fallback
                 'position' => $request->position ?? null,
-                'password' => Hash::make($temporaryPassword),
-                'force_password_change' => true,
+                'password' => null, // No password until invitation is accepted
+                'invite_token' => $inviteToken,
+                'invite_expires_at' => $inviteExpiresAt,
+                'invited_at' => now(),
+                'invited_by' => $user->id,
             ]);
 
             // Assign Spatie role based on department or role field
@@ -162,6 +169,9 @@ class EmployeeController extends Controller
             $spatieRole = $roleMap[$roleValue] ?? 'Staff';
             $newUser->assignRole($spatieRole);
 
+            // Generate invitation URL
+            $inviteUrl = url("/invite/{$inviteToken}");
+
             // Create initial leave balance
             LeaveBalance::createForNewEmployee(
                 $employee->id,
@@ -169,22 +179,29 @@ class EmployeeController extends Controller
                 date('Y')
             );
 
-            return [$employee, $newUser];
+            return [$employee, $newUser, $inviteUrl];
         });
+
+        // DON'T auto-send email - work email likely doesn't exist yet
+        // HR will manually share the link via personal email/WhatsApp/SMS
+        $emailSent = false;
 
         // Audit log
         $this->auditCreated(
             AuditLog::MODULE_EMPLOYEE,
             $employee,
             "Employee created: {$employee->first_name} {$employee->last_name} ({$employee->position})",
-            ['onboarding']
+            ['onboarding', 'invitation_sent' => $emailSent]
         );
 
         return response()->json([
-            'message' => 'Employee created successfully',
+            'message' => 'Employee created successfully. Share the invitation link with the employee.',
             'employee' => $employee->load(['leaveBalances']),
             'user_id' => $newUser->id,
-            'temporary_password' => $temporaryPassword,
+            'invite_url' => $inviteUrl,
+            'invite_expires_at' => $inviteExpiresAt->toDateTimeString(),
+            'email_sent' => $emailSent,
+            'work_email' => $newUser->email, // Work email (for reference only)
             'csrf_token' => csrf_token(),
         ], 201);
     }
@@ -313,8 +330,8 @@ class EmployeeController extends Controller
         $this->auditUpdated(
             AuditLog::MODULE_EMPLOYEE,
             $employee,
-            "Employee updated: {$employee->first_name} {$employee->last_name}",
-            ['employee_management']
+            ['employee_management'],
+            "Employee updated: {$employee->first_name} {$employee->last_name}"
         );
 
         return response()->json([

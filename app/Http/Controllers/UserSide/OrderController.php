@@ -91,7 +91,7 @@ class OrderController extends Controller
                 ];
             });
 
-        return Inertia::render('UserSide/MyOrders', [
+        return Inertia::render('UserSide/Orders/MyOrders', [
             'orders' => $orders,
         ]);
     }

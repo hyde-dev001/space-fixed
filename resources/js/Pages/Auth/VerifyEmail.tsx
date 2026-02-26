@@ -1,6 +1,6 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import Navigation from '../UserSide/Navigation';
+import Navigation from '../UserSide/Shared/Navigation';
 
 interface VerifyEmailProps {
     email?: string;

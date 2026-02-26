@@ -39,7 +39,7 @@ class LandingPageController extends Controller
                 ];
             });
 
-        return Inertia::render('UserSide/LandingPage', [
+        return Inertia::render('UserSide/Products/LandingPage', [
             'products' => $products,
         ]);
     }
@@ -49,7 +49,7 @@ class LandingPageController extends Controller
      */
     public function products(): Response
     {
-        return Inertia::render('UserSide/Products');
+        return Inertia::render('UserSide/Products/Products');
     }
 
     /**
@@ -107,7 +107,7 @@ class LandingPageController extends Controller
             'colors' => $colors,
         ];
 
-        return Inertia::render('UserSide/ProductShow', [
+        return Inertia::render('UserSide/Products/ProductShow', [
             'product' => [
                 'id' => $product->id,
                 'name' => $product->name,
@@ -202,7 +202,7 @@ class LandingPageController extends Controller
                 ];
             });
 
-        return Inertia::render('UserSide/Repair', [
+        return Inertia::render('UserSide/Repairs/Repair', [
             'shops' => $shops,
         ]);
     }
@@ -212,7 +212,7 @@ class LandingPageController extends Controller
      */
     public function services(): Response
     {
-        return Inertia::render('UserSide/Services');
+        return Inertia::render('UserSide/Shared/Services');
     }
 
     /**
@@ -228,7 +228,7 @@ class LandingPageController extends Controller
      */
     public function register(): Response
     {
-        return Inertia::render('UserSide/Register');
+        return Inertia::render('UserSide/Auth/Register');
     }
 
     /**
@@ -236,7 +236,7 @@ class LandingPageController extends Controller
      */
     public function login(): Response
     {
-        return Inertia::render('UserSide/Login');
+        return Inertia::render('UserSide/Auth/Login');
     }
 
     /**
@@ -244,7 +244,7 @@ class LandingPageController extends Controller
      */
     public function shopOwnerRegister(): Response
     {
-        return Inertia::render('UserSide/ShopOwnerRegistration');
+        return Inertia::render('UserSide/Auth/ShopOwnerRegistration');
     }
 
     /**
@@ -281,7 +281,7 @@ class LandingPageController extends Controller
                 ];
             });
 
-        return Inertia::render('UserSide/ShopProfile', [
+        return Inertia::render('UserSide/Profile/ShopProfile', [
             'shop' => [
                 'id' => $shopOwner->id,
                 'name' => $shopOwner->business_name ?? $shopOwner->name,
@@ -415,7 +415,7 @@ class LandingPageController extends Controller
             $shopImage = 'data:image/svg+xml;base64,' . base64_encode($svg);
         }
 
-        return Inertia::render('UserSide/repairShow', [
+        return Inertia::render('UserSide/Repairs/repairShow', [
             'shop' => [
                 'id' => $shopOwner->id,
                 'name' => $shopOwner->business_name ?? $shopOwner->getFullNameAttribute(),

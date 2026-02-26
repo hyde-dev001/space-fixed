@@ -42,7 +42,7 @@ class ShopOwnerRegistrationViewController extends Controller
             })
             ->toArray();
 
-        return Inertia::render('superAdmin/ShopOwnerRegistrationView', [
+        return Inertia::render('superAdmin/Shops/ShopOwnerRegistrationView', [
             'registrations' => $shopOwners
         ]);
     }

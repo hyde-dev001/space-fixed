@@ -24,6 +24,7 @@ use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\UserProfileController;
+use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\LeaveController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
@@ -41,8 +42,13 @@ use Illuminate\Http\Request;
 */
 
 // Email Verification Routes
-Route::get('/email/verify', function () {
-    return Inertia::render('Auth/VerifyEmail');
+Route::get('/email/verify', function (Request $request) {
+    $user = Auth::guard('web')->user() ?? Auth::guard('shop_owner')->user();
+    
+    return Inertia::render('UserSide/Auth/VerificationNotice', [
+        'status' => session('status'),
+        'email' => $user ? $user->email : null,
+    ]);
 })->middleware('auth')->name('verification.notice');
 
 Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
@@ -52,7 +58,7 @@ Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 've
 Route::post('/email/verification-notification', function (Request $request) {
     $request->user()->sendEmailVerificationNotification();
     
-    return back()->with('message', 'Verification link sent!');
+    return back()->with('status', 'verification-link-sent');
 })->middleware(['auth', 'throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
@@ -60,16 +66,16 @@ Route::get('/', [LandingPageController::class, 'index'])->name('landing');
 Route::get('/products', [LandingPageController::class, 'products'])->name('products');
 Route::get('/products/{slug}', [LandingPageController::class, 'productShow'])->name('products.show');
 Route::get('/checkout', function () {
-    return Inertia::render('UserSide/Checkout');
+    return Inertia::render('UserSide/Orders/Checkout');
 })->name('checkout');
 Route::get('/payment', function () {
-    return Inertia::render('UserSide/payment');
+    return Inertia::render('UserSide/Orders/payment');
 })->name('payment');
 Route::get('/order-success', function () {
-    return Inertia::render('UserSide/OrderSuccess');
+    return Inertia::render('UserSide/Orders/OrderSuccess');
 })->name('order-success');
 Route::get('/payment-failed', function () {
-    return Inertia::render('UserSide/PaymentFailed');
+    return Inertia::render('UserSide/Orders/PaymentFailed');
 })->name('payment-failed');
 Route::get('/my-orders', [OrderController::class, 'index'])->name('my-orders');
 Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->name('orders.confirm-delivery');
@@ -90,13 +96,13 @@ Route::get('/my-repairs', function () {
             ]);
     }
 
-    return Inertia::render('UserSide/myRepairs');
+    return Inertia::render('UserSide/Repairs/myRepairs');
 })->name('my-repairs');
 Route::get('/repair-process', function () {
-    return Inertia::render('UserSide/RepairProcess');
+    return Inertia::render('UserSide/Repairs/RepairProcess');
 })->name('repair-process');
 Route::get('/erp/user/repair-reject-approval', function () {
-    return Inertia::render('ShopOwner/repairRejectReview');
+    return Inertia::render('ShopOwner/Repairs/repairRejectReview');
 })->middleware('auth:user')->name('erp.user.repair-reject-approval');
 Route::get('/repair-services', [LandingPageController::class, 'repair'])->name('repair');
 Route::get('/repair-shop/{id}', [LandingPageController::class, 'repairShow'])->name('repair.show');
@@ -115,7 +121,7 @@ Route::get('/customer/conversations', function () {
             ]);
     }
 
-    return Inertia::render('UserSide/message');
+    return Inertia::render('UserSide/Communication/message');
 })->middleware('auth:user')->name('customer.conversations');
 // Message / Chat with shop owner
 Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
@@ -132,7 +138,7 @@ Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
             ]);
     }
 
-    return Inertia::render('UserSide/message', [
+    return Inertia::render('UserSide/Communication/message', [
         'shopOwnerId' => $shopOwnerId ? (int)$shopOwnerId : null,
     ]);
 })->middleware('auth:user')->name('message');
@@ -152,7 +158,7 @@ Route::get('/messages', function () {
             ]);
     }
 
-    return Inertia::render('UserSide/message', [
+    return Inertia::render('UserSide/Communication/message', [
         'shops' => [], // Frontend will fetch shop list
     ]);
 })->middleware('auth:user')->name('messages');
@@ -176,9 +182,16 @@ Route::get('/services', [LandingPageController::class, 'services'])->name('servi
 // Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
 Route::get('/register', [LandingPageController::class, 'register'])->name('register');
 Route::get('/login', function () {
-    return Inertia::render('UserSide/UserLogin');
+    return Inertia::render('UserSide/Auth/UserLogin');
 })->name('login');
 Route::get('/shop-owner-register', [LandingPageController::class, 'shopOwnerRegister'])->name('shop-owner-register');
+
+// Employee Invitation Routes (Public - No Authentication Required)
+Route::get('/invite/{token}', [InvitationController::class, 'show'])->name('invitation.show');
+Route::post('/invite/{token}', [InvitationController::class, 'accept'])->name('invitation.accept');
+// Alias route for accept-invitation (used by invitation links)
+Route::get('/accept-invitation/{token}', [InvitationController::class, 'show'])->name('invitation.accept-invitation');
+Route::post('/accept-invitation/{token}', [InvitationController::class, 'accept'])->name('invitation.accept-invitation.submit');
 
 // Cart Routes
 Route::get('/api/cart', [CartController::class, 'index'])->name('cart.index');
@@ -268,7 +281,7 @@ Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middlewar
 
 // User Login Page
 Route::get('/user/login', function () {
-    return Inertia::render('UserSide/UserLogin');
+    return Inertia::render('UserSide/Auth/UserLogin');
 })->name('user.login.form');
 
 // Shop Owner Login Page (redirect to customer login)
@@ -404,11 +417,11 @@ Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
     
     // Suspend Accounts page for Shop Owner (frontend page)
     Route::get('/suspend-accounts', function () {
-        return Inertia::render('ShopOwner/suspendAccount');
+        return Inertia::render('ShopOwner/TeamManagement/suspendAccount');
     })->name('suspend-accounts');
 
     Route::get('/refund-approvals', function () {
-        return Inertia::render('ShopOwner/refundApproval');
+        return Inertia::render('ShopOwner/Approvals/refundApproval');
     })->name('refund-approvals');
 });
 
@@ -423,63 +436,59 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     // PRODUCT MANAGEMENT - Retail or Both only
     Route::middleware('check.business.type:retail,both')->group(function () {
         Route::get('/products', function () {
-            return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
+            return Inertia::render('ShopOwner/Products/product management/ProductManagementWithVariants');
         })->name('products');
 
         Route::get('/product-uploder', function () {
-            return Inertia::render('ShopOwner/product management/ProductManagementWithVariants');
+            return Inertia::render('ShopOwner/Products/product management/ProductManagementWithVariants');
         })->name('product-uploder');
 
         Route::get('/inventory-overview', function () {
-            return Inertia::render('ShopOwner/product management/InventoryOverview');
+            return Inertia::render('ShopOwner/Products/product management/InventoryOverview');
         })->name('inventory-overview');
     });
 
     // SERVICE MANAGEMENT - Repair or Both only
     Route::middleware('check.business.type:repair,both')->group(function () {
         Route::get('/job-orders-repair', function () {
-            return Inertia::render('ShopOwner/service management/JobOrdersRepair');
+            return Inertia::render('ShopOwner/Repairs/service management/JobOrdersRepair');
         })->name('job-orders-repair');
 
         Route::get('/upload-services', function () {
-            return Inertia::render('ShopOwner/service management/uploadService');
+            return Inertia::render('ShopOwner/Repairs/service management/uploadService');
         })->name('upload-services');
 
         Route::middleware('check.registration.type:company')->group(function () {
             Route::get('/repair-reject-approval', function () {
-                return Inertia::render('ShopOwner/repairRejectReview');
+                return Inertia::render('ShopOwner/Repairs/repairRejectReview');
             })->name('repair-reject-approval');
 
             Route::get('/history-rejection', function () {
-                return Inertia::render('ShopOwner/historyRejection');
+                return Inertia::render('ShopOwner/Repairs/historyRejection');
             })->name('history-rejection');
         });
     });
 
     // ORDERS - Available to ALL
-    Route::get('/orders', function () {
-        return Inertia::render('ShopOwner/Orders');
-    })->name('orders');
-
     Route::get('/job-orders-retail', function () {
-        return Inertia::render('ShopOwner/order management/JobOrders');
+        return Inertia::render('ShopOwner/Orders/order management/JobOrders');
     })->name('job-orders-retail');
 
     // CUSTOMERS - Available to ALL
     Route::get('/customers', function () {
-        return Inertia::render('ShopOwner/customer management/Customers');
+        return Inertia::render('ShopOwner/Customers/customer management/Customers');
     })->name('customers');
 
     Route::get('/customer-support', function () {
-        return Inertia::render('ShopOwner/customer management/customerSupport');
+        return Inertia::render('ShopOwner/Customers/customer management/customerSupport');
     })->name('customer-support');
 
     Route::get('/repair-support', function () {
-        return Inertia::render('ShopOwner/customer management/repairSupport');
+        return Inertia::render('ShopOwner/Customers/customer management/repairSupport');
     })->name('repair-support');
 
     Route::get('/customer-reviews', function () {
-        return Inertia::render('ShopOwner/customer management/CustomersReviews');
+        return Inertia::render('ShopOwner/Customers/customer management/CustomersReviews');
     })->name('customer-reviews');
 
     // SHOP PROFILE - Available to ALL
@@ -488,18 +497,18 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     // AUDIT LOGS - Available to ALL
     Route::get('/audit-logs', function () {
-        return Inertia::render('ShopOwner/AuditLogs');
+        return Inertia::render('ShopOwner/Settings/AuditLogs');
     })->name('audit-logs');
 
     // REFUND APPROVALS - Available to ALL
     Route::get('/refund-approvals', function () {
-        return Inertia::render('ShopOwner/refundApproval');
+        return Inertia::render('ShopOwner/Approvals/refundApproval');
     })->name('refund-approvals');
 
     // PRICE APPROVALS - Company only (for approving staff price changes)
     Route::middleware('check.registration.type:company')->group(function () {
         Route::get('/price-approvals', function () {
-            return Inertia::render('ShopOwner/PriceApprovals');
+            return Inertia::render('ShopOwner/Approvals/PriceApprovals');
         })->name('price-approvals');
     });
 
@@ -940,13 +949,13 @@ Route::middleware(['auth:user', 'check.suspension'])->prefix('api/notifications'
 
 // Shop Registration Routes
 Route::get('/shop/register', function () {
-    return Inertia::render('userSide/ShopOwnerRegistration');
+    return Inertia::render('UserSide/Auth/ShopOwnerRegistration');
 })->name('shop.register.form');
 Route::post('/shop/register-full', [ShopRegistrationController::class, 'storeFullInertia'])->name('shop.register');
 
 // Shop Message Route
 Route::get('/shop/message', function () {
-    return Inertia::render('UserSide/message', [
+    return Inertia::render('UserSide/Communication/message', [
         'shopOwner' => [
             'id' => 1,
             'name' => 'Test Business',
@@ -990,7 +999,7 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
 
     // Additional admin routes
     Route::get('/notifications', function () {
-        return Inertia::render('superAdmin/NotificationCommunicationTools');
+        return Inertia::render('superAdmin/Communications/NotificationCommunicationTools');
     })->name('notifications');
     Route::get('/data-reports', [SuperAdminController::class, 'showDataReports'])->name('data-reports');
 });

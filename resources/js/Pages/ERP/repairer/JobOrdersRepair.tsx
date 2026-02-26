@@ -810,6 +810,20 @@ export default function JobOrdersRepair() {
       const response = await axios.post(`/api/repairer/repairs/${orderId}/activate-payment`);
       
       if (response.data.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            String(o.database_id) === String(orderId)
+              ? { ...o, payment_enabled: true }
+              : o
+          )
+        );
+
+        setViewOrder((prev) =>
+          prev && String(prev.database_id) === String(orderId)
+            ? { ...prev, payment_enabled: true }
+            : prev
+        );
+
         await Swal.fire({
           title: 'Payment Activated!',
           text: 'Customer can now pay for this repair.',

@@ -53,6 +53,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'role',
         'approval_limit',
         'force_password_change',
+        'invite_token',
+        'invite_expires_at',
+        'invited_at',
+        'invited_by',
     ];
 
     /**
@@ -75,6 +79,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'last_login_at' => 'datetime',
         'password' => 'hashed',
         'force_password_change' => 'boolean',
+        'invite_expires_at' => 'datetime',
+        'invited_at' => 'datetime',
     ];
 
     /**

@@ -10,6 +10,6 @@ class FlaggedAccountsController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('superAdmin/FlaggedAccounts');
+        return Inertia::render('superAdmin/Users/FlaggedAccounts');
     }
 }

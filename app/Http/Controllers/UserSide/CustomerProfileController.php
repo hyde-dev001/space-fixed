@@ -19,7 +19,7 @@ class CustomerProfileController extends Controller
             return redirect()->route('erp.profile');
         }
 
-        return Inertia::render('UserSide/customerProfile', [
+        return Inertia::render('UserSide/Profile/customerProfile', [
             'user' => [
                 'id' => $user->id,
                 'first_name' => $user->first_name,

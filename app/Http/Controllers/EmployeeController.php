@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\AuditLog;
+use App\Mail\EmployeeInvitation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
+use Carbon\Carbon;
 
 /**
  * EmployeeController
@@ -95,10 +98,11 @@ class EmployeeController extends Controller
             // Automatically assign to user's shop
             $validated['shop_owner_id'] = $request->user_shop_id;
 
-            // Auto-generate temporary password for the employee
-            $temporaryPassword = Str::random(10);
+            // Generate invitation token instead of temporary password
+            $inviteToken = Str::random(64);
+            $inviteExpiresAt = Carbon::now()->addDays(7);
 
-            // Create Employee record with temporary password
+            // Create Employee record
             $employeeData = collect($validated)->only([
                 'shop_owner_id',
                 'name',
@@ -112,7 +116,6 @@ class EmployeeController extends Controller
                 'hire_date',
                 'status'
             ])->toArray();
-            $employeeData['password'] = $temporaryPassword;
             $employee = Employee::create($employeeData);
 
             // Ensure no existing user account with same email
@@ -123,15 +126,25 @@ class EmployeeController extends Controller
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
-            // Create user account with same temporary password
+            // Create user account with invitation token (no password yet)
             $user = User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'shop_owner_id' => $request->user_shop_id,
                 'role' => $validated['role'],
-                'password' => Hash::make($temporaryPassword),
-                'force_password_change' => true,
+                'password' => null, // No password until invitation is accepted
+                'invite_token' => $inviteToken,
+                'invite_expires_at' => $inviteExpiresAt,
+                'invited_at' => now(),
+                'invited_by' => $request->user()->id,
             ]);
+
+            // Generate invitation URL
+            $inviteUrl = url("/invite/{$inviteToken}");
+
+            // DON'T auto-send email - work email likely doesn't exist yet
+            // HR will manually share the link via personal email/WhatsApp/SMS
+            $emailSent = false;
 
             // Audit log
             AuditLog::create([
@@ -145,15 +158,19 @@ class EmployeeController extends Controller
                     'employee_email' => $validated['email'],
                     'functional_role' => $validated['functional_role'] ?? null,
                     'branch' => $validated['branch'] ?? null,
+                    'invitation_sent' => $emailSent,
                 ],
             ]);
 
             return response()->json([
-                'message' => 'Employee and account created successfully',
+                'message' => 'Employee created successfully. Share the invitation link with the employee.',
                 'data' => [
                     'employee' => $employee,
                     'user_id' => $user->id,
-                    'temporary_password' => $temporaryPassword,
+                    'invite_url' => $inviteUrl,
+                    'invite_expires_at' => $inviteExpiresAt->toDateTimeString(),
+                    'email_sent' => $emailSent,
+                    'work_email' => $user->email, // Work email (for reference only)
                 ],
             ], Response::HTTP_CREATED);
         } catch (ValidationException $e) {

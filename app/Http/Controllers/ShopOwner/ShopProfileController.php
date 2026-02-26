@@ -18,7 +18,7 @@ class ShopProfileController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
         
-        return Inertia::render('ShopOwner/shopProfile', [
+        return Inertia::render('ShopOwner/Settings/shopProfile', [
             'shop_owner' => [
                 'id' => $shopOwner->id,
                 'first_name' => $shopOwner->first_name,

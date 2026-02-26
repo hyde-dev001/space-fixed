@@ -107,7 +107,10 @@ class HandleInertiaRequests extends Middleware
             'success' => fn () => $request->session()->get('success'),
             'employee' => fn () => $request->session()->get('employee'),
             'user_id' => fn () => $request->session()->get('user_id'),
-            'temporary_password' => fn () => $request->session()->get('temporary_password'),
+            'invite_url' => fn () => $request->session()->get('invite_url'),
+            'invite_expires_at' => fn () => $request->session()->get('invite_expires_at'),
+            'work_email' => fn () => $request->session()->get('work_email'),
+            'email_sent' => fn () => $request->session()->get('email_sent'),
 
             // Share authenticated user data based on guard
             // Only include ONE authenticated user to prevent header confusion

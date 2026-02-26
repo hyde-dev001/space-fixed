@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Auth\Events\Registered;
 use Inertia\Inertia;
 
 /**
@@ -97,16 +98,26 @@ class UserController extends Controller
 
             \Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $user->email]);
 
+            // Send email verification notification
+            event(new Registered($user));
+
+            // Auto-login the user so they can access the verification page
+            Auth::guard('web')->login($user);
+
             // Check if it's an Inertia request
             if ($request->header('X-Inertia')) {
-                return redirect()->route('login')->with('success', 'Registration successful! You can now login.');
+                return redirect()->route('verification.notice')->with([
+                    'success' => 'Registration successful! Please check your email to verify your account.',
+                    'email' => $user->email,
+                ]);
             }
 
             // Return success response for API calls
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'Registration successful! You can now login.',
+                    'message' => 'Registration successful! Please check your email to verify your account.',
+                    'redirect' => route('verification.notice'),
                     'user' => [
                         'id' => $user->id,
                         'name' => $user->name,
@@ -116,7 +127,10 @@ class UserController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('login')->with('success', 'Registration successful! You can now login.');
+            return redirect()->route('verification.notice')->with([
+                'success' => 'Registration successful! Please check your email to verify your account.',
+                'email' => $user->email,
+            ]);
         } catch (ValidationException $e) {
             \Log::warning('User registration validation failed', [
                 'errors' => $e->errors(),
@@ -178,6 +192,16 @@ class UserController extends Controller
             $user = User::where('email', $credentials['email'])->first();
 
             if ($user && Hash::check($credentials['password'], $user->password)) {
+                // Check if email is verified (only for non-employee users)
+                if (!$user->shop_owner_id && !$user->hasVerifiedEmail()) {
+                    // Auto-login user so they can access verification page
+                    Auth::guard('web')->login($user);
+                    
+                    throw ValidationException::withMessages([
+                        'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
+                    ])->redirectTo(route('verification.notice'));
+                }
+
                 // Check user status (stored as string in database)
                 if ($user->status !== 'active') {
                     throw ValidationException::withMessages([

@@ -198,6 +198,16 @@ class ShopOwnerAuthController extends Controller
                 ]);
             }
 
+            // Check if email is verified
+            if (!$shopOwner->hasVerifiedEmail()) {
+                // Auto-login shop owner so they can access verification page
+                Auth::guard('shop_owner')->login($shopOwner);
+                
+                throw ValidationException::withMessages([
+                    'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
+                ])->redirectTo(route('verification.notice'));
+            }
+
             // Check if account is approved
             if ($shopOwner->status === 'pending') {
                 throw ValidationException::withMessages([

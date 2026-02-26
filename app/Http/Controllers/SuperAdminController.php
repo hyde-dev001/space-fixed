@@ -19,7 +19,7 @@ class SuperAdminController extends Controller
      */
     public function showCreateAdmin(): Response
     {
-        return Inertia::render('superAdmin/CreateAdmin');
+        return Inertia::render('superAdmin/AdminTeam/CreateAdmin');
     }
     /**
      * Show admin management page
@@ -53,7 +53,7 @@ class SuperAdminController extends Controller
             'inactive' => $admins->where('status', 'inactive')->count(),
         ];
 
-        return Inertia::render('superAdmin/AdminManagement', [
+        return Inertia::render('superAdmin/AdminTeam/AdminManagement', [
             'admins' => $admins,
             'stats' => $stats
         ]);
@@ -114,7 +114,7 @@ class SuperAdminController extends Controller
                 ->count(),
         ];
 
-        return Inertia::render('superAdmin/RegisteredShops', [
+        return Inertia::render('superAdmin/Shops/RegisteredShops', [
             'shops' => $shops,
             'stats' => $stats
         ]);
@@ -125,7 +125,7 @@ class SuperAdminController extends Controller
      */
     public function showDataReports(): Response
     {
-        return Inertia::render('superAdmin/DataReportAccess', [
+        return Inertia::render('superAdmin/Reports/DataReportAccess', [
             'stats' => [
                 'totalUsers' => 0,
                 'totalShopOwners' => 0,
@@ -189,7 +189,7 @@ class SuperAdminController extends Controller
             'thisMonth' => User::whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->count(),
         ];
 
-        return Inertia::render('superAdmin/SuperAdminUserManagement', [
+        return Inertia::render('superAdmin/Users/SuperAdminUserManagement', [
             'users' => $users,
             'stats' => $stats,
         ]);
@@ -487,7 +487,7 @@ class SuperAdminController extends Controller
      */
     public function showFlaggedAccounts(): Response
     {
-        return Inertia::render('superAdmin/FlaggedAccounts');
+        return Inertia::render('superAdmin/Users/FlaggedAccounts');
     }
 
     /**

@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
-import Navigation from '../UserSide/Navigation';
+import Navigation from '../UserSide/Shared/Navigation';
 
 interface ShopOwner {
     email: string;

@@ -22,6 +22,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ERP\HR\EmployeeController;
+use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ERP\HR\AttendanceController;
 use App\Http\Controllers\ERP\HR\LeaveController;
 use App\Http\Controllers\ERP\HR\PayrollController;
@@ -75,6 +76,11 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::post('/{id}/suspend', [EmployeeController::class, 'suspend'])->name('hr.employees.suspend');
         Route::post('/{id}/activate', [EmployeeController::class, 'activate'])->name('hr.employees.activate');
         Route::post('/{userId}/roles/sync', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'syncAdditionalRoles'])->name('hr.employees.roles.sync');
+        
+        // Invitation Management
+        Route::post('/{id}/regenerate-invite', [InvitationController::class, 'regenerate'])->name('hr.employees.regenerate_invite');
+        Route::post('/{id}/resend-invite', [InvitationController::class, 'resendInvite'])->name('hr.employees.resend_invite');
+        Route::post('/{id}/send-invitation-email', [InvitationController::class, 'sendInvitationEmail'])->name('hr.employees.send_invitation_email');
     });
 
     // ============================================

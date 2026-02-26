@@ -19,7 +19,7 @@ class SuperAdminAuthController extends Controller
             return redirect()->route('admin.system-monitoring');
         }
         
-        return Inertia::render('superAdmin/SuperAdminLogin');
+        return Inertia::render('superAdmin/Auth/SuperAdminLogin');
     }
 
     /**
@@ -64,7 +64,7 @@ class SuperAdminAuthController extends Controller
      */
     public function showProfile()
     {
-        return Inertia::render('superAdmin/Profile', [
+        return Inertia::render('superAdmin/Settings/Profile', [
             'admin' => Auth::guard('super_admin')->user()
         ]);
     }

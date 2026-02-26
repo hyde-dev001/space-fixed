@@ -10,6 +10,6 @@ class NotificationCommunicationToolsController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('superAdmin/NotificationCommunicationTools');
+        return Inertia::render('superAdmin/Communications/NotificationCommunicationTools');
     }
 }

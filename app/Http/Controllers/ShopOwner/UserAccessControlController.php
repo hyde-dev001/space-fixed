@@ -20,6 +20,7 @@ use Spatie\Permission\Models\Role;
 use App\Models\PositionTemplate;
 use App\Models\PositionTemplatePermission;
 use App\Services\BusinessAccessControlService;
+use Carbon\Carbon;
 
 class UserAccessControlController extends Controller
 {
@@ -85,7 +86,7 @@ class UserAccessControlController extends Controller
                 ];
             });
         
-        return Inertia::render('ShopOwner/UserAccessControl', [
+        return Inertia::render('ShopOwner/TeamManagement/UserAccessControl', [
             'employees' => $employees,
         ]);
     }
@@ -167,8 +168,11 @@ class UserAccessControlController extends Controller
             }
 
             // Create both Employee and User atomically
-            $temporaryPassword = Str::random(10);
-            [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $temporaryPassword) {
+            // Generate invitation token instead of temporary password
+            $inviteToken = Str::random(64);
+            $inviteExpiresAt = Carbon::now()->addDays(7);
+            
+            [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt) {
                 $employeeData = collect($validated)->only([
                     'shop_owner_id','name','email','phone','address','position','department','branch','salary','hire_date','status'
                 ])->toArray();
@@ -193,8 +197,11 @@ class UserAccessControlController extends Controller
                     'shop_owner_id' => $shopOwner->id,
                     'role' => $validated['role'], // Keep old role column for backward compatibility
                     'position' => $validated['position'] ?? null,
-                    'password' => Hash::make($temporaryPassword),
-                    'force_password_change' => true,
+                    'password' => null, // No password until invitation is accepted
+                    'invite_token' => $inviteToken,
+                    'invite_expires_at' => $inviteExpiresAt,
+                    'invited_at' => now(),
+                    'invited_by' => $shopOwner->id,
                 ]);
 
                 // Assign Spatie role based on department
@@ -273,6 +280,9 @@ class UserAccessControlController extends Controller
                 // Audit log is optional - don't fail if it errors
             }
 
+            // Generate invitation URL
+            $inviteUrl = url("/invite/{$inviteToken}");
+
             // Return back with success data - Inertia will automatically reload with fresh props
             // Use redirect()->back() to ensure flash data is properly set in session
             // Add timestamp to ensure uniqueness and trigger useEffect on each creation
@@ -284,7 +294,10 @@ class UserAccessControlController extends Controller
                     'email' => $employee->email,
                 ],
                 'user_id' => $user->id,
-                'temporary_password' => $temporaryPassword,
+                'invite_url' => $inviteUrl,
+                'invite_expires_at' => $inviteExpiresAt->toISOString(),
+                'work_email' => $employee->email,
+                'email_sent' => false, // Manual sharing workflow
                 'timestamp' => now()->timestamp, // Unique identifier for each creation
             ]);
         } catch (ValidationException $e) {
@@ -989,6 +1002,183 @@ class UserAccessControlController extends Controller
             return response()->json(['error' => $e->errors()], 422);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to apply template: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Regenerate invitation link for an employee
+     */
+    public function regenerateInvite($userId)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if (!$shopOwner) {
+                return response()->json(['error' => 'Not authenticated'], 401);
+            }
+
+            // Find the user and verify they belong to this shop owner
+            $user = User::where('id', $userId)
+                ->where('shop_owner_id', $shopOwner->id)
+                ->first();
+
+            if (!$user) {
+                return response()->json(['error' => 'Employee not found'], 404);
+            }
+
+            // Generate new invitation token
+            $inviteToken = Str::random(64);
+            $inviteExpiresAt = Carbon::now()->addDays(7);
+
+            // Update user with new invitation token
+            $user->update([
+                'invite_token' => $inviteToken,
+                'invite_expires_at' => $inviteExpiresAt,
+                'invited_at' => now(),
+                'invited_by' => $shopOwner->id,
+            ]);
+
+            // Generate invitation URL
+            $inviteUrl = url("/accept-invitation/{$inviteToken}");
+
+            // Log the regeneration
+            AuditLog::create([
+                'shop_owner_id' => $shopOwner->id,
+                'user_id' => $shopOwner->id,
+                'action' => 'regenerate_invitation',
+                'description' => "Regenerated invitation for employee: {$user->name} ({$user->email})",
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'invite_url' => $inviteUrl,
+                'invite_expires_at' => $inviteExpiresAt->toIso8601String(),
+                'work_email' => $user->email,
+                'employee_name' => $user->name,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to regenerate invitation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Send invitation email to personal address
+     */
+    public function sendInvitationEmail(Request $request, $userId)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            
+            if (!$shopOwner) {
+                return response()->json(['error' => 'Not authenticated'], 401);
+            }
+
+            $validated = $request->validate([
+                'personal_email' => 'required|email',
+            ]);
+
+            // Find the user and verify they belong to this shop owner
+            $user = User::where('id', $userId)
+                ->where('shop_owner_id', $shopOwner->id)
+                ->first();
+
+            if (!$user) {
+                return response()->json(['error' => 'Employee not found'], 404);
+            }
+
+            // Check if user has valid invitation token
+            if (!$user->invite_token || !$user->invite_expires_at) {
+                return response()->json(['error' => 'No active invitation found. Please regenerate the invitation first.'], 400);
+            }
+
+            // Check if invitation expired
+            if (Carbon::now()->greaterThan($user->invite_expires_at)) {
+                return response()->json(['error' => 'Invitation has expired. Please regenerate a new invitation.'], 400);
+            }
+
+            $inviteUrl = url("/accept-invitation/{$user->invite_token}");
+            $shopName = $shopOwner->business_name ?? 'SoleSpace';
+            $expiresAt = $user->invite_expires_at->format('M d, Y h:i A');
+            $personalEmail = $validated['personal_email'];
+
+            // Send email using Laravel Mail
+            \Mail::send([], [], function ($message) use ($user, $inviteUrl, $shopName, $expiresAt, $personalEmail) {
+                $message->to($personalEmail)
+                    ->subject("Your {$shopName} Account Invitation")
+                    ->html("
+                        <html>
+                        <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
+                            <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
+                                <h2 style='color: #4F46E5;'>Welcome to {$shopName}!</h2>
+                                
+                                <p>Hi <strong>{$user->name}</strong>,</p>
+                                
+                                <p>You've been invited to join our team at <strong>{$shopName}</strong>!</p>
+                                
+                                <div style='background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$user->email}</p>
+                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$expiresAt}</p>
+                                </div>
+                                
+                                <p>Click the button below to set up your account and create your password:</p>
+                                
+                                <div style='text-align: center; margin: 30px 0;'>
+                                    <a href='{$inviteUrl}' 
+                                       style='display: inline-block; background: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;'>
+                                        Set Up My Account
+                                    </a>
+                                </div>
+                                
+                                <p style='font-size: 12px; color: #666;'>
+                                    Or copy and paste this link into your browser:<br>
+                                    <a href='{$inviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$inviteUrl}</a>
+                                </p>
+                                
+                                <hr style='border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;'>
+                                
+                                <p style='font-size: 12px; color: #666;'>
+                                    <strong>Important:</strong> This invitation link will expire on {$expiresAt}. 
+                                    If you need a new invitation, please contact your administrator.
+                                </p>
+                                
+                                <p style='font-size: 12px; color: #666;'>
+                                    If you didn't expect this invitation, please ignore this email or contact us.
+                                </p>
+                            </div>
+                        </body>
+                        </html>
+                    ");
+            });
+
+            // Log the email send
+            AuditLog::create([
+                'shop_owner_id' => $shopOwner->id,
+                'user_id' => $shopOwner->id,
+                'action' => 'send_invitation_email',
+                'description' => "Sent invitation email to {$personalEmail} for employee: {$user->name} ({$user->email})",
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Invitation email sent successfully to {$personalEmail}",
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => 'Invalid email address',
+                'details' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to send invitation email: ' . $e->getMessage()
+            ], 500);
         }
     }
 

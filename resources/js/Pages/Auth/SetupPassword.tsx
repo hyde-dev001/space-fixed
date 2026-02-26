@@ -1,6 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import Navigation from '../UserSide/Navigation';
+import Navigation from '../UserSide/Shared/Navigation';
 
 interface SetupPasswordProps {
     email: string;

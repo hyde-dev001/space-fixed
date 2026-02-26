@@ -10,6 +10,6 @@ class DataReportAccessController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('superAdmin/DataReportAccess');
+        return Inertia::render('superAdmin/Reports/DataReportAccess');
     }
 }
