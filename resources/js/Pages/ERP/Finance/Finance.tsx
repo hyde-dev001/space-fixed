@@ -13,6 +13,7 @@ import Expense from "../Finance/Expense";
 import CreateInvoice from "../Finance/createInvoice";
 import RepairPriceApproval from "../Finance/repairPriceApproval";
 import ShoePriceApproval from "../Finance/shoePriceApproval";
+import PurchaseRequestApproval from "../Finance/PurchaseRequestApproval";
 import PayslipApproval from "../Finance/payslipApproval";
 import RefundApproval from "../Finance/refundApproval";
 import ErrorModal from "../../../components/common/ErrorModal";
@@ -24,6 +25,7 @@ type Section =
   | "expense-tracking"
   | "repair-pricing"
   | "shoe-pricing"
+  | "purchase-request-approval"
   | "payslip-approvals"
   | "refund-approvals";
 
@@ -31,6 +33,7 @@ export default function FinancePage() {
   const { auth, url } = usePage().props as any;
   const userRole = auth?.user?.role;
   const [error, setError] = useState<string | null>(null);
+  const [isPurchaseRequestModalOpen, setIsPurchaseRequestModalOpen] = useState(false);
 
   // Mark page as successfully loaded
   useEffect(() => {
@@ -42,7 +45,7 @@ export default function FinancePage() {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const value = urlParams.get("section") || "invoice-generation";
-      if (["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "payslip-approvals", "refund-approvals"].includes(value)) return value as Section;
+      if (["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"].includes(value)) return value as Section;
       return "invoice-generation";
     }
     return "invoice-generation";
@@ -54,6 +57,7 @@ export default function FinancePage() {
     if (section === "expense-tracking") return "Expense Tracking - Solespace ERP";
     if (section === "repair-pricing") return "Repair Price Approval - Solespace ERP";
     if (section === "shoe-pricing") return "Shoe Price Approval - Solespace ERP";
+    if (section === "purchase-request-approval") return "Purchase Request Approval - Solespace ERP";
     if (section === "payslip-approvals") return "Payslip Approvals - Solespace ERP";
     if (section === "refund-approvals") return "Refund Approvals - Solespace ERP";
     return "Finance - Solespace ERP";
@@ -136,6 +140,10 @@ export default function FinancePage() {
             );
           }
           return <ShoePriceApproval />;
+
+        case "purchase-request-approval":
+          return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} />;
+
         case "payslip-approvals":
           // Check payslip approval permissions
           if (!hasAnyPermission(auth, ['access-payslip-approval'])) {
@@ -164,7 +172,7 @@ export default function FinancePage() {
   };
 
   return (
-    <AppLayoutERP>
+    <AppLayoutERP hideHeader={section === "purchase-request-approval" && isPurchaseRequestModalOpen}>
       <Head title={headTitle} />
       {error && (
         <ErrorModal message={error} onClose={() => setError(null)} />

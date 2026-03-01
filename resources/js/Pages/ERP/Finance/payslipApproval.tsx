@@ -243,6 +243,9 @@ export default function PayslipApproval() {
 	};
 
 	const handleApprove = async (request: PayslipApprovalRequest) => {
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+
 		const { value: notes } = await Swal.fire({
 			title: "Approve payslip?",
 			html: `
@@ -297,6 +300,9 @@ export default function PayslipApproval() {
 	};
 
 	const handleReject = async (request: PayslipApprovalRequest) => {
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+
 		const { value: reason } = await Swal.fire({
 			title: "Reject payslip",
 			html: `

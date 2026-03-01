@@ -5,7 +5,6 @@ import { route } from "ziggy-js";
 // Assume these icons are imported from an icon library
 import {
   CheckLineIcon,
-  ChevronDownIcon,
   HorizontaLDots,
   CurrencyDollarIcon,
 } from "../icons";
@@ -198,6 +197,19 @@ const financeItems: NavItem[] = [
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M2 17s.5-3.5 4-3.5 4 3.5 4 3.5m6 0s.5-3.5 4-3.5 4 3.5 4 3.5M2 17h20v4H2z"></path>
+          </svg>
+        ),
+      },
+      {
+        name: "Purchase Request Approval",
+        route: "finance.index",
+        params: { section: "purchase-request-approval" },
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+            <path d="M8 9h8"></path>
+            <path d="M8 13h8"></path>
+            <path d="M8 17h5"></path>
           </svg>
         ),
       },
@@ -406,10 +418,72 @@ const managerInventoryItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M16 4h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4"></path>
-        <rect x="8" y="2" width="8" height="4" rx="1"></rect>
-        <path d="M8 11h8"></path>
-        <path d="M8 15h5"></path>
+    <path d="M4 6a2 2 0 0 1 2-2h8l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"></path>
+    <path d="M14 4v4h4"></path>
+    <path d="M8 12h6"></path>
+    <path d="M11 9v6"></path>
+      </svg>
+    ),
+    name: "Stock Request",
+    route: "erp.inventory.stock-request",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="5" width="12" height="14" rx="2"></rect>
+    <path d="M7 9h4"></path>
+    <path d="M7 13h4"></path>
+    <circle cx="18" cy="10" r="3"></circle>
+    <path d="M18 8.5v1.8l1.2.7"></path>
+    <path d="M16 18h5"></path>
+      </svg>
+    ),
+    name: "Supplier Order Monitoring",
+    route: "erp.inventory.supplier-order-monitoring",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M5 4h10l4 4v12H5z"></path>
+    <path d="M15 4v4h4"></path>
+    <path d="M8 13l5-5 2 2-5 5-3 1z"></path>
+      </svg>
+    ),
+    name: "Purchase Request",
+    route: "erp.inventory.purchase-request",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+    <path d="M7 8h10"></path>
+    <path d="M7 12h10"></path>
+    <path d="M7 16h6"></path>
+    <path d="M16 16l1.5 1.5L20 15"></path>
+      </svg>
+    ),
+    name: "Purchase Orders",
+    route: "erp.inventory.purchase-orders",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="4" y="3" width="16" height="18" rx="2"></rect>
+    <path d="M8 9h8"></path>
+    <path d="M8 13h5"></path>
+    <path d="M14 15l2 2 3-3"></path>
+      </svg>
+    ),
+    name: "Stock Request Approval",
+    route: "erp.inventory.stock-request-approval",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="9" cy="10" r="3"></circle>
+    <path d="M3 19a6 6 0 0 1 12 0"></path>
+    <circle cx="17" cy="8" r="2"></circle>
+    <path d="M14 14a4 4 0 0 1 7 3"></path>
       </svg>
     ),
     name: "Suppliers Management",
@@ -654,6 +728,11 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.inventory.upload-stocks": "/erp/inventory/upload-stocks",
     "erp.inventory.stock-movement": "/erp/inventory/stock-movement",
     "erp.inventory.product-inventory": "/erp/inventory/product-inventory",
+    "erp.inventory.stock-request": "/erp/inventory/stock-request",
+    "erp.inventory.supplier-order-monitoring": "/erp/inventory/supplier-order-monitoring",
+    "erp.inventory.stock-request-approval": "/erp/inventory/stock-request-approval",
+    "erp.inventory.purchase-request": "/erp/inventory/purchase-request",
+    "erp.inventory.purchase-orders": "/erp/inventory/purchase-orders",
     "erp.inventory.suppliers-management": "/erp/inventory/suppliers-management",
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
@@ -849,6 +928,9 @@ const AppSidebar_ERP: React.FC = () => {
             }
             if (subItem.name === "Shoe Pricing Approval") {
               return permissions.includes('access-shoe-price-approval');
+            }
+            if (subItem.name === "Purchase Request Approval") {
+              return permissions.includes('access-shoe-price-approval') || permissions.includes('access-repair-price-approval');
             }
             return false;
           });
@@ -1118,13 +1200,22 @@ const AppSidebar_ERP: React.FC = () => {
                     <span className="menu-item-text">{nav.name}</span>
                   )}
                   {(isExpanded || isHovered || isMobileOpen) && (
-                    <ChevronDownIcon
+                    <svg
                       className={`ml-auto w-5 h-5 transition-transform duration-200 ${
                         openSubmenu === `${menuType}-${index}`
                           ? "rotate-180"
                           : ""
                       }`}
-                    />
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
                   )}
                 </button>
               ) : (
@@ -1344,7 +1435,21 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(managerInventoryItems, "manager")}
+                  {renderMenuItems(managerInventoryItems.slice(0, 6), "manager")}
+                  <h2
+                    className={`mt-4 mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                      !isExpanded && !isHovered
+                        ? "lg:justify-center"
+                        : "justify-start"
+                    }`}
+                  >
+                    {isExpanded || isHovered || isMobileOpen ? (
+                      "Procurement"
+                    ) : (
+                      <HorizontaLDots />
+                    )}
+                  </h2>
+                  {renderMenuItems(managerInventoryItems.slice(6), "manager")}
                 </div>
               </div>
             </nav>

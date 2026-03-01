@@ -354,6 +354,9 @@ export default function ShoePriceApproval() {
   };
 
   const handleApprove = async (request: PriceRequest) => {
+    setViewModalOpen(false);
+    setSelectedRequest(null);
+
     const { value: notes } = await Swal.fire({
       title: "Approve & Forward to Owner",
       html: `
@@ -425,6 +428,9 @@ export default function ShoePriceApproval() {
   };
 
   const handleReject = async (request: PriceRequest) => {
+    setViewModalOpen(false);
+    setSelectedRequest(null);
+
     const { value: reason } = await Swal.fire({
       title: "Reject Price Change",
       html: `

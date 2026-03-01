@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
 import Swal from 'sweetalert2';
@@ -88,6 +88,15 @@ interface MetricData {
   description: string;
 }
 
+interface InvitationModalData {
+  inviteUrl: string;
+  expiresAt: string;
+  workEmail: string;
+  employeeName: string;
+  employeeUserId?: number;
+  wasRegenerated?: boolean;
+}
+
 // Professional Metric Card Component
 const MetricCard: React.FC<MetricData> = ({
   title,
@@ -174,6 +183,129 @@ const UserAccessControl: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [invitationModalData, setInvitationModalData] = useState<InvitationModalData | null>(null);
+  const [personalInviteEmail, setPersonalInviteEmail] = useState('');
+  const [personalInviteEmailError, setPersonalInviteEmailError] = useState('');
+  const [isInviteLinkCopied, setIsInviteLinkCopied] = useState(false);
+  const [isSendingInviteEmail, setIsSendingInviteEmail] = useState(false);
+  const [inviteEmailStatus, setInviteEmailStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const lastInvitationKeyRef = useRef<string | null>(null);
+
+  const openInvitationModal = (
+    payload: {
+      invite_url?: string;
+      invite_expires_at?: string;
+      work_email?: string;
+      employee?: { name?: string; email?: string; userId?: number };
+      timestamp?: string | number;
+      wasRegenerated?: boolean;
+    },
+    uniqueToken?: string | number,
+  ) => {
+    if (!payload.invite_url || !payload.employee) {
+      return;
+    }
+
+    const inviteUrl = payload.invite_url;
+    const employeeName = payload.employee?.name || 'Employee';
+    const dedupeKey = `${uniqueToken ?? payload.timestamp ?? 'none'}-${inviteUrl}-${employeeName}`;
+
+    if (lastInvitationKeyRef.current === dedupeKey) {
+      return;
+    }
+
+    lastInvitationKeyRef.current = dedupeKey;
+
+    const modalData: InvitationModalData = {
+      inviteUrl,
+      expiresAt: payload.invite_expires_at ? new Date(payload.invite_expires_at).toLocaleString() : 'N/A',
+      workEmail: payload.work_email || payload.employee?.email || 'N/A',
+      employeeName,
+      employeeUserId: payload.employee?.userId,
+      wasRegenerated: payload.wasRegenerated || false,
+    };
+
+    setInvitationModalData(modalData);
+    setPersonalInviteEmail('');
+    setPersonalInviteEmailError('');
+    setInviteEmailStatus(null);
+    setIsInviteModalOpen(true);
+    setIsInviteLinkCopied(false);
+
+    navigator.clipboard.writeText(modalData.inviteUrl)
+      .then(() => {
+        setIsInviteLinkCopied(true);
+        setTimeout(() => setIsInviteLinkCopied(false), 2000);
+      })
+      .catch(() => {});
+  };
+
+  const handleCopyInvitationLink = async () => {
+    if (!invitationModalData) return;
+    try {
+      await navigator.clipboard.writeText(invitationModalData.inviteUrl);
+      setIsInviteLinkCopied(true);
+      setTimeout(() => setIsInviteLinkCopied(false), 2000);
+    } catch {
+      setIsInviteLinkCopied(false);
+    }
+  };
+
+  const handleSendToPersonalEmail = async () => {
+    if (!invitationModalData) return;
+
+    const personalEmail = personalInviteEmail.trim();
+    const workEmailNormalized = invitationModalData.workEmail.trim().toLowerCase();
+
+    if (!personalEmail) {
+      setPersonalInviteEmailError('Please enter an email address.');
+      return;
+    }
+
+    if (personalEmail.toLowerCase() === workEmailNormalized) {
+      setPersonalInviteEmailError('Use their personal email, not work email.');
+      return;
+    }
+
+    setPersonalInviteEmailError('');
+    setInviteEmailStatus(null);
+
+    if (invitationModalData.employeeUserId) {
+      try {
+        setIsSendingInviteEmail(true);
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const emailResponse = await fetch(`/api/shop-owner/employees/${invitationModalData.employeeUserId}/send-invitation-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf || '',
+          },
+          body: JSON.stringify({ personal_email: personalEmail }),
+        });
+
+        if (!emailResponse.ok) {
+          const errorData = await emailResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to send invitation email');
+        }
+
+        setInviteEmailStatus({
+          type: 'success',
+          message: `Invitation email sent to ${personalEmail}`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'An unexpected error occurred while sending email';
+        setInviteEmailStatus({ type: 'error', message });
+      } finally {
+        setIsSendingInviteEmail(false);
+      }
+      return;
+    }
+
+    const shopName = shopOwner?.business_name || 'SoleSpace';
+    window.location.href = `mailto:${personalEmail}?subject=Your ${shopName} Account Invitation&body=Hi ${invitationModalData.employeeName},%0D%0A%0D%0AYou've been invited to join our team at ${shopName}!%0D%0A%0D%0AClick this link to set up your account:%0D%0A${encodeURIComponent(invitationModalData.inviteUrl)}%0D%0A%0D%0AThis link expires on ${invitationModalData.expiresAt}%0D%0A%0D%0AYour work email will be: ${invitationModalData.workEmail}%0D%0A%0D%0AThanks!`;
+  };
 
   // Initialize employees from database and sync with Inertia props
   const [employees, setEmployees] = useState<Employee[]>(
@@ -201,112 +333,15 @@ const UserAccessControl: React.FC = () => {
     console.log('Invitation data check:', { success, invite_url, timestamp, employee });
     
     if (success && invite_url && employee) {
-      const inviteUrl = invite_url;
-      const expiresAt = invite_expires_at ? new Date(invite_expires_at).toLocaleString() : 'N/A';
-      const workEmail = work_email || employee?.email || 'N/A';
-      const employeeName = employee?.name || 'Employee';
-      const emailSent = false; // Always false - work email doesn't exist yet
-      
-      Swal.fire({
-        icon: 'success',
-        title: '✅ Employee Account Created Successfully',
-        html: `
-          <div style="text-align:left;padding:20px;background:#f0fdf4;border-radius:8px;margin-bottom:16px">
-            <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:4px solid #f59e0b;margin-bottom:12px">
-              <p style="margin:0;font-size:12px;color:#78350f;font-weight:600">
-                📝 <strong>Work email created:</strong> <code>${workEmail}</code><br>
-                ⚠️ This email doesn't exist yet - share the link via personal email/WhatsApp/SMS
-              </p>
-            </div>
-
-            <h3 style="color:#15803d;margin:0 0 12px 0;font-size:14px">
-              📧 Share this invitation link with ${employeeName}:
-            </h3>
-
-            <div style="background:white;padding:12px;border-radius:6px;margin-bottom:12px;border-left:4px solid #15803d">
-              <label style="display:block;font-size:11px;color:#666;margin-bottom:4px;font-weight:bold">
-                🔗 INVITATION LINK
-              </label>
-              <div style="background:#f9fafb;padding:8px;border-radius:4px;font-size:11px;word-break:break-all;font-family:monospace;">
-                ${inviteUrl}
-              </div>
-            </div>
-
-            <div style="background:#e0f2fe;padding:12px;border-radius:6px;border-left:4px solid #3b82f6;margin-bottom:12px">
-              <p style="margin:0 0 8px 0;font-size:12px;color:#1e40af;font-weight:600">
-                📱 How to share:
-              </p>
-              <ul style="margin:0;padding-left:20px;font-size:11px;color:#1e40af">
-                <li><strong>Personal Email:</strong> Ask employee for their Gmail/Yahoo/personal email</li>
-                <li><strong>WhatsApp/Messenger:</strong> Send link via chat</li>
-                <li><strong>SMS:</strong> Text message the link</li>
-                <li><strong>In-person:</strong> Show QR code or write it down</li>
-              </ul>
-            </div>
-
-            <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:4px solid #f59e0b;font-size:11px;color:#78350f">
-              <strong style="display:block;margin-bottom:4px">⚠️ IMPORTANT:</strong>
-              <ul style="margin:4px 0;padding-left:20px">
-                <li>Link expires: <strong>${expiresAt}</strong></li>
-                <li>Employee sets their own password</li>
-                <li>Can regenerate link anytime</li>
-              </ul>
-            </div>
-          </div>
-        `,
-        width: 650,
-        showCancelButton: true,
-        showDenyButton: true,
-        confirmButtonText: '📋 Copy Link',
-        denyButtonText: '📧 Email to Personal Address',
-        cancelButtonText: '✓ Done',
-        confirmButtonColor: '#15803d',
-        denyButtonColor: '#3b82f6',
-        cancelButtonColor: '#6b7280',
-        didOpen: () => {
-          // Auto-copy to clipboard
-          navigator.clipboard.writeText(inviteUrl).catch(() => {});
-        }
-      }).then(async (result) => {
-        if (result.isConfirmed) {
-          // Copy link
-          navigator.clipboard.writeText(inviteUrl);
-          Swal.fire({
-            icon: 'success',
-            title: 'Link Copied!',
-            text: 'Share this with the employee via WhatsApp, SMS, or personal email',
-            timer: 2000,
-            showConfirmButton: false
-          });
-        } else if (result.isDenied) {
-          // Ask for personal email
-          const { value: personalEmail } = await Swal.fire({
-            title: 'Send to Personal Email',
-            html: `
-              <p style="text-align:left;margin-bottom:12px;color:#666;font-size:14px">
-                Enter <strong>${employeeName}'s</strong> personal email address:<br>
-                <small>(Gmail, Yahoo, or their personal email)</small>
-              </p>
-            `,
-            input: 'email',
-            inputPlaceholder: 'personal.email@gmail.com',
-            showCancelButton: true,
-            confirmButtonText: 'Send Email',
-            confirmButtonColor: '#3b82f6',
-            inputValidator: (value) => {
-              if (!value) return 'Please enter an email address';
-              if (value === workEmail) return 'Use their PERSONAL email, not work email';
-            }
-          });
-          
-          if (personalEmail) {
-            const shopName = shopOwner?.business_name || 'SoleSpace';
-            window.location.href = `mailto:${personalEmail}?subject=Your ${shopName} Account Invitation&body=Hi ${employeeName},%0D%0A%0D%0AYou've been invited to join our team at ${shopName}!%0D%0A%0D%0AClick this link to set up your account:%0D%0A${encodeURIComponent(inviteUrl)}%0D%0A%0D%0AThis link expires on ${expiresAt}%0D%0A%0D%0AYour work email will be: ${workEmail}%0D%0A%0D%0AThanks!`;
-          }
-        }
+      openInvitationModal({
+        invite_url,
+        invite_expires_at,
+        work_email,
+        employee,
+        timestamp,
       });
     }
-  }, [success, invite_url, invite_expires_at, employee, timestamp, work_email, shopOwner]);
+  }, [success, invite_url, invite_expires_at, employee, timestamp, work_email]);
 
   const [roles, setRoles] = useState<Role[]>([]);
 
@@ -688,106 +723,7 @@ const UserAccessControl: React.FC = () => {
             
             // Show invitation modal immediately with the response data
             if (responseData.invite_url && responseData.employee) {
-              const inviteUrl = responseData.invite_url;
-              const expiresAt = responseData.invite_expires_at ? new Date(responseData.invite_expires_at).toLocaleString() : 'N/A';
-              const workEmail = responseData.work_email || responseData.employee?.email || 'N/A';
-              const employeeName = responseData.employee?.name || 'Employee';
-              
-              Swal.fire({
-                icon: 'success',
-                title: '✅ Employee Account Created Successfully',
-                html: `
-                  <div style="text-align:left;padding:20px;background:#f0fdf4;border-radius:8px;margin-bottom:16px">
-                    <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:4px solid #f59e0b;margin-bottom:12px">
-                      <p style="margin:0;font-size:12px;color:#78350f;font-weight:600">
-                        📝 <strong>Work email created:</strong> <code>${workEmail}</code><br>
-                        ⚠️ This email doesn't exist yet - share the link via personal email/WhatsApp/SMS
-                      </p>
-                    </div>
-
-                    <h3 style="color:#15803d;margin:0 0 12px 0;font-size:14px">
-                      📧 Share this invitation link with ${employeeName}:
-                    </h3>
-
-                    <div style="background:white;padding:12px;border-radius:6px;margin-bottom:12px;border-left:4px solid #15803d">
-                      <label style="display:block;font-size:11px;color:#666;margin-bottom:4px;font-weight:bold">
-                        🔗 INVITATION LINK
-                      </label>
-                      <div style="background:#f9fafb;padding:8px;border-radius:4px;font-size:11px;word-break:break-all;font-family:monospace;">
-                        ${inviteUrl}
-                      </div>
-                    </div>
-
-                    <div style="background:#e0f2fe;padding:12px;border-radius:6px;border-left:4px solid #3b82f6;margin-bottom:12px">
-                      <p style="margin:0 0 8px 0;font-size:12px;color:#1e40af;font-weight:600">
-                        📱 How to share:
-                      </p>
-                      <ul style="margin:0;padding-left:20px;font-size:11px;color:#1e40af">
-                        <li><strong>Personal Email:</strong> Ask employee for their Gmail/Yahoo/personal email</li>
-                        <li><strong>WhatsApp/Messenger:</strong> Send link via chat</li>
-                        <li><strong>SMS:</strong> Text message the link</li>
-                        <li><strong>In-person:</strong> Show QR code or write it down</li>
-                      </ul>
-                    </div>
-
-                    <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:4px solid #f59e0b;font-size:11px;color:#78350f">
-                      <strong style="display:block;margin-bottom:4px">⚠️ IMPORTANT:</strong>
-                      <ul style="margin:4px 0;padding-left:20px">
-                        <li>Link expires: <strong>${expiresAt}</strong></li>
-                        <li>Employee sets their own password</li>
-                        <li>Can regenerate link anytime</li>
-                      </ul>
-                    </div>
-                  </div>
-                `,
-                width: 650,
-                showCancelButton: true,
-                showDenyButton: true,
-                confirmButtonText: '📋 Copy Link',
-                denyButtonText: '📧 Email to Personal Address',
-                cancelButtonText: '✓ Done',
-                confirmButtonColor: '#15803d',
-                denyButtonColor: '#3b82f6',
-                cancelButtonColor: '#6b7280',
-                didOpen: () => {
-                  navigator.clipboard.writeText(inviteUrl).catch(() => {});
-                }
-              }).then(async (result) => {
-                if (result.isConfirmed) {
-                  navigator.clipboard.writeText(inviteUrl);
-                  Swal.fire({
-                    icon: 'success',
-                    title: 'Link Copied!',
-                    text: 'Share this with the employee via WhatsApp, SMS, or personal email',
-                    timer: 2000,
-                    showConfirmButton: false
-                  });
-                } else if (result.isDenied) {
-                  const { value: personalEmail } = await Swal.fire({
-                    title: 'Send to Personal Email',
-                    html: `
-                      <p style="text-align:left;margin-bottom:12px;color:#666;font-size:14px">
-                        Enter <strong>${employeeName}'s</strong> personal email address:<br>
-                        <small>(Gmail, Yahoo, or their personal email)</small>
-                      </p>
-                    `,
-                    input: 'email',
-                    inputPlaceholder: 'personal.email@gmail.com',
-                    showCancelButton: true,
-                    confirmButtonText: 'Send Email',
-                    confirmButtonColor: '#3b82f6',
-                    inputValidator: (value) => {
-                      if (!value) return 'Please enter an email address';
-                      if (value === workEmail) return 'Use their PERSONAL email, not work email';
-                    }
-                  });
-                  
-                  if (personalEmail) {
-                    const shopName = shopOwner?.business_name || 'SoleSpace';
-                    window.location.href = `mailto:${personalEmail}?subject=Your ${shopName} Account Invitation&body=Hi ${employeeName},%0D%0A%0D%0AYou've been invited to join our team at ${shopName}!%0D%0A%0D%0AClick this link to set up your account:%0D%0A${encodeURIComponent(inviteUrl)}%0D%0A%0D%0AThis link expires on ${expiresAt}%0D%0A%0D%0AYour work email will be: ${workEmail}%0D%0A%0D%0AThanks!`;
-                  }
-                }
-              });
+              openInvitationModal(responseData, responseData.timestamp);
             }
           },
           onError: (errors) => {
@@ -1214,155 +1150,21 @@ const UserAccessControl: React.FC = () => {
       }
 
       const data = await response.json();
-      const inviteUrl = data.invite_url;
-      const expiresAt = data.invite_expires_at ? new Date(data.invite_expires_at).toLocaleString() : 'N/A';
-      const workEmail = employee.email;
-      const employeeName = employee.name;
-
-      Swal.fire({
-        icon: 'info',
-        title: '📧 Employee Invitation Link',
-        html: `
-          <div style="text-align:left;padding:20px;background:#f0fdf4;border-radius:8px;margin-bottom:16px">
-            <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:4px solid #f59e0b;margin-bottom:12px">
-              <p style="margin:0;font-size:12px;color:#78350f;font-weight:600">
-                📝 <strong>Employee:</strong> ${employeeName}<br>
-                📧 <strong>Work email:</strong> <code>${workEmail}</code><br>
-                ⚠️ Share via personal email/WhatsApp/SMS
-              </p>
-            </div>
-
-            <div style="background:white;padding:12px;border-radius:6px;margin-bottom:12px;border-left:4px solid #15803d">
-              <label style="display:block;font-size:11px;color:#666;margin-bottom:4px;font-weight:bold">
-                🔗 INVITATION LINK
-              </label>
-              <div style="background:#f9fafb;padding:8px;border-radius:4px;font-size:11px;word-break:break-all;font-family:monospace;">
-                ${inviteUrl}
-              </div>
-            </div>
-
-            <div style="background:#e0f2fe;padding:12px;border-radius:6px;border-left:4px solid #3b82f6;margin-bottom:12px">
-              <p style="margin:0 0 8px 0;font-size:12px;color:#1e40af;font-weight:600">
-                📱 How to share:
-              </p>
-              <ul style="margin:0;padding-left:20px;font-size:11px;color:#1e40af">
-                <li><strong>Personal Email:</strong> Ask for their Gmail/Yahoo/personal email</li>
-                <li><strong>WhatsApp/Messenger:</strong> Send link via chat</li>
-                <li><strong>SMS:</strong> Text message the link</li>
-                <li><strong>In-person:</strong> Show QR code or write it down</li>
-              </ul>
-            </div>
-
-            <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:4px solid #f59e0b;font-size:11px;color:#78350f">
-              <strong style="display:block;margin-bottom:4px">⚠️ IMPORTANT:</strong>
-              <ul style="margin:4px 0;padding-left:20px">
-                <li>Link expires: <strong>${expiresAt}</strong></li>
-                <li>A new link was generated (old one is now invalid)</li>
-                <li>Employee sets their own password</li>
-              </ul>
-            </div>
-          </div>
-        `,
-        width: 650,
-        showCancelButton: true,
-        showDenyButton: true,
-        confirmButtonText: '📋 Copy Link',
-        denyButtonText: '📧 Email to Personal Address',
-        cancelButtonText: '✓ Done',
-        confirmButtonColor: '#15803d',
-        denyButtonColor: '#3b82f6',
-        cancelButtonColor: '#6b7280',
-        didOpen: () => {
-          navigator.clipboard.writeText(inviteUrl).catch(() => {});
-        }
-      }).then(async (result) => {
-        if (result.isConfirmed) {
-          navigator.clipboard.writeText(inviteUrl);
-          Swal.fire({
-            icon: 'success',
-            title: 'Link Copied!',
-            text: 'Share this with the employee via WhatsApp, SMS, or personal email',
-            timer: 2000,
-            showConfirmButton: false
-          });
-        } else if (result.isDenied) {
-          const { value: personalEmail } = await Swal.fire({
-            title: 'Send to Personal Email',
-            html: `
-              <p style="text-align:left;margin-bottom:12px;color:#666;font-size:14px">
-                Enter <strong>${employeeName}'s</strong> personal email address:<br>
-                <small>(Gmail, Yahoo, or their personal email)</small>
-              </p>
-            `,
-            input: 'email',
-            inputPlaceholder: 'personal.email@gmail.com',
-            showCancelButton: true,
-            confirmButtonText: 'Send Email',
-            confirmButtonColor: '#3b82f6',
-            inputValidator: (value) => {
-              if (!value) return 'Please enter an email address';
-              if (value === workEmail) return 'Use their PERSONAL email, not work email';
-            }
-          });
-          
-          if (personalEmail) {
-            // Send email via backend API
-            try {
-              Swal.fire({
-                title: 'Sending Email...',
-                text: 'Please wait while we send the invitation',
-                allowOutsideClick: false,
-                didOpen: () => {
-                  Swal.showLoading();
-                }
-              });
-
-              const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-              const emailResponse = await fetch(`/api/shop-owner/employees/${employee.userId}/send-invitation-email`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                  'X-CSRF-TOKEN': csrf || ''
-                },
-                body: JSON.stringify({
-                  personal_email: personalEmail
-                })
-              });
-
-              if (!emailResponse.ok) {
-                const errorData = await emailResponse.json();
-                throw new Error(errorData.error || 'Failed to send email');
-              }
-
-              const emailData = await emailResponse.json();
-
-              Swal.fire({
-                icon: 'success',
-                title: 'Email Sent!',
-                html: `
-                  <p>Invitation email has been sent to:</p>
-                  <p style="font-weight:bold;color:#15803d">${personalEmail}</p>
-                  <p style="font-size:12px;color:#666;margin-top:12px">
-                    The employee should receive the email within a few minutes.
-                    They can check their inbox (and spam folder) for the invitation.
-                  </p>
-                `,
-                confirmButtonColor: '#15803d'
-              });
-
-            } catch (error) {
-              console.error('Failed to send email:', error);
-              Swal.fire({
-                icon: 'error',
-                title: 'Failed to Send Email',
-                text: error instanceof Error ? error.message : 'An unexpected error occurred',
-                confirmButtonColor: '#dc2626'
-              });
-            }
-          }
-        }
-      });
+      openInvitationModal(
+        {
+          invite_url: data.invite_url,
+          invite_expires_at: data.invite_expires_at,
+          work_email: employee.email,
+          employee: {
+            name: employee.name,
+            email: employee.email,
+            userId: employee.userId,
+          },
+          timestamp: data.timestamp || Date.now(),
+          wasRegenerated: true,
+        },
+        `${employee.userId}-${data.timestamp || Date.now()}`,
+      );
 
     } catch (error) {
       console.error('Failed to get invitation link:', error);
@@ -1953,6 +1755,105 @@ const UserAccessControl: React.FC = () => {
               </div>
             </div>
           </Modal>
+
+          {isInviteModalOpen && invitationModalData && (
+            <Modal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} size="4xl">
+              <div className="w-full max-w-4xl p-5 sm:p-6 bg-white dark:bg-black">
+                <div className="mb-6 flex items-start gap-4">
+                  <div className="h-12 w-12 shrink-0 rounded-full bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-white flex items-center justify-center border border-gray-200 dark:border-gray-700">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Employee Invitation Link</h3>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      Share this invite with {invitationModalData.employeeName} to complete account setup.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-black p-4 sm:p-5">
+                  <div className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black p-4 text-sm text-gray-900 dark:text-white">
+                    <p className="font-semibold">Work email created: {invitationModalData.workEmail}</p>
+                    <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">This inbox does not exist yet. Share the invite link via personal email, chat, or SMS.</p>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-bold tracking-wide text-gray-900 dark:text-white">INVITATION LINK</p>
+                      <Button size="sm" variant="outline" onClick={handleCopyInvitationLink}>
+                        Copy Link
+                      </Button>
+                    </div>
+                    <p className="mt-2 break-all rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-black px-3 py-2 font-mono text-sm leading-6 text-black dark:text-white">
+                      {invitationModalData.inviteUrl}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black p-4 text-sm text-gray-900 dark:text-white">
+                      <p className="font-bold text-base">How to share</p>
+                      <ul className="mt-2 space-y-1.5 leading-6">
+                        <li>Personal email (Gmail/Yahoo)</li>
+                        <li>WhatsApp/Messenger</li>
+                        <li>SMS</li>
+                        <li>In person</li>
+                      </ul>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black p-4 text-sm text-gray-900 dark:text-white">
+                      <p className="font-bold text-base">Important</p>
+                      <ul className="mt-2 space-y-1.5 leading-6">
+                        <li>Link expires: {invitationModalData.expiresAt}</li>
+                        {invitationModalData.wasRegenerated && <li>A new link was generated (old one is now invalid)</li>}
+                        <li>Employee sets their own password</li>
+                        <li>You can regenerate the link anytime</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Personal email (optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={personalInviteEmail}
+                      onChange={(e) => {
+                        setPersonalInviteEmail(e.target.value);
+                        if (personalInviteEmailError) {
+                          setPersonalInviteEmailError('');
+                        }
+                      }}
+                      placeholder="personal.email@gmail.com"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:border-gray-600 dark:bg-black dark:text-white"
+                    />
+                    {personalInviteEmailError && (
+                      <p className="mt-2 text-xs text-gray-800 dark:text-gray-200">{personalInviteEmailError}</p>
+                    )}
+                    {inviteEmailStatus && (
+                      <p className="mt-2 text-xs text-gray-800 dark:text-gray-200">
+                        {inviteEmailStatus.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                  {isInviteLinkCopied && (
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Link copied</span>
+                  )}
+                  <Button variant="outline" onClick={() => setIsInviteModalOpen(false)}>
+                    Done
+                  </Button>
+                  <Button variant="outline" onClick={handleSendToPersonalEmail}>
+                    {isSendingInviteEmail ? 'Sending...' : 'Email to Personal Address'}
+                  </Button>
+                </div>
+              </div>
+            </Modal>
+          )}
 
           {/* Permission Management Modal (Phase 6) */}
           {isPermissionModalOpen && selectedEmployee && availablePermissions && (

@@ -412,6 +412,10 @@ export default function RefundApproval() {
 	};
 
 	const handleApprove = async (request: RefundRequest) => {
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+		setActiveImage(null);
+
 		const result = await Swal.fire({
 			title: "Approve Refund?",
 			html: `
@@ -446,6 +450,10 @@ export default function RefundApproval() {
 	};
 
 	const handleReject = async (request: RefundRequest) => {
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+		setActiveImage(null);
+
 		const { value: reason } = await Swal.fire({
 			title: "Reject Refund",
 			html: `

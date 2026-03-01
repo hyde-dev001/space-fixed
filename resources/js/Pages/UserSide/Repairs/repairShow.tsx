@@ -135,11 +135,17 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
   };
 
   const handleServiceToggle = (serviceId: number) => {
-    setSelectedServices(prev => 
-      prev.includes(serviceId)
-        ? prev.filter(id => id !== serviceId)
-        : [...prev, serviceId]
-    );
+    setSelectedServices(prev => {
+      if (prev.includes(serviceId)) {
+        return prev.filter(id => id !== serviceId);
+      }
+
+      if (prev.length > 0) {
+        return prev;
+      }
+
+      return [serviceId];
+    });
   };
 
   const handleRequestRepair = () => {
@@ -222,6 +228,24 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
   };
 
   const shopStatus = checkIfOpen();
+
+  const getServiceDescriptionLines = (description: string) => {
+    const normalized = description
+      .replace(/\s*-\s*/g, "|")
+      .replace(/\n+/g, "|")
+      .replace(/\s*•\s*/g, "|");
+
+    const chunks = normalized
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (chunks.length > 0) {
+      return chunks;
+    }
+
+    return [description.trim()].filter(Boolean);
+  };
 
   const handleSubmitReview = async () => {
     if (!newComment.trim() || userRating === 0) {
@@ -503,50 +527,73 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
             <h2 className="text-3xl font-bold text-black mb-8">Our Repair Services</h2>
             {repairServices && repairServices.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {repairServices.map((service) => (
-                  <div
-                    key={service.id}
-                    className={`bg-white rounded-2xl p-6 border-2 cursor-pointer transition-all hover:shadow-lg ${
-                      selectedServices.includes(service.id)
-                        ? 'border-black shadow-md'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => handleServiceToggle(service.id)}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-lg font-bold text-black">{service.title}</h3>
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
-                            {service.category}
-                          </span>
+                {repairServices.map((service) => {
+                  const descriptionLines = getServiceDescriptionLines(service.description);
+                  const isSelected = selectedServices.includes(service.id);
+                  const isDisabled = selectedServices.length > 0 && !isSelected;
+
+                  return (
+                    <div
+                      key={service.id}
+                      className={`bg-white rounded-2xl p-6 border-2 transition-all h-full ${
+                        isSelected
+                          ? 'border-black shadow-md'
+                          : isDisabled
+                          ? 'border-gray-200 opacity-45 cursor-not-allowed'
+                          : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
+                      }`}
+                      onClick={() => {
+                        if (isDisabled) return;
+                        handleServiceToggle(service.id);
+                      }}
+                    >
+                      <div className="flex flex-col h-full">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-lg font-bold text-black">{service.title}</h3>
+                              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
+                                {service.category}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                            isSelected
+                              ? 'border-black bg-black'
+                              : 'border-gray-300'
+                          }`}>
+                            {isSelected && (
+                              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-600 mb-3">{service.description}</p>
-                        <div className="flex items-center justify-between">
-                          <div className="text-2xl font-bold text-black">{service.price}</div>
-                          <div className="text-xs text-gray-500 flex items-center gap-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="12" r="10" />
-                              <polyline points="12 6 12 12 16 14" />
-                            </svg>
-                            {service.duration}
+
+                        <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
+                          {descriptionLines.map((line, index) => (
+                            <li key={`${service.id}-desc-${index}`} className="leading-5">
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
+
+                        <div className="mt-auto pt-4 border-t border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <div className="text-2xl font-bold text-black">{service.price}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                              </svg>
+                              {service.duration}
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ml-3 transition-all ${
-                        selectedServices.includes(service.id)
-                          ? 'border-black bg-black'
-                          : 'border-gray-300'
-                      }`}>
-                        {selectedServices.includes(service.id) && (
-                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-12 bg-gray-50 rounded-2xl">

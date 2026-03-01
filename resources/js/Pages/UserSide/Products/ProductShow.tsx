@@ -3,7 +3,7 @@ import { Head, Link, usePage, router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import Navigation from '../Shared/Navigation';
 import AddToCartButton from '../../../Components/CartActions';
-import Virtual3DShowroom from '../../../Components/Virtual3DShowroom';
+import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../../types/cart-events';
 
 type ColorVariantImage = {
@@ -399,17 +399,17 @@ const ProductShow: React.FC = () => {
                   
                   {/* 3D & 360 Virtual Showroom Buttons */}
                   <div className="absolute bottom-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {/* 3D Model Button */}
+                    {/* 360 Viewer Button */}
                     <button
                       onClick={() => setShow3DShowroom(true)}
                       className="bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                      title="View 3D Interactive Model"
-                      aria-label="View 3D interactive model"
+                      title="View 360 Interactive"
+                      aria-label="View 360 interactive"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      3D View
+                      360 View
                     </button>
 
                   </div>
@@ -1289,7 +1289,6 @@ const ProductShow: React.FC = () => {
       {/* Virtual 3D Showroom Modal */}
       {show3DShowroom && (
         <Virtual3DShowroom
-          modelUrl="/images/3D SHOES/shoe_3d_scan.glb"
           productName={product.name}
           onClose={() => setShow3DShowroom(false)}
         />

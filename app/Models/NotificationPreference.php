@@ -9,6 +9,11 @@ class NotificationPreference extends Model
 {
     protected $fillable = [
         'user_id',
+        'shop_owner_id',
+        // Phase 7: Granular preferences (JSON)
+        'preferences',
+        'email_digest_frequency',
+        'sound_enabled',
         // Original preferences (Finance/HR)
         'email_expense_approval',
         'email_leave_approval',
@@ -52,6 +57,8 @@ class NotificationPreference extends Model
     ];
 
     protected $casts = [
+        // Phase 7: Granular preferences
+        'preferences' => 'array',
         // Original casts
         'email_expense_approval' => 'boolean',
         'email_leave_approval' => 'boolean',

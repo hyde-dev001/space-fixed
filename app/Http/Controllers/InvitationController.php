@@ -115,15 +115,10 @@ class InvitationController extends Controller
     public function regenerate(Request $request, $employeeId)
     {
         $employee = Employee::findOrFail($employeeId);
-        $user = User::where('employee_id', $employeeId)->first();
+        $user = User::where('email', $employee->email)->first();
         
         if (!$user) {
             return response()->json(['error' => 'User account not found'], 404);
-        }
-        
-        // Don't regenerate if user already set password
-        if ($user->password !== null) {
-            return response()->json(['error' => 'User has already accepted invitation'], 400);
         }
         
         // Generate new token
@@ -156,7 +151,7 @@ class InvitationController extends Controller
         ]);
 
         $employee = Employee::findOrFail($employeeId);
-        $user = User::where('employee_id', $employeeId)->first();
+        $user = User::where('email', $employee->email)->first();
 
         if (!$user) {
             return response()->json(['error' => 'User account not found'], 404);
@@ -239,7 +234,7 @@ class InvitationController extends Controller
     public function resendInvite($employeeId)
     {
         $employee = Employee::findOrFail($employeeId);
-        $user = User::where('employee_id', $employeeId)->first();
+        $user = User::where('email', $employee->email)->first();
         
         if (!$user || !$user->invite_token) {
             return response()->json(['error' => 'No pending invitation found'], 404);

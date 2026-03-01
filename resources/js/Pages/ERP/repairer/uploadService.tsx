@@ -357,6 +357,30 @@ export default function UploadService() {
     });
   };
 
+  const normalizeDescription = (value: string) => {
+    return value
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .replace(/\s*•\s*/g, "\n")
+      .replace(/\s*-\s*/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join("\n");
+  };
+
+  const handleFormatDescription = () => {
+    setFormData((prev) => ({
+      ...prev,
+      description: normalizeDescription(prev.description),
+    }));
+  };
+
+  const getDescriptionPreviewLines = (value: string) => {
+    const normalized = normalizeDescription(value);
+    return normalized ? normalized.split("\n") : [];
+  };
+
   const filteredServices = services.filter((service) => {
     const matchesSearch = service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       service.category.toLowerCase().includes(searchTerm.toLowerCase());
@@ -508,7 +532,7 @@ export default function UploadService() {
                           {service.name}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {service.description}
+                          View description in Edit
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -663,16 +687,38 @@ export default function UploadService() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Description
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Description
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleFormatDescription}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Auto format lines
+                  </button>
+                </div>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
+                  rows={4}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter service description"
+                  placeholder={"Type one service detail per line\nExample:\nDeep cleaning\nStain removal\nDeodorizing"}
                 />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Tip: One detail per line. If pasted with dashes/bullets, click "Auto format lines".
+                </p>
+                {getDescriptionPreviewLines(formData.description).length > 0 && (
+                  <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3 max-h-32 overflow-y-auto">
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Preview</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {getDescriptionPreviewLines(formData.description).slice(0, 4).map((line, index) => (
+                        <li key={`add-desc-${index}`} className="text-xs text-gray-700 dark:text-gray-200">{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -781,16 +827,38 @@ export default function UploadService() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Description
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Description
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleFormatDescription}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Auto format lines
+                  </button>
+                </div>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
+                  rows={4}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter service description"
+                  placeholder={"Type one service detail per line\nExample:\nDeep cleaning\nStain removal\nDeodorizing"}
                 />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Tip: One detail per line. If pasted with dashes/bullets, click "Auto format lines".
+                </p>
+                {getDescriptionPreviewLines(formData.description).length > 0 && (
+                  <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3 max-h-32 overflow-y-auto">
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Preview</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {getDescriptionPreviewLines(formData.description).slice(0, 4).map((line, index) => (
+                        <li key={`edit-desc-${index}`} className="text-xs text-gray-700 dark:text-gray-200">{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\LeaveController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
+use App\Models\Product;
 
 /*
 |--------------------------------------------------------------------------
@@ -63,6 +64,38 @@ Route::post('/email/verification-notification', function (Request $request) {
 
 // Public Routes (User Side)
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
+Route::get('/showroom', function () {
+    $products = Product::query()
+        ->where('is_active', true)
+        ->where(function ($query) {
+            $query->where('category', 'shoes')
+                ->orWhereNull('category');
+        })
+        ->with(['colorVariants.images', 'shopOwner'])
+        ->latest()
+        ->take(12)
+        ->get()
+        ->map(function (Product $product) {
+            $variantImage = optional($product->colorVariants->first())
+                ?->images
+                ?->sortBy('sort_order')
+                ?->first();
+
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'shop_name' => $product->shopOwner?->business_name,
+                'slug' => $product->slug,
+                'price' => $product->price,
+                'image' => $variantImage?->image_path ?: $product->main_image_url,
+            ];
+        })
+        ->values();
+
+    return Inertia::render('UserSide/Products/showroom', [
+        'products' => $products,
+    ]);
+})->name('showroom');
 Route::get('/products', [LandingPageController::class, 'products'])->name('products');
 Route::get('/products/{slug}', [LandingPageController::class, 'productShow'])->name('products.show');
 Route::get('/checkout', function () {
@@ -1242,11 +1275,46 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
         return Inertia::render('ERP/inventory/ProductInventory');
     })->name('product-inventory');
 
+    Route::get('/stock-request', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/CRM/StockRequest');
+    })->name('stock-request');
+
+    Route::get('/supplier-order-monitoring', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/SupplierOrderMonitoring');
+    })->name('supplier-order-monitoring');
+
+    Route::get('/stock-request-approval', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/Procurement/StockRequestApproval');
+    })->name('stock-request-approval');
+
+    Route::get('/purchase-request', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/Procurement/PurchaseRequest');
+    })->name('purchase-request');
+
+    Route::get('/purchase-orders', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/Procurement/PurchaseOrders');
+    })->name('purchase-orders');
+
     Route::get('/suppliers-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/SuppliersManagement');
+        return Inertia::render('ERP/Procurement/SuppliersManagement');
     })->name('suppliers-management');
 });
 

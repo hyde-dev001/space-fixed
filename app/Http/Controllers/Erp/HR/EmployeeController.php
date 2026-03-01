@@ -30,7 +30,7 @@ class EmployeeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-employees')) {
+        if (!$user->can('access-employee-directory')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -70,7 +70,7 @@ class EmployeeController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -214,7 +214,7 @@ class EmployeeController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -258,7 +258,7 @@ class EmployeeController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -348,7 +348,7 @@ class EmployeeController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -372,7 +372,7 @@ class EmployeeController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -405,7 +405,7 @@ class EmployeeController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

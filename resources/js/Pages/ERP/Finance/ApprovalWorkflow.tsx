@@ -123,6 +123,8 @@ const ApprovalWorkflow: React.FC = () => {
 	};
 
 	const handleApprove = async (request: ApprovalRequest) => {
+		setSelectedRequest(null);
+
 		const { value: comments } = await Swal.fire({
 			title: "Approve Request",
 			html: `
@@ -171,6 +173,8 @@ const ApprovalWorkflow: React.FC = () => {
 	};
 
 	const handleReject = async (request: ApprovalRequest) => {
+		setSelectedRequest(null);
+
 		const { value: comments } = await Swal.fire({
 			title: "Reject Request",
 			html: `

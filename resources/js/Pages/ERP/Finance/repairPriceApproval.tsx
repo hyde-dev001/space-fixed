@@ -283,6 +283,9 @@ export default function RepairPriceApproval() {
   };
 
   const handleApprove = async (request: RepairPriceRequest) => {
+    setViewModalOpen(false);
+    setSelectedRequest(null);
+
     const { value: notes } = await Swal.fire({
       title: "Approve & Forward to Owner",
       html: `
@@ -355,6 +358,9 @@ export default function RepairPriceApproval() {
   };
 
   const handleReject = async (request: RepairPriceRequest) => {
+    setViewModalOpen(false);
+    setSelectedRequest(null);
+
     const { value: reason } = await Swal.fire({
       title: "Reject Price Change",
       html: `

@@ -5,7 +5,6 @@ import { Link, usePage } from "@inertiajs/react";
 import {
   CalenderIcon,
   CheckLineIcon,
-  ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
   UserIcon,
@@ -225,13 +224,22 @@ const AppSidebar: React.FC = () => {
                     <span className="menu-item-text">{nav.name}</span>
                   )}
                   {(isExpanded || isHovered || isMobileOpen) && (
-                    <ChevronDownIcon
+                    <svg
                       className={`ml-auto w-5 h-5 transition-transform duration-200 ${
                         openSubmenu === `${menuType}-${index}`
                           ? "rotate-180 text-brand-500"
                           : ""
                       }`}
-                    />
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
                   )}
                 </button>
               ) : (
