@@ -278,8 +278,8 @@ class NotificationService
     public function notifyRepairStatusUpdate(int $userId, array $repairData): ?Notification
     {
         $statusMessages = [
-            'assigned_to_repairer' => 'Your repair request has been assigned to a repairer.',
-            'repairer_accepted' => 'Repairer has accepted your repair request.',
+            'assigned_to_repairer' => 'Repair request is under review. Please wait for the shop to review it.',
+            'repairer_accepted' => 'Repair request is under review. Please wait for the shop to review it.',
             'waiting_customer_confirmation' => 'Please confirm the repair details and pricing.',
             'owner_approval_pending' => 'Repair is pending shop owner approval.',
             'owner_approved' => 'Your repair has been approved!',
@@ -309,8 +309,8 @@ class NotificationService
         return $this->sendToUser(
             userId: $userId,
             type: NotificationType::REPAIR_ASSIGNED,
-            title: 'Repair Request Assigned',
-            message: "Your repair request has been assigned to our repairer.",
+            title: 'Repair Request Under Review',
+            message: 'Repair request is under review. Please wait for the shop to review it.',
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -324,8 +324,8 @@ class NotificationService
         return $this->sendToUser(
             userId: $userId,
             type: NotificationType::REPAIR_ACCEPTED,
-            title: 'Repair Request Accepted',
-            message: "Your repair request has been accepted. Please confirm the details via chat.",
+            title: 'Repair Request Under Review',
+            message: 'Repair request is under review. Please wait for the shop to review it.',
             data: $repairData,
             actionUrl: '/my-repairs'
         );

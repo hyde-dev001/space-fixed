@@ -543,6 +543,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::get('/price-approvals', function () {
             return Inertia::render('ShopOwner/Approvals/PriceApprovals');
         })->name('price-approvals');
+
+        Route::get('/purchase-request-approval', function () {
+            return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval');
+        })->name('purchase-request-approval');
     });
 
     // STAFF/EMPLOYEE MANAGEMENT - Company only

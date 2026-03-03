@@ -129,6 +129,7 @@ class HandleInertiaRequests extends Middleware
                     'first_name' => Auth::guard('shop_owner')->user()->first_name,
                     'last_name' => Auth::guard('shop_owner')->user()->last_name,
                     'name' => Auth::guard('shop_owner')->user()->first_name . ' ' . Auth::guard('shop_owner')->user()->last_name,
+                    'profile_photo' => Auth::guard('shop_owner')->user()->profile_photo,
                     'business_name' => Auth::guard('shop_owner')->user()->business_name,
                     'email' => Auth::guard('shop_owner')->user()->email,
                     'business_type' => Auth::guard('shop_owner')->user()->business_type,

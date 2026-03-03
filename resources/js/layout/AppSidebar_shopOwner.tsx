@@ -84,22 +84,17 @@ const approvalWorkflowItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <path d="M9 12h6M9 16h6M9 8h6" />
+        <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
       </svg>
     ),
-    name: "Price Approvals",
-    route: "shop-owner.price-approvals",
-    path: "/shop-owner/price-approvals",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-      </svg>
-    ),
-    name: "Repair Reject Approval",
-    route: "shop-owner.repair-reject-approval",
-    path: "/shop-owner/repair-reject-approval",
+    name: "Approval Pages",
+    subItems: [
+      { name: "Refund Approval", route: "shop-owner.refund-approvals" },
+      { name: "Price Approvals", route: "shop-owner.price-approvals" },
+      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval" },
+      { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval" },
+    ],
   },
 ];
 
@@ -160,8 +155,8 @@ const productManagementItems: NavItem[] = [
       </svg>
     ),
     name: "Refund Approval",
-    route: "shopOwner.refund-approvals",
-    path: "/shopOwner/refund-approvals",
+    route: "shop-owner.refund-approvals",
+    path: "/shop-owner/refund-approvals",
   },
 ];
 
@@ -257,6 +252,7 @@ const AppSidebar_shopOwner: React.FC = () => {
     const companyOnlyRoutes = [
       'shopOwner.user-access-control',
       'shop-owner.price-approvals',
+      'shop-owner.purchase-request-approval',
       'shop-owner.repair-reject-approval',
       'shopOwner.suspend-accounts'
     ];
@@ -429,7 +425,7 @@ const AppSidebar_shopOwner: React.FC = () => {
           {nav.subItems ? (
             <button
               onClick={() => handleSubmenuToggle(index, menuType)}
-              className={`menu-item group ${openSubmenu?.type === menuType && openSubmenu?.index === index
+              className={`menu-item group ${openSubmenu === `${menuType}-${index}`
                   ? "menu-item-active"
                   : "menu-item-inactive"
                 } cursor-pointer ${!isExpanded && !isHovered
@@ -438,7 +434,7 @@ const AppSidebar_shopOwner: React.FC = () => {
                 }`}
             >
               <span
-                className={`menu-item-icon-size w-6 h-6 ${openSubmenu?.type === menuType && openSubmenu?.index === index
+                className={`menu-item-icon-size w-6 h-6 ${openSubmenu === `${menuType}-${index}`
                     ? "menu-item-icon-active"
                     : "menu-item-icon-inactive"
                   }`}
@@ -450,8 +446,7 @@ const AppSidebar_shopOwner: React.FC = () => {
               )}
               {(isExpanded || isHovered || isMobileOpen) && (
                 <svg
-                  className={`ml-auto w-5 h-5 transition-transform duration-200 ${openSubmenu?.type === menuType &&
-                      openSubmenu?.index === index
+                  className={`ml-auto w-5 h-5 transition-transform duration-200 ${openSubmenu === `${menuType}-${index}`
                       ? "rotate-180 text-brand-500"
                       : ""
                     }`}
@@ -506,7 +501,7 @@ const AppSidebar_shopOwner: React.FC = () => {
               className="overflow-hidden transition-all duration-300"
               style={{
                 height:
-                  openSubmenu?.type === menuType && openSubmenu?.index === index
+                  openSubmenu === `${menuType}-${index}`
                     ? `${subMenuHeight[`${menuType}-${index}`]}px`
                     : "0px",
               }}
@@ -620,14 +615,8 @@ const AppSidebar_shopOwner: React.FC = () => {
                   <HorizontaLDots className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(productManagementItems, "product")}
+              {renderMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems, isIndividualAccount ? "product" : "approval")}
             </div>
-
-            {!isIndividualAccount && (
-              <div>
-                {renderMenuItems(approvalWorkflowItems, "approval")}
-              </div>
-            )}
 
             <div>
               <h2

@@ -877,9 +877,58 @@ const AppSidebar_ERP: React.FC = () => {
   );
 
   useEffect(() => {
-    // Don't auto-expand menus on page load - let users manually toggle
-    // This prevents the menu from staying expanded when using localStorage
-  }, [url, isActive, openSubmenu, toggleSubmenu]);
+    const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
+
+    if (hasStaffAccess()) {
+      menuGroups.push({ menuType: "staff", items: getFilteredStaffItems() });
+    }
+
+    if (hasRepairerAccess()) {
+      menuGroups.push({ menuType: "repair", items: getFilteredRepairItems() });
+    }
+
+    if (role === "MANAGER") {
+      menuGroups.push({
+        menuType: "manager",
+        items: hasFinanceAccess() ? managerItems : [attendanceItem, ...managerItems],
+      });
+    }
+
+    if (hasHRAccess()) {
+      const filteredHrItems = getFilteredHRItems();
+      menuGroups.push({
+        menuType: "hr",
+        items: hasFinanceAccess() ? filteredHrItems : [attendanceItem, ...filteredHrItems],
+      });
+    }
+
+    if (hasFinanceAccess()) {
+      menuGroups.push({ menuType: "finance", items: [attendanceItem, ...getFilteredFinanceItems()] });
+    }
+
+    let activeSubmenuKey: string | null = null;
+
+    menuGroups.some(({ menuType, items }) => {
+      return items.some((nav, index) => {
+        if (!nav.subItems || nav.subItems.length === 0) return false;
+
+        const hasActiveSubItem = nav.subItems.some((subItem) =>
+          isActive(subItem.route, subItem.params)
+        );
+
+        if (hasActiveSubItem) {
+          activeSubmenuKey = `${menuType}-${index}`;
+          return true;
+        }
+
+        return false;
+      });
+    });
+
+    if (activeSubmenuKey && openSubmenu !== activeSubmenuKey) {
+      toggleSubmenu(activeSubmenuKey);
+    }
+  }, [url, isActive, openSubmenu, toggleSubmenu, role, roles, permissions]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -1341,13 +1390,6 @@ const AppSidebar_ERP: React.FC = () => {
         ref={sidebarScrollRef}
         className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
       >
-        {/* Standalone Attendance (TimeIn) - Available to all authenticated staff */}
-        <nav className="mb-6">
-          <div className="flex flex-col gap-4">
-            {renderMenuItems([attendanceItem], "attendance")}
-          </div>
-        </nav>
-
         {/* STAFF section - Show if user has Staff role or staff permissions */}
         {hasStaffAccess() && (
           <nav className="mb-6">
@@ -1412,7 +1454,10 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(managerItems, "manager")}
+                  {renderMenuItems(
+                    hasFinanceAccess() ? managerItems : [attendanceItem, ...managerItems],
+                    "manager"
+                  )}
                 </div>
               </div>
             </nav>
@@ -1471,7 +1516,10 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(getFilteredHRItems(), "hr")}
+                {renderMenuItems(
+                  hasFinanceAccess() ? getFilteredHRItems() : [attendanceItem, ...getFilteredHRItems()],
+                  "hr"
+                )}
               </div>
             </div>
           </nav>
@@ -1493,7 +1541,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(getFilteredFinanceItems(), "finance")}
+                {renderMenuItems([attendanceItem, ...getFilteredFinanceItems()], "finance")}
               </div>
             </div>
           </nav>

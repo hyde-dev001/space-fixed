@@ -53,6 +53,7 @@ interface Props {
 
 const ShopProfile: React.FC<Props> = ({ shop, products }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('Shoes');
+  const [isFollowing, setIsFollowing] = useState<boolean>(false);
 
   const categories = ['Shoes', 'Men', 'Women', 'Kids', 'Sports', 'Repair Services'];
   
@@ -79,8 +80,19 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
         {/* Shop Profile Section */}
         <div className="bg-white border-b border-gray-200 relative">
           <div className="max-w-6xl mx-auto px-6 py-12">
-            {/* Message Button */}
-            <div className="absolute top-6 right-6">
+            {/* Follow + Message Buttons */}
+            <div className="absolute top-6 right-6 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFollowing((prev) => !prev)}
+                className={`inline-block px-4 py-1 rounded text-sm font-medium transition-colors border ${
+                  isFollowing
+                    ? 'bg-black text-white border-black hover:bg-gray-900'
+                    : 'bg-white text-black border-black hover:bg-gray-50'
+                }`}
+              >
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
               <Link
                 href={`/message/${shop.id}`}
                 className="inline-block bg-white text-black border border-black px-4 py-1 rounded text-sm font-medium hover:bg-gray-50 transition-colors"
