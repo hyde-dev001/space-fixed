@@ -54,6 +54,12 @@ export default function RepairSupport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isFetchingConversationsRef = useRef(false);
 
+  const getRequestedConversationId = () => {
+    const conversationIdParam = new URLSearchParams(window.location.search).get('conversation_id');
+    const parsedConversationId = conversationIdParam ? Number(conversationIdParam) : NaN;
+    return Number.isInteger(parsedConversationId) && parsedConversationId > 0 ? parsedConversationId : null;
+  };
+
   useEffect(() => {
     fetchConversations(false);
     
@@ -107,7 +113,14 @@ export default function RepairSupport() {
         });
       });
 
+      const requestedConversationId = getRequestedConversationId();
+
       setSelectedConversationId((prevSelectedId) => {
+        if (requestedConversationId && conversationsData.find((conv: any) => conv.id === requestedConversationId)) {
+          window.history.replaceState({}, '', '/shop-owner/repair-support');
+          return requestedConversationId;
+        }
+
         if (prevSelectedId && conversationsData.find((conv: any) => conv.id === prevSelectedId)) {
           return prevSelectedId;
         }

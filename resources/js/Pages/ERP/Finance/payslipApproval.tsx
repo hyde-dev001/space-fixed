@@ -176,7 +176,7 @@ export default function PayslipApproval() {
 	const loadPayslips = async () => {
 		setLoading(true);
 		try {
-			const response = await fetch('/api/hr/payslip-approvals', {
+const response = await fetch('/api/finance/payslip-approvals', {
 				headers: {
 					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
 					'Accept': 'application/json',
@@ -224,7 +224,7 @@ export default function PayslipApproval() {
 	const handleView = async (request: PayslipApprovalRequest) => {
 		// Fetch full payslip details
 		try {
-			const response = await fetch(`/api/hr/payslip-approvals/${request.id}`, {
+const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 				headers: {
 					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
 					'Accept': 'application/json',
@@ -269,7 +269,7 @@ export default function PayslipApproval() {
 		if (notes !== undefined) {
 			setIsApproving(true);
 			try {
-				const response = await fetch(`/api/hr/payslip-approvals/${request.id}/approve`, {
+				const response = await fetch(`/api/finance/payslip-approvals/${request.id}/approve`, {
 					method: 'POST',
 					headers: {
 						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -330,7 +330,7 @@ export default function PayslipApproval() {
 		if (reason) {
 			setIsApproving(true);
 			try {
-				const response = await fetch(`/api/hr/payslip-approvals/${request.id}/reject`, {
+				const response = await fetch(`/api/finance/payslip-approvals/${request.id}/reject`, {
 					method: 'POST',
 					headers: {
 						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -381,7 +381,7 @@ export default function PayslipApproval() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payslip-approvals/batch/preview', {
+			const response = await fetch('/api/finance/payslip-approvals/batch/preview', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -471,7 +471,7 @@ export default function PayslipApproval() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payslip-approvals/batch/approve', {
+			const response = await fetch('/api/finance/payslip-approvals/batch/approve', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',

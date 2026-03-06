@@ -7,7 +7,6 @@ use App\Models\SupplierOrder;
 use App\Models\StockMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
 
 class SupplierOrderMonitoringController extends Controller
 {
@@ -52,13 +51,10 @@ class SupplierOrderMonitoringController extends Controller
         }
         
         $orders = $query->orderBy('expected_delivery_date', 'asc')
-            ->paginate(20)
+            ->paginate($request->per_page ?? 20)
             ->withQueryString();
         
-        return Inertia::render('ERP/Inventory/SupplierOrderMonitoring', [
-            'orders' => $orders,
-            'filters' => $request->only(['status', 'supplier_id', 'filter', 'search'])
-        ]);
+        return response()->json($orders);
     }
     
     /**

@@ -153,7 +153,7 @@ export default function ShopOwnerDropdown() {
                   <h4 className={`font-semibold text-sm ${
                     isIndividual ? "text-blue-900 dark:text-blue-100" : "text-purple-900 dark:text-purple-100"
                   }`}>
-                    {isIndividual ? "Individual Account" : "Company Account"}
+                    {isIndividual ? "Individual Account" : "Business Account"}
                   </h4>
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
                     businessTypeInfo.color === "blue"
@@ -206,11 +206,11 @@ export default function ShopOwnerDropdown() {
                     type="button"
                     className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-medium rounded-lg transition-colors"
                     onClick={() => {
-                      alert("Upgrade to Company feature coming soon!");
+                      alert("Upgrade to Business feature coming soon!");
                     }}
                   >
                     <Building2 className="w-3.5 h-3.5" />
-                    Upgrade to Company
+                    Upgrade to Business
                   </button>
                 </div>
               </div>

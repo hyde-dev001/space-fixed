@@ -427,6 +427,9 @@ const managerInventoryItems: NavItem[] = [
     name: "Stock Request",
     route: "erp.inventory.stock-request",
   },
+];
+
+const procurementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -439,7 +442,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Supplier Order Monitoring",
-    route: "erp.inventory.supplier-order-monitoring",
+    route: "erp.procurement.supplier-order-monitoring",
   },
   {
     icon: (
@@ -450,7 +453,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Purchase Request",
-    route: "erp.inventory.purchase-request",
+    route: "erp.procurement.purchase-request",
   },
   {
     icon: (
@@ -463,7 +466,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Purchase Orders",
-    route: "erp.inventory.purchase-orders",
+    route: "erp.procurement.purchase-orders",
   },
   {
     icon: (
@@ -475,7 +478,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Stock Request Approval",
-    route: "erp.inventory.stock-request-approval",
+    route: "erp.procurement.stock-request-approval",
   },
   {
     icon: (
@@ -487,7 +490,7 @@ const managerInventoryItems: NavItem[] = [
       </svg>
     ),
     name: "Suppliers Management",
-    route: "erp.inventory.suppliers-management",
+    route: "erp.procurement.suppliers-management",
   },
 ];
 
@@ -734,6 +737,12 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.inventory.purchase-request": "/erp/inventory/purchase-request",
     "erp.inventory.purchase-orders": "/erp/inventory/purchase-orders",
     "erp.inventory.suppliers-management": "/erp/inventory/suppliers-management",
+    // Procurement module routes
+    "erp.procurement.purchase-request": "/erp/procurement/purchase-request",
+    "erp.procurement.purchase-orders": "/erp/procurement/purchase-orders",
+    "erp.procurement.stock-request-approval": "/erp/procurement/stock-request-approval",
+    "erp.procurement.suppliers-management": "/erp/procurement/suppliers-management",
+    "erp.procurement.supplier-order-monitoring": "/erp/procurement/supplier-order-monitoring",
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
@@ -1058,24 +1067,35 @@ const AppSidebar_ERP: React.FC = () => {
     return roles.includes('Repairer') || role === "REPAIRER" || role === "Repairer";
   };
 
-  // Check if user has Inventory Manager role or Manager with inventory permissions
+  // Check if user has Inventory Manager role or explicit inventory gate permission
   const hasInventoryAccess = () => {
-    // Check for Inventory Manager role
     if (roles.includes('Inventory Manager')) return true;
-    
-    // Or Manager role (already has access through manager section)
-    if (role === "MANAGER" || roles.includes('Manager')) return true;
-    
-    // Or check for inventory-specific permissions
-    const inventoryPermissions = [
-      'view-inventory',
+    if (permissions.includes('view-inventory')) return true;
+    // Also grant access if user has any individual inventory page permission
+    const inventoryPagePermissions = [
       'access-inventory-dashboard',
       'access-product-inventory',
       'access-stock-movement',
-      'access-suppliers-management',
       'access-upload-inventory',
+      'access-inventory-overview',
     ];
-    return inventoryPermissions.some(perm => permissions.includes(perm));
+    return inventoryPagePermissions.some(p => permissions.includes(p));
+  };
+
+  // Check if user has Procurement Manager role or explicit procurement gate permission
+  const hasProcurementAccess = () => {
+    if (roles.includes('Procurement Manager')) return true;
+    if (permissions.includes('view-procurement')) return true;
+    // Also grant access if user has any individual procurement page permission
+    const procurementPagePermissions = [
+      'access-procurement-dashboard',
+      'access-purchase-requests',
+      'access-purchase-orders',
+      'access-stock-request-approval',
+      'access-suppliers-management',
+      'access-supplier-order-monitoring',
+    ];
+    return procurementPagePermissions.some(p => permissions.includes(p));
   };
 
   // Filter HR items based on user permissions
@@ -1475,14 +1495,22 @@ const AppSidebar_ERP: React.FC = () => {
                     }`}
                   >
                     {isExpanded || isHovered || isMobileOpen ? (
-                        "SCM"
+                        "Inventory"
                     ) : (
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(managerInventoryItems.slice(0, 6), "manager")}
+                  {renderMenuItems(hasFinanceAccess() ? managerInventoryItems : [attendanceItem, ...managerInventoryItems], "manager")}
+                </div>
+              </div>
+            </nav>
+        )}
+        {hasProcurementAccess() && (
+            <nav className="mb-6">
+              <div className="flex flex-col gap-4">
+                <div>
                   <h2
-                    className={`mt-4 mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                    className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
                         ? "lg:justify-center"
                         : "justify-start"
@@ -1494,7 +1522,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(managerInventoryItems.slice(6), "manager")}
+                  {renderMenuItems(hasFinanceAccess() ? procurementItems : [attendanceItem, ...procurementItems], "manager")}
                 </div>
               </div>
             </nav>
@@ -1563,7 +1591,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(crmItems, "crm")}
+                {renderMenuItems([attendanceItem, ...crmItems], "crm")}
               </div>
             </div>
           </nav>

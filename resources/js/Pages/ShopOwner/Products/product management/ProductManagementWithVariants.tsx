@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Head } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
 import Swal from 'sweetalert2';
-import { ColorVariantManager, ColorVariant } from './ColorVariantManager';
+import { ColorVariantManager, ColorVariant } from '@/components/variants/ColorVariantManager';
 
 // Types
 type Variant = {
@@ -140,8 +140,8 @@ export default function ProductManagement() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const allowed3DModelExtensions = ['glb', 'gltf', 'obj', 'fbx', 'stl', 'ply', 'dae'];
-  const accepted3DModelsInput = '.glb,.gltf,.obj,.fbx,.stl,.ply,.dae';
+  const allowed3DModelExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+  const accepted3DModelsInput = '.jpg,.jpeg,.png,.webp';
 
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
@@ -404,8 +404,8 @@ export default function ProductManagement() {
 
     if (invalidFiles.length > 0) {
       Swal.fire({
-        title: 'Unsupported 3D Format',
-        text: `Only ${allowed3DModelExtensions.join(', ').toUpperCase()} files are allowed.`,
+        title: 'Unsupported File Format',
+        text: `Only image sequence files (${allowed3DModelExtensions.join(', ').toUpperCase()}) are allowed.`,
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1134,11 +1134,11 @@ export default function ProductManagement() {
                 <button
                   type="button"
                   onClick={() => setShow3DShoeModels((prev) => !prev)}
-                  aria-label="Toggle 3D Shoe Models"
-                  title="Toggle 3D Shoe Models"
+                  aria-label="Toggle Shoe Spin Viewer"
+                  title="Toggle Shoe Spin Viewer"
                   className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
-                  <span>3D Shoe Models</span>
+                  <span>Shoe Spin Viewer</span>
                   <span
                     className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
                       show3DShoeModels ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
@@ -1170,10 +1170,10 @@ export default function ProductManagement() {
                   <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-4">
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        3D Shoe Models
+                        Shoe Spin Viewer
                       </label>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        GLB, GLTF, OBJ, FBX, STL, PLY, DAE
+                        JPG, JPEG, PNG, WEBP (Image Sequence)
                       </span>
                     </div>
 
@@ -1182,8 +1182,8 @@ export default function ProductManagement() {
                       multiple
                       accept={accepted3DModelsInput}
                       onChange={handle3DModelFilesChange}
-                      title="Upload 3D shoe model files"
-                      aria-label="Upload 3D shoe model files"
+                      title="Upload image sequence files"
+                      aria-label="Upload image sequence files"
                       className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:rounded-md file:border-0 file:bg-black file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-800"
                     />
 

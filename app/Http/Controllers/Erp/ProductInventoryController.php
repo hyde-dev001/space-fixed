@@ -7,7 +7,6 @@ use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
 
 class ProductInventoryController extends Controller
 {
@@ -61,12 +60,9 @@ class ProductInventoryController extends Controller
             $query->orderBy($sortBy, $sortOrder);
         }
         
-        $products = $query->paginate(20)->withQueryString();
+        $products = $query->paginate($request->per_page ?? 20)->withQueryString();
         
-        return Inertia::render('ERP/Inventory/ProductInventory', [
-            'products' => $products,
-            'filters' => $request->only(['search', 'category', 'brand', 'status', 'sort_by', 'sort_order'])
-        ]);
+        return response()->json($products);
     }
     
     /**

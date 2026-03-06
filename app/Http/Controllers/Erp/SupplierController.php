@@ -48,6 +48,7 @@ class SupplierController extends Controller
             'country' => 'nullable|string|max:100',
             'payment_terms' => 'nullable|string|max:255',
             'lead_time_days' => 'nullable|integer|min:0',
+            'products_supplied' => 'nullable|string',
             'notes' => 'nullable|string'
         ]);
         
@@ -96,6 +97,7 @@ class SupplierController extends Controller
             'payment_terms' => 'nullable|string|max:255',
             'lead_time_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
+            'products_supplied' => 'nullable|string',
             'notes' => 'nullable|string'
         ]);
         

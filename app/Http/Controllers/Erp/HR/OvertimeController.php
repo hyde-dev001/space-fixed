@@ -20,13 +20,8 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        // Validate that user has staff access
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
+        // All authenticated employees may submit overtime regardless of role
+        if (!$user || !$user->shop_owner_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -135,12 +130,8 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
+        // All authenticated employees may view their overtime requests regardless of role
+        if (!$user || !$user->shop_owner_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -349,12 +340,8 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
+        // All authenticated employees may clock in for overtime regardless of role
+        if (!$user || !$user->shop_owner_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -442,12 +429,8 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
+        // All authenticated employees may clock out from overtime regardless of role
+        if (!$user || !$user->shop_owner_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -510,13 +493,9 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        $hasStaffAccess = $user->hasRole(['STAFF', 'Manager', 'shop_owner']) || 
-                         $user->role === 'STAFF' || 
-                         $user->role === 'MANAGER' || 
-                         $user->role === 'shop_owner';
-        
-        if (!$hasStaffAccess) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+        // All authenticated employees may view their today's approved overtime regardless of role
+        if (!$user || !$user->shop_owner_id) {
+            return response()->json(['data' => []]);
         }
 
         $employee = Employee::where('shop_owner_id', $user->shop_owner_id)

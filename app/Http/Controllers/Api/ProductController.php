@@ -53,7 +53,15 @@ class ProductController extends Controller
                 ->allowedSorts(['price', 'name', 'created_at', 'sales_count'])
                 ->defaultSort('-created_at')
                 ->where('is_active', true)
-                ->with(['shopOwner:id,first_name,last_name,business_name,business_type']);
+                ->with([
+                    'shopOwner:id,first_name,last_name,business_name,business_type',
+                    'colorVariants' => function ($query) {
+                        $query->active()->orderBy('sort_order');
+                    },
+                    'colorVariants.images' => function ($query) {
+                        $query->orderBy('sort_order');
+                    }
+                ]);
 
             // Filter by business type - only show products from retail or both shops
             $query->whereHas('shopOwner', function($q) {
@@ -69,6 +77,31 @@ class ProductController extends Controller
             // Transform products to include full image URLs and shop owner info
             $products->getCollection()->transform(function ($product) {
                 $product->main_image = $product->main_image_url;
+
+                $mediaImages = collect($product->image_urls ?? [])
+                    ->pluck('url')
+                    ->filter();
+
+                $variantImages = collect($product->colorVariants ?? [])
+                    ->flatMap(function ($variant) {
+                        return collect($variant->images ?? [])->map(function ($img) {
+                            return $img->image_url;
+                        });
+                    })
+                    ->filter();
+
+                $allImages = $mediaImages
+                    ->merge($variantImages)
+                    ->unique()
+                    ->values();
+
+                $product->gallery_images = $allImages
+                    ->filter(fn ($url) => $url && $url !== $product->main_image)
+                    ->values();
+
+                $product->hover_image = $allImages
+                    ->first(fn ($url) => $url && $url !== $product->main_image)
+                    ?? null;
                 
                 // Add shop_owner for frontend compatibility
                 if ($product->shopOwner) {

@@ -1,8 +1,6 @@
 import type { ComponentType } from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
-import { useInvoices, useExpenses } from '../../../hooks/useFinanceQueries';
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 
@@ -120,61 +118,7 @@ const MetricCard = ({
 };
 
 export default function FinanceDashboard() {
-    const { auth } = usePage().props as any;
-    const { data: invoices = [], isLoading: loadingInvoices, error: invoicesError } = useInvoices();
-    const { data: expenses = [], isLoading: loadingExpenses, error: expensesError } = useExpenses();
-    const [currentTime, setCurrentTime] = useState<Date>(new Date());
-
-    // Update current time every second
-    useEffect(() => {
-        const updateTime = () => setCurrentTime(new Date());
-        updateTime();
-        const interval = setInterval(updateTime, 1000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Show loading state
-    if (loadingInvoices || loadingExpenses) {
-        return (
-            <AppLayoutERP>
-                <Head title="Finance Dashboard - Solespace ERP" />
-                <div className="flex items-center justify-center min-h-screen">
-                    <div className="text-center">
-                        <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-blue-600 border-r-transparent mb-4"></div>
-                        <p className="text-gray-600 dark:text-gray-400">Loading dashboard...</p>
-                    </div>
-                </div>
-            </AppLayoutERP>
-        );
-    }
-
-    // Show error state
-    if (invoicesError || expensesError) {
-        return (
-            <AppLayoutERP>
-                <Head title="Finance Dashboard - Solespace ERP" />
-                <div className="flex items-center justify-center min-h-screen">
-                    <div className="text-center max-w-md">
-                        <div className="text-red-600 dark:text-red-400 mb-4">
-                            <svg className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Error Loading Dashboard</h3>
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">
-                            {(invoicesError as Error)?.message || (expensesError as Error)?.message || 'Failed to load financial data'}
-                        </p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            Reload Page
-                        </button>
-                    </div>
-                </div>
-            </AppLayoutERP>
-        );
-    }
+    const { auth, invoices = [], expenses = [] } = usePage().props as any;
 
     // Calculate stats from real data - only count PAID invoices for revenue
     const stats: FinanceDashboardStats = {
@@ -233,7 +177,25 @@ export default function FinanceDashboard() {
         },
     ];
 
-    // Chart data
+    // Chart data — last 6 calendar months, revenue derived from real paid invoices
+    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const chartMonths: string[] = [];
+    const chartRevenue: number[] = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        chartMonths.push(MONTH_NAMES[d.getMonth()]);
+        const monthTotal = invoices
+            .filter((inv: any) => {
+                const invDate = new Date(inv.date);
+                return inv.status === 'paid' &&
+                    invDate.getFullYear() === d.getFullYear() &&
+                    invDate.getMonth() === d.getMonth();
+            })
+            .reduce((sum: number, inv: any) => sum + (parseFloat(String(inv.total)) || 0), 0);
+        chartRevenue.push(monthTotal);
+    }
+
     const revenueChartOptions: ApexOptions = {
         chart: {
             type: 'area',
@@ -252,7 +214,7 @@ export default function FinanceDashboard() {
         },
         colors: ['#10b981'],
         xaxis: {
-            categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+            categories: chartMonths,
         },
         tooltip: {
             y: {
@@ -264,7 +226,7 @@ export default function FinanceDashboard() {
     const revenueChartSeries = [
         {
             name: 'Revenue',
-            data: [30000, 40000, 35000, 50000, 49000, 60000],
+            data: chartRevenue,
         },
     ];
 

@@ -57,6 +57,12 @@ const EyeIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const PencilIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
 // Metric Card Component
 const MetricCard = ({
   title,
@@ -130,76 +136,6 @@ const MetricCard = ({
   );
 };
 
-// Mock attendance data
-const mockAttendanceData = [
-  {
-    id: 1,
-    name: "Samantha Lopez",
-    department: "Operations",
-    position: "Store Manager",
-    date: "2026-01-20",
-    status: "present",
-    checkIn: "08:00 AM",
-    checkOut: "05:30 PM",
-    totalHours: 9.5,
-  },
-  {
-    id: 2,
-    name: "Carlos Reyes",
-    department: "Sales",
-    position: "Sales Specialist",
-    date: "2026-01-20",
-    status: "present",
-    checkIn: "08:45 AM",
-    checkOut: "05:45 PM",
-    totalHours: 9,
-  },
-  {
-    id: 3,
-    name: "Alicia Tan",
-    department: "HR",
-    position: "HR Generalist",
-    date: "2026-01-20",
-    status: "leave",
-    checkIn: "-",
-    checkOut: "-",
-    totalHours: 0,
-  },
-  {
-    id: 4,
-    name: "Miguel Santos",
-    department: "IT",
-    position: "Support Engineer",
-    date: "2026-01-20",
-    status: "absent",
-    checkIn: "-",
-    checkOut: "-",
-    totalHours: 0,
-  },
-  {
-    id: 5,
-    name: "Erika Del Rosario",
-    department: "Marketing",
-    position: "Campaign Lead",
-    date: "2026-01-20",
-    status: "present",
-    checkIn: "08:15 AM",
-    checkOut: "01:00 PM",
-    totalHours: 4.75,
-  },
-  {
-    id: 6,
-    name: "James Wilson",
-    department: "Finance",
-    position: "Accountant",
-    date: "2026-01-20",
-    status: "present",
-    checkIn: "09:00 AM",
-    checkOut: "05:30 PM",
-    totalHours: 8.5,
-  },
-];
-
 // Transform snake_case API response to camelCase for frontend
 const transformAttendanceFromApi = (apiRecord: any) => {
   const employee = apiRecord.employee || {};
@@ -262,6 +198,10 @@ const ViewAttendance: React.FC = () => {
   const [sortBy, setSortBy] = useState<"name" | "date" | "status">("name");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editRecord, setEditRecord] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ checkIn: '', checkOut: '', status: '', notes: '' });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
@@ -417,6 +357,47 @@ const ViewAttendance: React.FC = () => {
     } catch (err) {
       console.error("Error downloading CSV:", err);
       alert("Failed to download attendance CSV.");
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editRecord) return;
+    setIsSavingEdit(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/hr/attendance/${editRecord.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+          'Accept': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          check_in_time:  editForm.checkIn  ? `${editForm.checkIn}:00`  : null,
+          check_out_time: editForm.checkOut ? `${editForm.checkOut}:00` : null,
+          status: editForm.status,
+          notes:  editForm.notes || null,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `Failed to update attendance (${response.status})`);
+      }
+      // Optimistically update the row without a full re-fetch
+      setAttendanceData(prev =>
+        prev.map(r =>
+          r.id === editRecord.id
+            ? { ...r, checkIn: editForm.checkIn || '-', checkOut: editForm.checkOut || '-', status: editForm.status, notes: editForm.notes }
+            : r
+        )
+      );
+      setIsEditModalOpen(false);
+      setEditRecord(null);
+    } catch (error: any) {
+      alert(error.message || 'Failed to save attendance correction.');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -687,16 +668,34 @@ const ViewAttendance: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => {
-                          setSelectedRecord(record);
-                          setIsViewModalOpen(true);
-                        }}
-                        className="inline-flex items-center justify-center p-2 rounded-lg text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors duration-200"
-                        title="View attendance details"
-                      >
-                        <EyeIcon className="size-5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setSelectedRecord(record);
+                            setIsViewModalOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center p-2 rounded-lg text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors duration-200"
+                          title="View attendance details"
+                        >
+                          <EyeIcon className="size-5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditRecord(record);
+                            setEditForm({
+                              checkIn:  record.checkIn  !== '-' ? record.checkIn.substring(0, 5)  : '',
+                              checkOut: record.checkOut !== '-' ? record.checkOut.substring(0, 5) : '',
+                              status:   record.status,
+                              notes:    record.notes || '',
+                            });
+                            setIsEditModalOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-colors duration-200"
+                          title="Correct attendance record"
+                        >
+                          <PencilIcon className="size-5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -844,6 +843,98 @@ const ViewAttendance: React.FC = () => {
                 className="flex-1 px-4 py-3 rounded-lg bg-gray-600 text-white text-base hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors duration-200 font-medium"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Edit Modal — Attendance Correction */}
+      {isEditModalOpen && editRecord && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full p-8 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Correct Attendance Record</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  {editRecord.name} · {editRecord.date}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="present">Present</option>
+                  <option value="late">Late</option>
+                  <option value="absent">Absent</option>
+                  <option value="leave">Leave</option>
+                </select>
+              </div>
+
+              {/* Check-in / Check-out */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Check-in Time</label>
+                  <input
+                    type="time"
+                    value={editForm.checkIn}
+                    onChange={(e) => setEditForm(f => ({ ...f, checkIn: e.target.value }))}
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Check-out Time</label>
+                  <input
+                    type="time"
+                    value={editForm.checkOut}
+                    onChange={(e) => setEditForm(f => ({ ...f, checkOut: e.target.value }))}
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Correction Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Correction Notes</label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={3}
+                  placeholder="Reason for correction (optional)..."
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={isSavingEdit}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors font-medium"
+              >
+                {isSavingEdit ? 'Saving…' : 'Save Correction'}
               </button>
             </div>
           </div>

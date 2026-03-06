@@ -1,8 +1,10 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
+import { useState, useCallback } from "react";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import type { ComponentType } from "react";
+import axios from "axios";
 
 type MetricColor = "success" | "warning" | "info" | "error";
 type ChangeType = "increase" | "decrease";
@@ -101,22 +103,60 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   );
 };
 
-const engagementData = [
-  { channel: "Messenger", value: 184 },
-  { channel: "Instagram", value: 142 },
-  { channel: "Email", value: 116 },
-  { channel: "Walk-in", value: 95 },
-  { channel: "Phone", value: 68 },
-];
+const RefreshIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
 
-const interactions = [
-  { customer: "Miguel A.", activity: "Asked for size recommendation", channel: "Messenger", time: "2 mins ago" },
-  { customer: "Carla D.", activity: "Requested exchange policy", channel: "Instagram", time: "11 mins ago" },
-  { customer: "Paolo R.", activity: "Follow-up on pending order", channel: "Email", time: "34 mins ago" },
-  { customer: "Shane L.", activity: "Complaint resolved", channel: "Phone", time: "1 hr ago" },
-];
+interface DashboardStats {
+  activeCustomers: number;
+  openConversations: number;
+  pendingReviews: number;
+  averageRating: number;
+}
+interface EngagementItem { channel: string; count: number; }
+interface InteractionItem {
+  conversation_id: number;
+  customer_name: string;
+  customer_email: string | null;
+  last_message: string;
+  last_message_at: string;
+  status: string;
+  priority: string;
+}
 
 export default function CRMDashboard() {
+  const { initialStats, initialEngagement, initialInteractions } =
+    usePage<{ initialStats: DashboardStats; initialEngagement: EngagementItem[]; initialInteractions: InteractionItem[] }>().props;
+
+  const defaultStats: DashboardStats = { activeCustomers: 0, openConversations: 0, pendingReviews: 0, averageRating: 0 };
+
+  const [stats, setStats]               = useState<DashboardStats>(initialStats    ?? defaultStats);
+  const [engagementData, setEngagement] = useState<EngagementItem[]>(initialEngagement  ?? []);
+  const [interactions, setInteractions] = useState<InteractionItem[]>(initialInteractions ?? []);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [lastSynced, setLastSynced]     = useState<Date>(new Date());
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const { data } = await axios.get("/api/crm/dashboard-stats");
+      setStats({
+        activeCustomers:   data.active_customers   ?? 0,
+        openConversations: data.open_conversations ?? 0,
+        pendingReviews:    data.pending_reviews    ?? 0,
+        averageRating:     data.average_rating     ?? 0,
+      });
+      setEngagement(data.engagement_by_channel ?? []);
+      setInteractions(data.recent_interactions  ?? []);
+      setLastSynced(new Date());
+    } catch {
+      // silently ignore
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
   const crmChartOptions: ApexOptions = {
     legend: { show: false },
     colors: ["#465FFF"],
@@ -135,11 +175,7 @@ export default function CRMDashboard() {
       },
     },
     dataLabels: { enabled: false },
-    stroke: {
-      show: true,
-      width: 2,
-      colors: ["transparent"],
-    },
+    stroke: { show: true, width: 2, colors: ["transparent"] },
     grid: {
       xaxis: { lines: { show: false } },
       yaxis: { lines: { show: true } },
@@ -149,42 +185,19 @@ export default function CRMDashboard() {
       categories: engagementData.map((item) => item.channel),
       axisBorder: { show: false },
       axisTicks: { show: false },
-      labels: {
-        style: {
-          fontSize: "12px",
-          colors: ["#6B7280"],
-        },
-      },
+      labels: { style: { fontSize: "12px", colors: ["#6B7280"] } },
     },
     yaxis: {
-      labels: {
-        style: {
-          fontSize: "12px",
-          colors: ["#6B7280"],
-        },
-      },
-      title: {
-        text: "Total Conversations",
-        style: {
-          fontSize: "12px",
-          color: "#6B7280",
-        },
-      },
+      labels: { style: { fontSize: "12px", colors: ["#6B7280"] } },
+      title: { text: "Total Conversations", style: { fontSize: "12px", color: "#6B7280" } },
     },
     tooltip: {
       enabled: true,
-      y: {
-        formatter: (val: number) => `${val} conversations`,
-      },
+      y: { formatter: (val: number) => `${val} conversations` },
     },
   };
 
-  const crmChartSeries = [
-    {
-      name: "Engagement",
-      data: engagementData.map((item) => item.value),
-    },
-  ];
+  const crmChartSeries = [{ name: "Engagement", data: engagementData.map((item) => item.count) }];
 
   return (
     <AppLayoutERP>
@@ -196,17 +209,24 @@ export default function CRMDashboard() {
             <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">CRM Dashboard</h1>
             <p className="text-gray-600 dark:text-gray-400">Track customer engagement, pipeline, and support response performance.</p>
           </div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span>Live CRM</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400 dark:text-gray-500">Synced {lastSynced.toLocaleTimeString()}</span>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              <RefreshIcon className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             title="Active Customers"
-            value="1,284"
-            change={9}
+            value={stats.activeCustomers.toLocaleString()}
+            change={0}
             changeType="increase"
             icon={UsersIcon}
             color="info"
@@ -214,30 +234,30 @@ export default function CRMDashboard() {
           />
           <MetricCard
             title="Open Conversations"
-            value="148"
-            change={6}
+            value={stats.openConversations.toLocaleString()}
+            change={0}
             changeType="increase"
             icon={MessageIcon}
             color="warning"
             description="Unread or unresolved customer messages"
           />
           <MetricCard
-            title="Deals Closed"
-            value="58"
-            change={14}
-            changeType="increase"
+            title="Pending Reviews"
+            value={stats.pendingReviews.toLocaleString()}
+            change={0}
+            changeType="decrease"
             icon={DealIcon}
             color="success"
-            description="Total successful conversions this month"
+            description="Customer reviews awaiting response"
           />
           <MetricCard
-            title="Avg Response Time"
-            value="12 mins"
-            change={8}
-            changeType="decrease"
+            title="Avg Rating"
+            value={`${Number(stats.averageRating).toFixed(1)} / 5`}
+            change={0}
+            changeType="increase"
             icon={ClockIcon}
             color="error"
-            description="Average first response across all channels"
+            description="Overall customer satisfaction score"
           />
         </div>
 
@@ -260,16 +280,21 @@ export default function CRMDashboard() {
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Latest conversation updates and support context</p>
 
             <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+              {interactions.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-6">No recent interactions.</p>
+              )}
               {interactions.map((item) => (
-                <div key={`${item.customer}-${item.time}`} className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+                <div key={item.conversation_id} className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{item.customer}</p>
-                      <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">{item.activity}</p>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{item.customer_name}</p>
+                      <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">{item.last_message || "—"}</p>
                     </div>
-                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">{item.channel}</span>
+                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300 capitalize">{item.status?.replace(/_/g, " ") ?? "open"}</span>
                   </div>
-                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{item.time}</p>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {item.last_message_at ? new Date(item.last_message_at).toLocaleString() : ""}
+                  </p>
                 </div>
               ))}
             </div>

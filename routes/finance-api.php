@@ -16,6 +16,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
+use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
@@ -99,6 +100,21 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::post('/{id}/approve', [RepairServiceController::class, 'financeApprove'])->name('finance.repair-price-changes.approve');
         Route::post('/{id}/reject', [RepairServiceController::class, 'financeReject'])->name('finance.repair-price-changes.reject');
     });
+});
+
+/**
+ * Finance Payslip Approval Routes
+ * Finance reviews HR-generated payslips before employee release.
+ * Separated from the HR module intentionally: Finance approves, HR generates.
+ * Permission required: approve-payroll
+ */
+Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'permission:approve-payroll', 'shop.isolation'])->group(function () {
+    Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
+    Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->name('finance.payslip_approval.show');
+    Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->name('finance.payslip_approval.approve');
+    Route::post('/{id}/reject', [FinancePayslipApprovalController::class, 'rejectPayslip'])->name('finance.payslip_approval.reject');
+    Route::post('/batch/preview', [FinancePayslipApprovalController::class, 'batchApprovalPreview'])->name('finance.payslip_approval.batch_preview');
+    Route::post('/batch/approve', [FinancePayslipApprovalController::class, 'batchApprove'])->name('finance.payslip_approval.batch_approve');
 });
 
 /**

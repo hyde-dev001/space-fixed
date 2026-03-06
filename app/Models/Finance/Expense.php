@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Models\Traits\ShopScoped;
 
 class Expense extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity;
+    use HasFactory, SoftDeletes, LogsActivity, ShopScoped;
 
     protected $table = 'finance_expenses';
 
@@ -34,6 +35,7 @@ class Expense extends Model
         'receipt_mime_type',
         'receipt_size',
         'shop_id',
+        'purchase_order_id',
         'meta',
     ];
 
@@ -48,6 +50,11 @@ class Expense extends Model
     public function journalEntry()
     {
         return $this->belongsTo(JournalEntry::class, 'journal_entry_id');
+    }
+
+    public function supplierOrder()
+    {
+        return $this->belongsTo(\App\Models\SupplierOrder::class, 'purchase_order_id');
     }
 
     public function expenseAccount()

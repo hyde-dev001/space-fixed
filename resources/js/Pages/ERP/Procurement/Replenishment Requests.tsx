@@ -1,122 +1,31 @@
 import { Head } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { replenishmentRequestApi } from "@/services/replenishmentRequestApi";
+import type { ReplenishmentRequest } from "@/types/procurement";
 
-type RequestPriority = "High" | "Medium" | "Low";
-type RequestStatus = "Pending" | "Accepted" | "Rejected" | "Needs Details";
+type RequestPriority = "high" | "medium" | "low";
+type RequestStatus = "pending" | "accepted" | "rejected" | "needs_details";
 
-interface ReplenishmentRequestItem {
-	id: number;
-	requestNo: string;
-	productName: string;
-	skuCode: string;
-	quantityNeeded: number;
-	priority: RequestPriority;
-	requestedBy: string;
-	requestedDate: string;
-	status: RequestStatus;
-	notes: string;
-}
+const formatPriority = (priority: string): string => {
+	const map: Record<string, string> = {
+		high: "High",
+		medium: "Medium",
+		low: "Low",
+	};
+	return map[priority] || priority;
+};
 
-const replenishmentRows: ReplenishmentRequestItem[] = [
-	{
-		id: 1,
-		requestNo: "RR-2026-001",
-		productName: "Nike Air Max 270",
-		skuCode: "NK-AM270-BLK",
-		quantityNeeded: 40,
-		priority: "High",
-		requestedBy: "Robert Martinez",
-		requestedDate: "2026-02-28 08:45 AM",
-		status: "Pending",
-		notes: "Out of stock in all major sizes.",
-	},
-	{
-		id: 2,
-		requestNo: "RR-2026-002",
-		productName: "Adidas Ultraboost 22",
-		skuCode: "AD-UB22-WHT",
-		quantityNeeded: 25,
-		priority: "High",
-		requestedBy: "Robert Martinez",
-		requestedDate: "2026-02-28 09:15 AM",
-		status: "Pending",
-		notes: "Fast-moving item for weekend campaign.",
-	},
-	{
-		id: 3,
-		requestNo: "RR-2026-003",
-		productName: "Puma RS-X",
-		skuCode: "PM-RSX-RED",
-		quantityNeeded: 18,
-		priority: "Medium",
-		requestedBy: "Kevin Santos",
-		requestedDate: "2026-02-27 02:30 PM",
-		status: "Accepted",
-		notes: "Restock for branch display section.",
-	},
-	{
-		id: 4,
-		requestNo: "RR-2026-004",
-		productName: "New Balance 550",
-		skuCode: "NB-550-GRY",
-		quantityNeeded: 30,
-		priority: "High",
-		requestedBy: "Mia Cruz",
-		requestedDate: "2026-02-27 03:10 PM",
-		status: "Needs Details",
-		notes: "Clarify preferred size ratio before sourcing.",
-	},
-	{
-		id: 5,
-		requestNo: "RR-2026-005",
-		productName: "Cleaning Foam",
-		skuCode: "CARE-FOAM-CLN",
-		quantityNeeded: 50,
-		priority: "Low",
-		requestedBy: "Kevin Santos",
-		requestedDate: "2026-02-26 10:05 AM",
-		status: "Accepted",
-		notes: "Routine replenishment for monthly level.",
-	},
-	{
-		id: 6,
-		requestNo: "RR-2026-006",
-		productName: "Premium Shoelaces",
-		skuCode: "ACC-LACE-PRM",
-		quantityNeeded: 80,
-		priority: "Low",
-		requestedBy: "Mia Cruz",
-		requestedDate: "2026-02-26 01:20 PM",
-		status: "Rejected",
-		notes: "Current stock level is still sufficient.",
-	},
-	{
-		id: 7,
-		requestNo: "RR-2026-007",
-		productName: "Leather Conditioner",
-		skuCode: "CARE-LTH-250",
-		quantityNeeded: 22,
-		priority: "Medium",
-		requestedBy: "Robert Martinez",
-		requestedDate: "2026-02-25 11:35 AM",
-		status: "Pending",
-		notes: "Stocks below safety stock threshold.",
-	},
-	{
-		id: 8,
-		requestNo: "RR-2026-008",
-		productName: "Shoe Box (Large)",
-		skuCode: "PKG-BOX-L",
-		quantityNeeded: 60,
-		priority: "Medium",
-		requestedBy: "Kevin Santos",
-		requestedDate: "2026-02-25 04:40 PM",
-		status: "Pending",
-		notes: "Required for incoming batch packaging.",
-	},
-];
+const formatStatus = (status: string): string => {
+	const map: Record<string, string> = {
+		pending: "Pending",
+		accepted: "Accepted",
+		rejected: "Rejected",
+		needs_details: "Needs Details",
+	};
+	return map[status] || status;
+};
 
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -130,24 +39,42 @@ const ChevronRightIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
-const priorityBadgeClass: Record<RequestPriority, string> = {
-	High: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	Medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-	Low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+const priorityBadgeClass: Record<string, string> = {
+	high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+	low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
-const statusBadgeClass: Record<RequestStatus, string> = {
-	Pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-	Accepted: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-	Rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	"Needs Details": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+const statusBadgeClass: Record<string, string> = {
+	pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+	accepted: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	needs_details: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
 };
 
 export default function ReplenishmentRequests() {
-	const [requests, setRequests] = useState<ReplenishmentRequestItem[]>(replenishmentRows);
+	const [requests, setRequests] = useState<ReplenishmentRequest[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
-	const [viewingRequest, setViewingRequest] = useState<ReplenishmentRequestItem | null>(null);
+	const [viewingRequest, setViewingRequest] = useState<ReplenishmentRequest | null>(null);
+
+	const fetchRequests = async () => {
+		try {
+			setLoading(true);
+			const response = await replenishmentRequestApi.getAll();
+			setRequests(response.data);
+		} catch (error) {
+			console.error("Failed to fetch replenishment requests:", error);
+			Swal.fire("Error", "Failed to load requests", "error");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		fetchRequests();
+	}, []);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -155,10 +82,10 @@ export default function ReplenishmentRequests() {
 		if (!query) return requests;
 
 		return requests.filter((request) =>
-			request.requestNo.toLowerCase().includes(query) ||
-			request.productName.toLowerCase().includes(query) ||
-			request.skuCode.toLowerCase().includes(query) ||
-			request.requestedBy.toLowerCase().includes(query) ||
+			request.request_number.toLowerCase().includes(query) ||
+			request.product_name.toLowerCase().includes(query) ||
+			request.sku_code.toLowerCase().includes(query) ||
+			(request.requester?.name || "").toLowerCase().includes(query) ||
 			request.status.toLowerCase().includes(query)
 		);
 	}, [searchQuery, requests]);
@@ -168,34 +95,12 @@ export default function ReplenishmentRequests() {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-	const updateStatus = (requestId: number, nextStatus: RequestStatus, nextNotes?: string) => {
-		setRequests((prev) =>
-			prev.map((request) => {
-				if (request.id !== requestId) return request;
-				return {
-					...request,
-					status: nextStatus,
-					notes: nextNotes ?? request.notes,
-				};
-			})
-		);
-
-		setViewingRequest((prev) => {
-			if (!prev || prev.id !== requestId) return prev;
-			return {
-				...prev,
-				status: nextStatus,
-				notes: nextNotes ?? prev.notes,
-			};
-		});
-	};
-
-	const handleAccept = async (request: ReplenishmentRequestItem) => {
-		if (request.status === "Accepted") return;
+	const handleAccept = async (request: ReplenishmentRequest) => {
+		if (request.status === "accepted") return;
 
 		const result = await Swal.fire({
 			title: "Accept request?",
-			text: `Proceed with supplier sourcing for ${request.productName}?`,
+			text: `Proceed with supplier sourcing for ${request.product_name}?`,
 			icon: "question",
 			showCancelButton: true,
 			confirmButtonText: "Yes, accept",
@@ -206,51 +111,74 @@ export default function ReplenishmentRequests() {
 
 		if (!result.isConfirmed) return;
 
-		updateStatus(request.id, "Accepted");
-
-		await Swal.fire({
-			title: "Accepted",
-			text: "Request has been accepted and is ready for supplier sourcing.",
-			icon: "success",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await replenishmentRequestApi.accept(request.id);
+			await Swal.fire({
+				title: "Accepted",
+				text: "Request has been accepted for supplier sourcing.",
+				icon: "success",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+			fetchRequests();
+			if (viewingRequest && viewingRequest.id === request.id) {
+				setViewingRequest(null);
+			}
+		} catch (error) {
+			console.error("Failed to accept request:", error);
+			Swal.fire("Error", "Failed to accept request", "error");
+		}
 	};
 
-	const handleReject = async (request: ReplenishmentRequestItem) => {
-		if (request.status === "Rejected") return;
+	const handleReject = async (request: ReplenishmentRequest) => {
+		if (request.status === "rejected") return;
 
-		const result = await Swal.fire({
+		const { value: notes } = await Swal.fire({
 			title: "Reject request?",
-			text: `Reject replenishment request ${request.requestNo}?`,
+			input: "textarea",
+			inputLabel: "Rejection Reason",
+			inputPlaceholder: "Enter reason for rejection...",
+			text: `Reject replenishment request ${request.request_number}?`,
 			icon: "warning",
 			showCancelButton: true,
 			confirmButtonText: "Yes, reject",
 			cancelButtonText: "Cancel",
 			confirmButtonColor: "#dc2626",
 			cancelButtonColor: "#6b7280",
+			inputValidator: (value) => {
+				if (!value) return "Please provide a reason";
+				return null;
+			}
 		});
 
-		if (!result.isConfirmed) return;
+		if (!notes) return;
 
-		updateStatus(request.id, "Rejected");
-
-		await Swal.fire({
-			title: "Rejected",
-			text: "Request has been rejected.",
-			icon: "success",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await replenishmentRequestApi.reject(request.id, { rejection_notes: notes });
+			await Swal.fire({
+				title: "Rejected",
+				text: "Request has been rejected.",
+				icon: "success",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+			fetchRequests();
+			if (viewingRequest && viewingRequest.id === request.id) {
+				setViewingRequest(null);
+			}
+		} catch (error) {
+			console.error("Failed to reject request:", error);
+			Swal.fire("Error", "Failed to reject request", "error");
+		}
 	};
 
-	const handleAskDetails = async (request: ReplenishmentRequestItem) => {
+	const handleAskDetails = async (request: ReplenishmentRequest) => {
 		const result = await Swal.fire({
 			title: "Request more details",
 			input: "textarea",
 			inputLabel: "Message to Inventory",
 			inputPlaceholder: "Type the details you need...",
-			inputValue: request.notes,
+			inputValue: request.notes || "",
 			showCancelButton: true,
 			confirmButtonText: "Send request",
 			cancelButtonText: "Cancel",
@@ -266,15 +194,23 @@ export default function ReplenishmentRequests() {
 
 		if (!result.isConfirmed || !result.value) return;
 
-		updateStatus(request.id, "Needs Details", String(result.value));
-
-		await Swal.fire({
-			title: "Sent",
-			text: "Request for details has been sent to Inventory.",
-			icon: "success",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await replenishmentRequestApi.requestDetails(request.id, { notes: String(result.value) });
+			await Swal.fire({
+				title: "Sent",
+				text: "Request for details has been sent to Inventory.",
+				icon: "success",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+			fetchRequests();
+			if (viewingRequest && viewingRequest.id === request.id) {
+				setViewingRequest(null);
+			}
+		} catch (error) {
+			console.error("Failed to request details:", error);
+			Swal.fire("Error", "Failed to send request", "error");
+		}
 	};
 
 	const isAnyModalOpen = Boolean(viewingRequest);
@@ -314,44 +250,54 @@ export default function ReplenishmentRequests() {
 						</div>
 					</div>
 
-					<div className="overflow-x-auto">
-						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-							<thead className="bg-gray-50 dark:bg-gray-800/50">
-								<tr>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Request no</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Requested by</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-									<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
-								</tr>
-							</thead>
-							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedItems.length > 0 ? (
-									paginatedItems.map((request) => (
-										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.requestNo}</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-												<p className="font-medium text-gray-900 dark:text-white">{request.productName}</p>
-												<p className="text-xs text-gray-500 dark:text-gray-400">{request.skuCode}</p>
-											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantityNeeded}</td>
-											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>
-													{request.priority}
-												</span>
-											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{request.requestedDate}</td>
-											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>
-													{request.status}
-												</span>
-											</td>
-											<td className="px-4 py-3 text-center">
-												<div className="flex items-center justify-center gap-2">
+					{loading ? (
+						<div className="text-center py-8">
+							<div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-white"></div>
+							<p className="mt-2 text-gray-600 dark:text-gray-400">Loading requests...</p>
+						</div>
+					) : paginatedItems.length === 0 ? (
+						<div className="text-center py-8 text-gray-500 dark:text-gray-400">
+							{searchQuery ? "No requests found matching your search." : "No replenishment requests yet."}
+						</div>
+					) : (
+						<>
+							<div className="overflow-x-auto">
+								<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+									<thead className="bg-gray-50 dark:bg-gray-800/50">
+										<tr>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Request no</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Requested by</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
+											<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+											<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
+										</tr>
+									</thead>
+									<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+										{paginatedItems.map((request) => (
+											<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+												<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.request_number}</td>
+												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+													<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
+													<p className="text-xs text-gray-500 dark:text-gray-400">{request.sku_code}</p>
+												</td>
+												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity_needed}</td>
+												<td className="px-4 py-3">
+													<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>
+														{formatPriority(request.priority)}
+													</span>
+												</td>
+												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.requester?.name || "—"}</td>
+												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{request.requested_date}</td>
+												<td className="px-4 py-3">
+													<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>
+														{formatStatus(request.status)}
+													</span>
+												</td>
+												<td className="px-4 py-3 text-center">
+													<div className="flex items-center justify-center gap-2">
 													<button
 														onClick={() => setViewingRequest(request)}
 														className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
@@ -362,19 +308,10 @@ export default function ReplenishmentRequests() {
 															<circle cx="12" cy="12" r="3" />
 														</svg>
 													</button>
-													<button
-
 												</div>
 											</td>
 										</tr>
-									))
-								) : (
-									<tr>
-										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
-											No replenishment requests found.
-										</td>
-									</tr>
-								)}
+									))}
 							</tbody>
 						</table>
 					</div>
@@ -404,10 +341,12 @@ export default function ReplenishmentRequests() {
 							</button>
 						</div>
 					</div>
-				</div>
+				</>
+				)}
 			</div>
+		</div>
 
-			{viewingRequest && (
+		{viewingRequest && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/50" onClick={() => setViewingRequest(null)} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
@@ -425,47 +364,47 @@ export default function ReplenishmentRequests() {
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Request No</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requestNo}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.request_number}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
 									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>
-										{viewingRequest.status}
+										{formatStatus(viewingRequest.status)}
 									</span>
 								</div>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Product</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.productName}</p>
-								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">SKU: {viewingRequest.skuCode}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.product_name}</p>
+								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">SKU: {viewingRequest.sku_code}</p>
 							</div>
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity Needed</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantityNeeded}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantity_needed}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Priority</p>
 									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[viewingRequest.priority]}`}>
-										{viewingRequest.priority}
+										{formatPriority(viewingRequest.priority)}
 									</span>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Requested Date</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requestedDate}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requested_date}</p>
 								</div>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Requested By</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requestedBy}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requester?.name || "—"}</p>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes || "—"}</p>
 							</div>
 						</div>
 

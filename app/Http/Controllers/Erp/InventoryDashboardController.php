@@ -8,7 +8,6 @@ use App\Models\StockMovement;
 use App\Models\SupplierOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
 
 class InventoryDashboardController extends Controller
 {
@@ -42,14 +41,13 @@ class InventoryDashboardController extends Controller
                 }
             })
             ->orderBy('name')
-            ->paginate(20)
+            ->paginate($request->per_page ?? 20)
             ->withQueryString();
         
-        return Inertia::render('ERP/Inventory/InventoryDashboard', [
+        return response()->json([
             'metrics' => $metrics,
             'chartData' => $chartData,
             'products' => $products,
-            'filters' => $request->only(['search', 'category', 'status'])
         ]);
     }
     

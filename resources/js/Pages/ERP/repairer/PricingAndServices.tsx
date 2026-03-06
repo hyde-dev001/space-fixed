@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -11,7 +11,7 @@ const initialServicePrices = [
   { name: "Deep Clean & Deodorize", category: "Care", price: "₱350", duration: "45 min", status: "Active" },
   { name: "Sole Whitening", category: "Restoration", price: "₱420", duration: "60 min", status: "Active" },
   { name: "Suede Treatment", category: "Restoration", price: "₱520", duration: "75 min", status: "Active" },
-  { name: "Premium Leather Conditioning", category: "Care", price: "₱650", duration: "90 min", status: "Rejected", rejectionReason: "Service price exceeds approved budget limits. Please revise pricing to align with company standards." },
+  { name: "Premium Leather Conditioning", category: "Care", price: "₱650", duration: "90 min", status: "Rejected", rejectionReason: "Service price exceeds approved budget limits. Please revise pricing to align with business standards." },
 ];
 
 const repairServices = [
@@ -153,7 +153,7 @@ interface ServiceItem {
 }
 
 export default function ERPPricingAndServices() {
-  const { auth } = usePage().props as any;
+  const { auth, initialServices } = usePage().props as any;
   const userRole = auth?.user?.role;
   
   const [currentPage, setCurrentPage] = useState(1);
@@ -163,62 +163,39 @@ export default function ERPPricingAndServices() {
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
   const [editFormData, setEditFormData] = useState({ price: "", reason: "" });
   const [addFormData, setAddFormData] = useState({ name: "", category: "Care", price: "", duration: "" });
-  const [servicePrices, setServicePrices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  // Fetch services from backend
+  const mapApiService = (service: any) => ({
+    name: service.name,
+    category: service.category,
+    price: `₱${parseFloat(service.price).toFixed(0)}`,
+    duration: service.duration,
+    status: service.status,
+    rejectionReason: service.rejection_reason,
+    id: service.id,
+  });
+
+  const [servicePrices, setServicePrices] = useState<any[]>(() =>
+    Array.isArray(initialServices) ? initialServices.map(mapApiService) : []
+  );
+  const [loading, setLoading] = useState(false);
+
+  // Fetch services from backend (used after mutations)
   const fetchServices = async () => {
     try {
       setLoading(true);
       const response = await axios.get('/api/repair-services');
       if (response.data.success) {
-        // Format services for display
-        const formattedServices = response.data.data.map((service: any) => ({
-          name: service.name,
-          category: service.category,
-          price: `₱${parseFloat(service.price).toFixed(0)}`,
-          duration: service.duration,
-          status: service.status,
-          rejectionReason: service.rejection_reason,
-          id: service.id,
-        }));
-        setServicePrices(formattedServices);
+        setServicePrices(response.data.data.map(mapApiService));
       }
     } catch (error) {
       console.error('Error fetching services:', error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Failed to load services',
-      });
+      Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to load services' });
     } finally {
       setLoading(false);
     }
   };
-
-  // Load services on component mount
-  useEffect(() => {
-    // Check authorization - Shop staff/managers/repairers or users with appropriate permissions
-    // Note: Super admin does NOT have access - this is shop-level operation only
-    const hasRoleAccess = userRole === "STAFF" || userRole === "MANAGER" || userRole === "REPAIRER";
-    const hasPermissionAccess = hasPermission(auth, 'access-pricing-services');
-    
-    if (!hasRoleAccess && !hasPermissionAccess) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Access Denied',
-        text: 'You don\'t have permission to manage repair service pricing.',
-        confirmButtonColor: '#2563eb',
-      }).then(() => {
-        window.history.back();
-      });
-      return;
-    }
-    
-    fetchServices();
-  }, []);
 
   // Filter data based on search and status
   const filteredData = servicePrices.filter((item) => {

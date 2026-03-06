@@ -103,7 +103,7 @@ class Product extends Model implements HasMedia
             if (str_starts_with($this->main_image, '/storage/')) {
                 return asset(ltrim($this->main_image, '/'));
             }
-            return asset('storage/products/' . $this->main_image);
+            return asset('storage/' . $this->main_image);
         }
         return $mainImage->getUrl();
     }

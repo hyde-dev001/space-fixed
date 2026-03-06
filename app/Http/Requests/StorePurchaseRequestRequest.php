@@ -25,6 +25,7 @@ class StorePurchaseRequestRequest extends FormRequest
             'product_name' => 'required|string|max:255',
             'supplier_id' => 'required|exists:suppliers,id',
             'inventory_item_id' => 'nullable|exists:inventory_items,id',
+            'requested_size' => 'nullable|string|max:20',
             'quantity' => 'required|integer|min:1',
             'unit_cost' => 'required|numeric|min:0',
             'priority' => 'required|in:high,medium,low',

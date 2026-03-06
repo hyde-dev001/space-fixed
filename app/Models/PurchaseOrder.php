@@ -19,7 +19,10 @@ class PurchaseOrder extends Model
         'supplier_id',
         'product_name',
         'inventory_item_id',
+        'requested_size',
         'quantity',
+        'received_quantity',
+        'defective_quantity',
         'unit_cost',
         'total_cost',
         'expected_delivery_date',
@@ -48,6 +51,8 @@ class PurchaseOrder extends Model
         'unit_cost' => 'decimal:2',
         'total_cost' => 'decimal:2',
         'quantity' => 'integer',
+        'received_quantity' => 'integer',
+        'defective_quantity' => 'integer',
     ];
 
     protected $appends = [
@@ -287,15 +292,42 @@ class PurchaseOrder extends Model
         }
 
         $inventoryItem = $this->inventoryItem;
-        if ($inventoryItem) {
-            $inventoryItem->incrementStock(
-                $this->quantity,
-                'stock_in',
-                "Delivered from PO: {$this->po_number}"
-            );
-            return true;
+        if (!$inventoryItem) {
+            return false;
         }
 
-        return false;
+        // Net accepted = received - defective (fall back to full quantity for older POs)
+        $netAccepted = ($this->received_quantity ?? $this->quantity) - ($this->defective_quantity ?? 0);
+
+        if ($netAccepted <= 0) {
+            return true; // All items defective — nothing goes to inventory
+        }
+
+        // Increment the overall available_quantity on the parent item
+        $inventoryItem->incrementStock(
+            $netAccepted,
+            'stock_in',
+            "Delivered from PO: {$this->po_number} (received: " . ($this->received_quantity ?? $this->quantity) . ", defective: " . ($this->defective_quantity ?? 0) . ")"
+        );
+
+        // If a specific size was requested, also increment that size's quantity
+        if ($this->requested_size) {
+            $sizeRow = $inventoryItem->sizes()
+                ->where('size', $this->requested_size)
+                ->first();
+
+            if ($sizeRow) {
+                $sizeRow->quantity += $netAccepted;
+                $sizeRow->save();
+            } else {
+                // Size didn't exist yet — create it
+                $inventoryItem->sizes()->create([
+                    'size'     => $this->requested_size,
+                    'quantity' => $netAccepted,
+                ]);
+            }
+        }
+
+        return true;
     }
 }

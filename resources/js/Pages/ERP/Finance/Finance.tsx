@@ -30,7 +30,7 @@ type Section =
   | "refund-approvals";
 
 export default function FinancePage() {
-  const { auth, url } = usePage().props as any;
+  const { auth, url, purchaseRequests } = usePage().props as any;
   const userRole = auth?.user?.role;
   const [error, setError] = useState<string | null>(null);
   const [isPurchaseRequestModalOpen, setIsPurchaseRequestModalOpen] = useState(false);
@@ -111,7 +111,19 @@ export default function FinancePage() {
           }
           return <Expense />;
           
-        case "repair-pricing":
+        case "repair-pricing": {
+          const businessType = (auth?.user?.shop_owner?.business_type ?? auth?.shop_owner?.business_type ?? '').toLowerCase();
+          if (businessType === 'retail') {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-gray-400 text-6xl mb-4">🔧</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Not Applicable</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Repair pricing is not available for retail-only shops.</p>
+                </div>
+              </div>
+            );
+          }
           // Check pricing permissions
           if (!hasAnyPermission(auth, ['access-repair-price-approval'])) {
             return (
@@ -125,8 +137,21 @@ export default function FinancePage() {
             );
           }
           return <RepairPriceApproval />;
+        }
           
-        case "shoe-pricing":
+        case "shoe-pricing": {
+          const businessType = (auth?.user?.shop_owner?.business_type ?? auth?.shop_owner?.business_type ?? '').toLowerCase();
+          if (businessType === 'repair') {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-gray-400 text-6xl mb-4">👟</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Not Applicable</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Shoe pricing is not available for repair-only shops.</p>
+                </div>
+              </div>
+            );
+          }
           // Check pricing permissions
           if (!hasAnyPermission(auth, ['access-shoe-price-approval'])) {
             return (
@@ -140,9 +165,10 @@ export default function FinancePage() {
             );
           }
           return <ShoePriceApproval />;
+        }
 
         case "purchase-request-approval":
-          return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} />;
+          return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} requests={purchaseRequests || []} />;
 
         case "payslip-approvals":
           // Check payslip approval permissions

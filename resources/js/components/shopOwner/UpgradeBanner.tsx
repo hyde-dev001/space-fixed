@@ -2,7 +2,7 @@
  * Upgrade Banner Component
  * 
  * Displays a prominent banner encouraging Individual shop owners
- * to upgrade to a Company account to unlock additional features
+ * to upgrade to a Business account to unlock additional features
  */
 
 import { Link } from '@inertiajs/react';
@@ -28,10 +28,10 @@ export default function UpgradeBanner({ feature, className = '' }: UpgradeBanner
                 {/* Content */}
                 <div className="flex-1">
                     <h3 className="text-xl font-bold text-gray-900 mb-2">
-                        Upgrade to Company Account
+                        Upgrade to Business Account
                     </h3>
                     <p className="text-gray-700 mb-4">
-                        {defaultFeature} is available exclusively for Company accounts. 
+                        {defaultFeature} is available exclusively for Business accounts. 
                         Upgrade today to unlock powerful features for growing businesses.
                     </p>
 

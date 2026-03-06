@@ -30,6 +30,10 @@ export default function AccessControlTest() {
         registrationType: shopOwner.registration_type,
     };
 
+    const displayRegistrationType = shopOwner.registration_type === 'company'
+        ? 'business'
+        : shopOwner.registration_type;
+
     const navigation = getShopOwnerNavigation(access);
     const quickActions = getQuickActions(access);
     const availableFeatures = getAvailableFeatures(access);
@@ -57,7 +61,7 @@ export default function AccessControlTest() {
                     </div>
                     <div>
                         <p className="text-sm text-gray-600">Registration Type</p>
-                        <p className="font-semibold">{shopOwner.registration_type}</p>
+                        <p className="font-semibold">{displayRegistrationType}</p>
                     </div>
                     <div>
                         <p className="text-sm text-gray-600">Max Locations</p>

@@ -19,6 +19,7 @@ class StockRequestApproval extends Model
         'product_name',
         'sku_code',
         'quantity_needed',
+        'requested_size',
         'priority',
         'status',
         'requested_by',

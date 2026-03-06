@@ -26,6 +26,10 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ERP\HR\AttendanceController;
 use App\Http\Controllers\ERP\HR\LeaveController;
 use App\Http\Controllers\ERP\HR\PayrollController;
+use App\Http\Controllers\ERP\HR\PayrollBatchController;
+use App\Http\Controllers\ERP\HR\PayrollComponentController;
+// Payslip approval moved to Finance module (finance-api.php + App\Http\Controllers\Api\Finance\PayslipApprovalController)
+// use App\Http\Controllers\ERP\HR\PayslipApprovalController;
 // use App\Http\Controllers\ERP\HR\PerformanceController; // TODO: Implement this controller
 use App\Http\Controllers\ERP\HR\DepartmentController;
 use App\Http\Controllers\ERP\HR\DocumentController;
@@ -145,36 +149,52 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     // PAYROLL PROCESSING
     // ============================================
     Route::prefix('payroll')->group(function () {
+        // Core CRUD
         Route::get('/', [PayrollController::class, 'index'])->name('hr.payroll.index');
         Route::post('/', [PayrollController::class, 'store'])->name('hr.payroll.store');
-        Route::post('/calculate-preview', [PayrollController::class, 'calculatePreview'])->name('hr.payroll.calculate_preview');
-        Route::post('/generate', [PayrollController::class, 'generatePayroll'])->name('hr.payroll.generate');
-        Route::post('/process', [PayrollController::class, 'processPayroll'])->name('hr.payroll.process');
-        
-        // Batch operations
-        Route::post('/batch/preview', [PayrollController::class, 'previewBatch'])->name('hr.payroll.batch.preview');
-        Route::post('/batch/generate', [PayrollController::class, 'generateBatch'])->name('hr.payroll.batch.generate');
-        Route::post('/batch/retry', [PayrollController::class, 'retryBatch'])->name('hr.payroll.batch.retry');
-        Route::post('/batch/export', [PayrollController::class, 'exportBatch'])->name('hr.payroll.batch.export');
-        
-        Route::get('/employee/{employeeId}', [PayrollController::class, 'getByEmployee'])->name('hr.payroll.by_employee');
         Route::get('/{id}', [PayrollController::class, 'show'])->name('hr.payroll.show');
         Route::put('/{id}', [PayrollController::class, 'update'])->name('hr.payroll.update');
         Route::delete('/{id}', [PayrollController::class, 'destroy'])->name('hr.payroll.destroy');
+
+        // Approval (generation is via POST /)
+        Route::post('/{id}/approve', [PayrollController::class, 'approve'])->name('hr.payroll.approve');
+
+        // Status transitions
+        Route::post('/process', [PayrollController::class, 'process'])->name('hr.payroll.process');
+
+        // Preview & analytics
+        Route::post('/calculate-preview', [PayrollController::class, 'calculatePreview'])->name('hr.payroll.calculate_preview');
+        Route::get('/stats', [PayrollController::class, 'stats'])->name('hr.payroll.stats');
+        Route::get('/summary', [PayrollController::class, 'summary'])->name('hr.payroll.summary');
+        Route::post('/{id}/recalculate', [PayrollController::class, 'recalculate'])->name('hr.payroll.recalculate');
+
+        // Export
         Route::get('/{id}/export', [PayrollController::class, 'exportPayslip'])->name('hr.payroll.export');
     });
 
     // ============================================
-    // PAYSLIP APPROVALS (Finance approval before HR release)
+    // PAYROLL BATCH OPERATIONS → PayrollBatchController
     // ============================================
-    Route::prefix('payslip-approvals')->middleware(['permission:access-payslip-approval'])->group(function () {
-        Route::get('/', [PayrollController::class, 'getPayslipsForApproval'])->name('hr.payslip_approval.index');
-        Route::get('/{id}', [PayrollController::class, 'getPayslipForApproval'])->name('hr.payslip_approval.show');
-        Route::post('/{id}/approve', [PayrollController::class, 'approvePayslip'])->name('hr.payslip_approval.approve');
-        Route::post('/{id}/reject', [PayrollController::class, 'rejectPayslip'])->name('hr.payslip_approval.reject');
-        Route::post('/batch/preview', [PayrollController::class, 'batchApprovalPreview'])->name('hr.payslip_approval.batch_preview');
-        Route::post('/batch/approve', [PayrollController::class, 'batchApprove'])->name('hr.payslip_approval.batch_approve');
+    Route::prefix('payroll/batch')->group(function () {
+        Route::post('/preview', [PayrollBatchController::class, 'previewBatch'])->name('hr.payroll.batch.preview');
+        Route::post('/generate', [PayrollBatchController::class, 'generateBatch'])->name('hr.payroll.batch.generate');
+        Route::post('/retry', [PayrollBatchController::class, 'retryBatch'])->name('hr.payroll.batch.retry');
+        Route::post('/export', [PayrollBatchController::class, 'exportBatch'])->name('hr.payroll.batch.export');
     });
+
+    // ============================================
+    // PAYROLL COMPONENT MANAGEMENT → PayrollComponentController
+    // ============================================
+    Route::prefix('payroll/{payrollId}/components')->group(function () {
+        Route::get('/', [PayrollComponentController::class, 'getComponents'])->name('hr.payroll.components.index');
+        Route::post('/', [PayrollComponentController::class, 'addComponent'])->name('hr.payroll.components.add');
+        Route::put('/{componentId}', [PayrollComponentController::class, 'updateComponent'])->name('hr.payroll.components.update');
+        Route::delete('/{componentId}', [PayrollComponentController::class, 'deleteComponent'])->name('hr.payroll.components.delete');
+    });
+
+    // NOTE: Payslip approval routes were moved to finance-api.php.
+    // Finance owns the approval workflow; HR owns generation.
+    // Frontend endpoint base: /api/finance/payslip-approvals/...
 
     // ============================================
     // PERFORMANCE REVIEWS
@@ -294,6 +314,8 @@ Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
     Route::prefix('attendance')->group(function () {
         Route::post('/check-in', [AttendanceController::class, 'selfCheckIn'])->name('staff.attendance.checkin');
         Route::post('/check-out', [AttendanceController::class, 'selfCheckOut'])->name('staff.attendance.checkout');
+        Route::post('/lunch-start', [AttendanceController::class, 'selfLunchStart'])->name('staff.attendance.lunch_start');
+        Route::post('/lunch-end', [AttendanceController::class, 'selfLunchEnd'])->name('staff.attendance.lunch_end');
         Route::get('/my-records', [AttendanceController::class, 'myRecords'])->name('staff.attendance.my_records');
         Route::get('/status', [AttendanceController::class, 'checkStatus'])->name('staff.attendance.status');
         Route::get('/my-lateness-stats', [AttendanceController::class, 'getMyLatenessStats'])->name('staff.attendance.my_lateness_stats');

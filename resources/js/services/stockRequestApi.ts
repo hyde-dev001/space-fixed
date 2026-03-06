@@ -78,6 +78,20 @@ export const stockRequestApi = {
         const response: AxiosResponse<StockRequestMetrics> = await axios.get(`${BASE_URL}/metrics`);
         return response.data;
     },
+
+    /**
+     * Create a new stock request
+     */
+    async create(data: {
+        inventory_item_id: number;
+        quantity_needed: number;
+        priority: string;
+        requested_size?: string;
+        notes?: string;
+    }): Promise<StockRequestApproval> {
+        const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(BASE_URL, data);
+        return (response.data as any).stock_request ?? response.data;
+    },
 };
 
 export default stockRequestApi;

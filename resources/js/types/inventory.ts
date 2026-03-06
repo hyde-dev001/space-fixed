@@ -205,7 +205,7 @@ export interface ChartData {
 // Form Data Interfaces
 export interface CreateInventoryItemData {
     name: string;
-    sku: string;
+    sku?: string;
     category: string;
     brand?: string;
     description?: string;
@@ -224,6 +224,7 @@ export interface CreateInventoryItemData {
         color_code?: string;
         quantity: number;
         sku_suffix?: string;
+        images?: File[];
     }>;
     images?: File[];
 }

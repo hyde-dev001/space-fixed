@@ -65,6 +65,15 @@ const getPHTime = () => {
     return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
 };
 
+// Format decimal hours to H:MM:SS (e.g. 7.5 → "7:30:00")
+const formatDecimalHours = (decimalHours: number): string => {
+    const totalSeconds = Math.round(decimalHours * 3600);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 export default function TimeIn() {
     const { auth } = usePage().props as any;
     const [currentTime, setCurrentTime] = useState<Date>(getPHTime());
@@ -141,6 +150,15 @@ export default function TimeIn() {
                     setLogoutTime(checkOutDate);
                     setIsClockedIn(false);
                 }
+
+                // Restore lunch break state
+                if (data.is_on_lunch && data.lunch_break_start) {
+                    const [lh, lm] = data.lunch_break_start.split(':');
+                    const lunchDate = new Date();
+                    lunchDate.setHours(parseInt(lh), parseInt(lm), 0);
+                    setLunchStartTime(lunchDate);
+                    setIsOnLunch(true);
+                }
                 
                 // SEAMLESS OVERTIME: Auto-detect if overtime is active
                 if (data.has_approved_overtime && data.overtime_id) {
@@ -175,7 +193,7 @@ export default function TimeIn() {
                     }),
                     clockIn: record.check_in_time ? formatTimeFromString(record.check_in_time) : '--:--',
                     clockOut: record.check_out_time ? formatTimeFromString(record.check_out_time) : '--:--',
-                    totalHours: record.working_hours ? `${record.working_hours}:00` : '0:00:00',
+                    totalHours: record.working_hours ? formatDecimalHours(record.working_hours) : '0:00:00',
                     status: record.check_out_time ? 'Completed' : 'In Progress',
                     isLate: record.is_late || false,
                     minutesLate: record.minutes_late || 0,
@@ -205,7 +223,6 @@ export default function TimeIn() {
             });
             if (response.ok) {
                 const data = await response.json();
-                console.log('Shop hours response:', data);
                 setShopHours(data);
             } else {
                 console.error('Failed to fetch shop hours:', response.status);
@@ -621,20 +638,51 @@ export default function TimeIn() {
         }
     };
 
-    const handleStartLunch = () => {
-        const now = new Date();
-        setLunchStartTime(now);
-        setIsOnLunch(true);
+    const handleStartLunch = async () => {
+        try {
+            const response = await fetch('/api/staff/attendance/lunch-start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                credentials: 'include',
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setLunchStartTime(getPHTime());
+                setIsOnLunch(true);
+            } else {
+                Swal.fire('Error', data.error || 'Failed to start lunch break', 'error');
+            }
+        } catch {
+            Swal.fire('Error', 'Failed to start lunch break', 'error');
+        }
     };
 
-    const handleEndLunch = () => {
-        const now = new Date();
-        setLunchEndTime(now);
-        setIsOnLunch(false);
-        setTimeout(() => {
-            setLunchStartTime(null);
-            setLunchEndTime(null);
-        }, 100);
+    const handleEndLunch = async () => {
+        try {
+            const response = await fetch('/api/staff/attendance/lunch-end', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                credentials: 'include',
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setIsOnLunch(false);
+                setTimeout(() => {
+                    setLunchStartTime(null);
+                    setLunchEndTime(null);
+                }, 100);
+            } else {
+                Swal.fire('Error', data.error || 'Failed to end lunch break', 'error');
+            }
+        } catch {
+            Swal.fire('Error', 'Failed to end lunch break', 'error');
+        }
     };
 
     const handleClockOut = async () => {

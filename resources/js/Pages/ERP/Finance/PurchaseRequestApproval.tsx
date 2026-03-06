@@ -2,98 +2,35 @@ import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
+import axios from "axios";
+import type { PurchaseRequest } from "@/services/purchaseRequestApi";
 
-type RequestPriority = "High" | "Medium" | "Low";
-type ApprovalStatus = "Pending" | "Approved" | "Rejected";
+type RequestPriority = "high" | "medium" | "low";
+type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "approved" | "rejected";
 type MetricColor = "success" | "warning" | "info";
 
-interface PurchaseRequestApprovalItem {
-	id: number;
-	prNo: string;
-	productName: string;
-	supplierName: string;
-	quantity: number;
-	unitCost: number;
-	totalCost: number;
-	priority: RequestPriority;
-	requestedBy: string;
-	requestedDate: string;
-	status: ApprovalStatus;
-	justification: string;
-	financeNotes?: string;
+interface PurchaseRequestApprovalItem extends PurchaseRequest {
+	// Additional frontend-only fields if needed
 }
 
-const initialRequests: PurchaseRequestApprovalItem[] = [
-	{
-		id: 1,
-		prNo: "PR-2026-001",
-		productName: "Nike Air Max 270",
-		supplierName: "Metro Footwear Trading",
-		quantity: 40,
-		unitCost: 5100,
-		totalCost: 204000,
-		priority: "High",
-		requestedBy: "Procurement Team",
-		requestedDate: "2026-02-28 10:20 AM",
-		status: "Pending",
-		justification: "Out of stock and high demand in branches for weekend sales.",
-	},
-	{
-		id: 2,
-		prNo: "PR-2026-002",
-		productName: "Adidas Ultraboost 22",
-		supplierName: "Prime Shoe Goods",
-		quantity: 25,
-		unitCost: 4800,
-		totalCost: 120000,
-		priority: "High",
-		requestedBy: "Procurement Team",
-		requestedDate: "2026-02-28 11:05 AM",
-		status: "Approved",
-		justification: "Approved stock request from inventory team.",
-		financeNotes: "Budget available under Q1 replenishment allocation.",
-	},
-	{
-		id: 3,
-		prNo: "PR-2026-003",
-		productName: "Cleaning Foam",
-		supplierName: "CleanKicks Supply Co.",
-		quantity: 60,
-		unitCost: 180,
-		totalCost: 10800,
-		priority: "Medium",
-		requestedBy: "Procurement Team",
-		requestedDate: "2026-02-27 03:15 PM",
-		status: "Pending",
-		justification: "Monthly replenishment of care products.",
-	},
-	{
-		id: 4,
-		prNo: "PR-2026-004",
-		productName: "Premium Shoelaces",
-		supplierName: "Urban Streetwear Partners",
-		quantity: 80,
-		unitCost: 120,
-		totalCost: 9600,
-		priority: "Low",
-		requestedBy: "Procurement Team",
-		requestedDate: "2026-02-27 01:40 PM",
-		status: "Rejected",
-		justification: "Buffer stock request before next month campaign.",
-		financeNotes: "Current warehouse level is still above reorder threshold.",
-	},
-];
-
 const priorityBadgeClass: Record<RequestPriority, string> = {
-	High: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	Medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-	Low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+	high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+	low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
 const statusBadgeClass: Record<ApprovalStatus, string> = {
-	Pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
-	Approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-	Rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	pending_finance: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+	pending_shop_owner: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+	approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+};
+
+const statusDisplayName: Record<ApprovalStatus, string> = {
+	pending_finance: "Pending Finance",
+	pending_shop_owner: "Pending Shop Owner",
+	approved: "Approved",
+	rejected: "Rejected",
 };
 
 interface MetricCardProps {
@@ -179,24 +116,50 @@ const currency = new Intl.NumberFormat("en-PH", {
 
 interface PurchaseRequestApprovalProps {
 	onModalStateChange?: (isOpen: boolean) => void;
+	requests: PurchaseRequestApprovalItem[];
 }
 
-export default function PurchaseRequestApproval({ onModalStateChange }: PurchaseRequestApprovalProps) {
+export default function PurchaseRequestApproval({ onModalStateChange, requests: initialRequests }: PurchaseRequestApprovalProps) {
 	const { auth } = usePage().props as any;
-	const [requests, setRequests] = useState<PurchaseRequestApprovalItem[]>(initialRequests);
+	const [requests, setRequests] = useState<PurchaseRequestApprovalItem[]>(initialRequests || []);
+	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestApprovalItem | null>(null);
+
+	const fetchPurchaseRequests = async () => {
+		try {
+			setLoading(true);
+			const response = await axios.get('/api/erp/procurement/purchase-requests', {
+				params: { status: 'pending_finance', per_page: 100 },
+			});
+			const data = response.data?.data || response.data || [];
+			setRequests(Array.isArray(data) ? data : []);
+		} catch (error) {
+			console.error('Error fetching purchase requests:', error);
+			setRequests([]);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		if (initialRequests && initialRequests.length > 0) {
+			setRequests(initialRequests);
+		} else {
+			fetchPurchaseRequests();
+		}
+	}, [initialRequests]);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 		if (!query) return requests;
 
 		return requests.filter((request) =>
-			request.prNo.toLowerCase().includes(query) ||
-			request.productName.toLowerCase().includes(query) ||
-			request.supplierName.toLowerCase().includes(query) ||
-			request.status.toLowerCase().includes(query)
+			request.pr_number?.toLowerCase().includes(query) ||
+			request.product_name?.toLowerCase().includes(query) ||
+			request.supplier?.name?.toLowerCase().includes(query) ||
+			request.status?.toLowerCase().includes(query)
 		);
 	}, [searchQuery, requests]);
 
@@ -206,39 +169,25 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
 	const totalRequests = requests.length;
-	const pendingCount = requests.filter((request) => request.status === "Pending").length;
-	const approvedCount = requests.filter((request) => request.status === "Approved").length;
-
-	const updateRequestStatus = (requestId: number, nextStatus: ApprovalStatus, financeNotes?: string) => {
-		setRequests((prev) =>
-			prev.map((request) => {
-				if (request.id !== requestId) return request;
-				return {
-					...request,
-					status: nextStatus,
-					financeNotes: financeNotes ?? request.financeNotes,
-				};
-			})
-		);
-
-		setViewingRequest((prev) => {
-			if (!prev || prev.id !== requestId) return prev;
-			return {
-				...prev,
-				status: nextStatus,
-				financeNotes: financeNotes ?? prev.financeNotes,
-			};
-		});
-	};
+	const pendingCount = requests.filter((request) => request.status === "pending_finance").length;
+	const approvedCount = requests.filter((request) => request.status === "pending_shop_owner").length;
 
 	const handleApprove = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
 
-		if (request.status === "Approved") return;
+		if (request.status !== "pending_finance") {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot Approve",
+				text: "Only requests pending finance review can be approved.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
 
 		const result = await Swal.fire({
 			title: "Approve purchase request?",
-			text: `Approve ${request.prNo} and return to Procurement?`,
+			text: `Approve ${request.pr_number} and send to Shop Owner for final approval?`,
 			input: "textarea",
 			inputLabel: "Finance Notes (optional)",
 			inputPlaceholder: "Add approval notes...",
@@ -251,25 +200,50 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 
 		if (!result.isConfirmed) return;
 
-		updateRequestStatus(request.id, "Approved", result.value ? String(result.value) : request.financeNotes);
+		try {
+			await axios.post(
+				`/api/erp/procurement/purchase-requests/${request.id}/approve`,
+				{
+					approval_notes: result.value || undefined,
+				}
+			);
 
-		await Swal.fire({
-			icon: "success",
-			title: "Approved",
-			text: `${request.prNo} was approved and sent back to Procurement.`,
-			timer: 1600,
-			showConfirmButton: false,
-		});
+			fetchPurchaseRequests();
+
+			await Swal.fire({
+				icon: "success",
+				title: "Approved",
+				text: `${request.pr_number} was approved and sent to Shop Owner for final approval.`,
+				timer: 1600,
+				showConfirmButton: false,
+			});
+		} catch (error: any) {
+			console.error("Error approving purchase request:", error);
+			await Swal.fire({
+				icon: "error",
+				title: "Error",
+				text: error.response?.data?.message || "Failed to approve purchase request.",
+				confirmButtonColor: "#2563eb",
+			});
+		}
 	};
 
 	const handleReject = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
 
-		if (request.status === "Rejected") return;
+		if (request.status !== "pending_finance") {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot Reject",
+				text: "Only requests pending finance review can be rejected.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
 
 		const result = await Swal.fire({
 			title: "Reject purchase request?",
-			text: `Please provide reason for rejecting ${request.prNo}.`,
+			text: `Please provide reason for rejecting ${request.pr_number}.`,
 			icon: "warning",
 			input: "textarea",
 			inputLabel: "Rejection reason",
@@ -284,15 +258,32 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 
 		if (!result.isConfirmed || !result.value) return;
 
-		updateRequestStatus(request.id, "Rejected", String(result.value));
+		try {
+			await axios.post(
+				`/api/erp/procurement/purchase-requests/${request.id}/reject`,
+				{
+					rejection_reason: String(result.value),
+				}
+			);
 
-		await Swal.fire({
-			icon: "success",
-			title: "Rejected",
-			text: `${request.prNo} was returned to Procurement with notes.`,
-			timer: 1600,
-			showConfirmButton: false,
-		});
+			fetchPurchaseRequests();
+
+			await Swal.fire({
+				icon: "success",
+				title: "Rejected",
+				text: `${request.pr_number} was rejected and returned to Procurement.`,
+				timer: 1600,
+				showConfirmButton: false,
+			});
+		} catch (error: any) {
+			console.error("Error rejecting purchase request:", error);
+			await Swal.fire({
+				icon: "error",
+				title: "Error",
+				text: error.response?.data?.message || "Failed to reject purchase request.",
+				confirmButtonColor: "#2563eb",
+			});
+		}
 	};
 
 	const isAnyModalOpen = Boolean(viewingRequest);
@@ -359,21 +350,29 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedItems.length > 0 ? (
+								{loading ? (
+									<tr>
+										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Loading...</td>
+									</tr>
+								) : paginatedItems.length > 0 ? (
 									paginatedItems.map((request) => (
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.prNo}</td>
+											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.pr_number}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-												<p className="font-medium text-gray-900 dark:text-white">{request.productName}</p>
-												<p className="text-xs text-gray-500 dark:text-gray-400">{request.supplierName}</p>
+												<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
+												<p className="text-xs text-gray-500 dark:text-gray-400">{request.supplier?.name || 'N/A'}</p>
 											</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity}</td>
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">{currency.format(request.totalCost)}</td>
+											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">{currency.format(request.total_cost)}</td>
 											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>{request.priority}</span>
+												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>
+													{request.priority.charAt(0).toUpperCase() + request.priority.slice(1)}
+												</span>
 											</td>
 											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>{request.status}</span>
+												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>
+													{statusDisplayName[request.status]}
+												</span>
 											</td>
 											<td className="px-4 py-3 text-center">
 												<div className="flex items-center justify-center gap-2">
@@ -441,18 +440,20 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">PR No</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.prNo}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.pr_number}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
-									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>{viewingRequest.status}</span>
+									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>
+										{statusDisplayName[viewingRequest.status]}
+									</span>
 								</div>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Product / Supplier</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.productName}</p>
-								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{viewingRequest.supplierName}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.product_name}</p>
+								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{viewingRequest.supplier?.name || 'N/A'}</p>
 							</div>
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -462,11 +463,11 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Unit Cost</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{currency.format(viewingRequest.unitCost)}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{currency.format(viewingRequest.unit_cost)}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Cost</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{currency.format(viewingRequest.totalCost)}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{currency.format(viewingRequest.total_cost)}</p>
 								</div>
 							</div>
 
@@ -475,10 +476,10 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.justification}</p>
 							</div>
 
-							{viewingRequest.financeNotes && (
+							{viewingRequest.notes && (
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Finance Notes</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.financeNotes}</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
 								</div>
 							)}
 						</div>

@@ -151,6 +151,11 @@ class HandleInertiaRequests extends Middleware
                     'shop_owner_id' => Auth::guard('user')->user()->shop_owner_id ?? null,
                     'force_password_change' => (bool) (Auth::guard('user')->user()->force_password_change ?? false),
                     'roles' => Auth::guard('user')->user()->getRoleNames()->toArray(), // Spatie roles
+                    'shop_owner' => Auth::guard('user')->user()->shopOwner ? [
+                        'business_type' => Auth::guard('user')->user()->shopOwner->business_type,
+                        'registration_type' => Auth::guard('user')->user()->shopOwner->registration_type,
+                        'business_name' => Auth::guard('user')->user()->shopOwner->business_name,
+                    ] : null,
                 ] : null,
                 
                 // Share permissions for all guards

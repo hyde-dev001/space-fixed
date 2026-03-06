@@ -1,6 +1,6 @@
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type MetricColor = "success" | "error" | "warning" | "info";
 
@@ -122,11 +122,7 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 const DashboardRepair: React.FC = () => {
-	const [metricCards, setMetricCards] = useState<MetricCardProps[]>([]);
-	const [requestedServices, setRequestedServices] = useState<RequestedService[]>([]);
-	const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
-	const [recentRepairs, setRecentRepairs] = useState<RecentRepair[]>([]);
-	const [isLoading, setIsLoading] = useState(true);
+	const { initialDashboard } = usePage().props as any;
 
 	// Icon mapping
 	const iconMap = {
@@ -143,62 +139,17 @@ const DashboardRepair: React.FC = () => {
 		"Completed Today": "success" as MetricColor,
 	};
 
-	useEffect(() => {
-		const fetchDashboardData = async () => {
-			try {
-				const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-				
-				const response = await fetch('/api/repairer/dashboard', {
-					method: 'GET',
-					headers: {
-						'Accept': 'application/json',
-						'Content-Type': 'application/json',
-						'X-CSRF-TOKEN': csrfToken,
-						'X-Requested-With': 'XMLHttpRequest',
-					},
-					credentials: 'include',
-				});
+	const mapCards = (cards: any[]): MetricCardProps[] =>
+		(cards || []).map((card: any) => ({
+			...card,
+			icon: iconMap[card.title as keyof typeof iconMap] || WrenchIcon,
+			color: colorMap[card.title as keyof typeof colorMap] || ("info" as MetricColor),
+		}));
 
-				if (!response.ok) {
-					throw new Error('Failed to fetch dashboard data');
-				}
-
-				const data = await response.json();
-				
-				// Map metric cards with icons and colors
-				const mappedMetricCards = data.metricCards.map((card: any) => ({
-					...card,
-					icon: iconMap[card.title as keyof typeof iconMap] || WrenchIcon,
-					color: colorMap[card.title as keyof typeof colorMap] || "info",
-				}));
-
-				setMetricCards(mappedMetricCards);
-				setRequestedServices(data.requestedServices);
-				setRevenueRows(data.revenueRows);
-				setRecentRepairs(data.recentRepairs);
-			} catch (error) {
-				console.error('Error fetching dashboard data:', error);
-			} finally {
-				setIsLoading(false);
-			}
-		};
-
-		fetchDashboardData();
-	}, []);
-
-	if (isLoading) {
-		return (
-			<AppLayoutERP>
-				<Head title="Repair Dashboard" />
-				<div className="flex items-center justify-center min-h-screen">
-					<div className="text-center">
-						<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-						<p className="mt-4 text-gray-600">Loading dashboard...</p>
-					</div>
-				</div>
-			</AppLayoutERP>
-		);
-	}
+	const [metricCards, setMetricCards] = useState<MetricCardProps[]>(() => mapCards(initialDashboard?.metricCards ?? []));
+	const [requestedServices, setRequestedServices] = useState<RequestedService[]>(initialDashboard?.requestedServices ?? []);
+	const [revenueRows, setRevenueRows] = useState<RevenueRow[]>(initialDashboard?.revenueRows ?? []);
+	const [recentRepairs, setRecentRepairs] = useState<RecentRepair[]>(initialDashboard?.recentRepairs ?? []);
 
 	return (
 		<AppLayoutERP>

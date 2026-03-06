@@ -3,7 +3,7 @@
  * 
  * Generates dynamic navigation based on:
  * - Business Type (retail, repair, both)
- * - Registration Type (individual, company)
+ * - Registration Type (individual, business)
  */
 
 import { NavigationItem, ShopOwnerAccess } from '@/types/shopOwner';
@@ -81,13 +81,13 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: true,
         },
 
-        // Price Approvals - Company only
+        // Price Approvals - Business only
         {
             label: 'Price Approvals',
             path: '/shop-owner/price-approvals',
             icon: '💰',
             visible: canAccessPriceApprovals(access),
-            badge: 'Company Only',
+            badge: 'Business Only',
         },
 
         // Refunds - Always visible
@@ -98,14 +98,14 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: true,
         },
 
-        // Staff Management - Company only
+        // Staff Management - Business only
         {
             label: 'Staff Management',
             path: '/shop-owner/staff',
             icon: '👔',
             visible: canAccessStaffManagement(access),
             className: 'border-t mt-2 pt-2',
-            badge: 'Company Only',
+            badge: 'Business Only',
             subItems: [
                 { label: 'All Staff', path: '/shop-owner/staff' },
                 { label: 'Add Staff', path: '/shop-owner/staff/add' },
@@ -120,9 +120,9 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: true,
         },
 
-        // Upgrade to Company - Individual only
+        // Upgrade to Business - Individual only
         {
-            label: 'Upgrade to Company',
+            label: 'Upgrade to Business',
             path: '/shop-owner/upgrade',
             icon: '⬆️',
             visible: access.registrationType === 'individual',

@@ -3,7 +3,7 @@
  * 
  * Helper functions to determine feature access based on:
  * - Business Type (retail, repair, both)
- * - Registration Type (individual, company)
+ * - Registration Type (individual, business)
  */
 
 import { ShopOwnerAccess, BusinessType } from '@/types/shopOwner';
@@ -47,7 +47,7 @@ export const canAccessCalendar = (access: ShopOwnerAccess): boolean => {
 
 /**
  * Check if shop owner can access staff management features
- * Available to: Company registration type only
+ * Available to: Business registration type only
  */
 export const canAccessStaffManagement = (access: ShopOwnerAccess): boolean => {
     return access.registrationType === 'company';
@@ -55,7 +55,7 @@ export const canAccessStaffManagement = (access: ShopOwnerAccess): boolean => {
 
 /**
  * Check if shop owner can access price approval features
- * Available to: Company registration type only (for approving staff price changes)
+ * Available to: Business registration type only (for approving staff price changes)
  */
 export const canAccessPriceApprovals = (access: ShopOwnerAccess): boolean => {
     return access.registrationType === 'company';
@@ -63,7 +63,7 @@ export const canAccessPriceApprovals = (access: ShopOwnerAccess): boolean => {
 
 /**
  * Check if shop owner can access multi-location features
- * Available to: Company registration type only
+ * Available to: Business registration type only
  */
 export const canAccessMultipleLocations = (access: ShopOwnerAccess): boolean => {
     return access.registrationType === 'company';
@@ -72,7 +72,7 @@ export const canAccessMultipleLocations = (access: ShopOwnerAccess): boolean => 
 /**
  * Check if shop owner can add more locations
  * Individual: Limited to 1 location
- * Company: Unlimited locations
+ * Business: Unlimited locations
  */
 export const canAddMoreLocations = (access: ShopOwnerAccess, currentLocationCount: number = 0): boolean => {
     if (access.registrationType === 'company') {
@@ -85,7 +85,7 @@ export const canAddMoreLocations = (access: ShopOwnerAccess, currentLocationCoun
 /**
  * Get maximum number of locations allowed
  * Individual: 1
- * Company: null (unlimited)
+ * Business: null (unlimited)
  */
 export const getMaxLocations = (access: ShopOwnerAccess): number | null => {
     return access.registrationType === 'individual' ? 1 : null;
@@ -137,7 +137,7 @@ export const getRestrictedFeatures = (access: ShopOwnerAccess): string[] => {
 };
 
 /**
- * Check if upgrade to Company is recommended
+ * Check if upgrade to Business is recommended
  */
 export const shouldShowUpgradePrompt = (access: ShopOwnerAccess): boolean => {
     return access.registrationType === 'individual';

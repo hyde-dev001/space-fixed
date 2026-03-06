@@ -5,10 +5,11 @@ namespace App\Models\Finance;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\ShopScoped;
 
 class TaxRate extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, ShopScoped;
 
     protected $table = 'finance_tax_rates';
 

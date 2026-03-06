@@ -271,11 +271,11 @@ const calculatePayroll = (
 	const overtimeRate = hourlyRate * 1.25; // 25% overtime premium
 	const overtimePay = totalOvertimeHours * overtimeRate;
 	
-	// Retail commission structure
-	// Note: Sales commission would typically come from actual sales data
-	// For now using 0 as placeholder - should be passed from sales records
-	const salesCommission = 0; // TODO: Calculate from actual sales data
-	const performanceBonus = 0; // TODO: Calculate based on target achievement
+	// Retail commission structure — apply the employee's stored rates against
+	// monthly base pay as the frontend proxy.  PayrollService on the server will
+	// also read these rates and may incorporate live sales figures when available.
+	const salesCommission = monthlyBase * (employee.salesCommissionRate ?? 0);
+	const performanceBonus = monthlyBase * (employee.performanceBonusRate ?? 0);
 	const otherAllowances = employee.otherAllowances || 0;
 	
 	const totalEarnings = basicPay + overtimePay + salesCommission + performanceBonus + otherAllowances;
@@ -335,8 +335,10 @@ const calculatePayroll = (
 	};
 };
 
-// ==================== Mock Data ====================
-
+// ==================== Static Config ====================
+// Payroll periods available for selection. In a future iteration these
+// could be fetched from a /api/hr/payroll-periods endpoint so that
+// finance staff can manage them without a code change.
 const payrollPeriods: PayrollPeriod[] = [
 	{
 		month: "January 2026",
@@ -469,7 +471,6 @@ export default function GenerateSlip() {
 				}
 
 				const data = await response.json();
-				console.log('Employees API response:', data);
 
 				if (data.data && Array.isArray(data.data)) {
 					const transformedData = data.data.map(transformEmployeeFromApi);
@@ -607,8 +608,7 @@ export default function GenerateSlip() {
 			}
 
 			const data = await response.json();
-			console.log('Attendance data:', data);
-			
+
 			// Auto-populate hours from attendance summary
 			if (data.summary) {
 				setTotalRegularHours(data.summary.total_regular_hours || 0);
@@ -1081,20 +1081,23 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			// Prepare payroll data for API (using camelCase as expected by controller)
+			// Prepare payroll data for the store() endpoint.
+			// base_salary and deductions are intentionally omitted — store() reads
+			// base salary from the employee record and computes statutory deductions
+			// (SSS, PhilHealth, Pag-IBIG, tax) via PayrollService.
 			const payrollData = {
-				employee_id: selectedEmployee.id,
-				payrollPeriod: selectedPeriod.month,
-				baseSalary: selectedEmployee.monthlySalary || 0,
-				salesCommission: calculation.salesCommission,
+				employee_id:      selectedEmployee.id,
+				payrollPeriod:    selectedPeriod.month,
+				paymentMethod:    'bank_transfer',
+				// Attendance inputs — drive the service's day-worked calculation
+				attendance_days:  Math.round(totalRegularHours / 8),
+				overtime_hours:   totalOvertimeHours,
+				// Extra earnings — appended as custom components by the service
+				salesCommission:  calculation.salesCommission,
 				performanceBonus: calculation.performanceBonus,
-				otherAllowances: calculation.otherAllowances,
-				deductions: calculation.totalDeductions,
-				paymentMethod: 'bank_transfer',
-				notes: `Generated payslip for period ${selectedPeriod.month}. Regular hours: ${calculation.totalRegularHours}, Overtime: ${calculation.totalOvertimeHours}hrs, Absent: ${calculation.totalAbsentDays} days`,
+				otherAllowances:  calculation.otherAllowances,
+				notes: `Generated payslip for period ${selectedPeriod.month}. Regular hours: ${totalRegularHours}, Overtime: ${totalOvertimeHours}hrs, Absent: ${totalAbsentDays} days`,
 			};
-
-			console.log('Sending payroll data:', payrollData);
 
 			const response = await fetch('/api/hr/payroll', {
 				method: 'POST',
@@ -1109,13 +1112,10 @@ export default function GenerateSlip() {
 
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-				console.error('API Error Response:', errorData);
-				console.error('Response Status:', response.status);
 				throw new Error(errorData.message || errorData.error || `Failed to generate payslip (Status: ${response.status})`);
 			}
 
 			const data = await response.json();
-			console.log('Payroll generated:', data);
 
 			// Update employee data to mark slip as generated
 			setEmployeeData(prevData => 

@@ -1,7 +1,8 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import axios from "axios";
 
 type OrderType = "product" | "repair";
 type ResponseStatus = "pending" | "responded" | "in_progress";
@@ -16,6 +17,18 @@ interface CustomerReview {
   orderType: OrderType;
   responseStatus: ResponseStatus;
   createdAt: string;
+  staffResponse?: string;
+  respondedAt?: string;
+  customer?: { id: number; name: string; email: string };
+  order?: { id: number; order_number: string };
+}
+
+interface ReviewStats {
+  total: number;
+  pending: number;
+  in_progress: number;
+  responded: number;
+  average_rating: number;
 }
 
 type MetricColor = "success" | "warning" | "info" | "error";
@@ -122,55 +135,13 @@ const StarIcon = ({ filled, className = "" }: { filled: boolean; className?: str
   </svg>
 );
 
-const seedReviews: CustomerReview[] = [
-  {
-    id: 1,
-    customerName: "Miguel Dela Rosa",
-    rating: 5,
-    comment: "Very smooth transaction and the staff was helpful.",
-    feedbackImages: ["/images/shop/shop1.jpg", "/images/shop/shop2.jpg"],
-    serviceType: "Product Purchase",
-    orderType: "product",
-    responseStatus: "responded",
-    createdAt: "2026-02-18",
-  },
-  {
-    id: 2,
-    customerName: "Andrea Santos",
-    rating: 4,
-    comment: "Repair quality is good, waiting time could be shorter.",
-    feedbackImages: ["/images/shop/shop3.jpg"],
-    serviceType: "Sole Reglue",
-    orderType: "repair",
-    responseStatus: "in_progress",
-    createdAt: "2026-02-19",
-  },
-  {
-    id: 3,
-    customerName: "Paolo Reyes",
-    rating: 3,
-    comment: "Delivery arrived late but product is okay.",
-    feedbackImages: ["/images/shop/shop4.jpg"],
-    serviceType: "Product Delivery",
-    orderType: "product",
-    responseStatus: "pending",
-    createdAt: "2026-02-20",
-  },
-  {
-    id: 4,
-    customerName: "Carla Dizon",
-    rating: 5,
-    comment: "Excellent customer support and quick updates.",
-    feedbackImages: ["/images/shop/shop5.jpg", "/images/shop/shop.jpg"],
-    serviceType: "Customer Support",
-    orderType: "repair",
-    responseStatus: "responded",
-    createdAt: "2026-02-21",
-  },
-];
-
 export default function CustomerReviews() {
-  const [reviews, setReviews] = useState<CustomerReview[]>(seedReviews);
+  const { initialReviews = [], initialStats } =
+    usePage<{ initialReviews: CustomerReview[]; initialStats: ReviewStats }>().props;
+
+  const defaultStats: ReviewStats = { total: 0, pending: 0, in_progress: 0, responded: 0, average_rating: 0 };
+  const [reviews, setReviews] = useState<CustomerReview[]>(initialReviews);
+  const [stats] = useState<ReviewStats>(initialStats ?? defaultStats);
   const [search, setSearch] = useState("");
   const [orderTypeFilter, setOrderTypeFilter] = useState<"all" | OrderType>("all");
   const [responseFilter, setResponseFilter] = useState<"all" | ResponseStatus>("all");
@@ -178,6 +149,9 @@ export default function CustomerReviews() {
   const [selectedReview, setSelectedReview] = useState<CustomerReview | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [responseDraft, setResponseDraft] = useState("");
+  const [submittingResponse, setSubmittingResponse] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const itemsPerPage = 6;
 
   const filteredReviews = useMemo(() => {
@@ -195,13 +169,40 @@ export default function CustomerReviews() {
   const startIndex = (safeCurrentPage - 1) * itemsPerPage;
   const paginatedReviews = filteredReviews.slice(startIndex, startIndex + itemsPerPage);
 
-  const averageRating = useMemo(() => {
-    if (reviews.length === 0) return 0;
-    return reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
-  }, [reviews]);
+  const averageRating = stats.average_rating ?? 0;
+  const pendingResponses = stats.pending ?? reviews.filter((r) => r.responseStatus === "pending").length;
+  const respondedCount = stats.responded ?? reviews.filter((r) => r.responseStatus === "responded").length;
 
-  const pendingResponses = reviews.filter((review) => review.responseStatus === "pending").length;
-  const respondedCount = reviews.filter((review) => review.responseStatus === "responded").length;
+  const handleRespond = async () => {
+    if (!selectedReview || !responseDraft.trim()) return;
+    setSubmittingResponse(true);
+    try {
+      await axios.post(`/api/crm/reviews/${selectedReview.id}/respond`, { staff_response: responseDraft.trim() });
+      const updated: CustomerReview = { ...selectedReview, responseStatus: "responded", staffResponse: responseDraft.trim(), respondedAt: new Date().toISOString() };
+      setReviews((prev) => prev.map((r) => r.id === selectedReview.id ? updated : r));
+      setSelectedReview(updated);
+      setResponseDraft("");
+    } catch {
+      // silently ignore — user can retry
+    } finally {
+      setSubmittingResponse(false);
+    }
+  };
+
+  const handleMarkInProgress = async () => {
+    if (!selectedReview || updatingStatus) return;
+    setUpdatingStatus(true);
+    try {
+      await axios.patch(`/api/crm/reviews/${selectedReview.id}/status`, { status: "in_progress" });
+      const updated: CustomerReview = { ...selectedReview, responseStatus: "in_progress" };
+      setReviews((prev) => prev.map((r) => r.id === selectedReview.id ? updated : r));
+      setSelectedReview(updated);
+    } catch {
+      // silently ignore
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   const renderStars = (rating: number) => (
     <div className="flex items-center gap-1">
@@ -238,7 +239,7 @@ export default function CustomerReviews() {
           <MetricCard
             title="Total Reviews"
             value={reviews.length.toString()}
-            change={12}
+            change={0}
             changeType="increase"
             icon={ReviewIcon}
             color="info"
@@ -246,8 +247,8 @@ export default function CustomerReviews() {
           />
           <MetricCard
             title="Average Rating"
-            value={`${averageRating.toFixed(1)} / 5`}
-            change={6}
+            value={`${Number(averageRating).toFixed(1)} / 5`}
+            change={0}
             changeType="increase"
             icon={RatingIcon}
             color="warning"
@@ -256,7 +257,7 @@ export default function CustomerReviews() {
           <MetricCard
             title="Pending Responses"
             value={pendingResponses.toString()}
-            change={4}
+            change={0}
             changeType="decrease"
             icon={PendingIcon}
             color="error"
@@ -448,6 +449,48 @@ export default function CustomerReviews() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Staff response actions */}
+                  {selectedReview.responseStatus !== "responded" && (
+                    <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Write a Staff Response</p>
+                      <textarea
+                        value={responseDraft}
+                        onChange={(e) => setResponseDraft(e.target.value)}
+                        rows={3}
+                        placeholder="Write your response to this review..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      />
+                      <div className="mt-3 flex justify-end gap-2">
+                        {selectedReview.responseStatus === "pending" && (
+                          <button
+                            onClick={handleMarkInProgress}
+                            disabled={updatingStatus}
+                            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                          >
+                            {updatingStatus ? "Updating…" : "Mark In Progress"}
+                          </button>
+                        )}
+                        <button
+                          onClick={handleRespond}
+                          disabled={!responseDraft.trim() || submittingResponse}
+                          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {submittingResponse ? "Saving…" : "Submit Response"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedReview.staffResponse && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Staff Response</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{selectedReview.staffResponse}</p>
+                      {selectedReview.respondedAt && (
+                        <p className="mt-2 text-xs text-gray-500">{new Date(selectedReview.respondedAt).toLocaleString()}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

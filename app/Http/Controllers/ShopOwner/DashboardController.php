@@ -33,7 +33,7 @@ class DashboardController extends Controller
         // Individual registration type gets revenue on shop owner dashboard
         if ($shopOwner->isCompany()) {
             return response()->json([
-                'message' => 'Company shop owners should access revenue data through ERP',
+                'message' => 'Business shop owners should access revenue data through ERP',
                 'registration_type' => 'company',
                 'redirect_to_erp' => true,
                 'revenue' => [

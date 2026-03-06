@@ -182,7 +182,6 @@ class InvoiceController extends Controller
 
             // Audit log
             $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-            $shopOwnerId = Auth::user()?->shop_owner_id ?? 1;
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -207,7 +206,13 @@ class InvoiceController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $invoice = Invoice::findOrFail($id);
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        if (! $shopOwnerId) {
+            return response()->json(['error' => 'No shop association found'], 403);
+        }
+
+        $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
         if ($invoice->status !== 'draft') {
             return response()->json(['message' => 'Only draft invoices can be edited'], 422);
@@ -261,7 +266,6 @@ class InvoiceController extends Controller
 
             // Audit log
             $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-            $shopOwnerId = Auth::user()?->shop_owner_id ?? 1;
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -286,7 +290,13 @@ class InvoiceController extends Controller
      */
     public function post(Request $request, $id)
     {
-        $invoice = Invoice::findOrFail($id);
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        if (! $shopOwnerId) {
+            return response()->json(['error' => 'No shop association found'], 403);
+        }
+
+        $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
         if ($invoice->status === 'posted') {
             return response()->json(['message' => 'Invoice already posted'], 422);
@@ -305,7 +315,6 @@ class InvoiceController extends Controller
 
             // Audit log
             $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-            $shopOwnerId = Auth::user()?->shop_owner_id ?? 1;
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -330,7 +339,13 @@ class InvoiceController extends Controller
      */
     public function destroy($id)
     {
-        $invoice = Invoice::findOrFail($id);
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        if (! $shopOwnerId) {
+            return response()->json(['error' => 'No shop association found'], 403);
+        }
+
+        $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
         if ($invoice->status !== 'draft') {
             return response()->json(['message' => 'Only draft invoices can be deleted'], 422);
@@ -338,7 +353,6 @@ class InvoiceController extends Controller
 
         // Audit log
         $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-        $shopOwnerId = Auth::user()?->shop_owner_id ?? 1;
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,

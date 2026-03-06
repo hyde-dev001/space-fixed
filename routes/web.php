@@ -29,7 +29,6 @@ use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\LeaveController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
-use App\Models\Product;
 
 /*
 |--------------------------------------------------------------------------
@@ -64,38 +63,6 @@ Route::post('/email/verification-notification', function (Request $request) {
 
 // Public Routes (User Side)
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
-Route::get('/showroom', function () {
-    $products = Product::query()
-        ->where('is_active', true)
-        ->where(function ($query) {
-            $query->where('category', 'shoes')
-                ->orWhereNull('category');
-        })
-        ->with(['colorVariants.images', 'shopOwner'])
-        ->latest()
-        ->take(12)
-        ->get()
-        ->map(function (Product $product) {
-            $variantImage = optional($product->colorVariants->first())
-                ?->images
-                ?->sortBy('sort_order')
-                ?->first();
-
-            return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'shop_name' => $product->shopOwner?->business_name,
-                'slug' => $product->slug,
-                'price' => $product->price,
-                'image' => $variantImage?->image_path ?: $product->main_image_url,
-            ];
-        })
-        ->values();
-
-    return Inertia::render('UserSide/Products/showroom', [
-        'products' => $products,
-    ]);
-})->name('showroom');
 Route::get('/products', [LandingPageController::class, 'products'])->name('products');
 Route::get('/products/{slug}', [LandingPageController::class, 'productShow'])->name('products.show');
 Route::get('/checkout', function () {
@@ -207,6 +174,7 @@ Route::get('/notifications/settings', function () {
 })->middleware('auth:user')->name('notifications.settings');
 
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
+Route::get('/shop-profile/{id}/virtual-showroom', [LandingPageController::class, 'virtualShowroom'])->name('shop-profile.virtual-showroom');
 
 // Phase 10D - Public shop reviews (no auth required)
 Route::get('/api/shop-owners/{id}/reviews', [\App\Http\Controllers\Api\RepairReviewController::class, 'getShopReviews']);
@@ -443,7 +411,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
 Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
     Route::get('/ecommerce', [EcommerceController::class, 'index'])->name('ecommerce');
     
-    // User Access Control - Company only (to manage employees)
+    // User Access Control - Business only (to manage employees)
     Route::get('/user-access-control', [UserAccessControlController::class, 'index'])
         ->middleware('check.registration.type:company')
         ->name('user-access-control');
@@ -538,7 +506,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         return Inertia::render('ShopOwner/Approvals/refundApproval');
     })->name('refund-approvals');
 
-    // PRICE APPROVALS - Company only (for approving staff price changes)
+    // PRICE APPROVALS - Business only (for approving staff price changes)
     Route::middleware('check.registration.type:company')->group(function () {
         Route::get('/price-approvals', function () {
             return Inertia::render('ShopOwner/Approvals/PriceApprovals');
@@ -549,7 +517,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         })->name('purchase-request-approval');
     });
 
-    // STAFF/EMPLOYEE MANAGEMENT - Company only
+    // STAFF/EMPLOYEE MANAGEMENT - Business only
     Route::middleware('check.registration.type:company')->group(function () {
         Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
         Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
@@ -883,7 +851,7 @@ Route::get('/storage/reviews/{filename}', function ($filename) {
 
 // Session-backed API endpoints for finance (allow web-session authenticated users)
 // CONSOLIDATED: All finance routes under /api/finance/session
-Route::middleware('auth:user')->prefix('api/finance/session')->group(function () {
+Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
     // Chart of Accounts - Commented out due to missing controller
     // Route::get('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'index']);
     // Route::post('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'store']);
@@ -1067,11 +1035,18 @@ Route::middleware(['auth:user', 'check.suspension'])->get('/erp/time-in', functi
     return Inertia::render('ERP/STAFF/TimeIn');
 })->name('erp.time-in');
 
-Route::middleware(['auth:user', 'check.suspension', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records'])->get('/erp/hr', function () {
+Route::middleware(['auth:user', 'check.suspension', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|access-payslip-generation|access-view-payslip'])->get('/erp/hr', function () {
     if (Auth::guard('user')->user()?->force_password_change) {
         return redirect()->route('erp.profile');
     }
-    return Inertia::render('ERP/HR/HR');
+    try {
+        $controller = app(\App\Http\Controllers\Erp\HR\HRAnalyticsController::class);
+        $response = $controller->dashboard(request());
+        $initialHrDashboard = json_decode($response->getContent(), true);
+    } catch (\Exception $e) {
+        $initialHrDashboard = null;
+    }
+    return Inertia::render('ERP/HR/HR', compact('initialHrDashboard'));
 })->name('erp.hr');
 
 // HR Audit Logs
@@ -1088,20 +1063,65 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Finance pages
-Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval'])->group(function () {
+Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-payslip-approval|access-refund-approval'])->group(function () {
     Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Finance/Finance');
+        
+        $purchaseRequests = \App\Models\PurchaseRequest::query()
+            ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->where('shop_owner_id', Auth::user()->shop_owner_id)
+            ->where('status', 'pending_finance')
+            ->orderBy('requested_date', 'desc')
+            ->get();
+        
+        return Inertia::render('ERP/Finance/Finance', [
+            'purchaseRequests' => $purchaseRequests
+        ]);
     })->name('index');
     
     Route::get('/dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Finance/Dashboard');
+        $shopId = Auth::user()->shop_owner_id;
+        $year   = now()->year;
+
+        $invoices = \App\Models\Finance\Invoice::where('shop_id', $shopId)
+            ->whereYear('date', $year)
+            ->select(['id', 'reference', 'status', 'total', 'date'])
+            ->orderBy('date', 'desc')
+            ->get();
+
+        $expenses = \App\Models\Finance\Expense::where('shop_id', $shopId)
+            ->whereYear('date', $year)
+            ->select(['id', 'reference', 'status', 'amount', 'date'])
+            ->orderBy('date', 'desc')
+            ->get();
+
+        return Inertia::render('ERP/Finance/Dashboard', [
+            'invoices' => $invoices,
+            'expenses' => $expenses,
+        ]);
     })->name('dashboard');
+    
+    Route::get('/purchase-request-approval', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        
+        $requests = \App\Models\PurchaseRequest::query()
+            ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->where('shop_owner_id', Auth::user()->shop_owner_id)
+            ->where('status', 'pending_finance')
+            ->orderBy('requested_date', 'desc')
+            ->get();
+        
+        return Inertia::render('ERP/Finance/PurchaseRequestApproval', [
+            'requests' => $requests
+        ]);
+    })->name('purchase-request-approval');
     
 });
 
@@ -1123,13 +1143,8 @@ Route::get('/create-invoice', function () {
 })->middleware(['auth:user', 'permission:access-finance-invoices'])->name('finance.create-invoice');
 
 // CRM routes
-Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-crm-dashboard|access-crm-customers'])->group(function () {
-    Route::get('/', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        return Inertia::render('ERP/CRM/CRMDashboard');
-    })->name('dashboard');
+Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-crm-dashboard|access-crm-customers|access-customer-support|access-customer-reviews|access-crm-messages'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\API\CRM\CRMDashboardController::class, 'indexPage'])->name('dashboard');
     Route::get('/opportunities', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1142,12 +1157,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
         }
         return Inertia::render('ERP/CRM/Leads');
     })->name('leads');
-    Route::get('/customers', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        return Inertia::render('ERP/CRM/Customers');
-    })->name('customers');
+    Route::get('/customers', [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'indexPage'])->name('customers');
     Route::get('/customer-support', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1155,12 +1165,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
         return Inertia::render('ERP/CRM/customerSupport');
     })->middleware('permission:access-customer-support')->name('customer-support');
 
-    Route::get('/customer-reviews', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        return Inertia::render('ERP/CRM/CustomerReviews');
-    })->name('customer-reviews');
+    Route::get('/customer-reviews', [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'indexPage'])->name('customer-reviews');
 });
 
 // MANAGER routes (only MANAGER can access)
@@ -1169,7 +1174,39 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Manager/Dashboard');
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $initialPendingLeaves = \App\Models\HR\LeaveRequest::where('shop_owner_id', $shopOwnerId)
+            ->where('status', 'pending')
+            ->with(['employee' => function($query) {
+                $query->select('id', 'name', 'email', 'position');
+            }])
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(function($leave) {
+                if (!$leave->employee) return null;
+                return [
+                    'id' => $leave->id,
+                    'employee' => [
+                        'id' => $leave->employee->id,
+                        'name' => $leave->employee->name,
+                        'email' => $leave->employee->email,
+                        'position' => $leave->employee->position,
+                    ],
+                    'leave_type' => $leave->leave_type,
+                    'leave_type_label' => \App\Models\HR\LeaveRequest::LEAVE_TYPES[$leave->leave_type] ?? $leave->leave_type,
+                    'start_date' => $leave->start_date->format('Y-m-d'),
+                    'end_date' => $leave->end_date->format('Y-m-d'),
+                    'no_of_days' => $leave->no_of_days,
+                    'reason' => $leave->reason,
+                    'status' => $leave->status,
+                    'created_at' => $leave->created_at->toIso8601String(),
+                    'days_pending' => \Carbon\Carbon::parse($leave->created_at)->diffInDays(now()),
+                ];
+            })
+            ->filter()
+            ->values();
+        return Inertia::render('ERP/Manager/Dashboard', compact('initialPendingLeaves'));
     })->name('dashboard');
     Route::get('/reports', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1207,25 +1244,39 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/UploadInventory');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+        return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->middleware('permission:access-upload-inventory')->name('upload-stocks');
     Route::get('/inventory-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/InventoryDashboard');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
+        $initialMetrics = ['total_items' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->where('is_active', true)->count(), 'low_stock_count' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->lowStock()->count(), 'out_of_stock_count' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->outOfStock()->count()];
+        return Inertia::render('ERP/inventory/InventoryDashboard', compact('initialData', 'initialMetrics'));
     })->middleware('permission:access-inventory-dashboard')->name('inventory-dashboard');
     Route::get('/stock-movement', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/StockMovement');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\StockMovement::with(['inventoryItem', 'performer'])
+            ->whereHas('inventoryItem', fn($q) => $q->where('shop_owner_id', $shopOwnerId))
+            ->orderBy('performed_at', 'desc')->paginate(200);
+        return Inertia::render('ERP/inventory/StockMovement', compact('initialData'));
     })->middleware('permission:access-stock-movement')->name('stock-movement');
     Route::get('/product-inventory', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/ProductInventory');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
+        return Inertia::render('ERP/inventory/ProductInventory', compact('initialData'));
     })->middleware('permission:access-product-inventory')->name('product-inventory');
     Route::get('/user-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1250,76 +1301,177 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
 // Note: Manager audit-logs route already defined above within the manager group
 
 // INVENTORY MODULE routes (accessible by Inventory Manager role or users with explicit permissions)
-Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user', 'permission:view-inventory'])->group(function () {
+Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user', 'permission:view-inventory|access-inventory-dashboard|access-product-inventory|access-stock-movement|access-upload-inventory|access-inventory-overview'])->group(function () {
     Route::get('/upload-stocks', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/UploadInventory');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+        return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->name('upload-stocks');
 
     Route::get('/inventory-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/InventoryDashboard');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
+        $initialMetrics = ['total_items' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->where('is_active', true)->count(), 'low_stock_count' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->lowStock()->count(), 'out_of_stock_count' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->outOfStock()->count()];
+        return Inertia::render('ERP/inventory/InventoryDashboard', compact('initialData', 'initialMetrics'));
     })->name('inventory-dashboard');
 
     Route::get('/stock-movement', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/StockMovement');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\StockMovement::with(['inventoryItem', 'performer'])
+            ->whereHas('inventoryItem', fn($q) => $q->where('shop_owner_id', $shopOwnerId))
+            ->orderBy('performed_at', 'desc')->paginate(200);
+        return Inertia::render('ERP/inventory/StockMovement', compact('initialData'));
     })->name('stock-movement');
 
     Route::get('/product-inventory', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/ProductInventory');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
+        return Inertia::render('ERP/inventory/ProductInventory', compact('initialData'));
     })->name('product-inventory');
 
     Route::get('/stock-request', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/CRM/StockRequest');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(200);
+        $initialInventoryItems = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
+        return Inertia::render('ERP/inventory/StockRequest', compact('initialRequests', 'initialInventoryItems'));
     })->name('stock-request');
 
     Route::get('/supplier-order-monitoring', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/inventory/SupplierOrderMonitoring');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\SupplierOrder::with(['supplier', 'items'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+        return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
     })->name('supplier-order-monitoring');
 
     Route::get('/stock-request-approval', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Procurement/StockRequestApproval');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem', 'requester', 'approver'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
+        return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
     })->name('stock-request-approval');
 
     Route::get('/purchase-request', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Procurement/PurchaseRequest');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\PurchaseRequest::with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
+        $initialSuppliers = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->get();
+        $initialAcceptedRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')->orderBy('requested_date', 'desc')->paginate(200);
+        return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
     })->name('purchase-request');
 
     Route::get('/purchase-orders', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Procurement/PurchaseOrders');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\PurchaseOrder::with(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('ordered_date', 'desc')->paginate(100);
+        $initialApprovedPRs = \App\Models\PurchaseRequest::with(['supplier', 'inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)->approved()
+            ->whereDoesntHave('purchaseOrders', fn($q) => $q->whereNotIn('status', ['cancelled']))
+            ->orderBy('approved_date', 'desc')->get();
+        return Inertia::render('ERP/Procurement/PurchaseOrders', compact('initialData', 'initialApprovedPRs'));
     })->name('purchase-orders');
 
     Route::get('/suppliers-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/Procurement/SuppliersManagement');
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->paginate(100);
+        return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
     })->name('suppliers-management');
+});
+
+// PROCUREMENT MODULE routes (accessible by Procurement Manager role or users with explicit permissions)
+Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:user', 'permission:view-procurement|access-procurement-dashboard|access-purchase-requests|access-purchase-orders|access-stock-request-approval|access-suppliers-management|access-supplier-order-monitoring'])->group(function () {
+
+    Route::get('/purchase-request', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\PurchaseRequest::with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
+        $initialSuppliers = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->get();
+        $initialAcceptedRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')->orderBy('requested_date', 'desc')->paginate(200);
+        return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
+    })->name('purchase-request');
+
+    Route::get('/purchase-orders', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\PurchaseOrder::with(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('ordered_date', 'desc')->paginate(100);
+        $initialApprovedPRs = \App\Models\PurchaseRequest::with(['supplier', 'inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)->approved()
+            ->whereDoesntHave('purchaseOrders', fn($q) => $q->whereNotIn('status', ['cancelled']))
+            ->orderBy('approved_date', 'desc')->get();
+        return Inertia::render('ERP/Procurement/PurchaseOrders', compact('initialData', 'initialApprovedPRs'));
+    })->name('purchase-orders');
+
+    Route::get('/stock-request-approval', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem', 'requester', 'approver'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
+        return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
+    })->name('stock-request-approval');
+
+    Route::get('/suppliers-management', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->paginate(100);
+        return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
+    })->name('suppliers-management');
+
+    Route::get('/supplier-order-monitoring', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
+        $initialData = \App\Models\SupplierOrder::with(['supplier', 'items'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+        return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
+    })->name('supplier-order-monitoring');
+
 });
 
 // STAFF routes (both MANAGER and STAFF can access)
@@ -1329,14 +1481,69 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/STAFF/JobOrders');
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $initialOrders = \App\Models\Order::with(['items', 'customer', 'shopOwner'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($order) {
+                return [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'customer_name' => $order->customer_name ?? optional($order->customer)->name ?? 'Guest',
+                    'customer_email' => $order->customer_email ?? optional($order->customer)->email ?? '',
+                    'customer_phone' => $order->customer_phone ?? '',
+                    'shipping_address' => $order->customer_address ?? '',
+                    'total_amount' => $order->total_amount,
+                    'status' => $order->status,
+                    'payment_status' => $order->payment_status ?? 'pending',
+                    'payment_method' => $order->payment_method ?? '',
+                    'tracking_number' => $order->tracking_number ?? '',
+                    'carrier_company' => $order->carrier_company ?? '',
+                    'carrier_name' => $order->carrier_name ?? '',
+                    'carrier_phone' => $order->carrier_phone ?? '',
+                    'tracking_link' => $order->tracking_link ?? '',
+                    'eta' => $order->eta ?? null,
+                    'created_at' => $order->created_at->toISOString(),
+                    'updated_at' => $order->updated_at->toISOString(),
+                    'pickup_enabled' => $order->pickup_enabled ?? false,
+                    'pickup_enabled_at' => $order->pickup_enabled_at ?? null,
+                    'items' => $order->items->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'product_id' => $item->product_id,
+                            'product_name' => $item->product_name,
+                            'product_slug' => $item->product_slug ?? '',
+                            'product_image' => $item->product_image,
+                            'price' => $item->price,
+                            'quantity' => $item->quantity,
+                            'subtotal' => $item->subtotal,
+                            'size' => $item->size,
+                            'color' => $item->color,
+                        ];
+                    }),
+                    'shop' => $order->shopOwner ? [
+                        'id' => $order->shopOwner->id,
+                        'shop_name' => $order->shopOwner->shop_name,
+                    ] : null,
+                ];
+            });
+        return Inertia::render('ERP/STAFF/JobOrders', compact('initialOrders'));
     })->middleware('permission:access-staff-job-orders')->name('job-orders');
 
     Route::get('/repair-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/repairer/dashboardRepair');
+        try {
+            $controller = app(\App\Http\Controllers\Repairer\DashboardController::class);
+            $response = $controller->getDashboardData();
+            $initialDashboard = json_decode($response->getContent(), true);
+        } catch (\Exception $e) {
+            $initialDashboard = null;
+        }
+        return Inertia::render('ERP/repairer/dashboardRepair', compact('initialDashboard'));
     })->middleware('permission:access-repairer-dashboard')->name('repair-dashboard');
     
     Route::get('/job-orders-repair', function () {
@@ -1364,7 +1571,11 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/repairer/PricingAndServices');
+        $user = Auth::guard('user')->user();
+        $initialServices = \App\Models\RepairService::where('shop_owner_id', $user->shop_owner_id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+        return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
     })->middleware('permission:access-pricing-services')->name('pricing-services');
     
     Route::get('/shoe-pricing', function () {
@@ -1422,7 +1633,11 @@ Route::get('/erp/repairer/pricing-and-services', function () {
     if (Auth::guard('user')->user()?->force_password_change) {
         return redirect()->route('erp.profile');
     }
-    return Inertia::render('ERP/repairer/PricingAndServices');
+    $user = Auth::guard('user')->user();
+    $initialServices = \App\Models\RepairService::where('shop_owner_id', $user->shop_owner_id)
+        ->orderBy('created_at', 'desc')
+        ->get();
+    return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
 })->middleware(['auth:user', 'permission:access-pricing-services'])->name('erp.repairer.pricing-services');
 
 // Common Routes (for testing/development)

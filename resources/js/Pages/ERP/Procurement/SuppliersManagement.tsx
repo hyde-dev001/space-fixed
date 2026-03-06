@@ -1,74 +1,10 @@
-import { Head } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { supplierApi, type Supplier } from "@/services/procurementApi";
 
-interface SupplierItem {
-	id: number;
-	supplierName: string;
-	contactInfo: string;
-	productsSupplied: string;
-	purchaseHistory: string;
-}
 
-const supplierRows: SupplierItem[] = [
-	{
-		id: 1,
-		supplierName: "Metro Footwear Trading",
-		contactInfo: "0917-456-1188 | metrofootwear@email.com",
-		productsSupplied: "Nike Air Max 270, Adidas Ultraboost 22",
-		purchaseHistory: "14 purchase orders",
-	},
-	{
-		id: 2,
-		supplierName: "Prime Shoe Goods",
-		contactInfo: "0922-315-7721 | primegoods@email.com",
-		productsSupplied: "New Balance 550, Puma RS-X",
-		purchaseHistory: "10 purchase orders",
-	},
-	{
-		id: 3,
-		supplierName: "Solespace Accessories Hub",
-		contactInfo: "0916-228-4103 | accessorieshub@email.com",
-		productsSupplied: "Premium Shoelaces, Shoe Box (Large)",
-		purchaseHistory: "22 purchase orders",
-	},
-	{
-		id: 4,
-		supplierName: "CleanKicks Supply Co.",
-		contactInfo: "0939-884-2310 | cleankicks@email.com",
-		productsSupplied: "Cleaning Foam, Leather Conditioner",
-		purchaseHistory: "18 purchase orders",
-	},
-	{
-		id: 5,
-		supplierName: "Angelus Distributor PH",
-		contactInfo: "0908-334-1156 | angelusph@email.com",
-		productsSupplied: "Leather Conditioner, Cleaning Foam",
-		purchaseHistory: "8 purchase orders",
-	},
-	{
-		id: 6,
-		supplierName: "Urban Streetwear Partners",
-		contactInfo: "0956-123-6670 | urbanpartners@email.com",
-		productsSupplied: "Puma RS-X, New Balance 550",
-		purchaseHistory: "11 purchase orders",
-	},
-	{
-		id: 7,
-		supplierName: "Essential Care Depot",
-		contactInfo: "0918-702-5519 | caredepot@email.com",
-		productsSupplied: "Cleaning Foam, Deodorizer Spray",
-		purchaseHistory: "7 purchase orders",
-	},
-	{
-		id: 8,
-		supplierName: "Packaging Solutions Group",
-		contactInfo: "0945-810-2214 | packagingsg@email.com",
-		productsSupplied: "Shoe Box (Large), Dust Bags",
-		purchaseHistory: "9 purchase orders",
-	},
-];
 
 const PencilIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -95,62 +31,83 @@ const ChevronRightIcon = ({ className }: { className?: string }) => (
 );
 
 interface FormState {
-	supplierName: string;
-	contactInfo: string;
-	productsSupplied: string;
-	purchaseHistory: string;
+	name: string;
+	contact_person: string;
+	email: string;
+	phone: string;
+	address: string;
+	notes: string;
 }
 
 const initialFormState: FormState = {
-	supplierName: "",
-	contactInfo: "",
-	productsSupplied: "",
-	purchaseHistory: "",
+	name: "",
+	contact_person: "",
+	email: "",
+	phone: "",
+	address: "",
+	notes: "",
 };
 
 export default function SuppliersManagement() {
-	const [suppliers, setSuppliers] = useState<SupplierItem[]>(supplierRows);
+	const { initialData } = usePage().props as any;
+	const [suppliers, setSuppliers] = useState<Supplier[]>(initialData?.data ?? []);
+	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [formData, setFormData] = useState<FormState>(initialFormState);
-	const [viewingSupplier, setViewingSupplier] = useState<SupplierItem | null>(null);
-	const [editingSupplier, setEditingSupplier] = useState<SupplierItem | null>(null);
+	const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
+	const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+
+	const fetchSuppliers = async () => {
+		setLoading(true);
+		try {
+			const response = await supplierApi.getAll({ page: 1, per_page: 100 });
+			setSuppliers(response.data || []);
+		} catch (error) {
+			console.error("Failed to fetch suppliers:", error);
+			await Swal.fire("Error", "Failed to load suppliers", "error");
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	const filteredData = useMemo(() => {
+		if (!suppliers || !Array.isArray(suppliers)) return [];
 		const query = searchQuery.trim().toLowerCase();
-
 		if (!query) return suppliers;
 
 		return suppliers.filter((supplier) =>
-			supplier.supplierName.toLowerCase().includes(query) ||
-			supplier.contactInfo.toLowerCase().includes(query) ||
-			supplier.productsSupplied.toLowerCase().includes(query) ||
-			supplier.purchaseHistory.toLowerCase().includes(query)
+			supplier.name.toLowerCase().includes(query) ||
+			supplier.contact_email?.toLowerCase().includes(query) ||
+			supplier.phone?.toLowerCase().includes(query) ||
+			supplier.notes?.toLowerCase().includes(query)
 		);
 	}, [searchQuery, suppliers]);
 
 	const itemsPerPage = 8;
-	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
+	const totalPages = Math.max(1, Math.ceil((filteredData?.length || 0) / itemsPerPage));
 	const startIndex = (currentPage - 1) * itemsPerPage;
-	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
+	const paginatedItems = filteredData?.slice(startIndex, startIndex + itemsPerPage) || [];
 
-	const handleView = (supplier: SupplierItem) => {
+	const handleView = (supplier: Supplier) => {
 		setViewingSupplier(supplier);
 	};
 
-	const handleEdit = (supplier: SupplierItem) => {
+	const handleEdit = (supplier: Supplier) => {
 		setEditingSupplier(supplier);
 		setFormData({
-			supplierName: supplier.supplierName,
-			contactInfo: supplier.contactInfo,
-			productsSupplied: supplier.productsSupplied,
-			purchaseHistory: supplier.purchaseHistory,
+			name: supplier.name,
+			contact_person: supplier.contact_person || "",
+			email: supplier.email || "",
+			phone: supplier.phone || "",
+			address: supplier.address || "",
+			notes: supplier.notes || "",
 		});
 	};
 
-	const handleDelete = (supplierId: number) => {
-		Swal.fire({
+	const handleDelete = async (supplierId: number) => {
+		const result = await Swal.fire({
 			title: "Delete Supplier?",
 			text: "Are you sure you want to delete this supplier? This action cannot be undone.",
 			icon: "warning",
@@ -159,41 +116,50 @@ export default function SuppliersManagement() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Delete",
 			cancelButtonText: "Cancel",
-		}).then((result) => {
-			if (result.isConfirmed) {
-				setSuppliers((prev) => prev.filter((s) => s.id !== supplierId));
-				Swal.fire({
-					title: "Deleted!",
-					text: "Supplier has been deleted successfully.",
-					icon: "success",
-					timer: 1500,
-				});
-			}
 		});
+
+		if (!result.isConfirmed) return;
+
+		try {
+			await supplierApi.delete(supplierId);
+			await Swal.fire({
+				title: "Deleted!",
+				text: "Supplier has been deleted successfully.",
+				icon: "success",
+				timer: 1500,
+			});
+			fetchSuppliers();
+		} catch (error) {
+			console.error("Failed to delete supplier:", error);
+			await Swal.fire("Error", "Failed to delete supplier", "error");
+		}
 	};
 
-	const handleSaveEdit = () => {
-		if (!formData.supplierName.trim() || !formData.contactInfo.trim() || !formData.productsSupplied.trim() || !formData.purchaseHistory.trim()) {
-			alert("Please fill in all fields");
+	const handleSaveEdit = async () => {
+		if (!formData.name.trim() || !formData.email.trim()) {
+			await Swal.fire("Warning", "Please fill required fields (Name, Email)", "warning");
 			return;
 		}
 
-		if (editingSupplier) {
-			setSuppliers((prev) =>
-				prev.map((s) =>
-					s.id === editingSupplier.id
-						? {
-							...s,
-							supplierName: formData.supplierName,
-							contactInfo: formData.contactInfo,
-							productsSupplied: formData.productsSupplied,
-							purchaseHistory: formData.purchaseHistory,
-						}
-						: s
-				)
-			);
+		if (!editingSupplier) return;
+
+		try {
+			await supplierApi.update(editingSupplier.id, {
+				name: formData.name,
+				contact_person: formData.contact_person,
+				email: formData.email,
+				phone: formData.phone,
+				address: formData.address,
+				notes: formData.notes,
+			});
+
+			await Swal.fire("Success", "Supplier updated successfully", "success");
 			setEditingSupplier(null);
 			setFormData(initialFormState);
+			fetchSuppliers();
+		} catch (error) {
+			console.error("Failed to update supplier:", error);
+			await Swal.fire("Error", "Failed to update supplier", "error");
 		}
 	};
 
@@ -215,22 +181,29 @@ export default function SuppliersManagement() {
 		}));
 	};
 
-	const handleAddSupplier = () => {
-		if (!formData.supplierName.trim() || !formData.contactInfo.trim() || !formData.productsSupplied.trim() || !formData.purchaseHistory.trim()) {
-			alert("Please fill in all fields");
+	const handleAddSupplier = async () => {
+		if (!formData.name.trim() || !formData.email.trim()) {
+			await Swal.fire("Warning", "Please fill required fields (Name, Email)", "warning");
 			return;
 		}
 
-		const newSupplier: SupplierItem = {
-			id: Math.max(...suppliers.map((s) => s.id), 0) + 1,
-			supplierName: formData.supplierName,
-			contactInfo: formData.contactInfo,
-			productsSupplied: formData.productsSupplied,
-			purchaseHistory: formData.purchaseHistory,
-		};
+		try {
+			await supplierApi.create({
+				name: formData.name,
+				contact_person: formData.contact_person,
+				email: formData.email,
+				phone: formData.phone,
+				address: formData.address,
+				notes: formData.notes,
+			});
 
-		setSuppliers((prev) => [newSupplier, ...prev]);
-		handleCloseModal();
+			await Swal.fire("Success", "Supplier created successfully", "success");
+			handleCloseModal();
+			fetchSuppliers();
+		} catch (error) {
+			console.error("Failed to create supplier:", error);
+			await Swal.fire("Error", "Failed to create supplier", "error");
+		}
 	};
 
 	const isAnyModalOpen = isModalOpen || !!viewingSupplier || !!editingSupplier;
@@ -244,7 +217,7 @@ export default function SuppliersManagement() {
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
 						<h1 className="text-2xl font-semibold mb-1">Suppliers Management</h1>
-						<p className="text-gray-600 dark:text-gray-400">View and manage supplier records, contact info, products supplied, and purchase history</p>
+						<p className="text-gray-600 dark:text-gray-400">View and manage supplier records, contact info, and purchase history</p>
 					</div>
 					<button
 						onClick={handleOpenModal}
@@ -257,14 +230,14 @@ export default function SuppliersManagement() {
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4">
 						<h2 className="text-lg font-semibold">Suppliers Table</h2>
-						<p className="text-sm text-gray-500">Supplier name, contact info, products supplied, and purchase history</p>
+						<p className="text-sm text-gray-500">Supplier name, contact info, and purchase history</p>
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">
 						<div className="flex-1">
 							<input
 								type="text"
-								placeholder="Search by supplier, contact, products, or purchase history..."
+								placeholder="Search by supplier name, contact, or notes..."
 								value={searchQuery}
 								onChange={(event) => {
 									setSearchQuery(event.target.value);
@@ -281,7 +254,7 @@ export default function SuppliersManagement() {
 								<tr>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Supplier name</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Contact info</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Products supplied</th>
+								<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Notes</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Purchase history</th>
 									<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
 								</tr>
@@ -290,10 +263,28 @@ export default function SuppliersManagement() {
 								{paginatedItems.length > 0 ? (
 									paginatedItems.map((supplier) => (
 										<tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{supplier.supplierName}</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{supplier.contactInfo}</td>
-									<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 max-w-xs truncate" title={supplier.productsSupplied}>{supplier.productsSupplied}</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{supplier.purchaseHistory}</td>
+										<td className="px-4 py-3">
+											<p className="text-sm font-medium text-gray-900 dark:text-white">{supplier.name}</p>
+											<span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium mt-1 ${supplier.is_active ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
+												{supplier.is_active ? "Active" : "Inactive"}
+											</span>
+										</td>
+										<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+											<p>{supplier.email}</p>
+											{supplier.phone && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{supplier.phone}</p>}
+										</td>
+										<td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate italic" title={supplier.notes}>{supplier.notes || "—"}</td>
+										<td className="px-4 py-3 text-sm">
+											<button
+												type="button"
+												onClick={() => router.visit(`/erp/procurement/supplier-order-monitoring?supplier=${encodeURIComponent(supplier.name)}`)}
+												className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+												title="View orders for this supplier"
+											>
+												{supplier.purchase_order_count} {supplier.purchase_order_count === 1 ? "order" : "orders"}
+											</button>
+											{supplier.last_order_date && <p className="text-xs text-gray-400 mt-0.5">Last: {supplier.last_order_date}</p>}
+										</td>
 											<td className="px-4 py-3 text-center">
 												<div className="flex items-center justify-center gap-2">
 													<button
@@ -337,7 +328,7 @@ export default function SuppliersManagement() {
 
 					<div className="mt-4 flex items-center justify-between">
 						<p className="text-sm text-gray-500">
-							Showing {filteredData.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredData.length)} of {filteredData.length} suppliers
+							Showing {(filteredData?.length || 0) === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, (filteredData?.length || 0))} of {(filteredData?.length || 0)} suppliers
 						</p>
 						<div className="flex gap-2">
 							<button
@@ -385,8 +376,8 @@ export default function SuppliersManagement() {
 								</label>
 								<input
 									type="text"
-									name="supplierName"
-									value={formData.supplierName}
+									name="name"
+									value={formData.name}
 									onChange={handleFormChange}
 									placeholder="e.g., Metro Footwear Trading"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
@@ -399,8 +390,8 @@ export default function SuppliersManagement() {
 								</label>
 								<input
 									type="text"
-									name="contactInfo"
-									value={formData.contactInfo}
+									name="email"
+									value={formData.email}
 									onChange={handleFormChange}
 									placeholder="e.g., 0917-456-1188 | contact@email.com"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
@@ -409,31 +400,19 @@ export default function SuppliersManagement() {
 
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Products Supplied *
+									Notes
 								</label>
 								<input
 									type="text"
-									name="productsSupplied"
-									value={formData.productsSupplied}
+									name="notes"
+									value={formData.notes}
 									onChange={handleFormChange}
-									placeholder="e.g., Nike Air Max 270, Adidas Ultraboost 22"
+									placeholder="e.g., Preferred payment: bank transfer. Lead time: 7 days."
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
 
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Purchase History *
-								</label>
-								<input
-									type="text"
-									name="purchaseHistory"
-									value={formData.purchaseHistory}
-									onChange={handleFormChange}
-									placeholder="e.g., 14 purchase orders"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
+
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
@@ -473,40 +452,73 @@ export default function SuppliersManagement() {
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Supplier Name</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.supplierName}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.name}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Contact Info</p>
-											<p className="text-base font-semibold text-gray-900 dark:text-white break-all">{viewingSupplier.contactInfo}</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
+									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${viewingSupplier.is_active ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
+										{viewingSupplier.is_active ? "Active" : "Inactive"}
+									</span>
 								</div>
 							</div>
 
-							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Products Supplied</p>
-								<div className="flex flex-wrap gap-2">
-									{viewingSupplier.productsSupplied.split(",").map((product, idx) => (
-										<span
-											key={idx}
-											className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-3 py-1 text-sm font-medium text-blue-700 dark:text-blue-300"
-										>
-											{product.trim()}
-										</span>
-									))}
+							{viewingSupplier.contact_person && (
+								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Contact Person</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.contact_person}</p>
+								</div>
+							)}
+
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Email</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white break-all">{viewingSupplier.email || "—"}</p>
+								</div>
+								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Phone</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.phone || "—"}</p>
 								</div>
 							</div>
 
+							{viewingSupplier.address && (
+								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Address</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.address}</p>
+								</div>
+							)}
+
+{viewingSupplier.notes && (
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Purchase History</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.purchaseHistory}</p>
+								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
+								<p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{viewingSupplier.notes}</p>
+							</div>
+						)}
+
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Purchase Orders</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.purchase_order_count} {viewingSupplier.purchase_order_count === 1 ? "order" : "orders"}</p>
+								</div>
+								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Last Order Date</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.last_order_date || "No orders yet"}</p>
+								</div>
 							</div>
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
 							<button
 								onClick={() => setViewingSupplier(null)}
-								className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-medium transition-colors"
+								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 							>
 								Close
+							</button>
+							<button
+								type="button"
+								onClick={() => { setViewingSupplier(null); router.visit(`/erp/procurement/supplier-order-monitoring?supplier=${encodeURIComponent(viewingSupplier.name)}`); }}
+								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+							>
+								View Orders →
 							</button>
 						</div>
 					</div>
@@ -535,8 +547,8 @@ export default function SuppliersManagement() {
 								</label>
 								<input
 									type="text"
-									name="supplierName"
-									value={formData.supplierName}
+									name="name"
+									value={formData.name}
 									onChange={handleFormChange}
 									placeholder="e.g., Metro Footwear Trading"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
@@ -549,8 +561,8 @@ export default function SuppliersManagement() {
 								</label>
 								<input
 									type="text"
-									name="contactInfo"
-									value={formData.contactInfo}
+									name="email"
+									value={formData.email}
 									onChange={handleFormChange}
 									placeholder="e.g., 0917-456-1188 | contact@email.com"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
@@ -559,31 +571,19 @@ export default function SuppliersManagement() {
 
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Products Supplied *
+									Notes
 								</label>
 								<input
 									type="text"
-									name="productsSupplied"
-									value={formData.productsSupplied}
+									name="notes"
+									value={formData.notes}
 									onChange={handleFormChange}
-									placeholder="e.g., Nike Air Max 270, Adidas Ultraboost 22"
+									placeholder="e.g., Preferred payment: bank transfer. Lead time: 7 days."
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
 
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Purchase History *
-								</label>
-								<input
-									type="text"
-									name="purchaseHistory"
-									value={formData.purchaseHistory}
-									onChange={handleFormChange}
-									placeholder="e.g., 14 purchase orders"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
+
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
@@ -606,3 +606,4 @@ export default function SuppliersManagement() {
 		</AppLayoutERP>
 	);
 }
+

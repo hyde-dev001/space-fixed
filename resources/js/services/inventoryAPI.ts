@@ -210,22 +210,40 @@ export const inventoryItemAPI = {
         try {
             const formData = new FormData();
             
-            // Append basic fields
+            // Append basic scalar fields
             Object.entries(data).forEach(([key, value]) => {
-                if (key === 'images' || key === 'sizes' || key === 'color_variants') return;
+                if (['images', 'sizes', 'color_variants'].includes(key)) return;
                 if (value !== null && value !== undefined) {
                     formData.append(key, String(value));
                 }
             });
 
-            // Append sizes
+            // Append sizes as PHP-compatible nested array (not JSON string)
             if (data.sizes) {
-                formData.append('sizes', JSON.stringify(data.sizes));
+                data.sizes.forEach((size, index) => {
+                    formData.append(`sizes[${index}][size]`, size.size);
+                    formData.append(`sizes[${index}][quantity]`, String(size.quantity));
+                });
             }
 
-            // Append color variants
+            // Append color variants as PHP-compatible nested array (not JSON string)
             if (data.color_variants) {
-                formData.append('color_variants', JSON.stringify(data.color_variants));
+                data.color_variants.forEach((variant, index) => {
+                    formData.append(`color_variants[${index}][color_name]`, variant.color_name);
+                    if (variant.color_code) {
+                        formData.append(`color_variants[${index}][color_code]`, variant.color_code);
+                    }
+                    formData.append(`color_variants[${index}][quantity]`, String(variant.quantity));
+                    if (variant.sku_suffix) {
+                        formData.append(`color_variants[${index}][sku_suffix]`, variant.sku_suffix);
+                    }
+                    // Send each variant's images as nested files
+                    if (variant.images) {
+                        variant.images.forEach((img, imgIndex) => {
+                            formData.append(`color_variants[${index}][images][${imgIndex}]`, img);
+                        });
+                    }
+                });
             }
 
             // Append images
@@ -250,6 +268,45 @@ export const inventoryItemAPI = {
     async update(id: number, data: Partial<CreateInventoryItemData>): Promise<InventoryItem> {
         try {
             const response = await axios.put(`${API_BASE}/items/${id}`, data);
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
+     * Add a new colour variant to an existing inventory item.
+     * The backend will auto-sync it to the linked product.
+     */
+    async addColor(
+        itemId: number,
+        data: {
+            color_name: string;
+            color_code?: string;
+            images?: File[];
+            sizes?: { size: string; quantity: number }[];
+        }
+    ): Promise<any> {
+        try {
+            const formData = new FormData();
+            formData.append('color_name', data.color_name);
+            if (data.color_code) {
+                formData.append('color_code', data.color_code);
+            }
+            if (data.sizes) {
+                data.sizes.forEach((s, i) => {
+                    formData.append(`sizes[${i}][size]`, s.size);
+                    formData.append(`sizes[${i}][quantity]`, String(s.quantity));
+                });
+            }
+            if (data.images) {
+                data.images.forEach((img, i) => {
+                    formData.append(`images[${i}]`, img);
+                });
+            }
+            const response = await axios.post(`${API_BASE}/items/${itemId}/colors`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
             return response.data;
         } catch (error) {
             return handleApiError(error);

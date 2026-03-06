@@ -49,7 +49,7 @@ class UserAccessControlController extends Controller
         // SECURITY: Individual accounts cannot access staff management
         if (!$this->accessControl->canManageStaff($shopOwner)) {
             return redirect()->route('shop-owner.dashboard')
-                ->with('error', 'Staff management is only available for Company accounts. Upgrade your account to manage employees.')
+                ->with('error', 'Staff management is only available for Business accounts. Upgrade your account to manage employees.')
                 ->with('upgrade_prompt', true);
         }
         
@@ -106,7 +106,7 @@ class UserAccessControlController extends Controller
             // SECURITY: Check if shop owner can manage staff (company only)
             if (!$this->accessControl->canManageStaff($shopOwner)) {
                 return back()->withErrors([
-                    'error' => 'Staff management is only available for Company accounts. Individual accounts cannot create employees.'
+                    'error' => 'Staff management is only available for Business accounts. Individual accounts cannot create employees.'
                 ])->with('upgrade_prompt', true);
             }
 
@@ -341,6 +341,8 @@ class UserAccessControlController extends Controller
             'crm' => [],
             'manager' => [],
             'repairer' => [],
+            'inventory' => [],
+            'procurement' => [],
             'staff' => [],
             'common' => [],
         ];
@@ -390,6 +392,25 @@ class UserAccessControlController extends Controller
                     str_contains($permission, 'upload-service')) {
                 $grouped['repairer'][] = $permission;
             }
+            // Procurement Module: procurement-specific permissions
+            elseif ($permission === 'view-procurement' ||
+                    str_contains($permission, 'purchase-requests') ||
+                    str_contains($permission, 'purchase-orders') ||
+                    str_contains($permission, 'stock-request-approval') ||
+                    str_contains($permission, 'suppliers-management') ||
+                    str_contains($permission, 'supplier-order-monitoring') ||
+                    str_contains($permission, 'replenishment-requests') ||
+                    str_starts_with($permission, 'access-procurement-')) {
+                $grouped['procurement'][] = $permission;
+            }
+            // Inventory Module: access-inventory-* permissions
+            elseif ($permission === 'view-inventory' ||
+                    str_starts_with($permission, 'access-inventory-') ||
+                    str_contains($permission, 'product-inventory') ||
+                    str_contains($permission, 'stock-movement') ||
+                    str_contains($permission, 'upload-inventory')) {
+                $grouped['inventory'][] = $permission;
+            }
             // Staff Module: access-staff-* permissions
             elseif (str_starts_with($permission, 'access-staff-') ||
                     str_contains($permission, 'staff-job-orders') ||
@@ -401,14 +422,6 @@ class UserAccessControlController extends Controller
                     str_contains($permission, 'color-variant-manager') ||
                     str_contains($permission, 'staff-customers')) {
                 $grouped['staff'][] = $permission;
-            }
-            // Inventory Module: access-inventory-* permissions
-            elseif (str_starts_with($permission, 'access-inventory-') ||
-                    str_contains($permission, 'product-inventory') ||
-                    str_contains($permission, 'stock-movement') ||
-                    str_contains($permission, 'suppliers-management') ||
-                    str_contains($permission, 'upload-inventory')) {
-                $grouped['staff'][] = $permission; // Group with staff for now
             }
             // Common/Global permissions
             elseif (str_contains($permission, 'global-search') ||
@@ -1200,7 +1213,7 @@ class UserAccessControlController extends Controller
                 return response()->json([
                     'allowed_roles' => [],
                     'can_manage_staff' => false,
-                    'message' => 'Staff management is only available for Company accounts.',
+                    'message' => 'Staff management is only available for Business accounts.',
                     'upgrade_required' => true,
                 ]);
             }

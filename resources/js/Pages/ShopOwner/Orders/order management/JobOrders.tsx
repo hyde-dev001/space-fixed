@@ -482,7 +482,7 @@ export default function JobOrdersPage() {
     if (!carrierCompany) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please select a Carrier Company",
+        text: "Please select a Carrier Business",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1171,7 +1171,7 @@ export default function JobOrdersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Carrier Company *
+                      Carrier Business *
                     </label>
                     <select
                       value={carrierCompany}

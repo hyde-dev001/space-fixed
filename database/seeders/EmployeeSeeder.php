@@ -84,6 +84,16 @@ class EmployeeSeeder extends Seeder
                 'salary' => 48000.00,
                 'phone' => '+639175550001',
             ],
+            // Procurement Manager
+            [
+                'first_name' => 'Patricia',
+                'last_name' => 'Reyes',
+                'email' => "procurement.{$shopOwner->id}@solespace.com",
+                'position' => 'Procurement Manager',
+                'department' => 'Procurement Manager',
+                'salary' => 50000.00,
+                'phone' => '+639178880001',
+            ],
             // General Staff
             [
                 'first_name' => 'Jessica',
@@ -138,7 +148,8 @@ class EmployeeSeeder extends Seeder
                 'HR' => ['role' => 'HR', 'spatie' => 'HR'],
                 'CRM' => ['role' => 'CRM', 'spatie' => 'CRM'],
                 'Repairer' => ['role' => 'REPAIRER', 'spatie' => 'Repairer'],
-                'Inventory Manager' => ['role' => 'INVENTORY_MANAGER', 'spatie' => 'Inventory Manager'], // Use unique role for proper identification
+                'Inventory Manager' => ['role' => 'INVENTORY_MANAGER', 'spatie' => 'Inventory Manager'],
+                'Procurement Manager' => ['role' => 'PROCUREMENT_MANAGER', 'spatie' => 'Procurement Manager'],
                 'Staff' => ['role' => 'STAFF', 'spatie' => 'Staff'],
             ];
             

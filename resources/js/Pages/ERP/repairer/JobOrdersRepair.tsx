@@ -50,6 +50,43 @@ type MetricCardProps = {
 };
 
 const useStaticData = false;
+const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
+const REPAIR_REQUEST_LIMIT_KEY = 'repair_request_limit';
+const DEFAULT_REPAIR_REQUEST_LIMIT = 20;
+
+type DeliveryMethodOverride = 'pickup' | 'walkin';
+
+const readDeliveryMethodOverrides = (): Record<string, DeliveryMethodOverride> => {
+  try {
+    const raw = localStorage.getItem(DELIVERY_METHOD_OVERRIDES_KEY);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+
+    return Object.entries(parsed).reduce<Record<string, DeliveryMethodOverride>>((acc, [repairId, method]) => {
+      if (method === 'pickup' || method === 'walkin') {
+        acc[repairId] = method;
+      }
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
+};
+
+const readRepairRequestLimit = (): number => {
+  if (typeof window === 'undefined') return DEFAULT_REPAIR_REQUEST_LIMIT;
+
+  const raw = window.localStorage.getItem(REPAIR_REQUEST_LIMIT_KEY);
+  const parsed = Number(raw);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_REPAIR_REQUEST_LIMIT;
+  }
+
+  return Math.floor(parsed);
+};
 
 const staticOrders: RepairOrder[] = [
   {
@@ -314,10 +351,16 @@ export default function JobOrdersRepair() {
   const [carrierPhone, setCarrierPhone] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
+  const [etaPreset, setEtaPreset] = useState("1-2 business days");
   const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [highlightRepairId, setHighlightRepairId] = useState<number | null>(null);
+  const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
+  const [repairRequestLimit, setRepairRequestLimit] = useState<number>(readRepairRequestLimit);
+  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+  const [limitInputValue, setLimitInputValue] = useState<string>(String(readRepairRequestLimit()));
+  const [limitInputError, setLimitInputError] = useState<string | null>(null);
   const itemsPerPage = 10;
 
   // Predefined rejection reasons
@@ -375,6 +418,40 @@ export default function JobOrdersRepair() {
     return () => window.clearTimeout(scrollTimer);
   }, [highlightRepairId, orders]);
 
+  useEffect(() => {
+    const refreshOverrides = () => {
+      setDeliveryMethodOverrides(readDeliveryMethodOverrides());
+    };
+
+    refreshOverrides();
+    window.addEventListener('storage', refreshOverrides);
+
+    return () => {
+      window.removeEventListener('storage', refreshOverrides);
+    };
+  }, []);
+
+  useEffect(() => {
+    setOrders((prev) =>
+      prev.map((order) => {
+        const override = deliveryMethodOverrides[String(order.database_id)];
+        if (!override || order.serviceType === override) {
+          return order;
+        }
+
+        return {
+          ...order,
+          serviceType: override,
+          pickupAddressLine: override === 'pickup' ? order.pickupAddressLine : undefined,
+          pickupBarangay: override === 'pickup' ? order.pickupBarangay : undefined,
+          pickupCity: override === 'pickup' ? order.pickupCity : undefined,
+          pickupRegion: override === 'pickup' ? order.pickupRegion : undefined,
+          pickupPostalCode: override === 'pickup' ? order.pickupPostalCode : undefined,
+        };
+      })
+    );
+  }, [deliveryMethodOverrides]);
+
   // Fetch repair requests from backend
   useEffect(() => {
     fetchOrders();
@@ -417,7 +494,7 @@ export default function JobOrdersRepair() {
           description: repair.description,
           shoeType: repair.shoe_type,
           brand: repair.brand,
-          serviceType: repair.delivery_method === 'pickup' ? 'pickup' : 'walkin',
+          serviceType: deliveryMethodOverrides[String(repair.id)] || (repair.delivery_method === 'pickup' ? 'pickup' : 'walkin'),
           pickupAddressLine: repair.pickup_address?.address_line || null,
           pickupBarangay: repair.pickup_address?.barangay || null,
           pickupCity: repair.pickup_address?.city || null,
@@ -520,6 +597,44 @@ export default function JobOrdersRepair() {
     return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
   }, [orders]);
 
+  const activeRepairCount = useMemo(() => {
+    const activeStatuses: RepairOrder['status'][] = [
+      'assigned_to_repairer',
+      'repairer_accepted',
+      'owner_approved',
+      'waiting_customer_confirmation',
+      'pending',
+      'received',
+      'in-progress',
+      'awaiting_parts',
+      'completed',
+      'ready-for-pickup',
+    ];
+
+    return orders.filter((order) => activeStatuses.includes(order.status)).length;
+  }, [orders]);
+
+  const handleSetRepairRequestLimit = () => {
+    setLimitInputValue(String(repairRequestLimit));
+    setLimitInputError(null);
+    setIsLimitModalOpen(true);
+  };
+
+  const handleSaveRepairRequestLimit = () => {
+    const parsed = Number(limitInputValue);
+
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 500) {
+      setLimitInputError('Please enter a limit from 1 to 500.');
+      return;
+    }
+
+    const newLimit = Math.floor(parsed);
+    setRepairRequestLimit(newLimit);
+    window.localStorage.setItem(REPAIR_REQUEST_LIMIT_KEY, String(newLimit));
+    setIsLimitModalOpen(false);
+    setLimitInputError(null);
+  };
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       "new_request": "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
@@ -535,6 +650,17 @@ export default function JobOrdersRepair() {
       "cancelled": "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
+  };
+
+  const getHalfPriceText = (priceText: string) => {
+    const numericPrice = parseFloat(priceText.replace(/[^0-9.]/g, "")) || 0;
+    const halfPrice = numericPrice / 2;
+    return `P${halfPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const isRemainingBalancePaid = (paymentStatus?: string) => {
+    const normalized = (paymentStatus || '').toLowerCase();
+    return normalized === 'completed';
   };
 
   const handleMarkReceived = async (order: RepairOrder) => {
@@ -905,6 +1031,7 @@ export default function JobOrdersRepair() {
 
   const handleShipOrder = (order: RepairOrder) => {
     setSelectedOrder(order);
+    setEtaPreset("1-2 business days");
     setCarrierCompany("");
     setCarrierName("");
     setCarrierPhone("");
@@ -917,12 +1044,51 @@ export default function JobOrdersRepair() {
     if (!selectedOrder) return;
 
     // Validation
+    if (!etaPreset) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please select an Estimated Delivery Date",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     if (!carrierCompany) {
       await Swal.fire({
-        title: "Required field",
-        text: "Please select a Carrier Company.",
+        title: "Missing Information",
+        text: "Please select a Shipping Business",
         icon: "warning",
-        confirmButtonText: "OK",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (!carrierName) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please enter the Rider Name",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (!carrierPhone) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please enter the Rider Phone Number",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (!trackingNumber) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please enter a Tracking Number",
+        icon: "warning",
         confirmButtonColor: "#2563eb",
       });
       return;
@@ -998,6 +1164,18 @@ export default function JobOrdersRepair() {
     return "Not specified";
   };
 
+  const getShippingAddress = (order: RepairOrder) => {
+    const parts = [
+      order.pickupAddressLine,
+      order.pickupBarangay,
+      order.pickupCity,
+      order.pickupRegion,
+      order.pickupPostalCode,
+    ].filter(Boolean);
+
+    return parts.length ? parts.join(', ') : 'No shipping address provided';
+  };
+
   const handleReviewAction = async (action: "accept" | "reject" | "message") => {
     if (!viewOrder) return;
 
@@ -1006,25 +1184,39 @@ export default function JobOrdersRepair() {
     }
 
     if (action === "accept") {
+      if (activeRepairCount >= repairRequestLimit) {
+        await Swal.fire({
+          title: 'Repair Limit Reached',
+          text: `This repairer already has ${activeRepairCount} active job orders. Increase the limit to accept more requests.`,
+          icon: 'warning',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#2563eb',
+        });
+        return;
+      }
+
       try {
         const response = await axios.post(`/api/repairer/repairs/${viewOrder.database_id}/accept`);
         
         if (response.data.success) {
-          // Close modal immediately
-          setIsViewModalOpen(false);
-          
-          // Refresh the repairs list
-          fetchOrders();
+          const createdConversationId =
+            response.data.conversation_id ||
+            response.data.conversation?.id ||
+            viewOrder.conversation_id;
 
           await Swal.fire({
             title: "Request Accepted",
-            text: response.data.message || "Conversation created with customer. You can now chat with them.",
+            text: response.data.message || "Opening support chat with this customer...",
             icon: "success",
-            confirmButtonText: "OK",
+            confirmButtonText: "Open Chat",
             confirmButtonColor: "#2563eb",
           });
 
-          setViewOrder(null);
+          const supportUrl = createdConversationId
+            ? `/erp/staff/repairer-support?conversation_id=${createdConversationId}`
+            : '/erp/staff/repairer-support';
+
+          window.location.href = supportUrl;
         }
       } catch (error: any) {
         console.error('Failed to accept repair:', error);
@@ -1112,6 +1304,17 @@ export default function JobOrdersRepair() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Shoe Repair & Cleaning Services</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">Manage shoe cleaning and repair service orders</p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              onClick={handleSetRepairRequestLimit}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            >
+              Repair Request Limit
+            </button>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Active workload: <span className="font-semibold">{activeRepairCount}</span> / {repairRequestLimit}
+            </p>
           </div>
         </div>
 
@@ -1296,7 +1499,13 @@ export default function JobOrdersRepair() {
                     Status
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Pickup Method
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Price
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Paid
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Created
@@ -1357,8 +1566,18 @@ export default function JobOrdersRepair() {
                           </span>
                         </div>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                        {formatServiceType(order.serviceType)}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
                         {order.total}
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
+                        isRemainingBalancePaid(order.payment_status)
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {getHalfPriceText(order.total)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {order.createdAt}
@@ -1426,13 +1645,23 @@ export default function JobOrdersRepair() {
                               Mark Ready for Pickup
                             </button>
                           )}
+
+                          {order.status === "ready-for-pickup" && (
+                            <button
+                              onClick={() => handleShipOrder(order)}
+                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                              title="Ship this repair order"
+                            >
+                              Ship
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
+                    <td colSpan={9} className="px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No repair orders found</p>
                     </td>
                   </tr>
@@ -1848,6 +2077,13 @@ export default function JobOrdersRepair() {
                 {viewOrder.status === "ready-for-pickup" && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
+                      onClick={() => handleShipOrder(viewOrder)}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                      title="Ship this repair order"
+                    >
+                      Ship
+                    </button>
+                    <button
                       onClick={() => handleActivatePickup(String(viewOrder.database_id))}
                       disabled={viewOrder.pickup_enabled}
                       className={`px-4 py-2 border border-black rounded-lg font-medium transition-colors ${
@@ -1908,7 +2144,7 @@ export default function JobOrdersRepair() {
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Repair Order</h2>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
               </div>
               
               <div className="px-6 py-4 overflow-y-auto flex-1">
@@ -1930,77 +2166,106 @@ export default function JobOrdersRepair() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Item
+                      Shipping Address
                     </label>
-                    <p className="text-sm text-gray-900 dark:text-white">{selectedOrder.item}</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{getShippingAddress(selectedOrder)}</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Carrier Company *
+                      Estimated Delivery Date *
                     </label>
                     <select
-                      value={carrierCompany}
-                      onChange={(e) => setCarrierCompany(e.target.value)}
+                      value={etaPreset}
+                      onChange={(e) => setEtaPreset(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      title="Estimated Delivery Date"
                     >
-                      <option value="">Select Carrier</option>
-                      <option value="JNT">JNT</option>
-                      <option value="LBC">LBC</option>
-                      <option value="Lalamove">Lalamove</option>
+                      <option value="1-2 business days">1-2 business days</option>
+                      <option value="1-3 business days">1-3 business days</option>
+                      <option value="2-4 business days">2-4 business days</option>
+                      <option value="3-6 business days">3-6 business days</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Carrier Name
+                      Shipping Business *
                     </label>
-                    <input
-                      type="text"
-                      value={carrierName}
-                      onChange={(e) => setCarrierName(e.target.value)}
-                      placeholder="e.g., John Doe"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <select
+                      value={carrierCompany}
+                      onChange={(e) => setCarrierCompany(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      title="Shipping Business"
+                    >
+                      <option value="">Select shipping</option>
+                      <option value="Lalamove">Lalamove</option>
+                      <option value="J&T">J&amp;T</option>
+                      <option value="Express Padala">Express Padala</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Rider Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={carrierName}
+                        onChange={(e) => setCarrierName(e.target.value)}
+                        aria-label="Rider Name"
+                        title="Rider Name"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Rider Phone *
+                      </label>
+                      <input
+                        type="tel"
+                        value={carrierPhone}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
+                          setCarrierPhone(digits);
+                        }}
+                        maxLength={11}
+                        aria-label="Rider Phone"
+                        title="Rider Phone"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Carrier Phone
-                    </label>
-                    <input
-                      type="tel"
-                      value={carrierPhone}
-                      onChange={(e) => setCarrierPhone(e.target.value)}
-                      placeholder="e.g., +63 965 123 4567"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tracking Number
+                      Tracking Number *
                     </label>
                     <input
                       type="text"
                       value={trackingNumber}
                       onChange={(e) => setTrackingNumber(e.target.value)}
-                      placeholder="e.g., 123456789"
+                      aria-label="Tracking Number"
+                      title="Tracking Number"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier. This field is required before confirming shipping.</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tracking Link
+                      Tracking Link *
                     </label>
                     <input
                       type="url"
                       value={trackingLink}
                       onChange={(e) => setTrackingLink(e.target.value)}
-                      placeholder="e.g., https://track.example.com"
+                      aria-label="Tracking Link"
+                      title="Tracking Link"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
                   </div>
                 </div>
               </div>
@@ -2010,6 +2275,7 @@ export default function JobOrdersRepair() {
                   onClick={() => {
                     setIsShippingModalOpen(false);
                     setSelectedOrder(null);
+                    setEtaPreset("1-2 business days");
                     setCarrierCompany("");
                     setCarrierName("");
                     setCarrierPhone("");
@@ -2058,6 +2324,7 @@ export default function JobOrdersRepair() {
                     <select
                       value={selectedRejectionReason}
                       onChange={(e) => setSelectedRejectionReason(e.target.value)}
+                      title="Rejection Reason"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">-- Select a reason --</option>
@@ -2105,6 +2372,58 @@ export default function JobOrdersRepair() {
                   className="px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg font-medium transition-colors"
                 >
                   Confirm Rejection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isLimitModalOpen && (
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white text-center">Set Repair Request Limit</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400 text-center mt-2">
+                  Set the max active repair job orders this repairer can handle.
+                </p>
+              </div>
+
+              <div className="px-6 py-5">
+                <label className="sr-only" htmlFor="repair-request-limit-input-erp">Repair request limit</label>
+                <input
+                  id="repair-request-limit-input-erp"
+                  type="number"
+                  min={1}
+                  max={500}
+                  step={1}
+                  title="Repair request limit"
+                  value={limitInputValue}
+                  onChange={(e) => {
+                    setLimitInputValue(e.target.value);
+                    if (limitInputError) setLimitInputError(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {limitInputError && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{limitInputError}</p>
+                )}
+              </div>
+
+              <div className="px-6 pb-5 flex items-center justify-center gap-3">
+                <button
+                  onClick={handleSaveRepairRequestLimit}
+                  className="px-5 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+                >
+                  Save Limit
+                </button>
+                <button
+                  onClick={() => {
+                    setIsLimitModalOpen(false);
+                    setLimitInputError(null);
+                  }}
+                  className="px-5 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

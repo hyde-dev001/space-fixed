@@ -325,39 +325,37 @@ const RepairProcess: React.FC = () => {
       if (data.success) {
         setIsSubmitting(false);
         
-        const result = await Swal.fire({
+        await Swal.fire({
           title: 'Request Submitted!',
           text: `Your repair request has been submitted successfully. Total: ₱${grandTotal.toLocaleString()}. We will contact you shortly.`,
           icon: 'success',
           confirmButtonColor: '#000000',
         });
 
-        if (result.isConfirmed) {
-          // Clear localStorage
-          localStorage.removeItem('selectedRepairServices');
-          localStorage.removeItem('shopDetails');
-          
-          // Reset form
-          setFormData({
-            customerName: '',
-            email: '',
-            phone: '',
-            shoeType: '',
-            brand: '',
-            description: '',
-            serviceType: '',
-            pickupAddressLine: '',
-            pickupBarangay: '',
-            pickupCity: '',
-            pickupRegion: '',
-            pickupPostalCode: '',
-          });
-          setSelectedServices([]);
-          setImageUploadGroups([{id: '0', file: null, preview: ''}]);
-          
-          // Redirect to home or repair services page
-          window.location.href = '/repair-services';
-        }
+        // Clear localStorage
+        localStorage.removeItem('selectedRepairServices');
+        localStorage.removeItem('shopDetails');
+        
+        // Reset form
+        setFormData({
+          customerName: '',
+          email: '',
+          phone: '',
+          shoeType: '',
+          brand: '',
+          description: '',
+          serviceType: '',
+          pickupAddressLine: '',
+          pickupBarangay: '',
+          pickupCity: '',
+          pickupRegion: '',
+          pickupPostalCode: '',
+        });
+        setSelectedServices([]);
+        setImageUploadGroups([{id: '0', file: null, preview: ''}]);
+        
+        // Redirect to My Repairs page
+        window.location.href = '/my-repairs';
       } else {
         // Show validation errors if available
         setIsSubmitting(false);

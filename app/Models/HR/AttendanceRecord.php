@@ -33,12 +33,16 @@ class AttendanceRecord extends Model
         'notes',
         'working_hours',
         'overtime_hours',
+        'lunch_break_start',
+        'lunch_break_end',
     ];
 
     protected $casts = [
         'date' => 'date',
         'check_in_time' => 'datetime:H:i',
         'check_out_time' => 'datetime:H:i',
+        'lunch_break_start' => 'datetime:H:i',
+        'lunch_break_end' => 'datetime:H:i',
         'expected_check_in' => 'datetime:H:i',
         'expected_check_out' => 'datetime:H:i',
         'working_hours' => 'decimal:2',

@@ -1,9 +1,10 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useState } from "react";
 import type { ComponentType } from "react";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import type { InventoryItem, InventoryMetrics } from "@/types/inventory";
 
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
@@ -52,28 +53,7 @@ const CloseIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-interface InventoryItem {
-  id: number;
-  name: string;
-  sku: string;
-  category: string;
-  quantity: number;
-  price: string;
-  image: string;
-  status: "In Stock" | "Low Stock" | "Out of Stock";
-  lastRestocked?: string;
-}
 
-const inventoryData: InventoryItem[] = [
-  { id: 1, name: "Nike Air Max 270", sku: "SKU-001", category: "Shoes", quantity: 45, price: "₱6,499", image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-01-28" },
-  { id: 2, name: "Adidas Ultraboost 22", sku: "SKU-002", category: "Shoes", quantity: 32, price: "₱8,999", image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-25" },
-  { id: 3, name: "New Balance 550", sku: "SKU-003", category: "Shoes", quantity: 8, price: "₱5,299", image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-20" },
-  { id: 4, name: "Puma RS-X", sku: "SKU-004", category: "Shoes", quantity: 28, price: "₱4,799", image: "/images/product/product-04.jpg", status: "In Stock", lastRestocked: "2026-01-30" },
-  { id: 5, name: "Adidas Samba", sku: "SKU-005", category: "Shoes", quantity: 0, price: "₱5,499", image: "/images/product/product-05.jpg", status: "Out of Stock", lastRestocked: "2026-01-15" },
-  { id: 6, name: "Premium Shoelaces", sku: "SKU-006", category: "Accessories", quantity: 120, price: "₱180", image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-02-01" },
-  { id: 7, name: "Cleaning Foam", sku: "SKU-007", category: "Care Products", quantity: 15, price: "₱220", image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-22" },
-  { id: 8, name: "Odor Eliminator Spray", sku: "SKU-008", category: "Care Products", quantity: 5, price: "₱260", image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-18" },
-];
 
 interface MetricCardProps {
   title: string;
@@ -129,6 +109,10 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function ERPInventoryOverview() {
+  const { initialData, initialMetrics } = usePage().props as any;
+  const [items, setItems] = useState<InventoryItem[]>(initialData?.data ?? []);
+  const [metrics, setMetrics] = useState<InventoryMetrics | null>(initialMetrics ?? null);
+  const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -136,9 +120,12 @@ export default function ERPInventoryOverview() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
+
+  const categories = ["All", ...Array.from(new Set(items.map((i) => i.category)))];
+
   // Filter data
-  const filteredData = inventoryData.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredData = items.filter((item) => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           item.sku.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "All" || item.status === statusFilter;
     const matchesCategory = categoryFilter === "All" || item.category === categoryFilter;
@@ -147,14 +134,14 @@ export default function ERPInventoryOverview() {
 
   // Pagination
   const itemsPerPage = 7;
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
   // Calculate metrics
-  const totalItems = inventoryData.reduce((sum, item) => sum + item.quantity, 0);
-  const lowStockCount = inventoryData.filter(item => item.status === "Low Stock").length;
-  const outOfStockCount = inventoryData.filter(item => item.status === "Out of Stock").length;
+  const totalItems = metrics?.total_items ?? items.reduce((sum, item) => sum + item.available_quantity, 0);
+  const lowStockCount = metrics?.low_stock_count ?? items.filter((item) => item.status === "Low Stock").length;
+  const outOfStockCount = metrics?.out_of_stock_count ?? items.filter((item) => item.status === "Out of Stock").length;
 
   const stockChartOptions: ApexOptions = {
     legend: {
@@ -205,7 +192,7 @@ export default function ERPInventoryOverview() {
     },
     xaxis: {
       type: "category",
-      categories: inventoryData.map((item) => item.name),
+      categories: items.map((item) => item.name),
       axisBorder: {
         show: false,
       },
@@ -240,7 +227,7 @@ export default function ERPInventoryOverview() {
   const stockChartSeries = [
     {
       name: "Stock",
-      data: inventoryData.map((item) => item.quantity),
+      data: items.map((item) => item.available_quantity),
     },
   ];
 
@@ -340,10 +327,9 @@ export default function ERPInventoryOverview() {
                 }}
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
-                <option value="All">All Categories</option>
-                <option value="Shoes">Shoes</option>
-                <option value="Accessories">Accessories</option>
-                <option value="Care Products">Care Products</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>
+                ))}
               </select>
             </div>
             <div className="sm:w-48">
@@ -378,12 +364,20 @@ export default function ERPInventoryOverview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {paginatedItems.map((item) => (
+                {loading ? (
+                  <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
+                ) : paginatedItems.length === 0 ? (
+                  <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-500">No inventory items found.</td></tr>
+                ) : paginatedItems.map((item) => (
                   <tr key={item.id}>
                     <td className="py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
-                          <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                          {item.main_image ? (
+                            <img src={`/storage/${item.main_image}`} alt={item.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center text-xs text-gray-400">No img</div>
+                          )}
                         </div>
                         <div>
                           <p className="font-medium text-gray-900 dark:text-gray-100">{item.name}</p>
@@ -393,9 +387,9 @@ export default function ERPInventoryOverview() {
                     <td className="py-3 text-gray-600 dark:text-gray-400">{item.sku}</td>
                     <td className="py-3 text-gray-600 dark:text-gray-400">{item.category}</td>
                     <td className="py-3">
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">{item.available_quantity}</span>
                     </td>
-                    <td className="py-3 text-gray-900 dark:text-gray-100">{item.price}</td>
+                    <td className="py-3 text-gray-900 dark:text-gray-100">{item.price != null ? `₱${item.price.toLocaleString()}` : "N/A"}</td>
                     <td className="py-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -475,7 +469,11 @@ export default function ERPInventoryOverview() {
                 {/* Product Image */}
                 <div className="flex justify-center">
                   <div className="h-48 w-48 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-700">
-                    <img src={selectedItem.image} alt={selectedItem.name} className="h-full w-full object-cover" />
+                    {selectedItem.main_image ? (
+                      <img src={`/storage/${selectedItem.main_image}`} alt={selectedItem.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-sm text-gray-400">No image</div>
+                    )}
                   </div>
                 </div>
 
@@ -495,11 +493,11 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Price</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.price}</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.price != null ? `₱${selectedItem.price.toLocaleString()}` : "N/A"}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Quantity Available</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.quantity} units</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.available_quantity} units</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
@@ -515,12 +513,10 @@ export default function ERPInventoryOverview() {
                       {selectedItem.status}
                     </span>
                   </div>
-                  {selectedItem.lastRestocked && (
-                    <div className="col-span-2">
-                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Restocked</p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.lastRestocked}</p>
-                    </div>
-                  )}
+                  <div className="col-span-2">
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Updated</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.updated_at}</p>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">

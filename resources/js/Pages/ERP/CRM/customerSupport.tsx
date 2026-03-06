@@ -75,7 +75,11 @@ export default function CustomerSupport() {
           customerRole: conv.customer?.email || "",
           lastMessage: conv.messages?.[0]?.content || "No messages yet",
           lastMessageTime: formatTime(conv.last_message_at),
-          status: "active",
+          status: (
+            conv.status === "open" || conv.status === "in_progress" ? "active" :
+            conv.status === "resolved" ? "idle" :
+            "offline"
+          ) as "active" | "idle" | "offline",
           messages: existingTicket?.messages || [], // Keep existing messages
           priority: conv.priority,
           conversationStatus: conv.status,
@@ -131,6 +135,18 @@ export default function CustomerSupport() {
       fetchConversationMessages(selectedTicketId);
     }
   }, [selectedTicketId]);
+
+  // 30-second auto-refresh
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchConversations();
+      if (selectedTicketId) {
+        fetchConversationMessages(selectedTicketId);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, selectedTicketId]);
 
   const fetchConversationMessages = async (conversationId: number) => {
     try {
@@ -301,6 +317,25 @@ export default function CustomerSupport() {
   const filteredTickets = tickets.filter((ticket) =>
     ticket.customerName.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleResolveConversation = async () => {
+    if (!selectedTicketId) return;
+    try {
+      await axios.patch(`/api/crm/conversations/${selectedTicketId}/status`, { status: "resolved" });
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === selectedTicketId
+            ? { ...t, conversationStatus: "resolved", status: "idle" as const }
+            : t
+        )
+      );
+      setNotification({ type: "success", message: "Conversation marked as resolved." });
+      setTimeout(() => setNotification(null), 3000);
+    } catch {
+      setNotification({ type: "error", message: "Failed to resolve conversation." });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
 
   const handleTransferToRepairer = async () => {
     if (!selectedTicket || !transferNote.trim()) {
@@ -478,6 +513,13 @@ export default function CustomerSupport() {
                         <span className="text-xs text-gray-500 ml-2">{ticket.lastMessageTime}</span>
                       </div>
                       <p className="text-xs text-gray-500">{ticket.customerRole}</p>
+                      {ticket.priority && (
+                        <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold mt-0.5 ${
+                          ticket.priority === "high"   ? "bg-red-100 text-red-700" :
+                          ticket.priority === "medium" ? "bg-yellow-100 text-yellow-700" :
+                          "bg-gray-100 text-gray-600"
+                        }`}>{ticket.priority}</span>
+                      )}
                       <p className="text-xs text-gray-600 truncate mt-1">{ticket.lastMessage}</p>
                     </div>
                   </div>
@@ -505,16 +547,29 @@ export default function CustomerSupport() {
                   </div>
                 </div>
                 
-                {/* Transfer Button */}
-                <button
-                  onClick={() => setShowTransferModal(true)}
-                  className="p-1.5 bg-white border-2 border-black hover:bg-gray-50 rounded-lg transition-colors"
-                  title="Transfer to Repairer"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="black" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                </button>
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleResolveConversation}
+                    disabled={selectedTicket.conversationStatus === "resolved"}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-300 text-green-700 hover:bg-green-100 rounded-lg transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Mark conversation as resolved"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    {selectedTicket.conversationStatus === "resolved" ? "Resolved" : "Resolve"}
+                  </button>
+                  <button
+                    onClick={() => setShowTransferModal(true)}
+                    className="p-1.5 bg-white border-2 border-black hover:bg-gray-50 rounded-lg transition-colors"
+                    title="Transfer to Repairer"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="black" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               {/* Messages */}

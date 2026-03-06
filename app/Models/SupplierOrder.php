@@ -55,6 +55,14 @@ class SupplierOrder extends Model
     }
 
     /**
+     * Get the Finance expense auto-created when this PO was received
+     */
+    public function expense()
+    {
+        return $this->hasOne(\App\Models\Finance\Expense::class, 'purchase_order_id');
+    }
+
+    /**
      * Get the user who created the order
      */
     public function creator(): BelongsTo

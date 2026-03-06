@@ -1,7 +1,7 @@
 /**
  * Account Type Information Banner
  * 
- * Displays registration type (Individual/Company) and business type (Retail/Repair/Both)
+ * Displays registration type (Individual/Business) and business type (Retail/Repair/Both)
  * Shows upgrade prompt for Individual accounts with limitations
  */
 
@@ -72,7 +72,7 @@ export default function AccountTypeInfo() {
                             <h3 className={`font-semibold ${
                                 isIndividual ? 'text-blue-900 dark:text-blue-100' : 'text-purple-900 dark:text-purple-100'
                             }`}>
-                                {isIndividual ? 'Individual Account' : 'Company Account'}
+                                {isIndividual ? 'Individual Account' : 'Business Account'}
                             </h3>
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                                 businessTypeInfo.color === 'blue' 
@@ -129,11 +129,11 @@ export default function AccountTypeInfo() {
                                 className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-medium rounded-lg transition-colors"
                                 onClick={() => {
                                     // TODO: Implement upgrade flow
-                                    alert('Upgrade to Company feature coming soon!');
+                                    alert('Upgrade to Business feature coming soon!');
                                 }}
                             >
                                 <Building2 className="w-4 h-4" />
-                                Upgrade to Company Account
+                                Upgrade to Business Account
                             </button>
                         </div>
                     </div>

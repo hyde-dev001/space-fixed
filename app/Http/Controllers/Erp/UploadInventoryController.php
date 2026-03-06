@@ -8,11 +8,15 @@ use App\Models\InventoryColorVariant;
 use App\Models\InventoryImage;
 use App\Models\InventorySize;
 use App\Models\StockMovement;
+use App\Models\Product;
+use App\Models\ProductColorVariant;
+use App\Models\ProductColorVariantImage;
+use App\Models\ProductVariant;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Inertia\Inertia;
 
 class UploadInventoryController extends Controller
 {
@@ -35,13 +39,10 @@ class UploadInventoryController extends Controller
                 $query->where('category', $category);
             })
             ->orderBy('created_at', 'desc')
-            ->paginate(20)
+            ->paginate($request->per_page ?? 20)
             ->withQueryString();
         
-        return Inertia::render('ERP/Inventory/UploadInventory', [
-            'items' => $items,
-            'filters' => $request->only(['search', 'category'])
-        ]);
+        return response()->json($items);
     }
     
     /**
@@ -70,6 +71,8 @@ class UploadInventoryController extends Controller
             'color_variants.*.color_name' => 'required|string',
             'color_variants.*.color_code' => 'nullable|string',
             'color_variants.*.quantity' => 'required|integer|min:0',
+            'color_variants.*.images' => 'nullable|array',
+            'color_variants.*.images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'images' => 'nullable|array',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
         ]);
@@ -116,17 +119,23 @@ class UploadInventoryController extends Controller
             
             // Create color variants if provided
             if (!empty($validated['color_variants'])) {
-                foreach ($validated['color_variants'] as $variantData) {
-                    InventoryColorVariant::create([
+                foreach ($validated['color_variants'] as $idx => $variantData) {
+                    $variant = InventoryColorVariant::create([
                         'inventory_item_id' => $item->id,
                         'color_name' => $variantData['color_name'],
                         'color_code' => $variantData['color_code'] ?? null,
                         'quantity' => $variantData['quantity']
                     ]);
+
+                    // Process images for this specific color variant
+                    $variantImages = $request->file("color_variants.{$idx}.images");
+                    if (!empty($variantImages)) {
+                        $this->uploadItemImages($item, $variantImages, $variant->id);
+                    }
                 }
             }
             
-            // Handle image uploads
+            // Handle flat images (repair materials / items without color variants)
             if ($request->hasFile('images')) {
                 $this->uploadItemImages($item, $request->file('images'));
             }
@@ -174,6 +183,7 @@ class UploadInventoryController extends Controller
             'description' => 'nullable|string',
             'notes' => 'nullable|string',
             'unit' => 'nullable|string|max:50',
+            'available_quantity' => 'nullable|integer|min:0',
             'reorder_level' => 'nullable|integer|min:0',
             'reorder_quantity' => 'nullable|integer|min:0',
             'price' => 'nullable|numeric|min:0',
@@ -187,9 +197,33 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
         
-        $item->update(array_merge($validated, [
-            'updated_by' => $request->user()->id
-        ]));
+        DB::transaction(function () use ($item, $validated, $request) {
+            $quantityBefore = $item->available_quantity;
+            $newQuantity = $validated['available_quantity'] ?? $quantityBefore;
+            $quantityChange = $newQuantity - $quantityBefore;
+
+            $updateData = array_merge(
+                array_diff_key($validated, ['available_quantity' => null]),
+                ['available_quantity' => $newQuantity, 'updated_by' => $request->user()->id]
+            );
+
+            $item->update($updateData);
+
+            // Record stock movement if quantity changed
+            if ($quantityChange !== 0) {
+                StockMovement::create([
+                    'inventory_item_id' => $item->id,
+                    'movement_type' => 'adjustment',
+                    'quantity_change' => $quantityChange,
+                    'quantity_before' => $quantityBefore,
+                    'quantity_after' => $newQuantity,
+                    'reference_type' => 'manual',
+                    'notes' => 'Quantity updated via Upload Inventory page',
+                    'performed_by' => $request->user()->id,
+                    'performed_at' => now(),
+                ]);
+            }
+        });
         
         return response()->json([
             'message' => 'Inventory item updated successfully',
@@ -299,6 +333,155 @@ class UploadInventoryController extends Controller
         ]);
     }
     
+    /**
+     * Add a new colour variant to an existing inventory item and
+     * automatically sync it to the linked product (if any).
+     *
+     * POST /erp/inventory/items/{id}/colors
+     */
+    public function addColor(Request $request, $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'color_name'        => 'required|string|max:100',
+            'color_code'        => 'nullable|string|max:20',
+            'sizes'             => 'nullable|array',
+            'sizes.*.size'      => 'required|string',
+            'sizes.*.quantity'  => 'required|integer|min:0',
+            'images'            => 'nullable|array',
+            'images.*'          => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        $shopOwnerId = $request->user()->shop_owner_id;
+
+        $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($id);
+
+        DB::beginTransaction();
+        try {
+            $totalQty = collect($validated['sizes'] ?? [])->sum('quantity');
+
+            // 1. Create the inventory colour variant
+            $colorVariant = InventoryColorVariant::create([
+                'inventory_item_id' => $item->id,
+                'color_name'        => $validated['color_name'],
+                'color_code'        => $validated['color_code'] ?? null,
+                'quantity'          => $totalQty,
+            ]);
+
+            // 2. Upload images (stored under inventory/{id}/)
+            $uploadedImages = [];
+            if ($request->hasFile('images')) {
+                $uploadedImages = $this->uploadItemImages(
+                    $item,
+                    $request->file('images'),
+                    $colorVariant->id
+                );
+            }
+
+            // 3. Update sizes (increment existing, create new) — sizes are per-item not per-colour
+            foreach ($validated['sizes'] ?? [] as $sizeData) {
+                $existingSize = InventorySize::where('inventory_item_id', $item->id)
+                    ->where('size', $sizeData['size'])
+                    ->first();
+
+                if ($existingSize) {
+                    $existingSize->increment('quantity', $sizeData['quantity']);
+                } else {
+                    InventorySize::create([
+                        'inventory_item_id' => $item->id,
+                        'size'              => $sizeData['size'],
+                        'quantity'          => $sizeData['quantity'],
+                    ]);
+                }
+            }
+
+            // 4. Recalculate item total quantity from all colour variants
+            $quantityBefore = $item->available_quantity;
+            $newTotalQty    = $item->colorVariants()->sum('quantity');
+
+            $item->update([
+                'available_quantity' => $newTotalQty,
+            ]);
+
+            // Record stock movement for the new colour addition
+            if ($totalQty > 0) {
+                StockMovement::create([
+                    'inventory_item_id' => $item->id,
+                    'movement_type'     => 'adjustment',
+                    'quantity_change'   => $totalQty,
+                    'quantity_before'   => $quantityBefore,
+                    'quantity_after'    => $newTotalQty,
+                    'reference_type'    => 'colour_added',
+                    'notes'             => "Added colour variant: {$validated['color_name']}",
+                    'performed_by'      => $request->user()->id,
+                    'performed_at'      => now(),
+                ]);
+            }
+
+            // 5. Auto-sync to linked product
+            if ($item->product_id) {
+                $nextSortOrder = (int) ProductColorVariant::where('product_id', $item->product_id)
+                    ->max('sort_order') + 1;
+
+                $productColorVariant = ProductColorVariant::create([
+                    'product_id'         => $item->product_id,
+                    'inventory_color_id' => $colorVariant->id,
+                    'color_name'         => $validated['color_name'],
+                    'color_code'         => $validated['color_code'] ?? null,
+                    'is_active'          => true,
+                    'sort_order'         => $nextSortOrder,
+                ]);
+
+                // Mirror images to product colour variant (reuse same storage path)
+                foreach ($uploadedImages as $index => $invImage) {
+                    ProductColorVariantImage::create([
+                        'product_color_variant_id' => $productColorVariant->id,
+                        'image_path'               => $invImage->image_path,
+                        'is_thumbnail'             => $index === 0,
+                        'sort_order'               => $index,
+                    ]);
+                }
+
+                // Create / update product variants (size × colour)
+                foreach ($validated['sizes'] ?? [] as $sizeData) {
+                    ProductVariant::updateOrCreate(
+                        [
+                            'product_id' => $item->product_id,
+                            'size'       => $sizeData['size'],
+                            'color'      => $validated['color_name'],
+                        ],
+                        [
+                            'quantity'  => $sizeData['quantity'],
+                            'is_active' => true,
+                        ]
+                    );
+                }
+
+                // Refresh product total stock
+                $product = Product::find($item->product_id);
+                if ($product) {
+                    $product->update([
+                        'stock_quantity' => ProductVariant::where('product_id', $item->product_id)->sum('quantity'),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message'       => 'Colour variant added successfully',
+                'color_variant' => $colorVariant->load('images'),
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error adding colour variant',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     /**
      * Generate SKU
      */

@@ -1213,7 +1213,7 @@ const Expense: React.FC = () => {
                   type="text"
                   value={addForm.vendor}
                   onChange={(e) => setAddForm({ ...addForm, vendor: e.target.value })}
-                  placeholder="e.g., Company Name"
+                  placeholder="e.g., Business Name"
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
               </div>

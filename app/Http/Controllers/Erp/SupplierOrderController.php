@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SupplierOrder;
 use App\Models\SupplierOrderItem;
 use App\Models\StockMovement;
+use App\Models\Finance\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -289,6 +290,29 @@ class SupplierOrderController extends Controller
             $order->actual_delivery_date = now();
             $order->updated_by = $request->user()->id;
             $order->save();
+
+            // Auto-create a draft Finance expense so Finance can review and post it
+            // Only create if one doesn't already exist for this PO
+            if (! $order->expense()->exists()) {
+                $order->loadMissing('supplier');
+                Expense::create([
+                    'reference'           => 'PO-EXP-' . $order->po_number,
+                    'date'                => now()->toDateString(),
+                    'category'            => 'Procurement',
+                    'vendor'              => $order->supplier?->name ?? null,
+                    'description'         => 'Auto-generated from Purchase Order: ' . $order->po_number,
+                    'amount'              => $order->total_amount ?? 0,
+                    'tax_amount'          => 0,
+                    'status'              => 'draft',
+                    'shop_id'             => $order->shop_owner_id,
+                    'purchase_order_id'   => $order->id,
+                    'meta'                => [
+                        'source'          => 'purchase_order',
+                        'po_number'       => $order->po_number,
+                        'created_by'      => $request->user()->id,
+                    ],
+                ]);
+            }
         });
         
         return response()->json([

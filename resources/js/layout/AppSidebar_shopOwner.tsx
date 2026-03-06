@@ -229,8 +229,8 @@ const AppSidebar_shopOwner: React.FC = () => {
         : businessType === "both"
           ? "Repair & Sales"
           : "Sales";
-  // Company accounts only see approval items, so always show "Approval Workflow"
-  const companyAccountSectionLabel = "Approval Workflow";
+  // Business accounts only see approval items, so always show "Approval Workflow"
+  const businessAccountSectionLabel = "Approval Workflow";
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
     {}
@@ -248,7 +248,7 @@ const AppSidebar_shopOwner: React.FC = () => {
     const isCompany = shopOwner.is_company === true;
     const canManageStaff = shopOwner.can_manage_staff === true;
 
-    // Company-only features (require Company registration)
+    // Business-only features (require Business registration)
     const companyOnlyRoutes = [
       'shopOwner.user-access-control',
       'shop-owner.price-approvals',
@@ -261,8 +261,8 @@ const AppSidebar_shopOwner: React.FC = () => {
       return isCompany || canManageStaff;
     }
 
-    // Operational routes - only visible to individual accounts, NOT company accounts
-    // Company accounts have staff to handle these tasks
+    // Operational routes - only visible to individual accounts, NOT business accounts
+    // Business accounts have staff to handle these tasks
     const operationalRoutes = [
       'shop-owner.job-orders-retail',
       'shop-owner.job-orders-repair',
@@ -271,7 +271,7 @@ const AppSidebar_shopOwner: React.FC = () => {
     ];
 
     if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
-      // Hide from company accounts - they manage staff who do these tasks
+      // Hide from business accounts - they manage staff who do these tasks
       if (isCompany || canManageStaff) {
         return false;
       }
@@ -290,7 +290,7 @@ const AppSidebar_shopOwner: React.FC = () => {
     }
 
     // Business type specific support/management routes
-    // Company accounts should not see support pages in the sidebar
+    // Business accounts should not see support pages in the sidebar
     if (menuItem.route === 'shop-owner.customer-support') {
       if (registrationType === 'company') {
         return false;
@@ -298,7 +298,7 @@ const AppSidebar_shopOwner: React.FC = () => {
       return itemBusinessType === 'retail' || itemBusinessType === 'both';
     }
 
-    // Company accounts should not see support pages in the sidebar
+    // Business accounts should not see support pages in the sidebar
     if (menuItem.route === 'shop-owner.repair-support') {
       if (registrationType === 'company') {
         return false;
@@ -610,7 +610,7 @@ const AppSidebar_shopOwner: React.FC = () => {
                   }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
-                  isIndividualAccount ? individualAccountSectionLabel : companyAccountSectionLabel
+                  isIndividualAccount ? individualAccountSectionLabel : businessAccountSectionLabel
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}

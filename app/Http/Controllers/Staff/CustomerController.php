@@ -27,7 +27,7 @@ class CustomerController extends Controller
 
         // Check if user has a shop assigned
         if (!$user || !$user->shop_owner_id) {
-            return Inertia::render('ERP/STAFF/Dashboard', [
+            return Inertia::render('ERP/STAFF/Customers', [
                 'initialCustomers' => [],
                 'initialStats' => [
                     'totalCustomers' => 0,
@@ -127,7 +127,7 @@ class CustomerController extends Controller
             'totalRevenueChange' => $calculateChange($totalRevenue, $prevTotalRevenue),
         ];
 
-        return Inertia::render('ERP/STAFF/Dashboard', [
+        return Inertia::render('ERP/STAFF/Customers', [
             'initialCustomers' => $customers,
             'initialStats' => $stats
         ]);

@@ -1,16 +1,20 @@
 import React, { FormEvent, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
-import { ColorVariantManager, ColorVariant } from '../STAFF/ColorVariantManager';
-import { ColorVariantImageUploader, ColorVariantImage } from '../STAFF/ColorVariantImageUploader';
+import { ColorVariantManager, ColorVariant, SizeVariant } from '@/components/variants/ColorVariantManager';
+import { ColorVariantImageUploader, ColorVariantImage } from '@/components/variants/ColorVariantImageUploader';
+import { inventoryItemAPI } from '@/services/inventoryAPI';
+import type { InventoryItem as ApiInventoryItem, InventoryColorVariant, InventoryImage, InventorySize } from '@/types/inventory';
 
-type StockCategory = 'shoes' | 'cleaning-materials';
+type StockCategory = 'shoes' | 'cleaning_materials';
 type StockStatus = 'In Stock' | 'Low Stock' | 'Out of Stock';
 
 type StockItem = {
   id: number;
   name: string;
+  brand: string;
+  shoeType: string;
   category: StockCategory;
   sku: string;
   quantity: number;
@@ -112,66 +116,172 @@ const getPrimaryImageFromVariants = (variants: ColorVariant[]): string => {
   return '';
 };
 
-const initialStockData: StockItem[] = [
-  {
-    id: 1,
-    name: 'Nike Air Zoom Pegasus',
-    category: 'shoes',
-    sku: 'SHOE-001',
-    quantity: 24,
-    unit: 'pairs',
-    notes: 'Main shelf',
-    colorVariants: [],
-    repairImages: [],
-    createdAt: '2026-02-21 09:30 AM',
-  },
-  {
-    id: 2,
-    name: 'Premium Cleaning Foam',
-    category: 'cleaning-materials',
-    sku: 'CLEAN-004',
-    quantity: 8,
-    unit: 'bottles',
-    notes: 'Backroom rack',
-    colorVariants: [],
-    repairImages: [],
-    createdAt: '2026-02-21 10:15 AM',
-  },
-];
+const toStorageUrl = (path?: string | null) =>
+  path ? `/storage/${path}` : '';
+
+const mapApiItemToStock = (item: ApiInventoryItem): StockItem => {
+  const isShoes = item.category === 'shoes';
+
+  // Map API color variants → ColorVariant[] for the ColorVariantManager
+  // Item-level images (no color_variant_id) — used as fallback for old uploads
+  const itemLevelImages = (item.images ?? []).filter(
+    (img: InventoryImage) => !img.inventory_color_variant_id,
+  );
+
+  const colorVariants: ColorVariant[] = (item.color_variants ?? []).map((v: InventoryColorVariant, vi: number) => {
+    // Use variant-specific images when available, otherwise assign all item images to the first variant
+    const variantImgs = v.images?.length > 0 ? v.images : vi === 0 ? itemLevelImages : [];
+    return {
+      id: String(v.id),
+      color_name: v.color_name,
+      color_code: v.color_code ?? '#000000',
+      isExpanded: false,
+      images: variantImgs.map((img: InventoryImage) => ({
+        id: String(img.id),
+        file: null,
+        preview: toStorageUrl(img.image_path),
+        is_thumbnail: img.is_thumbnail,
+        sort_order: img.sort_order,
+        uploaded_path: img.image_path,
+      })),
+      sizes: (item.sizes ?? []).map((s: InventorySize) => ({
+        id: String(s.id),
+        size: s.size,
+        quantity: s.quantity,
+      })),
+    };
+  });
+
+  // Map direct item images (not tied to a color variant) → repairImages
+  const repairImages: ColorVariantImage[] = (item.images ?? [])
+    .filter((img: InventoryImage) => !img.inventory_color_variant_id)
+    .map((img: InventoryImage) => ({
+      id: String(img.id),
+      file: null,
+      preview: toStorageUrl(img.image_path),
+      is_thumbnail: img.is_thumbnail,
+      sort_order: img.sort_order,
+      uploaded_path: img.image_path,
+    }));
+
+  return {
+    id: item.id,
+    name: item.name,
+    brand: item.brand ?? '',
+    shoeType: item.description ?? '',
+    category: (isShoes ? 'shoes' : 'cleaning_materials') as StockCategory,
+    sku: item.sku,
+    quantity: item.available_quantity,
+    unit: item.unit,
+    notes: item.notes ?? '',
+    colorVariants,
+    repairImages,
+    imageUrl: toStorageUrl(item.main_image),
+    createdAt: item.created_at,
+  };
+};
 
 export default function UploadInventory() {
-  const [stocks, setStocks] = useState<StockItem[]>(initialStockData);
+  const { initialData, auth } = usePage().props as any;
+
+  // Resolve the shop's business_type from either shop_owner guard or user guard's shop_owner sub-object
+  const rawBusinessType: string =
+    auth?.shop_owner?.business_type ??
+    auth?.user?.shop_owner?.business_type ??
+    'both';
+  const businessType = rawBusinessType.toLowerCase() as 'retail' | 'repair' | 'both';
+
+  // Derived capability flags
+  const canUploadShoes    = businessType === 'retail' || businessType === 'both';
+  const canUploadRepair   = businessType === 'repair' || businessType === 'both';
+  const showToggle        = businessType === 'both';
+
+  const [stocks, setStocks] = useState<StockItem[]>(
+    () => (initialData?.data ?? []).map(mapApiItemToStock)
+  );
+  const [loadingStocks, setLoadingStocks] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStock, setEditingStock] = useState<StockItem | null>(null);
   const [colorVariants, setColorVariants] = useState<ColorVariant[]>([]);
+  const [newColorVariants, setNewColorVariants] = useState<ColorVariant[]>([]);
   const [repairImages, setRepairImages] = useState<ColorVariantImage[]>([]);
-  const [isShoesMode, setIsShoesMode] = useState(true);
+  // Default mode: shoes for retail/both, repair materials for repair-only
+  const [isShoesMode, setIsShoesMode] = useState(canUploadShoes);
+  const shoeTypeOptions = [
+    { label: 'Women',      value: 'women' },
+    { label: 'Men',        value: 'men' },
+    { label: 'Kids',       value: 'kids' },
+    { label: 'Running',    value: 'running' },
+    { label: 'Basketball', value: 'basketball' },
+    { label: 'Training',   value: 'training' },
+    { label: 'Casual',     value: 'casual' },
+    { label: 'Football',   value: 'football' },
+    { label: 'Slides',     value: 'slides' },
+    { label: 'Tennis',     value: 'tennis' },
+    { label: 'Loafers',    value: 'loafers' },
+    { label: 'Lifestyle',  value: 'lifestyle' },
+    { label: 'Sports',     value: 'sports' },
+  ];
+  const shoeTypeLabelByValue = shoeTypeOptions.reduce<Record<string, string>>((acc, o) => {
+    acc[o.value] = o.label; return acc;
+  }, {});
+
+  const [selectedShoeTypes, setSelectedShoeTypes] = useState<string[]>([]);
+  const [isShoeTypePickerOpen, setIsShoeTypePickerOpen] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
-    category: 'shoes' as StockCategory,
+    brand: '',
+    category: (canUploadShoes ? 'shoes' : 'cleaning_materials') as StockCategory,
     sku: '',
     quantity: '',
     unit: 'pcs',
     notes: '',
   });
 
+  const fetchStocks = async () => {
+    setLoadingStocks(true);
+    try {
+      const res = await inventoryItemAPI.getAll({ per_page: 200 });
+      setStocks((res.data ?? []).map(mapApiItemToStock));
+    } catch (err) {
+      console.error('Failed to load inventory items', err);
+    } finally {
+      setLoadingStocks(false);
+    }
+  };
+
+  const toggleShoeType = (value: string) => {
+    setSelectedShoeTypes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
+
   const totalItems = useMemo(() => stocks.length, [stocks]);
   const totalUnits = useMemo(() => stocks.reduce((sum, item) => sum + item.quantity, 0), [stocks]);
   const inStock = useMemo(() => stocks.filter((item) => getStatusByQuantity(item.quantity) === 'In Stock').length, [stocks]);
   const outOfStock = useMemo(() => stocks.filter((item) => getStatusByQuantity(item.quantity) === 'Out of Stock').length, [stocks]);
 
+  // Auto-calculate total quantity for shoes from all size variants
+  const shoesAutoQuantity = useMemo(() =>
+    colorVariants.reduce((total, v) => total + v.sizes.reduce((s, sz) => s + sz.quantity, 0), 0),
+  [colorVariants]);
+
   const resetForm = () => {
     setFormData({
       name: '',
-      category: 'shoes',
+      brand: '',
+      category: canUploadShoes ? 'shoes' : 'cleaning_materials',
       sku: '',
       quantity: '',
       unit: 'pcs',
       notes: '',
     });
+    setSelectedShoeTypes([]);
     setColorVariants([]);
+    setNewColorVariants([]);
     setRepairImages([]);
-    setIsShoesMode(true);
+    setIsShoesMode(canUploadShoes);
     setEditingStock(null);
   };
 
@@ -180,15 +290,18 @@ export default function UploadInventory() {
       setEditingStock(stock);
       setFormData({
         name: stock.name,
+        brand: stock.brand,
         category: stock.category,
         sku: stock.sku,
         quantity: stock.quantity.toString(),
         unit: stock.unit,
         notes: stock.notes,
       });
+      setSelectedShoeTypes(stock.shoeType ? stock.shoeType.split(',').filter(Boolean) : []);
       setColorVariants(stock.colorVariants || []);
+      setNewColorVariants([]);
       setRepairImages(stock.repairImages || []);
-      setIsShoesMode(stock.category === 'shoes');
+      setIsShoesMode(stock.category !== 'cleaning_materials');
     } else {
       resetForm();
     }
@@ -196,71 +309,122 @@ export default function UploadInventory() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: number) => {
-    setStocks((previous) => previous.filter((item) => item.id !== id));
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Delete this stock entry?')) return;
+    try {
+      await inventoryItemAPI.delete(id);
+      setStocks((previous) => previous.filter((item) => item.id !== id));
+    } catch (err) {
+      console.error('Failed to delete stock item', err);
+      alert('Could not delete item. Please try again.');
+    }
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const quantityAsNumber = Number(formData.quantity);
-    if (Number.isNaN(quantityAsNumber) || quantityAsNumber < 0) {
+    // For shoes, use auto-calculated total from size variants; for cleaning materials use the manual field
+    const quantityAsNumber = isShoesMode
+      ? shoesAutoQuantity
+      : Number(formData.quantity);
+
+    if (!isShoesMode && (Number.isNaN(quantityAsNumber) || quantityAsNumber < 0)) {
       return;
     }
 
-    if (isShoesMode) {
-      const totalVariantImages = colorVariants.reduce((sum, variant) => sum + variant.images.length, 0);
-      if (colorVariants.length === 0 || totalVariantImages === 0) {
-        alert('Please add at least one color variant and upload at least one image.');
-        return;
-      }
-    } else {
-      if (repairImages.length === 0) {
-        alert('Please add at least one repair material image.');
-        return;
+    // Only require images/variants when creating — not when editing (already uploaded)
+    if (!editingStock) {
+      if (isShoesMode) {
+        const totalVariantImages = colorVariants.reduce((sum, variant) => sum + variant.images.length, 0);
+        if (colorVariants.length === 0 || totalVariantImages === 0) {
+          alert('Please add at least one color variant and upload at least one image.');
+          return;
+        }
+      } else {
+        if (repairImages.length === 0) {
+          alert('Please add at least one repair material image.');
+          return;
+        }
       }
     }
 
-    const primaryImageUrl = isShoesMode
-      ? getPrimaryImageFromVariants(colorVariants)
-      : (repairImages[0]?.preview || '');
+    // Extract File objects: for shoes images travel with each variant, for repair use flat array
+    const imageFiles: File[] = isShoesMode
+      ? []  // shoes images are embedded in colorVariantsPayload below
+      : repairImages.map((img) => img.file).filter((f): f is File => f !== null);
 
-    if (editingStock) {
-      setStocks((previous) =>
-        previous.map((item) =>
-          item.id === editingStock.id
-            ? {
-                ...item,
-                name: formData.name,
-                category: formData.category,
-                sku: formData.sku,
-                quantity: quantityAsNumber,
-                unit: formData.unit,
-                notes: formData.notes,
-                colorVariants: isShoesMode ? colorVariants : [],
-                repairImages: isShoesMode ? [] : repairImages,
-                imageUrl: primaryImageUrl,
-              }
-            : item
-        )
-      );
-    } else {
-      setStocks((previous) => [
-        {
-          id: Date.now(),
+    // Build color variants payload for shoes — include each variant's images
+    const colorVariantsPayload =
+      isShoesMode && colorVariants.length > 0
+        ? colorVariants.map((v) => ({
+            color_name: v.color_name,
+            color_code: v.color_code,
+            quantity: v.sizes.reduce((sum, s) => sum + s.quantity, 0),
+            images: v.images.map((img) => img.file).filter((f): f is File => f !== null),
+          }))
+        : undefined;
+
+    // Build flat sizes payload from all color variants
+    const sizesPayload =
+      isShoesMode && colorVariants.length > 0
+        ? colorVariants.flatMap((v) =>
+            v.sizes.map((s) => ({ size: s.size, quantity: s.quantity }))
+          )
+        : undefined;
+
+    try {
+      const resolvedUnit = isShoesMode ? 'pairs' : (formData.unit || 'pcs');
+
+      if (editingStock) {
+        await inventoryItemAPI.update(editingStock.id, {
           name: formData.name,
+          sku: formData.sku || undefined,
           category: formData.category,
-          sku: formData.sku,
-          quantity: quantityAsNumber,
-          unit: formData.unit,
+          brand: isShoesMode ? (formData.brand || undefined) : undefined,
+          description: isShoesMode ? (selectedShoeTypes.join(',') || undefined) : undefined,
+          unit: resolvedUnit,
           notes: formData.notes,
-          colorVariants: isShoesMode ? colorVariants : [],
-          repairImages: isShoesMode ? [] : repairImages,
-          imageUrl: primaryImageUrl,
-          createdAt: new Date().toLocaleString(),
-        },
-        ...previous,
-      ]);
+          available_quantity: quantityAsNumber,
+          reorder_level: 5,
+          reorder_quantity: 10,
+        });
+        // Upload any newly-added repair images when editing
+        if (imageFiles.length > 0) {
+          await inventoryItemAPI.uploadImages(editingStock.id, imageFiles);
+        }
+        // Persist any new colour variants added in edit mode
+        if (isShoesMode && newColorVariants.length > 0) {
+          for (const variant of newColorVariants) {
+            await inventoryItemAPI.addColor(editingStock.id, {
+              color_name: variant.color_name,
+              color_code: variant.color_code || undefined,
+              images: variant.images.map((img) => img.file).filter((f): f is File => f !== null),
+              sizes: variant.sizes.map((s) => ({ size: s.size, quantity: s.quantity })),
+            });
+          }
+        }
+      } else {
+        await inventoryItemAPI.create({
+          name: formData.name,
+          sku: formData.sku || undefined,
+          category: formData.category,
+          brand: isShoesMode ? (formData.brand || undefined) : undefined,
+          description: isShoesMode ? (selectedShoeTypes.join(',') || undefined) : undefined,
+          unit: resolvedUnit,
+          notes: formData.notes,
+          available_quantity: quantityAsNumber,
+          reorder_level: 5,
+          reorder_quantity: 10,
+          images: imageFiles.length > 0 ? imageFiles : undefined,
+          color_variants: colorVariantsPayload,
+          sizes: sizesPayload,
+        });
+      }
+      await fetchStocks();
+    } catch (err) {
+      console.error('Failed to save stock entry', err);
+      alert('Could not save stock entry. Please try again.');
+      return;
     }
 
     setIsModalOpen(false);
@@ -277,7 +441,11 @@ export default function UploadInventory() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Stocks</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Manage stock uploads for shoes and cleaning materials
+                {businessType === 'retail'
+                  ? 'Manage stock uploads for shoes'
+                  : businessType === 'repair'
+                  ? 'Manage stock uploads for repair materials'
+                  : 'Manage stock uploads for shoes and repair materials'}
               </p>
             </div>
             <button
@@ -309,7 +477,9 @@ export default function UploadInventory() {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {stocks.length === 0 ? (
+                {loadingStocks ? (
+                  <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">Loading stock entries...</td></tr>
+                ) : stocks.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                       No stock entries yet. Create your first stock upload!
@@ -332,7 +502,11 @@ export default function UploadInventory() {
                             )}
                             <div>
                               <p className="font-medium text-gray-900 dark:text-white">{stock.name}</p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">{stock.notes || 'No notes'}</p>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                {stock.category === 'shoes'
+                                  ? [stock.brand, stock.shoeType.split(',').filter(Boolean).join(', ')].filter(Boolean).join(' · ') || stock.notes || '—'
+                                  : stock.notes || '—'}
+                              </p>
                             </div>
                           </div>
                         </td>
@@ -401,7 +575,11 @@ export default function UploadInventory() {
                 {editingStock ? 'Edit Stock Entry' : 'Add Stock Entry'}
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Fill out stock details for shoes and cleaning materials.
+                {businessType === 'retail'
+                  ? 'Fill out stock details for shoes.'
+                  : businessType === 'repair'
+                  ? 'Fill out stock details for repair materials.'
+                  : 'Fill out stock details for shoes and repair materials.'}
               </p>
             </div>
 
@@ -410,48 +588,127 @@ export default function UploadInventory() {
                 <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                   <div>
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">Upload Type</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Toggle between repair materials and shoes.</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {showToggle
+                        ? 'Toggle between repair materials and shoes.'
+                        : canUploadShoes
+                          ? 'This shop is set up for retail — uploading shoes only.'
+                          : 'This shop is set up for repair — uploading repair materials only.'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-sm font-medium ${!isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
-                      Repair Materials
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextIsShoes = !isShoesMode;
-                        setIsShoesMode(nextIsShoes);
-                        setFormData((prev) => ({
-                          ...prev,
-                          category: nextIsShoes ? 'shoes' : 'cleaning-materials',
-                        }));
-                        if (!nextIsShoes) {
-                          setColorVariants([]);
-                        }
-                      }}
-                      className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors ${
-                        isShoesMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                      }`}
-                      aria-label="Toggle upload type"
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          isShoesMode ? 'translate-x-6' : 'translate-x-1'
+                  {showToggle ? (
+                    <div className="flex items-center gap-3">
+                      <span className={`text-sm font-medium ${!isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
+                        Repair Materials
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextIsShoes = !isShoesMode;
+                          setIsShoesMode(nextIsShoes);
+                          setFormData((prev) => ({
+                            ...prev,
+                            category: nextIsShoes ? 'shoes' : 'cleaning_materials',
+                          }));
+                          if (!nextIsShoes) {
+                            setColorVariants([]);
+                          }
+                        }}
+                        className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors ${
+                          isShoesMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
                         }`}
-                      />
-                    </button>
-                    <span className={`text-sm font-medium ${isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
-                      Shoes
+                        aria-label="Toggle upload type"
+                      >
+                        <span
+                          className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                            isShoesMode ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                      <span className={`text-sm font-medium ${isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
+                        Shoes
+                      </span>
+                    </div>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                      canUploadShoes
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                    }`}>
+                      {canUploadShoes ? '👟 Shoes' : '🔧 Repair Materials'}
                     </span>
-                  </div>
+                  )}
                 </div>
 
                 {isShoesMode && (
-                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
-                  <ColorVariantManager
-                    colorVariants={colorVariants}
-                    onColorVariantsChange={setColorVariants}
-                  />
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6 space-y-6">
+                  {editingStock ? (
+                    <>
+                      {/* Existing colours — read-only */}
+                      {colorVariants.length > 0 && (
+                        <div>
+                          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">
+                            Existing Colours
+                          </h3>
+                          <div className="space-y-3">
+                            {colorVariants.map((cv) => (
+                              <div
+                                key={cv.id}
+                                className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
+                              >
+                                <div className="flex items-center gap-3 mb-2">
+                                  <div
+                                    className="h-5 w-5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
+                                    style={{ backgroundColor: cv.color_code }}
+                                  />
+                                  <span className="font-medium text-gray-900 dark:text-white text-sm">
+                                    {cv.color_name}
+                                  </span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {cv.images.length} image{cv.images.length !== 1 ? 's' : ''}
+                                  </span>
+                                  <span className="ml-auto text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                                    {cv.sizes.reduce((sum, s) => sum + s.quantity, 0)} units
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {cv.sizes.map((s) => (
+                                    <span
+                                      key={s.id}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300"
+                                    >
+                                      {s.size} <span className="text-gray-400">×</span> {s.quantity}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* New colours to add */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                            Add New Colours
+                          </h3>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                          New colours are saved when you click Save and are automatically synced to the linked product.
+                        </p>
+                        <ColorVariantManager
+                          colorVariants={newColorVariants}
+                          onColorVariantsChange={setNewColorVariants}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <ColorVariantManager
+                      colorVariants={colorVariants}
+                      onColorVariantsChange={setColorVariants}
+                    />
+                  )}
                 </div>
                 )}
 
@@ -500,10 +757,56 @@ export default function UploadInventory() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                       required
                     >
-                      <option value="shoes">Shoes</option>
-                      <option value="cleaning-materials">Cleaning Materials</option>
+                      {canUploadShoes && <option value="shoes">Shoes</option>}
+                      {canUploadRepair && <option value="cleaning_materials">Cleaning Materials</option>}
                     </select>
                   </div>
+
+                  {isShoesMode && (
+                    <>
+                      <div>
+                        <label htmlFor="stock-brand" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Brand</label>
+                        <input
+                          id="stock-brand"
+                          type="text"
+                          value={formData.brand}
+                          onChange={(event) => setFormData((prev) => ({ ...prev, brand: event.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="e.g., Nike, Adidas"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Shoe Type</label>
+                        <button
+                          type="button"
+                          onClick={() => setIsShoeTypePickerOpen(true)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-left text-gray-500 dark:text-gray-400 text-sm"
+                        >
+                          {selectedShoeTypes.length > 0 ? `${selectedShoeTypes.length} type(s) selected` : 'Select types...'}
+                        </button>
+                        {selectedShoeTypes.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {selectedShoeTypes.map((v) => (
+                              <span
+                                key={v}
+                                className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+                              >
+                                {shoeTypeLabelByValue[v] || v}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleShoeType(v)}
+                                  className="ml-0.5 hover:text-blue-600"
+                                  aria-label={`Remove ${v}`}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label htmlFor="stock-sku" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">SKU *</label>
@@ -518,32 +821,54 @@ export default function UploadInventory() {
                     />
                   </div>
 
-                  <div>
-                    <label htmlFor="stock-quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity *</label>
-                    <input
-                      id="stock-quantity"
-                      type="number"
-                      min="0"
-                      value={formData.quantity}
-                      onChange={(event) => setFormData((prev) => ({ ...prev, quantity: event.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                      placeholder="0"
-                      required
-                    />
-                  </div>
+                  {isShoesMode ? (
+                    /* Shoes: show auto-calculated quantity as a read-only summary */
+                    <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 flex items-center justify-between md:col-span-1">
+                      <div>
+                        <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Total Stock (auto)</p>
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">Summed from all sizes above</p>
+                      </div>
+                      <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">{shoesAutoQuantity} pairs</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <label htmlFor="stock-quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity *</label>
+                      <input
+                        id="stock-quantity"
+                        type="number"
+                        min="0"
+                        value={formData.quantity}
+                        onChange={(event) => setFormData((prev) => ({ ...prev, quantity: event.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        placeholder="0"
+                        required
+                      />
+                    </div>
+                  )}
 
-                  <div>
-                    <label htmlFor="stock-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Unit *</label>
-                    <input
-                      id="stock-unit"
-                      type="text"
-                      value={formData.unit}
-                      onChange={(event) => setFormData((prev) => ({ ...prev, unit: event.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                      placeholder="pairs / bottles / pcs"
-                      required
-                    />
-                  </div>
+                  {!isShoesMode && (
+                    <div>
+                      <label htmlFor="stock-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Unit</label>
+                      <select
+                        id="stock-unit"
+                        title="Unit of measurement"
+                        value={formData.unit}
+                        onChange={(event) => setFormData((prev) => ({ ...prev, unit: event.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      >
+                        <option value="pcs">pcs (pieces)</option>
+                        <option value="bottles">bottles</option>
+                        <option value="sets">sets</option>
+                        <option value="liters">liters</option>
+                        <option value="kg">kg</option>
+                        <option value="rolls">rolls</option>
+                        <option value="meters">meters</option>
+                        <option value="tubes">tubes</option>
+                        <option value="boxes">boxes</option>
+                        <option value="pairs">pairs</option>
+                      </select>
+                    </div>
+                  )}
 
                   <div className="md:col-span-2">
                     <label htmlFor="stock-notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes</label>
@@ -558,6 +883,39 @@ export default function UploadInventory() {
                   </div>
                 </div>
               </div>
+
+              {isShoeTypePickerOpen && (
+                <div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Shoe Types</h3>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Choose one or more types for this shoe (e.g. Men + Running).</p>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 gap-3">
+                      {shoeTypeOptions.map((option) => (
+                        <label key={option.value} className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedShoeTypes.includes(option.value)}
+                            onChange={() => toggleShoeType(option.value)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsShoeTypePickerOpen(false)}
+                        className="h-9 px-5 rounded-lg bg-black text-sm font-semibold text-white hover:bg-gray-800"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3 p-6 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
                 <button

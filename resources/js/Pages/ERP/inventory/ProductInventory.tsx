@@ -1,8 +1,10 @@
-import { Head } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { Head, usePage } from "@inertiajs/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { productInventoryAPI } from "@/services/inventoryAPI";
+import type { InventoryItem as ApiInventoryItem } from "@/types/inventory";
 
 type StockStatus = "In stock" | "Low" | "Out";
 type MetricColor = "success" | "warning" | "info";
@@ -20,16 +22,21 @@ interface ProductInventoryItem {
 	lastUpdated: string;
 }
 
-const inventoryRows: ProductInventoryItem[] = [
-	{ id: 1, productName: "Nike Air Max 270", skuCode: "NK-AM270-BLK", category: "Shoes", brand: "Nike", sizes: ["8", "9", "10"], productImages: ["/images/product/product-01.jpg", "/images/product/product-02.jpg"], availableQuantity: 42, reservedQuantity: 6, lastUpdated: "2026-02-21 09:14 AM" },
-	{ id: 2, productName: "Adidas Ultraboost 22", skuCode: "AD-UB22-WHT", category: "Shoes", brand: "Adidas", sizes: ["7", "8", "9"], productImages: ["/images/product/product-02.jpg", "/images/product/product-03.jpg"], availableQuantity: 11, reservedQuantity: 4, lastUpdated: "2026-02-21 10:02 AM" },
-	{ id: 3, productName: "New Balance 550", skuCode: "NB-550-GRY", category: "Shoes", brand: "New Balance", sizes: ["8", "9", "10", "11"], productImages: ["/images/product/product-03.jpg", "/images/product/product-04.jpg"], availableQuantity: 0, reservedQuantity: 3, lastUpdated: "2026-02-20 03:55 PM" },
-	{ id: 4, productName: "Puma RS-X", skuCode: "PM-RSX-RED", category: "Shoes", brand: "Puma", sizes: ["6", "7", "8"], productImages: ["/images/product/product-04.jpg", "/images/product/product-05.jpg"], availableQuantity: 8, reservedQuantity: 1, lastUpdated: "2026-02-20 05:20 PM" },
-	{ id: 5, productName: "Premium Shoelaces", skuCode: "ACC-LACE-PRM", category: "Accessories", brand: "Solespace", sizes: ["90cm", "120cm"], productImages: ["/images/product/product-05.jpg", "/images/product/product-06.jpg"], availableQuantity: 120, reservedQuantity: 10, lastUpdated: "2026-02-21 08:31 AM" },
-	{ id: 6, productName: "Cleaning Foam", skuCode: "CARE-FOAM-CLN", category: "Care Products", brand: "Solespace", sizes: ["150ml"], productImages: ["/images/product/product-06.jpg", "/images/product/product-07.jpg"], availableQuantity: 9, reservedQuantity: 2, lastUpdated: "2026-02-21 11:19 AM" },
-	{ id: 7, productName: "Leather Conditioner", skuCode: "CARE-LTH-250", category: "Care Products", brand: "Angelus", sizes: ["250ml"], productImages: ["/images/product/product-07.jpg", "/images/product/product-08.jpg"], availableQuantity: 27, reservedQuantity: 5, lastUpdated: "2026-02-20 01:07 PM" },
-	{ id: 8, productName: "Shoe Box (Large)", skuCode: "PKG-BOX-L", category: "Packaging", brand: "Solespace", sizes: ["Large"], productImages: ["/images/product/product-08.jpg", "/images/product/product-01.jpg"], availableQuantity: 6, reservedQuantity: 0, lastUpdated: "2026-02-19 04:18 PM" },
-];
+const mapApiItem = (item: ApiInventoryItem): ProductInventoryItem => ({
+	id: item.id,
+	productName: item.name,
+	skuCode: item.sku,
+	category: item.category,
+	brand: item.brand ?? "",
+	sizes: item.sizes?.map((s) => s.size) ?? [],
+	productImages: [
+		...(item.images?.map((i) => `/storage/${i.image_path}`).filter(Boolean) ?? []),
+		...(item.main_image && !item.images?.length ? [`/storage/${item.main_image}`] : []),
+	],
+	availableQuantity: item.available_quantity,
+	reservedQuantity: item.reserved_quantity,
+	lastUpdated: item.updated_at,
+});
 
 const getStatus = (availableQuantity: number): StockStatus => {
 	if (availableQuantity <= 0) return "Out";
@@ -103,7 +110,11 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function ProductInventory() {
-	const [inventory, setInventory] = useState<ProductInventoryItem[]>(inventoryRows);
+	const { initialData } = usePage().props as any;
+	const [inventory, setInventory] = useState<ProductInventoryItem[]>(
+		() => (initialData?.data ?? []).map(mapApiItem)
+	);
+	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState("All");
 	const [brandFilter, setBrandFilter] = useState("All");
@@ -113,13 +124,25 @@ export default function ProductInventory() {
 	const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 	const [editedQuantity, setEditedQuantity] = useState("");
 
-	const categories = useMemo(() => {
-		return ["All", ...Array.from(new Set(inventoryRows.map((item) => item.category)))];
+	const fetchInventory = useCallback(async () => {
+		setLoading(true);
+		try {
+			const res = await productInventoryAPI.getAll({ per_page: 200 });
+			setInventory((res.data ?? []).map(mapApiItem));
+		} catch (err) {
+			console.error("Failed to load inventory", err);
+		} finally {
+			setLoading(false);
+		}
 	}, []);
 
+	const categories = useMemo(() => {
+		return ["All", ...Array.from(new Set(inventory.map((item) => item.category)))];
+	}, [inventory]);
+
 	const brands = useMemo(() => {
-		return ["All", ...Array.from(new Set(inventoryRows.map((item) => item.brand)))];
-	}, []);
+		return ["All", ...Array.from(new Set(inventory.map((item) => item.brand)))];
+	}, [inventory]);
 
 	const filteredData = useMemo(() => {
 		const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -214,26 +237,30 @@ export default function ProductInventory() {
 
 		if (!confirmResult.isConfirmed) return;
 
-		const updatedTime = new Date().toLocaleString();
-		setInventory((prevRows) =>
-			prevRows.map((row) => {
-				if (row.id !== product.id) return row;
-				return {
-					...row,
-					availableQuantity: parsed,
-					lastUpdated: updatedTime,
-				};
-			})
-		);
-
-		await Swal.fire({
-			icon: "success",
-			title: "Quantity saved",
-			text: "Available quantity has been updated successfully.",
-			confirmButtonColor: "#2563eb",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await productInventoryAPI.updateQuantity(product.id, {
+				available_quantity: parsed,
+				movement_type: "adjustment",
+				notes: `Manual adjustment via Product Inventory page`,
+			});
+			await fetchInventory();
+			await Swal.fire({
+				icon: "success",
+				title: "Quantity saved",
+				text: "Available quantity has been updated successfully.",
+				confirmButtonColor: "#2563eb",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+		} catch (err) {
+			console.error("Failed to update quantity", err);
+			await Swal.fire({
+				icon: "error",
+				title: "Update failed",
+				text: "Could not save quantity. Please try again.",
+				confirmButtonColor: "#2563eb",
+			});
+		}
 	};
 
 	return (
@@ -344,7 +371,9 @@ export default function ProductInventory() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedItems.length > 0 ? (
+							{loading ? (
+								<tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
+							) : paginatedItems.length > 0 ? (
 									paginatedItems.map((item) => {
 										const status = getStatus(item.availableQuantity);
 

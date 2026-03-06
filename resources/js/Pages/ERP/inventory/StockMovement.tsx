@@ -1,7 +1,8 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import type { StockMovement as ApiStockMovement } from "@/types/inventory";
 
 type MovementTrack = "Stock IN" | "Stock OUT" | "Adjustments" | "Returns" | "Repairs usage";
 
@@ -15,18 +16,31 @@ interface StockMovementItem {
 	updatedBy: string;
 }
 
-const stockMovements: StockMovementItem[] = [
-	{ id: 1, date: "2026-02-21", time: "09:15 AM", product: "Nike Air Max 270", actionType: "Stock IN", quantityChange: 40, updatedBy: "Maria Santos" },
-	{ id: 2, date: "2026-02-21", time: "10:42 AM", product: "Adidas Ultraboost 22", actionType: "Stock OUT", quantityChange: -3, updatedBy: "John Cruz" },
-	{ id: 3, date: "2026-02-20", time: "01:08 PM", product: "Cleaning Foam", actionType: "Returns", quantityChange: 2, updatedBy: "Paolo Reyes" },
-	{ id: 4, date: "2026-02-20", time: "03:27 PM", product: "Premium Shoelaces", actionType: "Adjustments", quantityChange: -1, updatedBy: "Maria Santos" },
-	{ id: 5, date: "2026-02-19", time: "08:33 AM", product: "Rubber Sole Adhesive", actionType: "Repairs usage", quantityChange: -6, updatedBy: "Kyla Mendoza" },
-	{ id: 6, date: "2026-02-19", time: "11:54 AM", product: "New Balance 550", actionType: "Stock OUT", quantityChange: -2, updatedBy: "John Cruz" },
-	{ id: 7, date: "2026-02-18", time: "02:16 PM", product: "Odor Eliminator Spray", actionType: "Stock IN", quantityChange: 18, updatedBy: "Paolo Reyes" },
-	{ id: 8, date: "2026-02-18", time: "04:41 PM", product: "Leather Conditioner", actionType: "Repairs usage", quantityChange: -4, updatedBy: "Kyla Mendoza" },
-	{ id: 9, date: "2026-02-17", time: "09:50 AM", product: "Puma RS-X", actionType: "Returns", quantityChange: 1, updatedBy: "Maria Santos" },
-	{ id: 10, date: "2026-02-17", time: "12:22 PM", product: "Shoe Box (Large)", actionType: "Adjustments", quantityChange: 5, updatedBy: "John Cruz" },
-];
+const movementTypeMap: Record<string, MovementTrack> = {
+	stock_in: "Stock IN",
+	stock_out: "Stock OUT",
+	adjustment: "Adjustments",
+	return: "Returns",
+	repair_usage: "Repairs usage",
+	transfer: "Stock OUT",
+	damage: "Stock OUT",
+	initial: "Stock IN",
+};
+
+const mapApiMovement = (m: ApiStockMovement): StockMovementItem => {
+	const dt = new Date(m.performed_at);
+	const date = dt.toISOString().split("T")[0];
+	const time = dt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+	return {
+		id: m.id,
+		date,
+		time,
+		product: m.inventory_item?.name ?? m.product?.name ?? "Unknown",
+		actionType: movementTypeMap[m.movement_type] ?? "Adjustments",
+		quantityChange: m.quantity_change,
+		updatedBy: m.performer?.name ?? "System",
+	};
+};
 
 type MetricColor = "success" | "warning" | "info";
 
@@ -95,28 +109,33 @@ const formatQuantity = (quantity: number) => {
 };
 
 export default function StockMovement() {
+	const { initialData } = usePage().props as any;
+	const [movements, setMovements] = useState<StockMovementItem[]>(
+		() => (initialData?.data ?? []).map(mapApiMovement)
+	);
+	const [loading, setLoading] = useState(false);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [trackFilter, setTrackFilter] = useState<MovementTrack | "All">("All");
 
 	const filteredData = useMemo(() => {
-		return stockMovements.filter((item) => {
+		return movements.filter((item) => {
 			const matchesSearch =
 				item.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.updatedBy.toLowerCase().includes(searchQuery.toLowerCase());
 			const matchesTrack = trackFilter === "All" || item.actionType === trackFilter;
 			return matchesSearch && matchesTrack;
 		});
-	}, [searchQuery, trackFilter]);
+	}, [movements, searchQuery, trackFilter]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-	const stockInCount = stockMovements.filter((item) => item.actionType === "Stock IN").length;
-	const stockOutCount = stockMovements.filter((item) => item.actionType === "Stock OUT").length;
-	const repairUsageCount = stockMovements.filter((item) => item.actionType === "Repairs usage").length;
+	const stockInCount = movements.filter((item) => item.actionType === "Stock IN").length;
+	const stockOutCount = movements.filter((item) => item.actionType === "Stock OUT").length;
+	const repairUsageCount = movements.filter((item) => item.actionType === "Repairs usage").length;
 
 	return (
 		<AppLayoutERP>
@@ -190,7 +209,9 @@ export default function StockMovement() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedItems.length > 0 ? (
+						{loading ? (
+							<tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Loading stock movements...</td></tr>
+						) : paginatedItems.length > 0 ? (
 									paginatedItems.map((movement) => (
 										<tr key={movement.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.date}</td>

@@ -9,24 +9,41 @@ const Virtual3DShowroom: React.FC<{
   productName: string;
   onClose?: () => void;
   embedded?: boolean;
-}> = ({ productName, onClose, embedded = false }) => {
+  frameUrls?: string[];
+}> = ({ productName, onClose, embedded = false, frameUrls }) => {
   const frames = useMemo(
-    () => Array.from({ length: TOTAL_FRAMES }, (_, index) => getFrameUrl(index + 1)),
-    []
+    () => (frameUrls && frameUrls.length > 0
+      ? frameUrls
+      : Array.from({ length: TOTAL_FRAMES }, (_, index) => getFrameUrl(index + 1))),
+    [frameUrls]
   );
 
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [showHint, setShowHint] = useState(true);
   const dragStartXRef = useRef(0);
   const accumulatedDeltaRef = useRef(0);
   const pendingDeltaRef = useRef(0);
   const rafIdRef = useRef<number | null>(null);
   const currentFrameRef = useRef(0);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const zoomRef = useRef(1);
 
   useEffect(() => {
     currentFrameRef.current = currentFrame;
   }, [currentFrame]);
+
+  useEffect(() => {
+    // Reset to first frame when the selected frame set changes.
+    setCurrentFrame(0);
+    currentFrameRef.current = 0;
+    accumulatedDeltaRef.current = 0;
+    pendingDeltaRef.current = 0;
+    zoomRef.current = 1;
+    if (imageRef.current) {
+      imageRef.current.style.transform = 'scale(1)';
+      imageRef.current.style.transformOrigin = 'center center';
+    }
+  }, [frames]);
 
   useEffect(() => {
     const preloaders = frames.map((src) => {
@@ -85,7 +102,6 @@ const Virtual3DShowroom: React.FC<{
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     setIsDragging(true);
-    setShowHint(false);
     dragStartXRef.current = event.clientX;
   };
 
@@ -102,7 +118,6 @@ const Virtual3DShowroom: React.FC<{
 
   const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     setIsDragging(true);
-    setShowHint(false);
     dragStartXRef.current = event.touches[0].clientX;
   };
 
@@ -123,6 +138,21 @@ const Virtual3DShowroom: React.FC<{
     currentFrameRef.current = 0;
     accumulatedDeltaRef.current = 0;
     pendingDeltaRef.current = 0;
+    zoomRef.current = 1;
+    if (imageRef.current) {
+      imageRef.current.style.transform = 'scale(1)';
+      imageRef.current.style.transformOrigin = 'center center';
+    }
+  };
+
+  const handleWheelZoom = (deltaY: number) => {
+    if (!imageRef.current) return;
+    const zoomSpeed = 0.0015;
+    const nextZoom = Math.max(1, Math.min(4, zoomRef.current - deltaY * zoomSpeed));
+    if (Math.abs(nextZoom - zoomRef.current) < 0.001) return;
+    zoomRef.current = nextZoom;
+    imageRef.current.style.transform = `scale(${nextZoom})`;
+    imageRef.current.style.transformOrigin = 'center center';
   };
 
   return (
@@ -156,6 +186,11 @@ const Virtual3DShowroom: React.FC<{
 
         <div
           className={`flex-1 flex items-center justify-center overflow-hidden bg-white relative ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onWheel={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleWheelZoom(event.deltaY);
+          }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -165,20 +200,12 @@ const Virtual3DShowroom: React.FC<{
           onTouchEnd={handleTouchEnd}
         >
           <img
+            ref={imageRef}
             src={frames[currentFrame]}
             alt={`${productName} 360 frame ${currentFrame + 1}`}
             className="w-full h-full object-contain select-none pointer-events-none"
             draggable={false}
           />
-
-          {showHint && !isDragging && (
-            <div className="absolute top-6 right-6 bg-blue-500/90 text-white px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 animate-pulse">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m0 0l4 4m10-4v12m0 0l4-4m0 0l-4-4" />
-              </svg>
-              Drag to rotate
-            </div>
-          )}
 
           <button
             onClick={resetView}

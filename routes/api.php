@@ -236,6 +236,31 @@ Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:
 });
 
 /**
+ * CRM Customer Routes - Manage customer profiles, history and staff notes
+ */
+Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
+    Route::get('/',                  [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'index']);
+    Route::get('/{id}',              [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'show']);
+    Route::put('/{id}',              [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'update']);
+    Route::post('/{id}/notes',       [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'storeNote']);
+});
+
+/**
+ * CRM Review Routes - Manage customer reviews and staff responses
+ */
+Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
+    Route::get('/',                  [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'index']);
+    Route::post('/{id}/respond',     [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'respond']);
+    Route::patch('/{id}/status',     [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'updateStatus']);
+});
+
+/**
+ * CRM Dashboard Stats - Aggregate data for the CRM overview page
+ */
+Route::get('crm/dashboard-stats', [\App\Http\Controllers\API\CRM\CRMDashboardController::class, 'index'])
+    ->middleware(['web', 'auth:user', 'permission:access-customer-support']);
+
+/**
  * Repairer Conversation Routes - Repair technicians handling technical support
  */
 Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permission:access-repairer-support'])->group(function () {

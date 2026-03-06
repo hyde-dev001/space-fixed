@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useState, useEffect } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import Tooltip from "../../../components/common/Tooltip";
+import { usePage } from "@inertiajs/react";
 
 // Icon Components
 const UsersIcon = ({ className }: { className?: string }) => (
@@ -44,8 +45,8 @@ const ArrowDownIcon = ({ className }: { className?: string }) => (
 const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
+  change?: number;
+  changeType?: 'increase' | 'decrease';
   icon: React.FC<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -72,14 +73,16 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
 
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
-          </div>
+          {change !== undefined && changeType !== undefined && (
+            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
+              changeType === 'increase'
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            }`}>
+              {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+              {Math.abs(change)}%
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -228,8 +231,9 @@ interface DashboardData {
 }
 
 export function HRDashboard() {
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { initialHrDashboard } = usePage().props as any;
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(initialHrDashboard ?? null);
+  const [loading, setLoading] = useState(!initialHrDashboard);
   const [error, setError] = useState<string | null>(null);
   const [clockedIn, setClockedIn] = useState(false);
   const [loginTime, setLoginTime] = useState<string | null>(null);
@@ -280,8 +284,9 @@ export function HRDashboard() {
     return `${hours.toFixed(2)} hrs`;
   };
 
-  // Fetch dashboard data
+  // Fetch dashboard data (skip if already seeded from Inertia props)
   useEffect(() => {
+    if (initialHrDashboard) return;
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
@@ -369,8 +374,6 @@ export function HRDashboard() {
           <MetricCard
             title="Total Employees"
             value={totalEmployees}
-            change={12}
-            changeType="increase"
             icon={UsersIcon}
             color="info"
             description="Total registered employees"
@@ -380,8 +383,6 @@ export function HRDashboard() {
           <MetricCard
             title="Active Employees"
             value={activeEmployees}
-            change={8}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Currently working"
@@ -391,8 +392,6 @@ export function HRDashboard() {
           <MetricCard
             title="Departments"
             value={totalDepartments}
-            change={5}
-            changeType="decrease"
             icon={StoreIcon}
             color="warning"
             description="Active departments"
@@ -402,8 +401,6 @@ export function HRDashboard() {
           <MetricCard
             title="On Leave"
             value={onLeaveCount}
-            change={15}
-            changeType="increase"
             icon={CalendarIcon}
             color="error"
             description="Employees on leave"

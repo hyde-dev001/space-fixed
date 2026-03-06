@@ -84,12 +84,17 @@ export const purchaseOrderApi = {
     },
 
     /**
-     * Mark purchase order as delivered
+     * Mark purchase order as delivered with goods receipt verification
      */
-    async markAsDelivered(id: number, actualDate?: string): Promise<PurchaseOrder> {
+    async markAsDelivered(id: number, data: {
+        actual_delivery_date: string;
+        received_quantity: number;
+        defective_quantity: number;
+        notes?: string;
+    }): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.post(
             `${BASE_URL}/${id}/mark-delivered`,
-            { actual_delivery_date: actualDate || new Date().toISOString().split('T')[0] }
+            data
         );
         return response.data;
     },

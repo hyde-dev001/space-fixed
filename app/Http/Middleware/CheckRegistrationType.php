@@ -35,7 +35,7 @@ class CheckRegistrationType
             // If trying to access Company-only feature as Individual
             if (in_array('company', $allowedTypes) && $shopOwner->registration_type === 'individual') {
                 return redirect()->route('shop-owner.dashboard')
-                    ->with('error', 'This feature requires a Company account.')
+                    ->with('error', 'This feature requires a Business account.')
                     ->with('upgrade_prompt', true);
             }
             

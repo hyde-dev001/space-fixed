@@ -52,6 +52,8 @@ Route::middleware(['auth:sanctum'])->prefix('erp/inventory')->group(function () 
     Route::post('/items', [UploadInventoryController::class, 'store'])->name('inventory.items.store');
     Route::put('/items/{id}', [UploadInventoryController::class, 'update'])->name('inventory.items.update');
     Route::delete('/items/{id}', [UploadInventoryController::class, 'destroy'])->name('inventory.items.destroy');
+    // Add a new colour variant to an existing item (auto-syncs to linked product)
+    Route::post('/items/{id}/colors', [UploadInventoryController::class, 'addColor'])->name('inventory.items.colors.store');
     
     // Image Management
     Route::post('/items/images', [UploadInventoryController::class, 'uploadImages'])->name('inventory.items.images.upload');

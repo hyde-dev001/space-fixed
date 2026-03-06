@@ -20,7 +20,12 @@ class ExpenseController extends Controller
 {
     public function index(Request $request)
     {
-        $expenses = QueryBuilder::for(Expense::class)
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expenses = QueryBuilder::for(Expense::where('shop_id', $shopId))
             ->allowedFilters([
                 'status',
                 'category',
@@ -39,12 +44,25 @@ class ExpenseController extends Controller
 
     public function show($id)
     {
-        $expense = Expense::with('journalEntry.lines')->findOrFail($id);
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::where('shop_id', $shopId)
+            ->with('journalEntry.lines')
+            ->findOrFail($id);
+
         return response()->json($expense);
     }
 
     public function store(Request $request)
     {
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
         $data = $request->validate([
             'reference' => 'nullable|string|unique:finance_expenses,reference',
             'date' => 'required|date',
@@ -75,7 +93,7 @@ class ExpenseController extends Controller
                 'status' => $data['status'] ?? 'submitted',
                 'expense_account_id' => $data['expense_account_id'] ?? null,
                 'payment_account_id' => $data['payment_account_id'] ?? null,
-                'shop_id' => auth()->user()?->shop_owner_id ?? 1,
+                'shop_id' => $shopId,
                 'meta' => [
                     'created_by' => auth()->id(),
                 ],
@@ -108,7 +126,12 @@ class ExpenseController extends Controller
 
     public function update(Request $request, $id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
         if (!in_array($expense->status, ['draft', 'submitted'])) {
             return response()->json(['message' => 'Only draft/submitted expenses can be edited'], 422);
@@ -296,7 +319,12 @@ class ExpenseController extends Controller
 
     public function destroy($id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
         if (!in_array($expense->status, ['draft', 'submitted', 'rejected'])) {
             return response()->json(['message' => 'Only unposted expenses can be deleted'], 422);
@@ -403,7 +431,10 @@ class ExpenseController extends Controller
     private function audit(string $action, int $targetId, array $metadata = []): void
     {
         $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-        $shopOwnerId = Auth::user()?->shop_owner_id ?? 1;
+        $shopOwnerId = Auth::user()?->shop_owner_id;
+        if (! $shopOwnerId) {
+            return; // No shop context — skip audit rather than writing to shop #1
+        }
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,

@@ -1,14 +1,8 @@
 import { Head, router } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
-import { useTaxRates, useAccounts } from "../../../hooks/useFinanceQueries";
+import { useTaxRates } from "../../../hooks/useFinanceQueries";
 
-type Account = {
-	id: string;
-	code: string;
-	name: string;
-	type: string;
-};
 
 type TaxRate = {
 	id: string;
@@ -83,19 +77,11 @@ export default function FinanceCreateInvoice() {
 	const [productQty, setProductQty] = useState<number>(1);
 	const [productDiscount, setProductDiscount] = useState<number>(0);
 	const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
-	const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 	const [selectedTaxId, setSelectedTaxId] = useState<string | number>("");
 	const [loading, setLoading] = useState(false);
 
 	// React Query hooks - automatically handle loading, caching, refetching
-	const { data: accountsData = [], isLoading: isLoadingAccounts } = useAccounts();
 	const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
-	
-	// Filter to revenue accounts only
-	const accounts = useMemo(() => 
-		accountsData.filter((a: Account) => a.type === "Revenue"),
-		[accountsData]
-	);
 
 	const [invoiceNumber, setInvoiceNumber] = useState("INV-" + Date.now());
 	const [customerName, setCustomerName] = useState("");
@@ -105,13 +91,6 @@ export default function FinanceCreateInvoice() {
 	const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
 	const [dueDate, setDueDate] = useState("");
 	const [additionalInfo, setAdditionalInfo] = useState("");
-
-	// Set default account and tax when data is loaded
-	useEffect(() => {
-		if (accounts.length > 0 && !selectedAccountId) {
-			setSelectedAccountId(accounts[0].id);
-		}
-	}, [accounts, selectedAccountId]);
 
 	useEffect(() => {
 		if (taxRates.length > 0 && !selectedTaxId) {
@@ -327,7 +306,6 @@ export default function FinanceCreateInvoice() {
 					quantity: quantity,
 					unit_price: unitPrice,
 					tax_rate: taxRate,
-					account_id: selectedAccountId || accounts[0]?.id,
 				};
 			});
 
@@ -342,6 +320,10 @@ export default function FinanceCreateInvoice() {
 			};
 
 		const response = await fetch("/api/finance/session/invoices", {
+				method: "POST",
+				headers: headers,
+				credentials: "include",
+				body: JSON.stringify(invoiceData),
 			});
 
 			const data = await response.json();
@@ -607,7 +589,7 @@ export default function FinanceCreateInvoice() {
 								<div className="md:col-span-2 flex">
 									<button
 										onClick={handleAddRow}
-										disabled={!selectedAccountId}
+										disabled={!productName.trim()}
 										className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 text-sm font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
 									>
 										<PlusIcon className="w-5 h-5" />
@@ -616,30 +598,14 @@ export default function FinanceCreateInvoice() {
 								</div>
 							</div>
 
-							{accounts.length > 0 && (
-								<div className="col-span-full mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-									<div>
-										<label className="text-xs text-gray-600 dark:text-gray-400">Revenue Account</label>
-										<select
-											value={selectedAccountId}
-											onChange={(e) => setSelectedAccountId(e.target.value)}
-											className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white mt-1"
-										>
-											{accounts.map((acc) => (
-												<option key={acc.id} value={acc.id}>
-													{acc.code} - {acc.name}
-												</option>
-											))}
-										</select>
-									</div>
-									{taxRates.length > 0 && (
-										<div>
-											<label className="text-xs text-gray-600 dark:text-gray-400">Tax Rate</label>
-											<select
-												value={selectedTaxId}
-												onChange={(e) => setSelectedTaxId(e.target.value)}
-												className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white mt-1"
-											>
+							{taxRates.length > 0 && (
+								<div className="col-span-full mt-3">
+									<label className="text-xs text-gray-600 dark:text-gray-400">Tax Rate</label>
+									<select
+										value={selectedTaxId}
+										onChange={(e) => setSelectedTaxId(e.target.value)}
+										className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white mt-1"
+									>
 												{taxRates.map((tax: any) => {
 													const isPercentage = tax.is_percentage === true || tax.type === 'percentage';
 													const isFixed = tax.type === 'fixed';
@@ -648,9 +614,9 @@ export default function FinanceCreateInvoice() {
 													if (isPercentage) {
 														displayText += ` (${tax.rate}%)`;
 													} else if (isFixed && tax.fixed_amount != null) {
-														displayText += ` (₱${Number(tax.fixed_amount).toFixed(2)})`;
+														displayText += ` (Γé▒${Number(tax.fixed_amount).toFixed(2)})`;
 													} else if (tax.rate > 0) {
-														displayText += ` (₱${tax.rate})`;
+														displayText += ` (Γé▒${tax.rate})`;
 													}
 													
 													return (
@@ -659,9 +625,7 @@ export default function FinanceCreateInvoice() {
 														</option>
 													);
 												})}
-											</select>
-										</div>
-									)}
+									</select>
 								</div>
 							)}
 						</div>
@@ -677,7 +641,7 @@ export default function FinanceCreateInvoice() {
 										className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 										title="Close"
 									>
-										✕
+										Γ£ò
 									</button>
 								</div>
 								<div className="grid grid-cols-1 gap-3">

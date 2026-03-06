@@ -441,13 +441,10 @@ const PerformanceChart: React.FC = () => {
 
 // Leave Approval Widget Component
 const LeaveApprovalWidget: React.FC = () => {
-    const [pendingLeaves, setPendingLeaves] = useState<PendingLeave[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { initialPendingLeaves } = usePage().props as any;
+    const [pendingLeaves, setPendingLeaves] = useState<PendingLeave[]>(initialPendingLeaves ?? []);
+    const [loading, setLoading] = useState(false);
     const [processingId, setProcessingId] = useState<number | null>(null);
-
-    useEffect(() => {
-        fetchPendingLeaves();
-    }, []);
 
     const fetchPendingLeaves = async () => {
         try {

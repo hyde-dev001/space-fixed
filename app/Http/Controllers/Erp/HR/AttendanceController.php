@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ERP\HR;
 
 use App\Http\Controllers\Controller;
 use App\Models\HR\AttendanceRecord;
+use App\Models\HR\OvertimeRequest;
 use App\Models\Employee;
 use App\Models\HR\AuditLog;
 use App\Services\HR\LatenessTrackingService;
@@ -735,6 +736,9 @@ class AttendanceController extends Controller
             'check_out_time' => $attendance ? $attendance->check_out_time : null,
             'status' => $attendance ? $attendance->status : 'pending',
             'working_hours' => $attendance ? $attendance->working_hours : 0,
+            'lunch_break_start' => $attendance ? $attendance->lunch_break_start : null,
+            'lunch_break_end' => $attendance ? $attendance->lunch_break_end : null,
+            'is_on_lunch' => $attendance && $attendance->lunch_break_start && !$attendance->lunch_break_end,
         ];
         
         // SEAMLESS OVERTIME: Include extended schedule information
@@ -751,7 +755,102 @@ class AttendanceController extends Controller
         
         return response()->json($response);
     }
-    
+
+    /**
+     * Record lunch break start for the authenticated employee.
+     */
+    public function selfLunchStart(Request $request): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $today = Carbon::now($shopTimezone)->toDateString();
+        $now = Carbon::now($shopTimezone);
+
+        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+            ->where('email', $user->email)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['error' => 'Employee record not found'], 404);
+        }
+
+        $attendance = AttendanceRecord::where('employee_id', $employee->id)
+            ->where('date', $today)
+            ->first();
+
+        if (!$attendance || !$attendance->check_in_time) {
+            return response()->json(['error' => 'You have not checked in today'], 422);
+        }
+
+        if ($attendance->check_out_time) {
+            return response()->json(['error' => 'You have already checked out today'], 422);
+        }
+
+        if ($attendance->lunch_break_start && !$attendance->lunch_break_end) {
+            return response()->json(['error' => 'Lunch break already started'], 422);
+        }
+
+        $attendance->update([
+            'lunch_break_start' => $now->format('H:i'),
+            'lunch_break_end' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Lunch break started',
+            'lunch_break_start' => $now->format('H:i'),
+        ]);
+    }
+
+    /**
+     * Record lunch break end for the authenticated employee.
+     */
+    public function selfLunchEnd(Request $request): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $today = Carbon::now($shopTimezone)->toDateString();
+        $now = Carbon::now($shopTimezone);
+
+        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+            ->where('email', $user->email)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['error' => 'Employee record not found'], 404);
+        }
+
+        $attendance = AttendanceRecord::where('employee_id', $employee->id)
+            ->where('date', $today)
+            ->first();
+
+        if (!$attendance || !$attendance->lunch_break_start) {
+            return response()->json(['error' => 'No lunch break was started'], 422);
+        }
+
+        if ($attendance->lunch_break_end) {
+            return response()->json(['error' => 'Lunch break already ended'], 422);
+        }
+
+        $attendance->update([
+            'lunch_break_end' => $now->format('H:i'),
+        ]);
+
+        return response()->json([
+            'message' => 'Lunch break ended',
+            'lunch_break_end' => $now->format('H:i'),
+        ]);
+    }
+
     /**
      * Get my attendance records (for staff/managers).
      */

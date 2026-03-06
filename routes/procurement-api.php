@@ -65,6 +65,7 @@ Route::middleware(['auth:sanctum'])->prefix('erp/procurement')->group(function (
     Route::prefix('stock-requests')->group(function () {
         Route::get('/', [StockRequestApprovalController::class, 'index'])->name('procurement.stock-requests.index');
         Route::get('/metrics', [StockRequestApprovalController::class, 'getMetrics'])->name('procurement.stock-requests.metrics');
+        Route::post('/', [StockRequestApprovalController::class, 'store'])->name('procurement.stock-requests.store');
         Route::get('/{id}', [StockRequestApprovalController::class, 'show'])->name('procurement.stock-requests.show');
         Route::post('/{id}/approve', [StockRequestApprovalController::class, 'approve'])->name('procurement.stock-requests.approve');
         Route::post('/{id}/reject', [StockRequestApprovalController::class, 'reject'])->name('procurement.stock-requests.reject');
@@ -73,6 +74,11 @@ Route::middleware(['auth:sanctum'])->prefix('erp/procurement')->group(function (
     
     // Suppliers Routes (Procurement-specific enhancements)
     Route::prefix('suppliers')->group(function () {
+        Route::get('/', [SupplierController::class, 'index'])->name('procurement.suppliers.index');
+        Route::post('/', [SupplierController::class, 'store'])->name('procurement.suppliers.store');
+        Route::get('/{id}', [SupplierController::class, 'show'])->name('procurement.suppliers.show');
+        Route::put('/{id}', [SupplierController::class, 'update'])->name('procurement.suppliers.update');
+        Route::delete('/{id}', [SupplierController::class, 'destroy'])->name('procurement.suppliers.destroy');
         Route::get('/{id}/purchase-history', [SupplierController::class, 'getPurchaseHistory'])->name('procurement.suppliers.purchase-history');
         Route::get('/{id}/performance', [SupplierController::class, 'getPerformanceMetrics'])->name('procurement.suppliers.performance');
         Route::post('/{id}/rating', [SupplierController::class, 'updatePerformanceRating'])->name('procurement.suppliers.rating');

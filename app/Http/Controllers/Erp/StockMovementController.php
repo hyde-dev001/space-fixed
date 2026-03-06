@@ -7,7 +7,6 @@ use App\Models\StockMovement;
 use App\Models\InventoryItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
 
 class StockMovementController extends Controller
 {
@@ -50,13 +49,10 @@ class StockMovementController extends Controller
         }
         
         $movements = $query->orderBy('performed_at', 'desc')
-            ->paginate(50)
+            ->paginate($request->per_page ?? 50)
             ->withQueryString();
         
-        return Inertia::render('ERP/Inventory/StockMovement', [
-            'movements' => $movements,
-            'filters' => $request->only(['movement_type', 'inventory_item_id', 'start_date', 'end_date', 'search'])
-        ]);
+        return response()->json($movements);
     }
     
     /**

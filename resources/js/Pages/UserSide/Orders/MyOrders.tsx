@@ -688,7 +688,7 @@ const MyOrders: React.FC = () => {
                               <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
                             </div>
                             <div>
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Company </p>
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Business </p>
                               <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
                             </div>
                             <div>

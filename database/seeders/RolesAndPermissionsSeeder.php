@@ -67,9 +67,17 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-inventory-dashboard',
             'access-product-inventory',
             'access-stock-movement',
-            'access-suppliers-management',
             'access-upload-inventory',
             'view-inventory', // Required for erp/inventory route group
+
+            // ===== PROCUREMENT MODULE =====
+            'access-procurement-dashboard',
+            'access-purchase-requests',
+            'access-purchase-orders',
+            'access-stock-request-approval',
+            'access-suppliers-management',
+            'access-supplier-order-monitoring',
+            'view-procurement', // Required for erp/procurement route group
             
             // ===== STAFF MODULE =====
             'access-staff-dashboard',
@@ -190,14 +198,13 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
         $this->command->info('✓ Repairer role: ' . $repairer->permissions->count() . ' permissions (Full Repairer module)');
 
-        // 6. Inventory Manager Role - Full Inventory Module Access
+        // 6. Inventory Manager Role - Inventory Module Only
         $inventoryManager = Role::firstOrCreate(['name' => 'Inventory Manager', 'guard_name' => 'user']);
         $inventoryManager->syncPermissions([
             // Inventory Pages
             'access-inventory-dashboard',
             'access-product-inventory',
             'access-stock-movement',
-            'access-suppliers-management',
             'access-upload-inventory',
             'access-inventory-overview',
             'view-inventory', // Required for erp/inventory route group
@@ -206,7 +213,25 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-notification-center',
             'access-profile',
         ]);
-        $this->command->info('✓ Inventory Manager role: ' . $inventoryManager->permissions->count() . ' permissions (Full Inventory module)');
+        $this->command->info('✓ Inventory Manager role: ' . $inventoryManager->permissions->count() . ' permissions (Inventory module only)');
+
+        // 6b. Procurement Manager Role - Procurement Module Only
+        $procurementManager = Role::firstOrCreate(['name' => 'Procurement Manager', 'guard_name' => 'user']);
+        $procurementManager->syncPermissions([
+            // Procurement Pages
+            'access-procurement-dashboard',
+            'access-purchase-requests',
+            'access-purchase-orders',
+            'access-stock-request-approval',
+            'access-suppliers-management',
+            'access-supplier-order-monitoring',
+            'view-procurement', // Required for erp/procurement route group
+            // Global Access
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
+        ]);
+        $this->command->info('✓ Procurement Manager role: ' . $procurementManager->permissions->count() . ' permissions (Procurement module only)');
 
         // 7. Staff Role - Staff Module Access
         $staff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'user']);
@@ -255,8 +280,9 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('  3. HR (' . $hr->permissions->count() . ' perms) - Full HR module');
         $this->command->info('  4. CRM (' . $crm->permissions->count() . ' perms) - Full CRM module');
         $this->command->info('  5. Repairer (' . $repairer->permissions->count() . ' perms) - Full Repairer module');
-        $this->command->info('  6. Inventory Manager (' . $inventoryManager->permissions->count() . ' perms) - Full Inventory module');
-        $this->command->info('  7. Staff (' . $staff->permissions->count() . ' perms) - Staff module + Basic access');
+        $this->command->info('  6. Inventory Manager (' . $inventoryManager->permissions->count() . ' perms) - Inventory module only');
+        $this->command->info('  7. Procurement Manager (' . $procurementManager->permissions->count() . ' perms) - Procurement module only');
+        $this->command->info('  8. Staff (' . $staff->permissions->count() . ' perms) - Staff module + Basic access');
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');

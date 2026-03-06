@@ -50,7 +50,17 @@ class ProductColorVariantImage extends Model
             return $this->image_path;
         }
 
-        return Storage::url($this->image_path);
+        $path = ltrim((string) $this->image_path, '/');
+
+        if (str_starts_with($path, 'storage/')) {
+            return asset($path);
+        }
+
+        if (str_starts_with($path, 'public/')) {
+            return Storage::url(substr($path, 7));
+        }
+
+        return Storage::url($path);
     }
 
     /**

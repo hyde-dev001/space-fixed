@@ -43,7 +43,7 @@ export default function ShopOwnerLayout({ children, title }: ShopOwnerLayoutProp
     }[shopOwner.business_type] || '📦 Retail';
 
     // Get registration type label
-    const registrationTypeLabel = shopOwner.is_individual ? '👤 Individual' : '🏢 Company';
+    const registrationTypeLabel = shopOwner.is_individual ? '👤 Individual' : '🏢 Business';
 
     return (
         <div className="min-h-screen bg-gray-50 flex">

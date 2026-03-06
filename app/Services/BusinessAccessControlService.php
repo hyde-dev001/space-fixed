@@ -227,7 +227,7 @@ class BusinessAccessControlService
         if ($this->isIndividual($shopOwner)) {
             return [
                 'allowed' => false,
-                'reason' => 'Individual accounts cannot manage staff or create employee roles. Upgrade to a Company account to access staff management features.'
+                'reason' => 'Individual accounts cannot manage staff or create employee roles. Upgrade to a Business account to access staff management features.'
             ];
         }
 

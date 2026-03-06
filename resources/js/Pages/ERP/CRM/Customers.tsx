@@ -1,62 +1,17 @@
-import { Head } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { Head, usePage } from "@inertiajs/react";
+import { useMemo, useState, useCallback } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
+import axios from "axios";
 
 type CustomerStatus = "active" | "inactive";
-type TabType = "personal" | "purchase" | "repair" | "payment" | "notes";
-
-interface PurchaseRecord {
-  id: number;
-  orderNumber: string;
-  itemSummary: string;
-  date: string;
-  amount: number;
-  status: "completed" | "processing" | "cancelled";
-}
-
-interface RepairRecord {
-  id: number;
-  requestNumber: string;
-  service: string;
-  date: string;
-  cost: number;
-  status: "done" | "in_progress" | "queued";
-}
-
-interface PaymentRecord {
-  id: number;
-  reference: string;
-  method: string;
-  date: string;
-  amount: number;
-  status: "paid" | "pending" | "failed";
-}
+type TabType = "personal" | "purchase" | "repair" | "notes";
 
 interface StaffNote {
   id: number;
   author: string;
   date: string;
   content: string;
-}
-
-interface Customer {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  status: CustomerStatus;
-  joinedAt: string;
-  lastActivity: string;
-  totalOrders: number;
-  totalRepairs: number;
-  totalSpent: number;
-  purchaseHistory: PurchaseRecord[];
-  repairHistory: RepairRecord[];
-  paymentHistory: PaymentRecord[];
-  staffNotes: StaffNote[];
 }
 
 const UserGroupIcon = ({ className = "" }) => (
@@ -101,118 +56,66 @@ const money = (value: number) => `₱${value.toLocaleString()}`;
 
 const dateText = (value: string) => new Date(value).toLocaleDateString();
 
-const seedCustomers: Customer[] = [
-  {
-    id: 1,
-    name: "Miguel Dela Rosa",
-    email: "miguel.rosa@example.com",
-    phone: "+63 912 456 7801",
-    address: "124 P. Burgos Street",
-    city: "Makati City",
-    status: "active",
-    joinedAt: "2025-07-12",
-    lastActivity: "2026-02-19",
-    totalOrders: 8,
-    totalRepairs: 2,
-    totalSpent: 48200,
-    purchaseHistory: [
-      { id: 1, orderNumber: "ORD-10214", itemSummary: "Nike Air Max 270 x2", date: "2026-02-16", amount: 12998, status: "completed" },
-      { id: 2, orderNumber: "ORD-09983", itemSummary: "Adidas Samba x1", date: "2026-01-29", amount: 5499, status: "completed" },
-      { id: 3, orderNumber: "ORD-09642", itemSummary: "Shoe Cleaning Kit", date: "2026-01-05", amount: 1299, status: "processing" },
-    ],
-    repairHistory: [
-      { id: 1, requestNumber: "REP-4301", service: "Sole Reglue", date: "2026-01-10", cost: 1200, status: "done" },
-      { id: 2, requestNumber: "REP-4517", service: "Heel Replacement", date: "2026-02-14", cost: 1800, status: "in_progress" },
-    ],
-    paymentHistory: [
-      { id: 1, reference: "PAY-77620", method: "GCash", date: "2026-02-16", amount: 12998, status: "paid" },
-      { id: 2, reference: "PAY-76408", method: "Card", date: "2026-01-29", amount: 5499, status: "paid" },
-      { id: 3, reference: "PAY-75993", method: "Bank Transfer", date: "2026-01-10", amount: 1200, status: "paid" },
-    ],
-    staffNotes: [
-      { id: 1, author: "Camille G.", date: "2026-02-14", content: "Prefers SMS updates for repair status." },
-      { id: 2, author: "Noel R.", date: "2026-01-29", content: "Requested follow-up for loyalty rewards program." },
-    ],
-  },
-  {
-    id: 2,
-    name: "Andrea Santos",
-    email: "andrea.santos@example.com",
-    phone: "+63 933 210 9087",
-    address: "52 Scout Torillo Avenue",
-    city: "Quezon City",
-    status: "active",
-    joinedAt: "2025-03-21",
-    lastActivity: "2026-02-18",
-    totalOrders: 12,
-    totalRepairs: 1,
-    totalSpent: 76640,
-    purchaseHistory: [
-      { id: 1, orderNumber: "ORD-10170", itemSummary: "New Balance 550 x1", date: "2026-02-12", amount: 5299, status: "completed" },
-      { id: 2, orderNumber: "ORD-10080", itemSummary: "Puma RS-X x2", date: "2026-02-03", amount: 9598, status: "completed" },
-      { id: 3, orderNumber: "ORD-09850", itemSummary: "Nike Cortez x1", date: "2026-01-21", amount: 4599, status: "cancelled" },
-    ],
-    repairHistory: [
-      { id: 1, requestNumber: "REP-4470", service: "Deep Clean + Deodorize", date: "2026-02-09", cost: 900, status: "done" },
-    ],
-    paymentHistory: [
-      { id: 1, reference: "PAY-77341", method: "Card", date: "2026-02-12", amount: 5299, status: "paid" },
-      { id: 2, reference: "PAY-77008", method: "GCash", date: "2026-02-03", amount: 9598, status: "paid" },
-      { id: 3, reference: "PAY-76602", method: "Card", date: "2026-01-21", amount: 4599, status: "failed" },
-    ],
-    staffNotes: [{ id: 1, author: "Rico M.", date: "2026-02-12", content: "Repeat buyer for running shoes. Offer pre-order alerts." }],
-  },
-  {
-    id: 3,
-    name: "Paolo Reyes",
-    email: "paolo.reyes@example.com",
-    phone: "+63 917 881 2244",
-    address: "18 Kalayaan Street",
-    city: "Taguig City",
-    status: "inactive",
-    joinedAt: "2024-12-09",
-    lastActivity: "2025-11-04",
-    totalOrders: 3,
-    totalRepairs: 3,
-    totalSpent: 21800,
-    purchaseHistory: [
-      { id: 1, orderNumber: "ORD-08324", itemSummary: "Vans Old Skool x1", date: "2025-10-28", amount: 3499, status: "completed" },
-      { id: 2, orderNumber: "ORD-08011", itemSummary: "Converse Chuck 70 x1", date: "2025-09-14", amount: 3899, status: "completed" },
-    ],
-    repairHistory: [
-      { id: 1, requestNumber: "REP-3893", service: "Heel Pad Refit", date: "2025-08-09", cost: 700, status: "done" },
-      { id: 2, requestNumber: "REP-4028", service: "Midsole Repaint", date: "2025-09-20", cost: 1200, status: "done" },
-      { id: 3, requestNumber: "REP-4210", service: "Leather Conditioning", date: "2025-11-04", cost: 950, status: "queued" },
-    ],
-    paymentHistory: [
-      { id: 1, reference: "PAY-72100", method: "Cash", date: "2025-10-28", amount: 3499, status: "paid" },
-      { id: 2, reference: "PAY-71482", method: "Bank Transfer", date: "2025-09-20", amount: 1200, status: "pending" },
-    ],
-    staffNotes: [{ id: 1, author: "Elaine T.", date: "2025-11-04", content: "No response after queue notification. Follow up in 7 days." }],
-  },
-];
+// seedCustomers removed — data comes from Inertia props (initialCustomers)
+
+// ─── Inertia prop shape from the server ──────────────────────────────────────
+interface CustomerListItem {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  status: CustomerStatus;
+  totalOrders: number;
+  totalRepairs: number;
+  totalSpent: number;
+  lastActivity: string | null;
+  memberSince: string;
+  notesCount: number;
+}
+
+// Full detail loaded lazily when the modal opens
+interface CustomerDetail extends CustomerListItem {
+  orders: Array<{
+    id: number; order_number: string; total_amount: number;
+    status: string; created_at: string;
+    items?: Array<{ id: number; product_name?: string; quantity?: number; price?: number }>;
+  }>;
+  repairs: Array<{
+    id: number; request_id?: string; shoe_type?: string; description?: string;
+    total: number; status: string; created_at: string;
+  }>;
+  notes: StaffNote[];
+  stats: { total_orders: number; total_repairs: number; total_spent: number; member_since: string | null };
+}
 
 const metricCardClasses = "group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700";
 
 export default function Customers() {
-  const [customers, setCustomers] = useState<Customer[]>(seedCustomers);
+  const { initialCustomers = [] } = usePage<{ initialCustomers: CustomerListItem[] }>().props;
+
+  const [customers, setCustomers] = useState<CustomerListItem[]>(initialCustomers);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | CustomerStatus>("all");
-  const [selectedCustomerId, setSelectedCustomerId] = useState<number>(seedCustomers[0]?.id ?? 0);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("personal");
   const [editing, setEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+  const [customerDetail, setCustomerDetail] = useState<CustomerDetail | null>(null);
   const itemsPerPage = 5;
 
   const [formData, setFormData] = useState({
-    name: seedCustomers[0]?.name ?? "",
-    email: seedCustomers[0]?.email ?? "",
-    phone: seedCustomers[0]?.phone ?? "",
-    address: seedCustomers[0]?.address ?? "",
-    city: seedCustomers[0]?.city ?? "",
-    status: seedCustomers[0]?.status ?? "active",
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    status: "active" as CustomerStatus,
   });
 
   const filteredCustomers = useMemo(() => {
@@ -224,23 +127,15 @@ export default function Customers() {
     });
   }, [customers, search, statusFilter]);
 
-  const selectedCustomer = useMemo(
-    () => customers.find((customer) => customer.id === selectedCustomerId) ?? filteredCustomers[0] ?? null,
-    [customers, selectedCustomerId, filteredCustomers]
-  );
-
   const isFormDirty = useMemo(() => {
-    if (!selectedCustomer) return false;
-
+    if (!customerDetail) return false;
     return (
-      formData.name !== selectedCustomer.name ||
-      formData.email !== selectedCustomer.email ||
-      formData.phone !== selectedCustomer.phone ||
-      formData.address !== selectedCustomer.address ||
-      formData.city !== selectedCustomer.city ||
-      formData.status !== selectedCustomer.status
+      formData.name    !== customerDetail.name    ||
+      formData.phone   !== customerDetail.phone   ||
+      formData.address !== customerDetail.address ||
+      formData.status  !== customerDetail.status
     );
-  }, [formData, selectedCustomer]);
+  }, [formData, customerDetail]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -252,36 +147,56 @@ export default function Customers() {
   const totalOrders = customers.reduce((sum, customer) => sum + customer.totalOrders, 0);
   const totalRepairs = customers.reduce((sum, customer) => sum + customer.totalRepairs, 0);
 
-  const openCustomer = (customer: Customer) => {
+  // Lazy-load full customer detail when modal opens
+  const openCustomer = useCallback(async (customer: CustomerListItem) => {
     setSelectedCustomerId(customer.id);
     setActiveTab("personal");
     setEditing(false);
-    setFormData({
-      name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      address: customer.address,
-      city: customer.city,
-      status: customer.status,
-    });
-  };
+    setCustomerDetail(null);
+    setShowDetailsModal(true);
+    setLoadingDetail(true);
+    try {
+      const { data } = await axios.get<CustomerDetail>(`/api/crm/customers/${customer.id}`);
+      // Normalise: server returns { customer, orders, repairs, notes, stats }
+      const detail: CustomerDetail = {
+        ...(data as any).customer,
+        orders:  (data as any).orders  ?? [],
+        repairs: (data as any).repairs ?? [],
+        notes:   (data as any).notes   ?? [],
+        stats:   (data as any).stats   ?? {},
+      };
+      setCustomerDetail(detail);
+      setFormData({
+        name:    detail.name    ?? "",
+        email:   detail.email   ?? "",
+        phone:   detail.phone   ?? "",
+        address: detail.address ?? "",
+        city:    "",
+        status:  (detail.status as CustomerStatus) ?? "active",
+      });
+    } catch {
+      void Swal.fire({ title: "Error", text: "Failed to load customer details.", icon: "error", timer: 2000, showConfirmButton: false });
+      setShowDetailsModal(false);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, []);
 
   const startEdit = () => {
-    if (!selectedCustomer) return;
+    if (!customerDetail) return;
     setFormData({
-      name: selectedCustomer.name,
-      email: selectedCustomer.email,
-      phone: selectedCustomer.phone,
-      address: selectedCustomer.address,
-      city: selectedCustomer.city,
-      status: selectedCustomer.status,
+      name:    customerDetail.name    ?? "",
+      email:   customerDetail.email   ?? "",
+      phone:   customerDetail.phone   ?? "",
+      address: customerDetail.address ?? "",
+      city:    "",
+      status:  (customerDetail.status as CustomerStatus) ?? "active",
     });
     setEditing(true);
   };
 
   const saveEdit = async () => {
-    if (!selectedCustomer) return;
-    if (!isFormDirty) return;
+    if (!customerDetail || !isFormDirty) return;
 
     const result = await Swal.fire({
       title: "Save changes?",
@@ -292,55 +207,53 @@ export default function Customers() {
       cancelButtonText: "Cancel",
       reverseButtons: true,
     });
-
     if (!result.isConfirmed) return;
 
-    setCustomers((prev) =>
-      prev.map((customer) =>
-        customer.id === selectedCustomer.id
-          ? {
-              ...customer,
-              name: formData.name,
-              email: formData.email,
-              phone: formData.phone,
-              address: formData.address,
-              city: formData.city,
-              status: formData.status,
-            }
-          : customer
-      )
-    );
-    setEditing(false);
-
-    void Swal.fire({
-      title: "Saved",
-      text: "Customer details updated successfully.",
-      icon: "success",
-      timer: 1400,
-      showConfirmButton: false,
-    });
+    try {
+      setSavingEdit(true);
+      await axios.put(`/api/crm/customers/${customerDetail.id}`, {
+        name:    formData.name,
+        phone:   formData.phone,
+        address: formData.address,
+        status:  formData.status,
+      });
+      // Update list row
+      setCustomers((prev) =>
+        prev.map((c) =>
+          c.id === customerDetail.id
+            ? { ...c, name: formData.name, phone: formData.phone, address: formData.address, status: formData.status as CustomerStatus }
+            : c
+        )
+      );
+      setCustomerDetail((prev) => prev ? { ...prev, name: formData.name, phone: formData.phone, address: formData.address, status: formData.status as CustomerStatus } : prev);
+      setEditing(false);
+      void Swal.fire({ title: "Saved", text: "Customer details updated.", icon: "success", timer: 1400, showConfirmButton: false });
+    } catch {
+      void Swal.fire({ title: "Error", text: "Failed to save changes.", icon: "error", timer: 2000, showConfirmButton: false });
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
-  const addStaffNote = () => {
-    if (!selectedCustomer || !noteDraft.trim()) return;
-    const newNote: StaffNote = {
-      id: Date.now(),
-      author: "CRM Staff",
-      date: new Date().toISOString().slice(0, 10),
-      content: noteDraft.trim(),
-    };
-
-    setCustomers((prev) =>
-      prev.map((customer) =>
-        customer.id === selectedCustomer.id
-          ? {
-              ...customer,
-              staffNotes: [newNote, ...customer.staffNotes],
-            }
-          : customer
-      )
-    );
-    setNoteDraft("");
+  const addStaffNote = async () => {
+    if (!customerDetail || !noteDraft.trim()) return;
+    try {
+      setSavingNote(true);
+      const { data } = await axios.post(`/api/crm/customers/${customerDetail.id}/notes`, { content: noteDraft.trim() });
+      const saved: StaffNote = {
+        id:      data.note?.id      ?? Date.now(),
+        author:  data.note?.author  ?? "CRM Staff",
+        date:    data.note?.created_at ? data.note.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        content: data.note?.content ?? noteDraft.trim(),
+      };
+      setCustomerDetail((prev) => prev ? { ...prev, notes: [saved, ...prev.notes] } : prev);
+      setCustomers((prev) => prev.map((c) => c.id === customerDetail.id ? { ...c, notesCount: c.notesCount + 1 } : c));
+      setNoteDraft("");
+    } catch {
+      void Swal.fire({ title: "Error", text: "Failed to save note.", icon: "error", timer: 2000, showConfirmButton: false });
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   return (
@@ -482,10 +395,7 @@ export default function Customers() {
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{dateText(customer.lastActivity)}</td>
                     <td className="px-4 py-3 text-center">
                       <button
-                        onClick={() => {
-                          openCustomer(customer);
-                          setShowDetailsModal(true);
-                        }}
+                        onClick={() => openCustomer(customer)}
                         title={`View ${customer.name}`}
                         className="inline-flex items-center justify-center bg-transparent text-blue-600 transition-colors hover:text-blue-700 dark:bg-transparent dark:text-blue-400 dark:hover:text-blue-300"
                       >
@@ -531,51 +441,56 @@ export default function Customers() {
           )}
         </div>
 
-        {showDetailsModal && selectedCustomer && (
+        {showDetailsModal && (
           <>
             <div className="fixed inset-0 z-100000 bg-black/50" />
             <div className="fixed inset-0 z-100001 flex items-center justify-center p-4">
               <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+                {/* Loading skeleton */}
+                {loadingDetail && (
+                  <div className="flex flex-col gap-4 animate-pulse">
+                    <div className="flex items-center gap-3 border-b border-gray-200 pb-5">
+                      <div className="h-12 w-12 rounded-full bg-gray-200 dark:bg-gray-700" />
+                      <div className="space-y-2">
+                        <div className="h-4 w-40 rounded bg-gray-200 dark:bg-gray-700" />
+                        <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
+                      </div>
+                    </div>
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="h-16 rounded-xl bg-gray-100 dark:bg-gray-800" />
+                    ))}
+                  </div>
+                )}
+
+                {!loadingDetail && customerDetail && (<>
                 <div className="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-gray-800 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-base font-bold text-white">
-                      {getInitials(selectedCustomer.name)}
+                      {getInitials(customerDetail.name)}
                     </div>
                     <div>
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedCustomer.name}</h2>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Customer #{selectedCustomer.id} • Joined {dateText(selectedCustomer.joinedAt)}</p>
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{customerDetail.name}</h2>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Customer #{customerDetail.id} • Joined {customerDetail.memberSince ?? "—"}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
                     {editing ? (
                       <>
-                        <button
-                          onClick={() => setEditing(false)}
-                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                          Cancel
-                        </button>
+                        <button onClick={() => setEditing(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
                         <button
                           onClick={saveEdit}
-                          disabled={!isFormDirty}
+                          disabled={!isFormDirty || savingEdit}
                           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 disabled:hover:bg-gray-400 dark:disabled:bg-gray-600"
                         >
-                          Save Changes
+                          {savingEdit ? "Saving…" : "Save Changes"}
                         </button>
                       </>
                     ) : (
                       <>
-                        <button onClick={startEdit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                          Edit Customer
-                        </button>
+                        <button onClick={startEdit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Edit Customer</button>
                         <button
-                          onClick={() => {
-                            setShowDetailsModal(false);
-                            setEditing(false);
-                            setNoteDraft("");
-                            setActiveTab("personal");
-                          }}
+                          onClick={() => { setShowDetailsModal(false); setEditing(false); setNoteDraft(""); setActiveTab("personal"); setCustomerDetail(null); }}
                           className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                         >
                           Close
@@ -588,10 +503,9 @@ export default function Customers() {
                 <div className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-4 dark:border-gray-800">
                   {[
                     { key: "personal", label: "Personal details" },
-                    { key: "purchase", label: "Purchase history" },
-                    { key: "repair", label: "Repair history" },
-                    { key: "payment", label: "Payment history" },
-                    { key: "notes", label: "Notes" },
+                    { key: "purchase", label: `Purchase history (${customerDetail.orders?.length ?? 0})` },
+                    { key: "repair",   label: `Repair history (${customerDetail.repairs?.length ?? 0})` },
+                    { key: "notes",    label: `Notes (${customerDetail.notes?.length ?? 0})` },
                   ].map((tab) => (
                     <button
                       key={tab.key}
@@ -610,95 +524,44 @@ export default function Customers() {
                 <div className="mt-5">
                   {activeTab === "personal" && (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Full Name</p>
-                        {editing ? (
-                          <input
-                            value={formData.name}
-                            onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
-                            title="Customer full name"
-                            placeholder="Enter full name"
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                          />
-                        ) : (
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedCustomer.name}</p>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Email</p>
-                        {editing ? (
-                          <input
-                            value={formData.email}
-                            onChange={(event) => setFormData((prev) => ({ ...prev, email: event.target.value }))}
-                            title="Customer email"
-                            placeholder="Enter email address"
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                          />
-                        ) : (
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedCustomer.email}</p>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Phone</p>
-                        {editing ? (
-                          <input
-                            value={formData.phone}
-                            onChange={(event) => setFormData((prev) => ({ ...prev, phone: event.target.value }))}
-                            title="Customer phone number"
-                            placeholder="Enter phone number"
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                          />
-                        ) : (
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedCustomer.phone}</p>
-                        )}
-                      </div>
+                      {[ 
+                        { label: "Full Name",  field: "name"    as const, placeholder: "Enter full name" },
+                        { label: "Email",      field: "email"   as const, placeholder: "Email (read-only)", readonly: true },
+                        { label: "Phone",      field: "phone"   as const, placeholder: "Enter phone number" },
+                      ].map(({ label, field, placeholder, readonly }) => (
+                        <div key={field} className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+                          {editing && !readonly ? (
+                            <input
+                              value={formData[field]}
+                              onChange={(e) => setFormData((prev) => ({ ...prev, [field]: e.target.value }))}
+                              placeholder={placeholder}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                            />
+                          ) : (
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">{(customerDetail as any)[field] || "—"}</p>
+                          )}
+                        </div>
+                      ))}
 
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                         {editing ? (
-                          <select
-                            value={formData.status}
-                            onChange={(event) => setFormData((prev) => ({ ...prev, status: event.target.value as CustomerStatus }))}
-                            title="Customer status"
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                          >
+                          <select value={formData.status} onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as CustomerStatus }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white">
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                           </select>
                         ) : (
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              selectedCustomer.status === "active"
-                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                            }`}
-                          >
-                            {selectedCustomer.status}
-                          </span>
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${customerDetail.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>{customerDetail.status}</span>
                         )}
                       </div>
 
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700 md:col-span-2">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Address</p>
                         {editing ? (
-                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            <input
-                              value={formData.address}
-                              onChange={(event) => setFormData((prev) => ({ ...prev, address: event.target.value }))}
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                              placeholder="Street"
-                            />
-                            <input
-                              value={formData.city}
-                              onChange={(event) => setFormData((prev) => ({ ...prev, city: event.target.value }))}
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                              placeholder="City"
-                            />
-                          </div>
+                          <input value={formData.address} onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="Street / full address" />
                         ) : (
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedCustomer.address}, {selectedCustomer.city}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{customerDetail.address || "—"}</p>
                         )}
                       </div>
                     </div>
@@ -706,94 +569,59 @@ export default function Customers() {
 
                   {activeTab === "purchase" && (
                     <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-                      <table className="w-full min-w-170">
-                        <thead className="bg-gray-50 dark:bg-gray-800">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Order</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Items</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                          {selectedCustomer.purchaseHistory.map((entry) => (
-                            <tr key={entry.id} className="bg-white dark:bg-transparent">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{entry.orderNumber}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{entry.itemSummary}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{dateText(entry.date)}</td>
-                              <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{money(entry.amount)}</td>
-                              <td className="px-4 py-3 text-sm">
-                                <span
-                                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                    entry.status === "completed"
-                                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                      : entry.status === "processing"
-                                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                  }`}
-                                >
-                                  {entry.status.replace("_", " ")}
-                                </span>
-                              </td>
+                      {customerDetail.orders.length === 0 ? (
+                        <p className="px-4 py-8 text-center text-sm text-gray-500">No purchase records.</p>
+                      ) : (
+                        <table className="w-full min-w-170">
+                          <thead className="bg-gray-50 dark:bg-gray-800">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Order #</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {customerDetail.orders.map((o) => (
+                              <tr key={o.id} className="bg-white dark:bg-transparent">
+                                <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{o.order_number ?? `#${o.id}`}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{o.created_at ? dateText(o.created_at) : "—"}</td>
+                                <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{money(Number(o.total_amount ?? 0))}</td>
+                                <td className="px-4 py-3 text-sm">
+                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    String(o.status).toLowerCase().includes("complet") ? "bg-green-100 text-green-700" :
+                                    String(o.status).toLowerCase().includes("cancel")  ? "bg-red-100 text-red-700" :
+                                    "bg-yellow-100 text-yellow-700"
+                                  }`}>{String(o.status).replace(/_/g, " ")}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   )}
 
                   {activeTab === "repair" && (
                     <div className="space-y-3">
-                      {selectedCustomer.repairHistory.map((entry) => (
-                        <div key={entry.id} className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                      {customerDetail.repairs.length === 0 ? (
+                        <p className="px-4 py-8 text-center text-sm text-gray-500">No repair records.</p>
+                      ) : customerDetail.repairs.map((r) => (
+                        <div key={r.id} className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white">{entry.requestNumber} • {entry.service}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Requested on {dateText(entry.date)}</p>
+                              <p className="text-sm font-semibold text-gray-900 dark:text-white">{r.request_id ?? `#${r.id}`} • {r.shoe_type ?? "Repair"}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{r.description || "—"}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Submitted {r.created_at ? dateText(r.created_at) : "—"}</p>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-sm font-semibold text-gray-900 dark:text-white">{money(entry.cost)}</span>
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                  entry.status === "done"
-                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                    : entry.status === "in_progress"
-                                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                                    : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                }`}
-                              >
-                                {entry.status.replace("_", " ")}
-                              </span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-white">{money(Number(r.total ?? 0))}</span>
+                              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                String(r.status).includes("complet") || String(r.status).includes("done")   ? "bg-green-100 text-green-700" :
+                                String(r.status).includes("progress")                                        ? "bg-blue-100 text-blue-700" :
+                                "bg-yellow-100 text-yellow-700"
+                              }`}>{String(r.status).replace(/_/g, " ")}</span>
                             </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {activeTab === "payment" && (
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                      {selectedCustomer.paymentHistory.map((entry) => (
-                        <div key={entry.id} className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                          <div className="mb-2 flex items-center justify-between">
-                            <p className="text-sm font-semibold text-gray-900 dark:text-white">{entry.reference}</p>
-                            <span
-                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                entry.status === "paid"
-                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                  : entry.status === "pending"
-                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                              }`}
-                            >
-                              {entry.status}
-                            </span>
-                          </div>
-                          <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
-                            <p>Method: {entry.method}</p>
-                            <p>Date: {dateText(entry.date)}</p>
-                            <p className="font-semibold text-gray-900 dark:text-white">Amount: {money(entry.amount)}</p>
                           </div>
                         </div>
                       ))}
@@ -806,21 +634,25 @@ export default function Customers() {
                         <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Add staff note</label>
                         <textarea
                           value={noteDraft}
-                          onChange={(event) => setNoteDraft(event.target.value)}
+                          onChange={(e) => setNoteDraft(e.target.value)}
                           rows={3}
                           placeholder="Write a note about this customer..."
                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                         />
                         <div className="mt-3 flex justify-end">
-                          <button onClick={addStaffNote} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                          <button
+                            onClick={addStaffNote}
+                            disabled={savingNote || !noteDraft.trim()}
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
                             <WalletIcon className="size-4" />
-                            Save Note
+                            {savingNote ? "Saving…" : "Save Note"}
                           </button>
                         </div>
                       </div>
 
                       <div className="space-y-3">
-                        {selectedCustomer.staffNotes.map((note) => (
+                        {(customerDetail.notes ?? []).map((note) => (
                           <div key={note.id} className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                             <div className="mb-1 flex items-center justify-between gap-2">
                               <p className="text-sm font-semibold text-gray-900 dark:text-white">{note.author}</p>
@@ -829,6 +661,7 @@ export default function Customers() {
                             <p className="text-sm text-gray-600 dark:text-gray-300">{note.content}</p>
                           </div>
                         ))}
+                        {(customerDetail.notes ?? []).length === 0 && <p className="text-sm text-gray-500 text-center py-4">No staff notes yet.</p>}
                       </div>
                     </div>
                   )}
@@ -837,17 +670,18 @@ export default function Customers() {
                 <div className="mt-5 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 md:grid-cols-3">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-gray-500">Lifetime Spend</p>
-                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{money(selectedCustomer.totalSpent)}</p>
+                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{money(Number(customerDetail.stats?.total_spent ?? customerDetail.totalSpent ?? 0))}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-gray-500">Last Activity</p>
-                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{dateText(selectedCustomer.lastActivity)}</p>
+                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{customerDetail.lastActivity ? dateText(customerDetail.lastActivity) : "—"}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-gray-500">Service Requests</p>
-                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedCustomer.totalRepairs}</p>
+                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{customerDetail.stats?.total_repairs ?? customerDetail.totalRepairs ?? 0}</p>
                   </div>
                 </div>
+                </>)} {/* end !loadingDetail && customerDetail */}
               </div>
             </div>
           </>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { usePage } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
 
@@ -72,9 +72,10 @@ const LeaveManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   
   const [formData, setFormData] = useState({
-    employee_id: '',
     leave_type: 'vacation',
     start_date: '',
     end_date: '',
@@ -83,10 +84,14 @@ const LeaveManagement: React.FC = () => {
 
   useEffect(() => {
     fetchLeaveRequests();
+    setCurrentPage(1);
+  }, [selectedTab]);
+
+  useEffect(() => {
     if (user?.employee_id) {
       fetchLeaveBalances(user.employee_id);
     }
-  }, [selectedTab]);
+  }, []);
 
   const fetchLeaveRequests = async () => {
     try {
@@ -109,8 +114,7 @@ const LeaveManagement: React.FC = () => {
       
       const data = await response.json();
       setLeaveRequests(data.data || []);
-    } catch (error) {
-      console.error('Error fetching leave requests:', error);
+    } catch {
       Swal.fire('Error', 'Failed to fetch leave requests', 'error');
     } finally {
       setLoading(false);
@@ -130,8 +134,8 @@ const LeaveManagement: React.FC = () => {
       const data = await response.json();
       const balances = Object.values(data.balances || {}) as LeaveBalance[];
       setLeaveBalances(balances);
-    } catch (error) {
-      console.error('Error fetching leave balances:', error);
+    } catch {
+      // silently fail — balance data is supplementary
     }
   };
 
@@ -148,7 +152,7 @@ const LeaveManagement: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           ...formData,
-          employee_id: user?.employee_id || formData.employee_id,
+          employee_id: user?.employee_id,
         }),
       });
       
@@ -167,7 +171,6 @@ const LeaveManagement: React.FC = () => {
       
       setIsModalOpen(false);
       setFormData({
-        employee_id: '',
         leave_type: 'vacation',
         start_date: '',
         end_date: '',
@@ -260,8 +263,12 @@ const LeaveManagement: React.FC = () => {
     });
   };
 
+  const totalPages = Math.ceil(leaveRequests.length / itemsPerPage);
+  const paginatedRequests = leaveRequests.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   return (
     <AppLayoutERP>
+      <Head title="Leave - Solespace ERP" />
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -333,6 +340,7 @@ const LeaveManagement: React.FC = () => {
               <p className="mt-2 text-gray-600 dark:text-gray-400">No leave requests found</p>
             </div>
           ) : (
+            <>
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -357,7 +365,7 @@ const LeaveManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {leaveRequests.map((leave) => (
+                {paginatedRequests.map((leave) => (
                   <tr key={leave.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900 dark:text-white">
@@ -405,6 +413,30 @@ const LeaveManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            {totalPages > 1 && (
+              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Showing {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, leaveRequests.length)} of {leaveRequests.length}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>

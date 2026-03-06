@@ -57,8 +57,14 @@ class LandingPageController extends Controller
      */
     public function productShow(string $slug): Response
     {
-        $product = Product::where('slug', $slug)
-            ->where('is_active', true)
+        $product = Product::where('is_active', true)
+            ->where(function ($query) use ($slug) {
+                $query->where('slug', $slug);
+
+                if (is_numeric($slug)) {
+                    $query->orWhere('id', (int) $slug);
+                }
+            })
             ->with([
                 'shopOwner:id,first_name,last_name,business_name', 
                 'variants',
@@ -148,8 +154,8 @@ class LandingPageController extends Controller
                         'images' => $variant->images ? $variant->images->map(function($img) {
                             return [
                                 'id' => $img->id,
-                                'image_url' => $img->image_path,
-                                'image_path' => $img->image_path,
+                                'image_url' => $img->image_url,
+                                'image_path' => $img->image_url,
                                 'is_thumbnail' => $img->is_thumbnail,
                                 'sort_order' => $img->sort_order,
                                 'alt_text' => $img->alt_text,
@@ -252,21 +258,95 @@ class LandingPageController extends Controller
      */
     public function shopProfile(string $id): Response
     {
-        // Handle null or invalid ID
+        [$shop, $products] = $this->buildShopProfileData($id);
+
+        return Inertia::render('UserSide/Profile/ShopProfile', [
+            'shop' => $shop,
+            'products' => $products,
+        ]);
+    }
+
+    /**
+     * Display full-screen virtual showroom page
+     */
+    public function virtualShowroom(string $id): Response
+    {
+        [$shop, $products] = $this->buildShopProfileData($id);
+
+        return Inertia::render('UserSide/Profile/VirtualShowroomPage', [
+            'shop' => $shop,
+            'products' => $products,
+        ]);
+    }
+
+    /**
+     * Shared payload builder for shop profile and virtual showroom pages.
+     */
+    private function buildShopProfileData(string $id): array
+    {
         if ($id === 'null' || !is_numeric($id)) {
             abort(404, 'Shop not found');
         }
-        
+
         $shopOwner = ShopOwner::where('id', (int)$id)
             ->where('status', 'approved')
             ->firstOrFail();
 
-        // Get all active products from this shop
         $products = Product::where('shop_owner_id', $id)
             ->where('is_active', true)
+            ->with([
+                'colorVariants' => function ($query) {
+                    $query->active()->orderBy('sort_order');
+                },
+                'colorVariants.images' => function ($query) {
+                    $query->orderBy('sort_order');
+                }
+            ])
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($product) {
+                $mainImage = $product->main_image_url;
+
+                $mediaImages = collect($product->image_urls ?? [])
+                    ->pluck('url')
+                    ->filter();
+
+                $variantImages = collect($product->colorVariants ?? [])
+                    ->flatMap(function ($variant) {
+                        return collect($variant->images ?? [])->map(function ($img) {
+                            return $img->image_url;
+                        });
+                    })
+                    ->filter();
+
+                $legacyAdditionalImages = collect($product->additional_images ?? [])
+                    ->map(function ($image) {
+                        if (!$image) {
+                            return null;
+                        }
+
+                        if (filter_var($image, FILTER_VALIDATE_URL)) {
+                            return $image;
+                        }
+
+                        if (str_starts_with($image, '/')) {
+                            return $image;
+                        }
+
+                        return asset('storage/products/' . ltrim($image, '/'));
+                    })
+                    ->filter();
+
+                $allImages = $mediaImages
+                    ->merge($variantImages)
+                    ->merge($legacyAdditionalImages)
+                    ->unique()
+                    ->values();
+
+                $galleryImages = $allImages
+                    ->filter(fn ($url) => $url && $url !== $mainImage)
+                    ->values();
+
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
@@ -276,46 +356,47 @@ class LandingPageController extends Controller
                     'brand' => $product->brand,
                     'category' => $product->category,
                     'stock_quantity' => $product->stock_quantity,
-                    'main_image' => $product->main_image,
+                    'main_image' => $mainImage ?: ($allImages->first() ?? null),
+                    'gallery_images' => $galleryImages,
+                    'hover_image' => $galleryImages->first() ?? null,
                     'description' => $product->description,
                 ];
             });
 
-        return Inertia::render('UserSide/Profile/ShopProfile', [
-            'shop' => [
-                'id' => $shopOwner->id,
-                'name' => $shopOwner->business_name ?? $shopOwner->name,
-                'description' => $shopOwner->bio ?? 'Premium footwear products and services',
-                'address' => $shopOwner->business_address ?? $shopOwner->city_state,
-                'phone' => $shopOwner->phone,
-                'email' => $shopOwner->email,
-                'profile_photo' => $shopOwner->profile_photo && str_starts_with($shopOwner->profile_photo, '/') 
-                    ? $shopOwner->profile_photo
-                    : ($shopOwner->profile_photo ? "/storage/{$shopOwner->profile_photo}" : null),
-                'cover_image' => '/images/shop/shop-cover.jpg',
-                'rating' => 4.8,
-                'total_reviews' => 0,
-                'established_year' => 2024,
-                'country' => $shopOwner->country,
-                'postal_code' => $shopOwner->postal_code,
-                'tax_id' => $shopOwner->tax_id,
-                'monday_open' => $shopOwner->monday_open,
-                'monday_close' => $shopOwner->monday_close,
-                'tuesday_open' => $shopOwner->tuesday_open,
-                'tuesday_close' => $shopOwner->tuesday_close,
-                'wednesday_open' => $shopOwner->wednesday_open,
-                'wednesday_close' => $shopOwner->wednesday_close,
-                'thursday_open' => $shopOwner->thursday_open,
-                'thursday_close' => $shopOwner->thursday_close,
-                'friday_open' => $shopOwner->friday_open,
-                'friday_close' => $shopOwner->friday_close,
-                'saturday_open' => $shopOwner->saturday_open,
-                'saturday_close' => $shopOwner->saturday_close,
-                'sunday_open' => $shopOwner->sunday_open,
-                'sunday_close' => $shopOwner->sunday_close,
-            ],
-            'products' => $products,
-        ]);
+        $shop = [
+            'id' => $shopOwner->id,
+            'name' => $shopOwner->business_name ?? $shopOwner->name,
+            'description' => $shopOwner->bio ?? 'Premium footwear products and services',
+            'address' => $shopOwner->business_address ?? $shopOwner->city_state,
+            'phone' => $shopOwner->phone,
+            'email' => $shopOwner->email,
+            'profile_photo' => $shopOwner->profile_photo && str_starts_with($shopOwner->profile_photo, '/')
+                ? $shopOwner->profile_photo
+                : ($shopOwner->profile_photo ? "/storage/{$shopOwner->profile_photo}" : null),
+            'cover_image' => '/images/shop/shop-cover.jpg',
+            'rating' => 4.8,
+            'total_reviews' => 0,
+            'established_year' => 2024,
+            'country' => $shopOwner->country,
+            'postal_code' => $shopOwner->postal_code,
+            'tax_id' => $shopOwner->tax_id,
+            'monday_open' => $shopOwner->monday_open,
+            'monday_close' => $shopOwner->monday_close,
+            'tuesday_open' => $shopOwner->tuesday_open,
+            'tuesday_close' => $shopOwner->tuesday_close,
+            'wednesday_open' => $shopOwner->wednesday_open,
+            'wednesday_close' => $shopOwner->wednesday_close,
+            'thursday_open' => $shopOwner->thursday_open,
+            'thursday_close' => $shopOwner->thursday_close,
+            'friday_open' => $shopOwner->friday_open,
+            'friday_close' => $shopOwner->friday_close,
+            'saturday_open' => $shopOwner->saturday_open,
+            'saturday_close' => $shopOwner->saturday_close,
+            'sunday_open' => $shopOwner->sunday_open,
+            'sunday_close' => $shopOwner->sunday_close,
+        ];
+
+        return [$shop, $products];
     }
 
     /**

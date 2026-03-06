@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Head } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
-import { ColorVariantManager, ColorVariant } from './ColorVariantManager';
+import { ColorVariantManager, ColorVariant } from '@/components/variants/ColorVariantManager';
 
 // Types
 type Variant = {
@@ -140,8 +140,8 @@ export default function ProductManagement() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const allowed3DModelExtensions = ['glb', 'gltf', 'obj', 'fbx', 'stl', 'ply', 'dae'];
-  const accepted3DModelsInput = '.glb,.gltf,.obj,.fbx,.stl,.ply,.dae';
+  const allowed3DModelExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+  const accepted3DModelsInput = '.jpg,.jpeg,.png,.webp';
 
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
@@ -195,6 +195,13 @@ export default function ProductManagement() {
   
   const [uploading, setUploading] = useState(false);
 
+  // Inventory stock picker
+  const [isStockPickerOpen, setIsStockPickerOpen] = useState(false);
+  const [inventoryStocks, setInventoryStocks] = useState<any[]>([]);
+  const [isLoadingStocks, setIsLoadingStocks] = useState(false);
+  const [stockSearch, setStockSearch] = useState('');
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<any | null>(null);
+
   useEffect(() => {
     fetchProducts();
   }, []);
@@ -228,6 +235,25 @@ export default function ProductManagement() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchInventoryStocks = async () => {
+    setIsLoadingStocks(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch('/api/erp/inventory/items?category=shoes&per_page=200', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken || '' },
+      });
+      if (!response.ok) throw new Error('Failed to fetch inventory');
+      const data = await response.json();
+      setInventoryStocks(data.data || []);
+    } catch (error) {
+      console.error('Error fetching inventory stocks:', error);
+      setInventoryStocks([]);
+    } finally {
+      setIsLoadingStocks(false);
     }
   };
 
@@ -305,30 +331,58 @@ export default function ProductManagement() {
         await loadLegacyVariants(product.id);
       }
     } else {
+      // New products must be seeded from an uploaded inventory stock item
       setEditingProduct(null);
-      setFormData({
-        name: '',
-        description: '',
-        price: '',
-        compare_at_price: '',
-        brand: '',
-        category: 'shoes',
-      });
-      setSelectedCategories(['shoes']);
-      setVariants([
-        {
-          size: [],
-          color: '',
-          image: '',
-          quantity: 0,
-          imageFile: null,
-          imagePreview: '',
-          imageGroups: [{ id: '0', file: null, preview: '' }],
-        },
-      ]);
+      setSelectedInventoryItem(null);
       setColorVariants([]);
+      setStockSearch('');
+      fetchInventoryStocks();
+      setIsStockPickerOpen(true);
+      return; // stock picker opens; isModalOpen stays false until a stock is chosen
     }
-    
+
+    setIsModalOpen(true);
+  };
+
+  const handleSelectStock = (stock: any) => {
+    setSelectedInventoryItem(stock);
+    const shoeTypes = (stock.description || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+    const derivedCategories: string[] = ['shoes', ...shoeTypes];
+    setFormData({
+      name: stock.name,
+      description: '',
+      price: '',
+      compare_at_price: '',
+      brand: stock.brand || '',
+      category: derivedCategories.join(','),
+    });
+    setSelectedCategories(derivedCategories);
+
+    // Map inventory color variants → ColorVariant[] for the product form
+    const mappedColorVariants: ColorVariant[] = (stock.color_variants ?? []).map((v: any) => ({
+      id: String(v.id),
+      color_name: v.color_name,
+      color_code: v.color_code ?? '#000000',
+      isExpanded: true,
+      images: (v.images ?? []).map((img: any) => ({
+        id: String(img.id),
+        file: null,
+        preview: img.image_path ? `/storage/${img.image_path}` : '',
+        is_thumbnail: img.is_thumbnail ?? false,
+        sort_order: img.sort_order ?? 0,
+        uploaded_path: img.image_path,
+      })),
+      // Sizes are stored at item level and are shared across all color variants
+      sizes: (stock.sizes ?? []).map((s: any) => ({
+        id: String(s.id),
+        size: String(s.size),
+        quantity: s.quantity,
+        sku: '',
+      })),
+    }));
+
+    setColorVariants(mappedColorVariants);
+    setIsStockPickerOpen(false);
     setIsModalOpen(true);
   };
 
@@ -404,8 +458,8 @@ export default function ProductManagement() {
 
     if (invalidFiles.length > 0) {
       Swal.fire({
-        title: 'Unsupported 3D Format',
-        text: `Only ${allowed3DModelExtensions.join(', ').toUpperCase()} files are allowed.`,
+        title: 'Unsupported File Format',
+        text: `Only image sequence files (${allowed3DModelExtensions.join(', ').toUpperCase()}) are allowed.`,
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -593,8 +647,14 @@ export default function ProductManagement() {
         for (const image of colorVariant.images) {
           // Skip if image is already uploaded (has uploaded_path but no new file)
           if (image.uploaded_path && !image.file) {
+            // Normalize path: ensure /storage/ prefix so main_image resolves correctly
+            const normalizedPath =
+              image.uploaded_path.startsWith('http') || image.uploaded_path.startsWith('/storage/')
+                ? image.uploaded_path
+                : `/storage/${image.uploaded_path}`;
+
             uploadedImages.push({
-              path: image.uploaded_path,
+              path: normalizedPath,
               alt_text: image.alt_text || '',
               is_thumbnail: image.is_thumbnail,
               sort_order: image.sort_order,
@@ -604,9 +664,9 @@ export default function ProductManagement() {
             // Save the first image of the first color as main_image
             if (isFirstColor) {
               if (image.is_thumbnail) {
-                firstColorFirstImage = image.uploaded_path;
+                firstColorFirstImage = normalizedPath;
               } else if (!firstColorFirstImage && isFirstImageInColor) {
-                firstColorFirstImage = image.uploaded_path;
+                firstColorFirstImage = normalizedPath;
               }
             }
             
@@ -1138,11 +1198,11 @@ export default function ProductManagement() {
                 <button
                   type="button"
                   onClick={() => setShow3DShoeModels((prev) => !prev)}
-                  aria-label="Toggle 3D Shoe Models"
-                  title="Toggle 3D Shoe Models"
+                  aria-label="Toggle Shoe Spin Viewer"
+                  title="Toggle Shoe Spin Viewer"
                   className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
-                  <span>3D Shoe Models</span>
+                  <span>Shoe Spin Viewer</span>
                   <span
                     className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
                       show3DShoeModels ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
@@ -1161,12 +1221,58 @@ export default function ProductManagement() {
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-1 overflow-y-auto flex flex-col gap-6 p-6 pr-2">
               
-              {/* Color-First Variant Management */}
+              {/* Color Variants — read-only when sourced from inventory stock, editable when editing an existing product */}
               <div className="order-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
+                {selectedInventoryItem && !editingProduct ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base font-semibold text-gray-900 dark:text-white">Color Variants &amp; Sizes</h3>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                        📦 From Inventory: {selectedInventoryItem.name}
+                      </span>
+                    </div>
+                    {colorVariants.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No color variants found in this stock item.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {colorVariants.map((cv) => (
+                          <div key={cv.id} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="h-5 w-5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0" style={{ backgroundColor: cv.color_code }} />
+                              <span className="font-medium text-gray-900 dark:text-white text-sm">{cv.color_name}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{cv.images.length} image{cv.images.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            {cv.images.length > 0 && (
+                              <div className="flex gap-2 mb-3 flex-wrap">
+                                {cv.images.slice(0, 5).map((img) => (
+                                  <img key={img.id} src={img.preview} alt="" className="h-14 w-14 rounded-lg object-cover border border-gray-200 dark:border-gray-700" />
+                                ))}
+                                {cv.images.length > 5 && (
+                                  <div className="h-14 w-14 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs text-gray-500 dark:text-gray-400">
+                                    +{cv.images.length - 5}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {cv.sizes.map((s) => (
+                                <span key={s.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                  {s.size} <span className="text-gray-400">×</span> {s.quantity}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
                   <ColorVariantManager
                     colorVariants={colorVariants}
                     onColorVariantsChange={setColorVariants}
+                    isEditing={!!editingProduct}
                   />
+                )}
               </div>
 
               {show3DShoeModels && (
@@ -1174,10 +1280,10 @@ export default function ProductManagement() {
                   <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-4">
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        3D Shoe Models
+                        Shoe Spin Viewer
                       </label>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        GLB, GLTF, OBJ, FBX, STL, PLY, DAE
+                        JPG, JPEG, PNG, WEBP (Image Sequence)
                       </span>
                     </div>
 
@@ -1186,8 +1292,8 @@ export default function ProductManagement() {
                       multiple
                       accept={accepted3DModelsInput}
                       onChange={handle3DModelFilesChange}
-                      title="Upload 3D shoe model files"
-                      aria-label="Upload 3D shoe model files"
+                      title="Upload image sequence files"
+                      aria-label="Upload image sequence files"
                       className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:rounded-md file:border-0 file:bg-black file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-800"
                     />
 
@@ -1342,7 +1448,7 @@ export default function ProductManagement() {
               <div className="grid grid-cols-2 gap-3 p-6 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setSelectedInventoryItem(null); }}
                   className="h-11 w-full rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-900"
                   disabled={uploading}
                 >
@@ -1392,6 +1498,120 @@ export default function ProductManagement() {
                 </div>
               </div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Inventory Stock Picker — staff must choose an uploaded shoe stock item to create a product */}
+      {isStockPickerOpen && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full shadow-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Select Inventory Stock</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Choose an uploaded shoe stock item to create a product listing from.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStockPickerOpen(false)}
+                aria-label="Close stock picker"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1 rounded-lg"
+              >
+                <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <input
+                type="text"
+                value={stockSearch}
+                onChange={(e) => setStockSearch(e.target.value)}
+                placeholder="Search by name or SKU..."
+                className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              />
+            </div>
+
+            {/* Stock Grid */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {isLoadingStocks ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
+                  <p className="text-sm">Loading inventory stocks...</p>
+                </div>
+              ) : (() => {
+                const filtered = inventoryStocks.filter(s =>
+                  s.name.toLowerCase().includes(stockSearch.toLowerCase()) ||
+                  (s.sku || '').toLowerCase().includes(stockSearch.toLowerCase())
+                );
+                if (filtered.length === 0) return (
+                  <div className="flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
+                    <svg className="size-14 mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                    </svg>
+                    <p className="font-medium">No shoe stock items found</p>
+                    <p className="text-xs mt-1 text-center">Upload inventory stock first before creating product listings.</p>
+                  </div>
+                );
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filtered.map((stock) => {
+                      const thumb = stock.main_image
+                        ? `/storage/${stock.main_image}`
+                        : stock.color_variants?.[0]?.images?.[0]?.image_path
+                          ? `/storage/${stock.color_variants[0].images[0].image_path}`
+                          : null;
+                      const colorCount = (stock.color_variants ?? []).length;
+                      const qty = stock.available_quantity ?? 0;
+                      return (
+                        <button
+                          key={stock.id}
+                          type="button"
+                          onClick={() => handleSelectStock(stock)}
+                          className="text-left rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-900 p-4 transition-all duration-200 hover:shadow-md group focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <div className="h-36 w-full rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 mb-3 flex items-center justify-center">
+                            {thumb ? (
+                              <img src={thumb} alt={stock.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                            ) : (
+                              <svg className="size-10 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </div>
+                          <p className="font-semibold text-gray-900 dark:text-white text-sm leading-snug mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2">
+                            {stock.name}
+                          </p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mb-2 font-mono">{stock.sku}</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {colorCount} color{colorCount !== 1 ? 's' : ''}
+                            </span>
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              qty === 0
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                : qty < 10
+                                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            }`}>
+                              {qty} units
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>,
         document.body

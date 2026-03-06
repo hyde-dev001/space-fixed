@@ -19,12 +19,22 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
+use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchaseRequestController;
 
 /**
  * Shop Owner Routes
  * All routes require authentication and shop_owner role
  */
 Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.isolation'])->group(function () {
+    // ============================================
+    // PURCHASE REQUEST APPROVAL (Shop Owner Final Approval)
+    // ============================================
+    Route::prefix('purchase-requests')->group(function () {
+        Route::get('/', [ShopOwnerPurchaseRequestController::class, 'index'])->name('shop_owner.purchase-requests.index');
+        Route::post('/{id}/approve', [ShopOwnerPurchaseRequestController::class, 'approve'])->name('shop_owner.purchase-requests.approve');
+        Route::post('/{id}/reject', [ShopOwnerPurchaseRequestController::class, 'reject'])->name('shop_owner.purchase-requests.reject');
+    });
+
     // ============================================
     // AUDIT LOGS (Shop Owner View)
     // ============================================

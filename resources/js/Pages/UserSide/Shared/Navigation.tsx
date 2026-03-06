@@ -110,7 +110,6 @@ const Navigation: React.FC = () => {
 
   const navItems = [
     { route: 'landing', label: 'Home' },
-    { route: 'showroom', label: 'Showroom' },
     { route: 'products', label: 'Shoes', dropdownKey: 'shoes' },
     { route: 'products', label: 'Men', params: { category: 'men' }, dropdownKey: 'men' },
     { route: 'products', label: 'Women', params: { category: 'women' }, dropdownKey: 'women' },
@@ -126,7 +125,6 @@ const Navigation: React.FC = () => {
   // Map URLs to nav items
   const urlToRouteMap: Record<string, string> = {
     '/': 'landing',
-    '/showroom': 'showroom',
     '/products': 'products',
     '/repair-services': 'repair',
     '/services': 'services',

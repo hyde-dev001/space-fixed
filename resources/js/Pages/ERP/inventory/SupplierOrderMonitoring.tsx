@@ -1,7 +1,8 @@
-import { Head } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import type { SupplierOrder as ApiSupplierOrder } from "@/types/inventory";
 
 type OrderStatus = "Sent" | "Confirmed" | "In Transit" | "Delivered" | "Completed" | "Cancelled";
 type MetricColor = "success" | "warning" | "info";
@@ -18,6 +19,28 @@ interface SupplierOrderItem {
 	remarks: string;
 }
 
+const apiStatusToDisplay: Record<string, OrderStatus> = {
+	sent: "Sent",
+	confirmed: "Confirmed",
+	in_transit: "In Transit",
+	delivered: "Delivered",
+	completed: "Completed",
+	cancelled: "Cancelled",
+	draft: "Sent",
+};
+
+const mapApiOrder = (order: ApiSupplierOrder): SupplierOrderItem => ({
+	id: order.id,
+	poNo: order.po_number,
+	supplierName: order.supplier?.name ?? "Unknown Supplier",
+	productName: order.items?.[0]?.product_name ?? "—",
+	quantity: order.items?.[0]?.quantity ?? 0,
+	orderedDate: order.order_date,
+	expectedDeliveryDate: order.expected_delivery_date ?? "",
+	status: apiStatusToDisplay[order.status] ?? "Sent",
+	remarks: order.remarks ?? "",
+});
+
 interface MetricCardProps {
 	title: string;
 	value: number;
@@ -25,75 +48,6 @@ interface MetricCardProps {
 	icon: ComponentType<{ className?: string }>;
 	color: MetricColor;
 }
-
-const supplierOrders: SupplierOrderItem[] = [
-	{
-		id: 1,
-		poNo: "PO-2026-001",
-		supplierName: "Prime Shoe Goods",
-		productName: "Adidas Ultraboost 22",
-		quantity: 25,
-		orderedDate: "2026-02-28",
-		expectedDeliveryDate: "2026-03-05",
-		status: "In Transit",
-		remarks: "Courier picked up from supplier warehouse.",
-	},
-	{
-		id: 2,
-		poNo: "PO-2026-002",
-		supplierName: "Metro Footwear Trading",
-		productName: "Nike Air Force 1 '07",
-		quantity: 30,
-		orderedDate: "2026-02-28",
-		expectedDeliveryDate: "2026-03-07",
-		status: "Confirmed",
-		remarks: "Supplier confirmed production allocation.",
-	},
-	{
-		id: 3,
-		poNo: "PO-2026-003",
-		supplierName: "CleanKicks Supply Co.",
-		productName: "Cleaning Foam",
-		quantity: 60,
-		orderedDate: "2026-02-27",
-		expectedDeliveryDate: "2026-03-01",
-		status: "Delivered",
-		remarks: "Delivered to receiving dock, pending final QC.",
-	},
-	{
-		id: 4,
-		poNo: "PO-2026-004",
-		supplierName: "Urban Streetwear Partners",
-		productName: "Puma RS-X",
-		quantity: 20,
-		orderedDate: "2026-02-26",
-		expectedDeliveryDate: "2026-02-28",
-		status: "In Transit",
-		remarks: "Expected to arrive tonight.",
-	},
-	{
-		id: 5,
-		poNo: "PO-2026-005",
-		supplierName: "Metro Footwear Trading",
-		productName: "Shoe Box (Large)",
-		quantity: 80,
-		orderedDate: "2026-02-25",
-		expectedDeliveryDate: "2026-02-27",
-		status: "In Transit",
-		remarks: "Delayed due to logistics congestion.",
-	},
-	{
-		id: 6,
-		poNo: "PO-2026-006",
-		supplierName: "Prime Shoe Goods",
-		productName: "New Balance 550",
-		quantity: 16,
-		orderedDate: "2026-02-24",
-		expectedDeliveryDate: "2026-03-03",
-		status: "Sent",
-		remarks: "Awaiting supplier order confirmation.",
-	},
-];
 
 const statusBadgeClass: Record<OrderStatus, string> = {
 	Sent: "bg-white text-black border border-gray-300 dark:bg-gray-900 dark:text-white dark:border-gray-600",
@@ -218,8 +172,13 @@ const getStatusBadge = (order: SupplierOrderItem) => {
 };
 
 export default function SupplierOrderMonitoring() {
-	const [orders] = useState<SupplierOrderItem[]>(supplierOrders);
-	const [searchQuery, setSearchQuery] = useState("");
+	const supplierParam = new URLSearchParams(window.location.search).get("supplier") ?? "";
+	const { initialData } = usePage().props as any;
+	const [orders, setOrders] = useState<SupplierOrderItem[]>(
+		() => (initialData?.data ?? []).map(mapApiOrder)
+	);
+	const [loading, setLoading] = useState(false);
+	const [searchQuery, setSearchQuery] = useState(supplierParam);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingOrder, setViewingOrder] = useState<SupplierOrderItem | null>(null);
 
@@ -291,6 +250,29 @@ export default function SupplierOrderMonitoring() {
 							/>
 						</div>
 					</div>
+					{supplierParam && searchQuery === supplierParam && (
+						<div className="mb-4 flex items-center gap-2">
+							<span className="text-sm text-gray-500 dark:text-gray-400">Filtered by supplier:</span>
+							<span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 px-3 py-1 text-sm font-medium text-blue-700 dark:text-blue-300">
+								{supplierParam}
+								<button
+									type="button"
+									onClick={() => { setSearchQuery(""); window.history.replaceState({}, "", window.location.pathname); }}
+									className="ml-0.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200 text-base leading-none"
+									title="Clear supplier filter"
+								>
+									×
+								</button>
+							</span>
+							<button
+								type="button"
+								onClick={() => router.visit("/erp/procurement/suppliers-management")}
+								className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+							>
+								← Back to Suppliers
+							</button>
+						</div>
+					)}
 
 					<div className="overflow-x-auto">
 						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -305,7 +287,9 @@ export default function SupplierOrderMonitoring() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedItems.length > 0 ? (
+						{loading ? (
+							<tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Loading supplier orders...</td></tr>
+						) : paginatedItems.length > 0 ? (
 									paginatedItems.map((order) => {
 										const sla = getSlaBadge(order);
 

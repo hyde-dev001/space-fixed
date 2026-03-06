@@ -207,11 +207,15 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 export default function JobOrdersPage() {
   const [error, setError] = useState<string | null>(null);
-  const { auth } = usePage().props as any;
+  const { auth, initialOrders } = usePage().props as any;
   const userRole = auth?.user?.role;
   const [selectedTab, setSelectedTab] = useState<string>("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -224,71 +228,55 @@ export default function JobOrdersPage() {
   const [carrierPhone, setCarrierPhone] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const mapApiOrder = (order: any): Order => ({
+    id: order.id,
+    order_number: order.order_number,
+    customer: order.customer_name || 'Unknown',
+    email: order.customer_email || '',
+    phone: order.customer_phone || '',
+    shippingAddress: order.shipping_address || '',
+    total: `₱${parseFloat(order.total_amount || 0).toLocaleString()}`,
+    paymentStatus: order.payment_status || 'pending',
+    paymentMethod: order.payment_method || '',
+    status: order.status as any,
+    eta: order.eta || undefined,
+    orderedAt: new Date(order.created_at).toLocaleString(),
+    carrierCompany: order.carrier_company || undefined,
+    carrierName: order.carrier_name || undefined,
+    carrierPhone: order.carrier_phone || undefined,
+    trackingNumber: order.tracking_number || undefined,
+    trackingLink: order.tracking_link || undefined,
+    items: order.items || [],
+    quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
+    shopName: order.shop?.shop_name || undefined,
+    product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
+    pickup_enabled: order.pickup_enabled || false,
+    pickup_enabled_at: order.pickup_enabled_at || null,
+  });
+
+  const [orders, setOrders] = useState<Order[]>(() =>
+    Array.isArray(initialOrders) ? initialOrders.map(mapApiOrder) : []
+  );
+  const [loading, setLoading] = useState(false);
   const itemsPerPage = 10;
 
-  // Fetch orders from API on mount
-  React.useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('/api/staff/orders', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch orders');
-        }
-        
-        const data = await response.json();
-        
-        // Map API data to Order type
-        const mappedOrders: Order[] = data.map((order: any) => ({
-          id: order.id,
-          order_number: order.order_number,
-          customer: order.customer_name || 'Unknown',
-          email: order.customer_email || '',
-          phone: order.customer_phone || '',
-          shippingAddress: order.shipping_address || '',
-          total: `₱${parseFloat(order.total_amount || 0).toLocaleString()}`,
-          paymentStatus: order.payment_status || 'pending',
-          paymentMethod: order.payment_method || '',
-          status: order.status as any,
-          eta: order.eta || undefined,
-          orderedAt: new Date(order.created_at).toLocaleString(),
-          carrierCompany: order.carrier_company || undefined,
-          carrierName: order.carrier_name || undefined,
-          carrierPhone: order.carrier_phone || undefined,
-          trackingNumber: order.tracking_number || undefined,
-          trackingLink: order.tracking_link || undefined,
-          items: order.items || [],
-          quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
-          shopName: order.shop?.shop_name || undefined,
-          product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
-          pickup_enabled: order.pickup_enabled || false,
-          pickup_enabled_at: order.pickup_enabled_at || null,
-        }));
-        
-        setOrders(mappedOrders);
-      } catch (error) {
-        console.error('Error fetching orders:', error);
-        await Swal.fire({
-          title: 'Error',
-          text: 'Failed to load orders. Please refresh the page.',
-          icon: 'error',
-          confirmButtonColor: '#2563eb'
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchOrders();
-  }, []);
+  const refreshOrders = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/staff/orders', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!response.ok) throw new Error('Failed to fetch orders');
+      const data = await response.json();
+      setOrders(data.map(mapApiOrder));
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getShippingMessage = () => {
     if (!selectedOrder) return "";
@@ -311,7 +299,7 @@ export default function JobOrdersPage() {
     );
   }
 
-  // Filter orders based on tab and search
+  // Filter orders based on tab, search, date range, and payment method
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       const matchesTab = selectedTab === "all" || order.status === selectedTab;
@@ -319,9 +307,20 @@ export default function JobOrdersPage() {
         String(order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order.product || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesTab && matchesSearch;
+      const matchesPayment = filterPaymentMethod === "all" || order.paymentMethod === filterPaymentMethod;
+      let matchesDate = true;
+      if (dateFrom || dateTo) {
+        const orderDate = new Date(order.orderedAt);
+        if (dateFrom) matchesDate = matchesDate && orderDate >= new Date(dateFrom);
+        if (dateTo) {
+          const end = new Date(dateTo);
+          end.setHours(23, 59, 59, 999);
+          matchesDate = matchesDate && orderDate <= end;
+        }
+      }
+      return matchesTab && matchesSearch && matchesPayment && matchesDate;
     });
-  }, [orders, selectedTab, searchTerm]);
+  }, [orders, selectedTab, searchTerm, dateFrom, dateTo, filterPaymentMethod]);
 
   // Pagination
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
@@ -357,6 +356,71 @@ export default function JobOrdersPage() {
     setSelectedOrders((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Order #', 'Customer', 'Email', 'Product', 'Quantity', 'Total', 'Payment Method', 'Status', 'Ordered At'];
+    const rows = filteredOrders.map(order => [
+      order.order_number,
+      order.customer,
+      order.email,
+      order.product || '',
+      String(order.quantity || 0),
+      order.total,
+      order.paymentMethod || '',
+      order.status,
+      order.orderedAt,
+    ]);
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `orders_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkMarkAsProcessing = async () => {
+    if (selectedOrders.length === 0) return;
+    const result = await Swal.fire({
+      title: `Mark ${selectedOrders.length} order(s) as Processing?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, process all',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+    if (!result.isConfirmed) return;
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' },
+      });
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrf_token;
+      await Promise.all(
+        selectedOrders.map(id =>
+          fetch(`/api/staff/orders/${id}/status`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+            body: JSON.stringify({ status: 'processing' }),
+          })
+        )
+      );
+      setOrders(prev =>
+        prev.map(o => selectedOrders.includes(o.id) ? { ...o, status: 'processing' as any } : o)
+      );
+      setSelectedOrders([]);
+      Swal.fire('Done', `${selectedOrders.length} order(s) marked as Processing.`, 'success');
+    } catch {
+      Swal.fire('Error', 'Some orders could not be updated. Please try again.', 'error');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -474,7 +538,7 @@ export default function JobOrdersPage() {
     if (!carrierCompany) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please select a Carrier Company",
+        text: "Please select a Carrier Business",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -749,6 +813,16 @@ export default function JobOrdersPage() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">Process and manage customer shoe orders</p>
           </div>
+          <button
+            onClick={refreshOrders}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
         </div>
 
         {/* Metrics */}
@@ -756,8 +830,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Pending Orders"
             value={stats.pending}
-            change={12}
-            changeType="increase"
             icon={ClipboardListIcon}
             color="warning"
             description="Awaiting processing"
@@ -765,8 +837,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Processing"
             value={stats.processing}
-            change={8}
-            changeType="increase"
             icon={ClockIcon}
             color="info"
             description="Currently being prepared"
@@ -774,8 +844,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Shipped"
             value={stats.shipped}
-            change={15}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Out for delivery"
@@ -783,8 +851,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Total Revenue"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
-            change={20}
-            changeType="increase"
             icon={CurrencyDollarIcon}
             color="success"
             description="From all orders"
@@ -885,19 +951,102 @@ export default function JobOrdersPage() {
                 </div>
 
                 {/* Filter Button */}
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <button
+                  onClick={() => setShowFilterPanel(p => !p)}
+                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
+                    showFilterPanel || dateFrom || dateTo || filterPaymentMethod !== 'all'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                      : 'border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
                   <FunnelIcon className="size-5" />
                   <span className="hidden sm:inline text-sm font-medium">Filter</span>
                 </button>
 
                 {/* Export Button */}
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <button
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
                   <ArrowDownTrayIcon className="size-5" />
                   <span className="hidden sm:inline text-sm font-medium">Export</span>
                 </button>
               </div>
             </div>
           </div>
+
+          {/* Filter Panel */}
+          {showFilterPanel && (
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Date From</label>
+                  <input
+                    type="date"
+                    aria-label="Date From"
+                    value={dateFrom}
+                    onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }}
+                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Date To</label>
+                  <input
+                    type="date"
+                    aria-label="Date To"
+                    value={dateTo}
+                    onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }}
+                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Payment Method</label>
+                  <select
+                    aria-label="Payment Method"
+                    value={filterPaymentMethod}
+                    onChange={e => { setFilterPaymentMethod(e.target.value); setCurrentPage(1); }}
+                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All Methods</option>
+                    <option value="cod">Cash on Delivery (COD)</option>
+                    <option value="online">Online Payment</option>
+                  </select>
+                </div>
+                <button
+                  onClick={() => { setDateFrom(''); setDateTo(''); setFilterPaymentMethod('all'); setCurrentPage(1); }}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Clear Filters
+                </button>
+                {(dateFrom || dateTo || filterPaymentMethod !== 'all') && (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium self-end pb-2">
+                    {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''} found
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Action Bar */}
+          {selectedOrders.length > 0 && (
+            <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 flex items-center gap-4">
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                {selectedOrders.length} order{selectedOrders.length !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                onClick={handleBulkMarkAsProcessing}
+                className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Mark as Processing
+              </button>
+              <button
+                onClick={() => setSelectedOrders([])}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
 
           {/* Table */}
           <div className="overflow-x-auto">
@@ -1141,7 +1290,7 @@ export default function JobOrdersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Shipping Company *
+                      Shipping Business *
                     </label>
                     <select
                       value={carrierCompany}

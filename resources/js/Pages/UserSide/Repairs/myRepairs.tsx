@@ -39,6 +39,22 @@ type ConversationShop = {
   unreadCount?: number;
 };
 
+const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
+
+const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walkin' | 'pickup') => {
+  try {
+    const raw = localStorage.getItem(DELIVERY_METHOD_OVERRIDES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const overrides = parsed && typeof parsed === 'object' ? parsed : {};
+
+    overrides[String(repairId)] = deliveryMethod;
+
+    localStorage.setItem(DELIVERY_METHOD_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch (error) {
+    console.warn('Failed to store delivery method override:', error);
+  }
+};
+
 // Static mock data for testing
 const getStaticRepairOrders = (): RepairOrder[] => {
   return [
@@ -534,6 +550,10 @@ const MyRepairs: React.FC = () => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
+    const isRemainingBalancePhase = order.status === 'ready_for_pickup';
+    const paymentAmount = Math.max(1, order.total_amount / 2);
+    const paymentLabel = isRemainingBalancePhase ? 'remaining balance' : 'down payment';
+
     setProcessingPayment(true);
 
     try {
@@ -547,8 +567,8 @@ const MyRepairs: React.FC = () => {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          amount: order.total_amount,
-          description: `SoleSpace Repair #${order.order_number} - ${order.repair_type}`,
+          amount: paymentAmount,
+          description: `SoleSpace Repair #${order.order_number} - ${order.repair_type} (${paymentLabel})`,
         }),
       });
 
@@ -847,6 +867,65 @@ const MyRepairs: React.FC = () => {
 
   const removeReviewImage = (index: number) => {
     setReviewImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const canSwitchToWalkIn = (order: RepairOrder) => {
+    if (order.delivery_method === 'walk_in') return false;
+
+    return order.status === 'ready_for_pickup';
+  };
+
+  const handleSwitchToWalkIn = async (order: RepairOrder) => {
+    const result = await Swal.fire({
+      title: 'Switch to Self Pick-up?',
+      html: `
+        <p class="text-gray-700 mb-2">You are changing this order from <strong>carrier pickup</strong> to <strong>shop pickup</strong>.</p>
+        <p class="text-gray-700">You will get your shoes to the shop.</p>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, switch to shop pickup',
+      cancelButtonText: 'Keep carrier pickup',
+      confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    let persisted = false;
+
+    try {
+      await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
+        delivery_method: 'walk_in',
+      });
+      persisted = true;
+    } catch (error) {
+      console.warn('Delivery method endpoint unavailable, applying frontend-only update:', error);
+    }
+
+    setOrders(prev =>
+      prev.map(item =>
+        item.id === order.id
+          ? {
+              ...item,
+              delivery_method: 'walk_in',
+              pickup_address: undefined,
+            }
+          : item
+      )
+    );
+
+    saveDeliveryMethodOverride(order.id, 'walkin');
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Pickup Method Updated',
+      text: persisted
+        ? 'Your order is now set to self pick-up at the shop.'
+        : 'Updated in frontend. Add backend endpoint to persist this change.',
+      confirmButtonColor: '#000000',
+    });
   };
 
   const getStatusColor = (status: RepairStatus) => {
@@ -1254,6 +1333,12 @@ const MyRepairs: React.FC = () => {
                               Note: Duration starts once the status is IN PROGRESS.
                             </p>
                           </div>
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Method</p>
+                            <p className="text-sm text-black font-medium">
+                              {order.delivery_method === 'walk_in' ? 'Self Pick-up at Shop' : 'Carrier Pickup'}
+                            </p>
+                          </div>
                           {order.estimated_completion && (
                             <div>
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">
@@ -1394,20 +1479,42 @@ const MyRepairs: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {order.status === 'ready_for_pickup' && (
+                      {canSwitchToWalkIn(order) && (
                         <button
-                          type="button"
-                          onClick={() => confirmPickup(order.id)}
-                          disabled={!order.pickup_enabled}
-                          className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${
-                            order.pickup_enabled
-                              ? 'bg-black text-white hover:bg-gray-800 cursor-pointer'
-                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          }`}
-                          title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
+                          onClick={() => handleSwitchToWalkIn(order)}
+                          disabled={processingPayment}
+                          className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
                         >
-                          {order.pickup_enabled ? 'Confirm Received' : 'Received'}
+                          SWITCH TO SHOP PICKUP
                         </button>
+                      )}
+                      {order.status === 'ready_for_pickup' && (
+                        <>
+                          <button
+                            onClick={() => handlePayNow(order.id)}
+                            disabled={!order.payment_enabled || processingPayment}
+                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                              order.payment_enabled && !processingPayment
+                                ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => confirmPickup(order.id)}
+                            disabled={!order.pickup_enabled}
+                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${
+                              order.pickup_enabled
+                                ? 'bg-black text-white hover:bg-gray-800 cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                            title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
+                          >
+                            {order.pickup_enabled ? 'Confirm Received' : 'Received'}
+                          </button>
+                        </>
                       )}
                       {order.status === 'picked_up' && (
                         <>

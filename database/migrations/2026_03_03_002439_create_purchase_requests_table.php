@@ -23,7 +23,7 @@ return new class extends Migration
             $table->decimal('total_cost', 12, 2);
             $table->enum('priority', ['high', 'medium', 'low'])->default('medium');
             $table->text('justification');
-            $table->enum('status', ['draft', 'pending_finance', 'approved', 'rejected'])->default('draft');
+            $table->enum('status', ['draft', 'pending_finance', 'pending_shop_owner', 'approved', 'rejected'])->default('draft');
             $table->text('rejection_reason')->nullable();
             $table->foreignId('requested_by')->constrained('users')->onDelete('cascade');
             $table->timestamp('requested_date');

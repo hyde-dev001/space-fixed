@@ -1,124 +1,12 @@
-import { Head } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { Head, usePage } from "@inertiajs/react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { stockRequestApi } from "@/services/stockRequestApi";
+import type { StockRequestApproval, StockRequestMetrics } from "@/types/procurement";
 
-type RequestPriority = "High" | "Medium" | "Low";
-type RequestStatus = "Pending" | "Accepted" | "Rejected" | "Needs Details";
 type MetricColor = "success" | "warning" | "info";
-
-interface StockRequestItem {
-	id: number;
-	requestNo: string;
-	productName: string;
-	skuCode: string;
-	quantityNeeded: number;
-	priority: RequestPriority;
-	requestedBy: string;
-	requestedDate: string;
-	status: RequestStatus;
-	notes: string;
-}
-
-const stockRequestRows: StockRequestItem[] = [
-	{
-		id: 1,
-		requestNo: "RR-2026-001",
-		productName: "Nike Air Max 270",
-		skuCode: "NK-AM270-BLK",
-		quantityNeeded: 40,
-		priority: "High",
-		requestedBy: "Robert Martinez",
-		requestedDate: "2026-02-28 08:45 AM",
-		status: "Pending",
-		notes: "Out of stock in all major sizes.",
-	},
-	{
-		id: 2,
-		requestNo: "RR-2026-002",
-		productName: "Adidas Ultraboost 22",
-		skuCode: "AD-UB22-WHT",
-		quantityNeeded: 25,
-		priority: "High",
-		requestedBy: "Robert Martinez",
-		requestedDate: "2026-02-28 09:15 AM",
-		status: "Pending",
-		notes: "Fast-moving item for weekend campaign.",
-	},
-	{
-		id: 3,
-		requestNo: "RR-2026-003",
-		productName: "Puma RS-X",
-		skuCode: "PM-RSX-RED",
-		quantityNeeded: 18,
-		priority: "Medium",
-		requestedBy: "Kevin Santos",
-		requestedDate: "2026-02-27 02:30 PM",
-		status: "Accepted",
-		notes: "Restock for branch display section.",
-	},
-	{
-		id: 4,
-		requestNo: "RR-2026-004",
-		productName: "New Balance 550",
-		skuCode: "NB-550-GRY",
-		quantityNeeded: 30,
-		priority: "High",
-		requestedBy: "Mia Cruz",
-		requestedDate: "2026-02-27 03:10 PM",
-		status: "Needs Details",
-		notes: "Clarify preferred size ratio before sourcing.",
-	},
-	{
-		id: 5,
-		requestNo: "RR-2026-005",
-		productName: "Cleaning Foam",
-		skuCode: "CARE-FOAM-CLN",
-		quantityNeeded: 50,
-		priority: "Low",
-		requestedBy: "Kevin Santos",
-		requestedDate: "2026-02-26 10:05 AM",
-		status: "Accepted",
-		notes: "Routine replenishment for monthly level.",
-	},
-	{
-		id: 6,
-		requestNo: "RR-2026-006",
-		productName: "Premium Shoelaces",
-		skuCode: "ACC-LACE-PRM",
-		quantityNeeded: 80,
-		priority: "Low",
-		requestedBy: "Mia Cruz",
-		requestedDate: "2026-02-26 01:20 PM",
-		status: "Rejected",
-		notes: "Current stock level is still sufficient.",
-	},
-	{
-		id: 7,
-		requestNo: "RR-2026-007",
-		productName: "Leather Conditioner",
-		skuCode: "CARE-LTH-250",
-		quantityNeeded: 22,
-		priority: "Medium",
-		requestedBy: "Robert Martinez",
-		requestedDate: "2026-02-25 11:35 AM",
-		status: "Pending",
-		notes: "Stocks below safety stock threshold.",
-	},
-	{
-		id: 8,
-		requestNo: "RR-2026-008",
-		productName: "Shoe Box (Large)",
-		skuCode: "PKG-BOX-L",
-		quantityNeeded: 60,
-		priority: "Medium",
-		requestedBy: "Kevin Santos",
-		requestedDate: "2026-02-25 04:40 PM",
-		status: "Pending",
-		notes: "Required for incoming batch packaging.",
-	},
-];
 
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -132,17 +20,17 @@ const ChevronRightIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
-const priorityBadgeClass: Record<RequestPriority, string> = {
-	High: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	Medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-	Low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+const priorityBadgeClass: Record<string, string> = {
+	high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+	low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
-const statusBadgeClass: Record<RequestStatus, string> = {
-	Pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-	Accepted: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-	Rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	"Needs Details": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+const statusBadgeClass: Record<string, string> = {
+	pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+	accepted: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	needs_details: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
 };
 
 interface MetricCardProps {
@@ -209,10 +97,40 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function StockRequest() {
-	const [requests, setRequests] = useState<StockRequestItem[]>(stockRequestRows);
+	const { initialData } = usePage().props as any;
+	const [requests, setRequests] = useState<StockRequestApproval[]>(initialData?.data ?? []);
+	const [loading, setLoading] = useState(false);
+	const [metrics, setMetrics] = useState<StockRequestMetrics>({ total: 0, pending: 0, accepted: 0, rejected: 0 });
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
-	const [viewingRequest, setViewingRequest] = useState<StockRequestItem | null>(null);
+	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
+
+	const fetchRequests = async () => {
+		try {
+			setLoading(true);
+			const response = await stockRequestApi.getAll({ per_page: 100 });
+			const data = (response as any).data || response || [];
+			setRequests(Array.isArray(data) ? data : []);
+		} catch (error) {
+			console.error("Failed to fetch stock requests:", error);
+			Swal.fire("Error", "Failed to load stock requests", "error");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const fetchMetrics = async () => {
+		try {
+			const data = await stockRequestApi.getMetrics();
+			setMetrics(data);
+		} catch (error) {
+			console.error("Failed to fetch metrics:", error);
+		}
+	};
+
+	useEffect(() => {
+		fetchMetrics();
+	}, []);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -220,10 +138,10 @@ export default function StockRequest() {
 		if (!query) return requests;
 
 		return requests.filter((request) =>
-			request.requestNo.toLowerCase().includes(query) ||
-			request.productName.toLowerCase().includes(query) ||
-			request.skuCode.toLowerCase().includes(query) ||
-			request.requestedBy.toLowerCase().includes(query) ||
+			request.request_number.toLowerCase().includes(query) ||
+			request.product_name.toLowerCase().includes(query) ||
+			request.sku_code.toLowerCase().includes(query) ||
+			(request.requester?.name || "").toLowerCase().includes(query) ||
 			request.status.toLowerCase().includes(query)
 		);
 	}, [searchQuery, requests]);
@@ -232,38 +150,28 @@ export default function StockRequest() {
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
-	const totalRequests = requests.length;
-	const pendingRequests = requests.filter((request) => request.status === "Pending").length;
-	const acceptedRequests = requests.filter((request) => request.status === "Accepted").length;
 
-	const updateStatus = (requestId: number, nextStatus: RequestStatus, nextNotes?: string) => {
-		setRequests((prev) =>
-			prev.map((request) => {
-				if (request.id !== requestId) return request;
-				return {
-					...request,
-					status: nextStatus,
-					notes: nextNotes ?? request.notes,
-				};
-			})
-		);
-
-		setViewingRequest((prev) => {
-			if (!prev || prev.id !== requestId) return prev;
-			return {
-				...prev,
-				status: nextStatus,
-				notes: nextNotes ?? prev.notes,
-			};
-		});
+	const formatPriority = (priority: string) => {
+		const map: Record<string, string> = { high: "High", medium: "Medium", low: "Low" };
+		return map[priority] || priority;
 	};
 
-	const handleAccept = async (request: StockRequestItem) => {
-		if (request.status === "Accepted") return;
+	const formatStatus = (status: string) => {
+		const map: Record<string, string> = {
+			pending: "Pending",
+			accepted: "Accepted",
+			rejected: "Rejected",
+			needs_details: "Needs Details",
+		};
+		return map[status] || status;
+	};
+
+	const handleAccept = async (request: StockRequestApproval) => {
+		if (request.status === "accepted") return;
 
 		const result = await Swal.fire({
 			title: "Accept request?",
-			text: `Proceed with supplier sourcing for ${request.productName}?`,
+			text: `Proceed with supplier sourcing for ${request.product_name}?`,
 			icon: "question",
 			showCancelButton: true,
 			confirmButtonText: "Yes, accept",
@@ -274,51 +182,72 @@ export default function StockRequest() {
 
 		if (!result.isConfirmed) return;
 
-		updateStatus(request.id, "Accepted");
-
-		await Swal.fire({
-			title: "Accepted",
-			text: "Request has been accepted and is ready for supplier sourcing.",
-			icon: "success",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await stockRequestApi.approve(request.id);
+			await Swal.fire({
+				title: "Accepted",
+				text: "Request has been accepted and is ready for supplier sourcing.",
+				icon: "success",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+			setViewingRequest(null);
+			fetchRequests();
+			fetchMetrics();
+		} catch (error) {
+			console.error("Failed to accept request:", error);
+			Swal.fire("Error", "Failed to accept request", "error");
+		}
 	};
 
-	const handleReject = async (request: StockRequestItem) => {
-		if (request.status === "Rejected") return;
+	const handleReject = async (request: StockRequestApproval) => {
+		if (request.status === "rejected") return;
 
 		const result = await Swal.fire({
 			title: "Reject request?",
-			text: `Reject stock request ${request.requestNo}?`,
+			text: `Reject stock request ${request.request_number}?`,
+			input: "textarea",
+			inputLabel: "Rejection Reason",
+			inputPlaceholder: "Enter reason for rejection...",
 			icon: "warning",
 			showCancelButton: true,
 			confirmButtonText: "Yes, reject",
 			cancelButtonText: "Cancel",
 			confirmButtonColor: "#dc2626",
 			cancelButtonColor: "#6b7280",
+			inputValidator: (value) => {
+				if (!value || !value.trim()) return "Please provide a rejection reason.";
+				return undefined;
+			},
 		});
 
-		if (!result.isConfirmed) return;
+		if (!result.isConfirmed || !result.value) return;
 
-		updateStatus(request.id, "Rejected");
-
-		await Swal.fire({
-			title: "Rejected",
-			text: "Request has been rejected.",
-			icon: "success",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await stockRequestApi.reject(request.id, { rejection_reason: result.value });
+			await Swal.fire({
+				title: "Rejected",
+				text: "Request has been rejected.",
+				icon: "success",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+			setViewingRequest(null);
+			fetchRequests();
+			fetchMetrics();
+		} catch (error) {
+			console.error("Failed to reject request:", error);
+			Swal.fire("Error", "Failed to reject request", "error");
+		}
 	};
 
-	const handleAskDetails = async (request: StockRequestItem) => {
+	const handleAskDetails = async (request: StockRequestApproval) => {
 		const result = await Swal.fire({
 			title: "Request more details",
 			input: "textarea",
 			inputLabel: "Message to Inventory",
 			inputPlaceholder: "Type the details you need...",
-			inputValue: request.notes,
+			inputValue: request.notes || "",
 			showCancelButton: true,
 			confirmButtonText: "Send request",
 			cancelButtonText: "Cancel",
@@ -334,15 +263,21 @@ export default function StockRequest() {
 
 		if (!result.isConfirmed || !result.value) return;
 
-		updateStatus(request.id, "Needs Details", String(result.value));
-
-		await Swal.fire({
-			title: "Sent",
-			text: "Request for details has been sent to Inventory.",
-			icon: "success",
-			timer: 1500,
-			showConfirmButton: false,
-		});
+		try {
+			await stockRequestApi.requestDetails(request.id, { response_notes: result.value });
+			await Swal.fire({
+				title: "Sent",
+				text: "Request for details has been sent to Inventory.",
+				icon: "success",
+				timer: 1500,
+				showConfirmButton: false,
+			});
+			setViewingRequest(null);
+			fetchRequests();
+		} catch (error) {
+			console.error("Failed to request details:", error);
+			Swal.fire("Error", "Failed to send details request", "error");
+		}
 	};
 
 	const isAnyModalOpen = Boolean(viewingRequest);
@@ -362,9 +297,9 @@ export default function StockRequest() {
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-					<MetricCard title="Total Requests" value={totalRequests} description="All stock requests received" icon={ClipboardIcon} color="info" />
-					<MetricCard title="Pending Review" value={pendingRequests} description="Requests awaiting procurement action" icon={ClockIcon} color="warning" />
-					<MetricCard title="Accepted Requests" value={acceptedRequests} description="Requests ready for supplier sourcing" icon={CheckCircleIcon} color="success" />
+					<MetricCard title="Total Requests" value={metrics.total} description="All stock requests received" icon={ClipboardIcon} color="info" />
+					<MetricCard title="Pending Review" value={metrics.pending} description="Requests awaiting procurement action" icon={ClockIcon} color="warning" />
+					<MetricCard title="Accepted Requests" value={metrics.accepted} description="Requests ready for supplier sourcing" icon={CheckCircleIcon} color="success" />
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
@@ -403,25 +338,31 @@ export default function StockRequest() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedItems.length > 0 ? (
+								{loading ? (
+									<tr>
+										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
+											Loading...
+										</td>
+									</tr>
+								) : paginatedItems.length > 0 ? (
 									paginatedItems.map((request) => (
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.requestNo}</td>
+											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.request_number}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-												<p className="font-medium text-gray-900 dark:text-white">{request.productName}</p>
-												<p className="text-xs text-gray-500 dark:text-gray-400">{request.skuCode}</p>
+												<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
+												<p className="text-xs text-gray-500 dark:text-gray-400">{request.sku_code}</p>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantityNeeded}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity_needed}</td>
 											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>
-													{request.priority}
+												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority] || ""}`}>
+													{formatPriority(request.priority)}
 												</span>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{request.requestedDate}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.requester?.name || "—"}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{request.requested_date}</td>
 											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>
-													{request.status}
+												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status] || ""}`}>
+													{formatStatus(request.status)}
 												</span>
 											</td>
 											<td className="px-4 py-3 text-center">
@@ -497,54 +438,58 @@ export default function StockRequest() {
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Request No</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requestNo}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.request_number}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
-									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>
-										{viewingRequest.status}
+									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status] || ""}`}>
+										{formatStatus(viewingRequest.status)}
 									</span>
 								</div>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Product</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.productName}</p>
-								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">SKU: {viewingRequest.skuCode}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.product_name}</p>
+								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">SKU: {viewingRequest.sku_code}</p>
 							</div>
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity Needed</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantityNeeded}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantity_needed}</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Priority</p>
-									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[viewingRequest.priority]}`}>
-										{viewingRequest.priority}
+									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[viewingRequest.priority] || ""}`}>
+										{formatPriority(viewingRequest.priority)}
 									</span>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Requested Date</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requestedDate}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{new Date(viewingRequest.requested_date).toLocaleString()}</p>
+							</div>
+						</div>
+
+						{viewingRequest.requested_size && (
+							<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
+								<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">Size {viewingRequest.requested_size}</p>
+							</div>
+						)}
+							{viewingRequest.rejection_reason && (
+								<div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800">
+									<p className="text-sm font-medium text-red-500 dark:text-red-400 mb-1">Rejection Reason</p>
+									<p className="text-base font-semibold text-red-900 dark:text-red-300 whitespace-pre-wrap">{viewingRequest.rejection_reason}</p>
 								</div>
-							</div>
-
-							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Requested By</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requestedBy}</p>
-							</div>
-
-							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
-							</div>
+							)}
 						</div>
 
 						<div className="flex flex-wrap gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
 							<button
 								onClick={() => handleAccept(viewingRequest)}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
+								disabled={viewingRequest.status === "accepted"}
+								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Accept
 							</button>
@@ -556,7 +501,8 @@ export default function StockRequest() {
 							</button>
 							<button
 								onClick={() => handleReject(viewingRequest)}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+								disabled={viewingRequest.status === "rejected"}
+								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Reject
 							</button>

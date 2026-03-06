@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
@@ -12,6 +12,8 @@ interface Product {
   category: string;
   stock_quantity: number;
   main_image: string;
+  hover_image?: string | null;
+  gallery_images?: string[];
   description?: string;
 }
 
@@ -52,14 +54,72 @@ interface Props {
 }
 
 const ShopProfile: React.FC<Props> = ({ shop, products }) => {
-  const [selectedCategory, setSelectedCategory] = useState<string>('Shoes');
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('Shoes');
+  const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
+  const hoverTimersRef = useRef<Record<number, number>>({});
+  const categories = ['Shoes', 'Men', 'Women', 'Kids', 'Sports', 'Services'];
 
-  const categories = ['Shoes', 'Men', 'Women', 'Kids', 'Sports', 'Repair Services'];
-  
-  const filteredProducts = selectedCategory === 'Shoes'
-    ? products
-    : [];
+  const filteredProducts = products.filter((product) => {
+    if (selectedCategory === 'Shoes') {
+      return true;
+    }
+
+    const normalizedCategory = (product.category || '').toLowerCase();
+    const categoryParts = normalizedCategory
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (selectedCategory === 'Services') {
+      return categoryParts.some((item) => item.includes('service') || item.includes('repair'));
+    }
+
+    const target = selectedCategory.toLowerCase();
+    return categoryParts.some((item) => item === target || item.includes(target));
+  });
+
+  useEffect(() => {
+    return () => {
+      Object.values(hoverTimersRef.current).forEach((timerId) => window.clearInterval(timerId));
+      hoverTimersRef.current = {};
+    };
+  }, []);
+
+  const getProductImages = (product: Product) => {
+    const images = [product.main_image, product.hover_image, ...(product.gallery_images ?? [])].filter(Boolean) as string[];
+    return Array.from(new Set(images));
+  };
+
+  const startImageCycle = (product: Product) => {
+    const images = getProductImages(product);
+    if (images.length <= 1) return;
+
+    setActiveImageIndexes((prev) => ({ ...prev, [product.id]: 1 }));
+
+    if (hoverTimersRef.current[product.id]) {
+      window.clearInterval(hoverTimersRef.current[product.id]);
+    }
+
+    hoverTimersRef.current[product.id] = window.setInterval(() => {
+      setActiveImageIndexes((prev) => {
+        const currentIndex = prev[product.id] ?? 1;
+        return {
+          ...prev,
+          [product.id]: (currentIndex + 1) % images.length,
+        };
+      });
+    }, 800);
+  };
+
+  const stopImageCycle = (productId: number) => {
+    if (hoverTimersRef.current[productId]) {
+      window.clearInterval(hoverTimersRef.current[productId]);
+      delete hoverTimersRef.current[productId];
+    }
+
+    setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -184,44 +244,72 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
           <div className="mb-12">
             <h2 className="text-3xl font-bold text-black mb-8">Featured Shoes</h2>
 
-            {/* Category Filter */}
             <div className="flex gap-8 mb-10 overflow-x-auto pb-2">
               {categories.map((category) => (
-                <a
+                <button
                   key={category}
+                  type="button"
                   onClick={() => setSelectedCategory(category)}
-                  className={`text-sm font-medium tracking-wide uppercase whitespace-nowrap cursor-pointer transition-all ${
+                  className={`text-sm font-medium tracking-wide uppercase whitespace-nowrap transition-all ${
                     selectedCategory === category
                       ? 'text-black border-b-2 border-black pb-1'
                       : 'text-gray-500 hover:text-black pb-1'
                   }`}
                 >
                   {category}
-                </a>
+                </button>
               ))}
+              <Link
+                href={`/shop-profile/${shop.id}/virtual-showroom`}
+                className="text-sm font-medium tracking-wide uppercase whitespace-nowrap transition-all text-gray-500 hover:text-black pb-1"
+              >
+                Virtual Showroom
+              </Link>
             </div>
 
             {/* Products Grid */}
             {filteredProducts.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {filteredProducts.map((product) => (
+                {filteredProducts.map((product) => {
+                  const productImages = getProductImages(product);
+                  const activeImageIndex = activeImageIndexes[product.id] ?? 0;
+
+                  return (
                   <Link
                     key={product.id}
                     href={`/products/${product.slug}`}
                     className="group border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300"
+                    onMouseEnter={() => startImageCycle(product)}
+                    onMouseLeave={() => stopImageCycle(product.id)}
                   >
                     {/* Product Image */}
-                    <div className="relative h-64 bg-gray-100 overflow-hidden">
-                      <img
-                        src={product.main_image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                      <div className="absolute top-4 right-4">
-                        <span className="bg-black text-white px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-                          {product.category}
-                        </span>
-                      </div>
+                    <div className="relative h-72 bg-gray-100 overflow-hidden">
+                      {productImages.length > 0 ? (
+                        productImages.map((image, imageIndex) => {
+                          const isActiveImage = imageIndex === activeImageIndex;
+
+                          return (
+                            <img
+                              key={`${product.id}-${imageIndex}`}
+                              src={image}
+                              alt={product.name}
+                              className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out ${
+                                isActiveImage
+                                  ? 'opacity-100 scale-100 group-hover:scale-105'
+                                  : 'opacity-0 scale-100 pointer-events-none'
+                              }`}
+                              loading="lazy"
+                              onError={(e) => {
+                                if (product.main_image) {
+                                  e.currentTarget.src = product.main_image;
+                                }
+                              }}
+                            />
+                          );
+                        })
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">No Image</div>
+                      )}
                       {product.stock_quantity === 0 && (
                         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
                           <span className="bg-red-600 text-white px-4 py-2 text-sm font-semibold">OUT OF STOCK</span>
@@ -230,27 +318,27 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                     </div>
 
                     {/* Product Info */}
-                    <div className="p-6">
+                    <div className="p-4">
                       {product.brand && (
-                        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">{product.brand}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{product.brand}</p>
                       )}
-                      <h3 className="text-lg font-bold text-black mb-3 line-clamp-2">
+                      <h3 className="text-lg font-bold text-black mb-2 line-clamp-2">
                         {product.name}
                       </h3>
 
                       {product.description && (
-                        <p className="text-xs text-gray-600 mb-3 line-clamp-2">{product.description}</p>
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">{product.description}</p>
                       )}
 
                       {/* Stock Info */}
-                      <div className="mb-3">
+                      <div className="mb-2">
                         <span className={`text-xs font-medium ${product.stock_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {product.stock_quantity > 0 ? `${product.stock_quantity} in stock` : 'Out of stock'}
                         </span>
                       </div>
 
                       {/* Price */}
-                      <div className="pt-4 border-t border-gray-200">
+                      <div className="pt-3 border-t border-gray-200">
                         {product.compare_at_price && (
                           <p className="text-sm text-gray-400 line-through">₱{product.compare_at_price.toLocaleString()}</p>
                         )}
@@ -258,7 +346,8 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                       </div>
                     </div>
                   </Link>
-                ))}
+                );
+                })}
               </div>
             ) : (
               <div className="text-center py-16">

@@ -51,6 +51,12 @@ export default function RepairerSupport() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const getRequestedConversationId = () => {
+    const conversationIdParam = new URLSearchParams(window.location.search).get('conversation_id');
+    const parsedConversationId = conversationIdParam ? Number(conversationIdParam) : NaN;
+    return Number.isInteger(parsedConversationId) && parsedConversationId > 0 ? parsedConversationId : null;
+  };
+
   useEffect(() => {
     fetchConversations();
   }, [statusFilter]);
@@ -91,6 +97,13 @@ export default function RepairerSupport() {
       });
       
       setTickets(conversationsData);
+
+      const requestedConversationId = getRequestedConversationId();
+      if (requestedConversationId && conversationsData.find((ticket: any) => ticket.id === requestedConversationId)) {
+        setSelectedTicketId(requestedConversationId);
+        window.history.replaceState({}, '', '/erp/staff/repairer-support');
+        return;
+      }
       
       // Only update selection if current selection is not in the new list
       if (selectedTicketId && conversationsData.find((t) => t.id === selectedTicketId)) {

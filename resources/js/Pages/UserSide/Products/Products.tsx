@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
@@ -9,6 +9,8 @@ type Product = {
   compare_at_price?: number | null;
   slug: string;
   main_image: string | null;
+  hover_image?: string | null;
+  gallery_images?: string[];
   brand: string | null;
   stock_quantity: number;
   description?: string | null;
@@ -29,11 +31,15 @@ const Products: React.FC<Props> = () => {
   
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState('created_at');
+  const [sortBy, setSortBy] = useState('featured');
+  const [isSortOpen, setIsSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
+  const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const hoverTimersRef = useRef<Record<number, number>>({});
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -45,18 +51,46 @@ const Products: React.FC<Props> = () => {
     fetchProducts();
   }, [sortBy, currentPage, searchQuery]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(hoverTimersRef.current).forEach((timerId) => window.clearInterval(timerId));
+      hoverTimersRef.current = {};
+    };
+  }, []);
+
   const fetchProducts = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       
       // Sorting (use - prefix for descending)
-      if (sortBy === 'created_at') {
+      if (sortBy === 'featured') {
         params.append('sort', '-created_at');
-      } else if (sortBy === 'price') {
-        params.append('sort', 'price');
-      } else if (sortBy === 'popular') {
+      } else if (sortBy === 'best_selling') {
         params.append('sort', '-sales_count');
+      } else if (sortBy === 'name_asc') {
+        params.append('sort', 'name');
+      } else if (sortBy === 'name_desc') {
+        params.append('sort', '-name');
+      } else if (sortBy === 'price_asc') {
+        params.append('sort', 'price');
+      } else if (sortBy === 'price_desc') {
+        params.append('sort', '-price');
+      } else if (sortBy === 'created_at_asc') {
+        params.append('sort', 'created_at');
+      } else {
+        params.append('sort', '-created_at');
       }
       
       // Pagination
@@ -92,6 +126,63 @@ const Products: React.FC<Props> = () => {
     }
   };
 
+  const sortLabelMap: Record<string, string> = {
+    featured: 'Featured',
+    best_selling: 'Best selling',
+    name_asc: 'Alphabetically, A-Z',
+    name_desc: 'Alphabetically, Z-A',
+    price_asc: 'Price, low to high',
+    price_desc: 'Price, high to low',
+    created_at_asc: 'Date, old to new',
+    created_at_desc: 'Date, new to old',
+  };
+
+  const sortOptions = [
+    { value: 'featured', label: 'Featured' },
+    { value: 'best_selling', label: 'Best selling' },
+    { value: 'name_asc', label: 'Alphabetically, A-Z' },
+    { value: 'name_desc', label: 'Alphabetically, Z-A' },
+    { value: 'price_asc', label: 'Price, low to high' },
+    { value: 'price_desc', label: 'Price, high to low' },
+    { value: 'created_at_asc', label: 'Date, old to new' },
+    { value: 'created_at_desc', label: 'Date, new to old' },
+  ];
+
+  const getProductImages = (product: Product) => {
+    const images = [product.main_image, ...(product.gallery_images ?? [])].filter(Boolean) as string[];
+    return Array.from(new Set(images));
+  };
+
+  const startImageCycle = (product: Product) => {
+    const images = getProductImages(product);
+    if (images.length <= 1) return;
+
+    setActiveImageIndexes((prev) => ({ ...prev, [product.id]: 1 }));
+
+    if (hoverTimersRef.current[product.id]) {
+      window.clearInterval(hoverTimersRef.current[product.id]);
+    }
+
+    hoverTimersRef.current[product.id] = window.setInterval(() => {
+      setActiveImageIndexes((prev) => {
+        const currentIndex = prev[product.id] ?? 1;
+        return {
+          ...prev,
+          [product.id]: (currentIndex + 1) % images.length,
+        };
+      });
+    }, 800);
+  };
+
+  const stopImageCycle = (productId: number) => {
+    if (hoverTimersRef.current[productId]) {
+      window.clearInterval(hoverTimersRef.current[productId]);
+      delete hoverTimersRef.current[productId];
+    }
+
+    setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
+  };
+
   return (
     <>
       <Head title="Products" />
@@ -101,18 +192,56 @@ const Products: React.FC<Props> = () => {
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-12 py-8 lg:py-16">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
             <div className="text-xs sm:text-sm text-black/60 tracking-wide">HOME / ALL SHOES</div>
-            <div className="flex items-center gap-3">
-              <label htmlFor="sort-select" className="text-sm text-black/70">Sort by:</label>
-              <select 
-                id="sort-select"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="text-sm text-black border border-gray-200 rounded-md px-3 py-1.5 bg-white focus:outline-none focus:border-black transition-colors"
+            <div className="relative" ref={sortMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsSortOpen((prev) => !prev)}
+                className="flex items-center gap-2 text-sm text-black/80"
               >
-                <option value="created_at">Date, new to old</option>
-                <option value="price">Price, low to high</option>
-                <option value="popular">Most popular</option>
-              </select>
+                <span>
+                  <span className="font-semibold">Sort by:</span>{' '}
+                  <span>{sortLabelMap[sortBy]}</span>
+                </span>
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+                  <svg
+                    className={`h-3.5 w-3.5 text-black/70 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </button>
+
+              {isSortOpen && (
+                <div className="absolute right-0 mt-3 w-52 border border-gray-200 bg-white py-3 shadow-sm z-20" role="menu">
+                  {sortOptions.map((option) => {
+                    const isActive = sortBy === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setSortBy(option.value);
+                          setIsSortOpen(false);
+                        }}
+                        className="group w-full px-5 py-2 text-left text-sm"
+                      >
+                        <span className={`relative inline-block ${isActive ? 'text-black font-medium' : 'text-black/80'}`}>
+                          {option.label}
+                          <span
+                            className="absolute -bottom-0.5 left-0 h-px w-full bg-black origin-left scale-x-0 transition-transform duration-300 group-hover:scale-x-100"
+                          />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -135,8 +264,19 @@ const Products: React.FC<Props> = () => {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {products.map((p) => (
-                <Link key={p.id} href={`/products/${p.slug}`} className="group block">
+              {products.map((p) => {
+                const productImages = getProductImages(p);
+                const activeImageIndex = activeImageIndexes[p.id] ?? 0;
+                const activeImage = productImages[activeImageIndex] ?? p.main_image;
+
+                return (
+                <Link
+                  key={p.id}
+                  href={`/products/${p.slug}`}
+                  className="group block"
+                  onMouseEnter={() => startImageCycle(p)}
+                  onMouseLeave={() => stopImageCycle(p.id)}
+                >
                   <div className="bg-white rounded-lg border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-200 relative flex flex-col h-full">
                     {p.compare_at_price && p.compare_at_price > p.price && (
                       <div className="absolute left-3 top-3 bg-red-600 text-white text-xs px-2.5 py-1 rounded font-semibold z-10 shadow-sm">
@@ -149,14 +289,32 @@ const Products: React.FC<Props> = () => {
                       </div>
                     )}
 
-                    <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
-                      {p.main_image ? (
-                        <img 
-                          src={p.main_image} 
-                          alt={p.name} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                        />
+                    <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden relative">
+                      {activeImage ? (
+                        <>
+                          {productImages.map((image, imageIndex) => {
+                            const isActiveImage = imageIndex === activeImageIndex;
+
+                            return (
+                              <img
+                                key={`${p.id}-${imageIndex}`}
+                                src={image}
+                                alt={p.name}
+                                className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out ${
+                                  isActiveImage
+                                    ? 'opacity-100 scale-100 group-hover:scale-105'
+                                    : 'opacity-0 scale-100 pointer-events-none'
+                                }`}
+                                loading="lazy"
+                                onError={(e) => {
+                                  if (p.main_image) {
+                                    e.currentTarget.src = p.main_image;
+                                  }
+                                }}
+                              />
+                            );
+                          })}
+                        </>
                       ) : (
                         <div className="text-gray-400 text-sm">No Image</div>
                       )}
@@ -199,7 +357,8 @@ const Products: React.FC<Props> = () => {
                     </div>
                   </div>
                 </Link>
-              ))}
+                );
+              })}
             </div>
           )}
 

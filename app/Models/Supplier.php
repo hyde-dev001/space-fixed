@@ -25,6 +25,7 @@ class Supplier extends Model
         'lead_time_days',
         'is_active',
         'notes',
+        'products_supplied',
     ];
 
     protected $casts = [

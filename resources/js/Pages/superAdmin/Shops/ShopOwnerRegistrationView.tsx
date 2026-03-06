@@ -175,6 +175,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const formatRegistrationType = (registrationType?: string) => {
     if (!registrationType) return 'Not specified';
 
+    if (registrationType.toLowerCase() === 'company') {
+      return 'Business';
+    }
+
     return registrationType
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())

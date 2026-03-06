@@ -355,6 +355,7 @@ const UserAccessControl: React.FC = () => {
     CRM: 'CRM',
     Repairer: 'Repairer',
     'Inventory Manager': 'Inventory Manager',
+    'Procurement Manager': 'Procurement Manager',
     Staff: 'Staff',
     MANAGER: 'Manager',
     FINANCE: 'Finance',
@@ -584,6 +585,7 @@ const UserAccessControl: React.FC = () => {
       'CRM': 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
       'Inventory Manager': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
+      'Procurement Manager': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
     };
     return styles[role] || 'bg-gray-50 border-gray-200';
@@ -618,8 +620,13 @@ const UserAccessControl: React.FC = () => {
       },
       'Inventory Manager': {
         title: '📦 Inventory Management',
-        description: 'Manage inventory, suppliers, stock movements, product management, and inventory reports',
-        permissions: 19
+        description: 'Manage stock levels, product inventory, upload stocks, and track stock movements',
+        permissions: 9
+      },
+      'Procurement Manager': {
+        title: '🛒 Procurement Management',
+        description: 'Manage purchase requests, purchase orders, supplier management, and order monitoring',
+        permissions: 11
       },
       'Staff': {
         title: '⚙️ General Staff (Customizable)',
@@ -639,7 +646,8 @@ const UserAccessControl: React.FC = () => {
       { value: 'HR', label: 'Human Resources - Employees, Payroll, Attendance' },
       { value: 'CRM', label: 'CRM - Customers, Leads, Sales' },
       { value: 'Repairer', label: 'Repairer - Technical Support & Repairs' },
-      { value: 'Inventory Manager', label: 'Inventory Manager - Inventory, Suppliers, Stock' },
+      { value: 'Inventory Manager', label: 'Inventory Manager - Stock Levels, Product Inventory, Movements' },
+      { value: 'Procurement Manager', label: 'Procurement Manager - Purchase Requests, Orders, Suppliers' },
       { value: 'Staff', label: 'Staff - Basic Access (Customizable)' },
     ];
 

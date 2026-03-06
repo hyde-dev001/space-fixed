@@ -79,8 +79,8 @@ interface ShoeItem {
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
+  change?: number;
+  changeType?: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
@@ -108,16 +108,18 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
-          </div>
+          {change !== undefined && (
+            <div
+              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
+                changeType === "increase"
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              }`}
+            >
+              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+              {Math.abs(change!)}%
+            </div>
+          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -202,7 +204,6 @@ export default function ERPShoePricing() {
 
       setShoePricing(mapped);
     } catch (error: any) {
-      console.error('Error fetching shoe pricing:', error);
       Swal.fire({
         title: 'Error',
         text: error.message || 'Failed to load shoe pricing',
@@ -330,20 +331,16 @@ export default function ERPShoePricing() {
     <AppLayoutERP>
       <Head title="Shoe Pricing - Solespace" />
       <div className="p-6 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Shoe Pricing</h1>
-            <p className="text-gray-600 dark:text-gray-400">Manager controls for shoe pricing and margins.</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-          </div>
+        <div>
+          <h1 className="text-2xl font-semibold mb-1">Shoe Pricing</h1>
+          <p className="text-gray-600 dark:text-gray-400">Manager controls for shoe pricing and margins.</p>
         </div>
 
         <div className="mb-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard title="Active SKUs" value={activeCount} change={0} changeType="increase" icon={TagIcon} color="info" description="Live pricing" />
-          <MetricCard title="Under Review" value={underReviewCount} change={0} changeType="increase" icon={WalletIcon} color="warning" description="Awaiting finance review" />
-          <MetricCard title="Awaiting Owner" value={awaitingOwnerCount} change={0} changeType="increase" icon={BoxIcon} color="info" description="Forwarded to owner" />
-          <MetricCard title="Rejected" value={rejectedCount} change={0} changeType="decrease" icon={ArrowDownIcon} color="warning" description="Needs adjustment" />
+          <MetricCard title="Active SKUs" value={activeCount} icon={TagIcon} color="info" description="Live pricing" />
+          <MetricCard title="Under Review" value={underReviewCount} icon={WalletIcon} color="warning" description="Awaiting finance review" />
+          <MetricCard title="Awaiting Owner" value={awaitingOwnerCount} icon={BoxIcon} color="info" description="Forwarded to owner" />
+          <MetricCard title="Rejected" value={rejectedCount} icon={ArrowDownIcon} color="warning" description="Needs adjustment" />
         </div>
 
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">

@@ -210,7 +210,6 @@ export function LeaveRequests() {
         }
 
         const data = await response.json();
-        console.log('Leave requests API response:', data);
 
         // Check if response has Laravel pagination structure
         if (data.data && Array.isArray(data.data)) {
@@ -241,6 +240,11 @@ export function LeaveRequests() {
     fetchLeaveRequests();
   }, [searchTerm, selectedStatus, selectedLeaveType, currentPage, itemsPerPage]);
 
+  // Reset to page 1 when filters change (prevents viewing a stale page after narrowing results)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedStatus, selectedLeaveType]);
+
   // Filter requests - only used for client-side filtering when no server pagination
   const filteredRequests = useMemo(() => {
     // If server pagination is active, return data as-is (filtering done server-side)
@@ -262,11 +266,17 @@ export function LeaveRequests() {
     });
   }, [leaveRequestsState, searchTerm, selectedStatus, selectedLeaveType, paginationMeta]);
 
-  // Pagination calculations
-  const totalPages = paginationMeta ? paginationMeta.last_page : Math.ceil(filteredRequests.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedRequests = paginationMeta ? filteredRequests : filteredRequests.slice(startIndex, endIndex);
+  // Pagination calculations — prefer server-side data when available
+  const useServerPagination = !!paginationMeta;
+  const totalPages = useServerPagination ? paginationMeta.last_page : Math.ceil(filteredRequests.length / itemsPerPage);
+  const startIndex = useServerPagination
+    ? (paginationMeta.current_page - 1) * paginationMeta.per_page
+    : (currentPage - 1) * itemsPerPage;
+  const endIndex = useServerPagination
+    ? startIndex + leaveRequestsState.length
+    : startIndex + itemsPerPage;
+  const totalItems = useServerPagination ? paginationMeta.total : filteredRequests.length;
+  const paginatedRequests = useServerPagination ? filteredRequests : filteredRequests.slice(startIndex, endIndex);
 
   // Calculate stats
   const stats = {
@@ -657,13 +667,13 @@ export function LeaveRequests() {
         </div>
 
         {/* Pagination */}
-        {filteredRequests.length > 0 && (
+        {totalItems > 0 && (
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-700 dark:text-gray-300">
                 Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                <span className="font-medium">{Math.min(endIndex, filteredRequests.length)}</span> of{" "}
-                <span className="font-medium">{filteredRequests.length}</span>
+                <span className="font-medium">{Math.min(endIndex, totalItems)}</span> of{" "}
+                <span className="font-medium">{totalItems}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button

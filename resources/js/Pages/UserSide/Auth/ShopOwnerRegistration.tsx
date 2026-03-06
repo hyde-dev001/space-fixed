@@ -408,7 +408,7 @@ export default function ShopOwnerRegistration() {
                         value="company"
                         checked={formData.registrationType === "company"}
                         onChange={handleRegistrationTypeChange}
-                        label="Registered as Company"
+                        label="Registered as Business"
                       />
                     </div>
                   </div>
