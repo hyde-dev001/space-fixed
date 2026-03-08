@@ -5,10 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Notification;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class RepairRequest extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     protected $fillable = [
         'request_id',
@@ -39,6 +41,7 @@ class RepairRequest extends Model
         'payment_enabled',
         'payment_enabled_at',
         'payment_enabled_by',
+        'payment_policy',
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
@@ -64,6 +67,12 @@ class RepairRequest extends Model
         'completed_at',
         'picked_up_at',
         'received_at',
+        'tracking_number',
+        'carrier_company',
+        'carrier_name',
+        'carrier_phone',
+        'tracking_link',
+        'shipped_at',
     ];
 
     protected $casts = [
@@ -71,6 +80,7 @@ class RepairRequest extends Model
         'completed_at' => 'datetime',
         'picked_up_at' => 'datetime',
         'received_at' => 'datetime',
+        'shipped_at' => 'datetime',
         'assigned_at' => 'datetime',
         'last_reassigned_at' => 'datetime',
         'scheduled_dropoff_date' => 'datetime',
@@ -226,5 +236,17 @@ class RepairRequest extends Model
                 'shop_id' => $repair->shop_owner_id,
             ]);
         });
+    }
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['status', 'payment_status', 'assigned_repairer_id', 'total', 'customer_name'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Repair Request {$eventName}");
     }
 }

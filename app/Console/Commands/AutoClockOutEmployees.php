@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Models\AttendanceRecord;
+use App\Models\HR\AttendanceRecord;
 use App\Models\ShopOwner;
 use App\Models\HR\OvertimeRequest;
 use Carbon\Carbon;
@@ -29,7 +29,8 @@ class AutoClockOutEmployees extends Command
      */
     public function handle()
     {
-        $now = Carbon::now();
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $now = Carbon::now($shopTimezone);
         $today = $now->toDateString();
         $currentTime = $now->format('H:i:s');
         $dayOfWeek = strtolower($now->format('l')); // monday, tuesday, etc.
@@ -48,8 +49,9 @@ class AutoClockOutEmployees extends Command
                 continue; // Shop is closed today or no closing time set
             }
             
-            // Parse closing time (e.g., "21:00:00" or "21:00")
-            $closeTime = substr($shopCloseTime, 0, 8); // Ensure HH:MM:SS format
+            // Parse closing time (e.g., "21:00:00" or "21:00") – normalise to HH:MM:SS
+            $closeParts = explode(':', $shopCloseTime);
+            $closeTime = sprintf('%02d:%02d:%02d', (int)$closeParts[0], (int)($closeParts[1] ?? 0), (int)($closeParts[2] ?? 0));
             
             // Check if current time has passed closing time
             if ($currentTime >= $closeTime) {
@@ -84,12 +86,17 @@ class AutoClockOutEmployees extends Command
                                 'auto_clockout_reason' => 'Auto clocked out at end of approved overtime period',
                             ]);
                             
-                            // Calculate working hours
+                            // Calculate working hours (subtract lunch if taken)
                             $checkIn = Carbon::parse($attendance->check_in_time);
                             $checkOut = Carbon::parse($overtimeEndTime);
                             $workingMinutes = $checkIn->diffInMinutes($checkOut);
-                            $workingHours = floor($workingMinutes / 60);
-                            
+                            if ($attendance->lunch_break_start && $attendance->lunch_break_end) {
+                                $lunchStart = Carbon::parse($attendance->lunch_break_start);
+                                $lunchEnd = Carbon::parse($attendance->lunch_break_end);
+                                $workingMinutes -= max(0, $lunchStart->diffInMinutes($lunchEnd));
+                            }
+                            $workingHours = round(max(0, $workingMinutes) / 60, 2);
+
                             $attendance->update([
                                 'working_hours' => $workingHours,
                             ]);
@@ -110,12 +117,17 @@ class AutoClockOutEmployees extends Command
                         'auto_clockout_reason' => 'Auto clocked out at shop closing time',
                     ]);
                     
-                    // Calculate working hours
+                    // Calculate working hours (subtract lunch if taken)
                     $checkIn = Carbon::parse($attendance->check_in_time);
                     $checkOut = Carbon::parse($closeTime);
                     $workingMinutes = $checkIn->diffInMinutes($checkOut);
-                    $workingHours = floor($workingMinutes / 60);
-                    
+                    if ($attendance->lunch_break_start && $attendance->lunch_break_end) {
+                        $lunchStart = Carbon::parse($attendance->lunch_break_start);
+                        $lunchEnd = Carbon::parse($attendance->lunch_break_end);
+                        $workingMinutes -= max(0, $lunchStart->diffInMinutes($lunchEnd));
+                    }
+                    $workingHours = round(max(0, $workingMinutes) / 60, 2);
+
                     $attendance->update([
                         'working_hours' => $workingHours,
                     ]);

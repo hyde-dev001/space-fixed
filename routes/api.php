@@ -41,19 +41,54 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
             return response()->json(['error' => 'Invalid amount'], 400);
         }
 
-        $apiKey = 'sk_test_ZxQwuLRuxwAnuH5eyWLsSqBh';
+        // --- Resolve the correct PayMongo key ---
+        // Shop payments must ALWAYS use the shop's own key.
+        // The platform key (.env) is reserved for platform-level payments (e.g. premium subscriptions).
+        // If no shop key is configured, we block the payment — no silent fallback.
+        $shopOwnerId = $request->input('shop_owner_id');
+        $orderId     = $request->input('order_id');
+
+        $apiKey = null;
+
+        if ($shopOwnerId) {
+            $shopOwner = \App\Models\ShopOwner::find($shopOwnerId);
+            $apiKey = $shopOwner?->paymongo_secret_key;
+        } elseif ($orderId) {
+            $order = \App\Models\Order::find($orderId);
+            $apiKey = $order?->shopOwner?->paymongo_secret_key;
+        }
+
+        // Hard block: shop must have their own key configured
+        if (!$apiKey) {
+            return response()->json([
+                'error'   => 'shop_payment_not_configured',
+                'message' => 'This shop has not set up payment processing yet. Please contact the shop owner.',
+            ], 503);
+        }
+        // --- End key resolution ---
+
+        $successUrl  = $request->input('success_url', url('/order-success') . '?paymongo_success=1');
+        $failedUrl   = $request->input('failed_url',  url('/order-success') . '?paymongo_failed=1');
         
         $response = \Illuminate\Support\Facades\Http::withHeaders([
             'Content-Type' => 'application/json',
             'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
-        ])->post('https://api.paymongo.com/v1/links', [
+        ])->post('https://api.paymongo.com/v1/checkout_sessions', [
             'data' => [
                 'attributes' => [
-                    'amount' => (int)($amount * 100), // Convert to centavos
-                    'currency' => 'PHP',
-                    'description' => $description,
-                    'success_url' => url('/order-success'),
-                    'failed_url' => url('/payment-failed'),
+                    'success_url'        => $successUrl,
+                    'cancel_url'         => $failedUrl,
+                    'description'        => $description,
+                    'send_email_receipt' => false,
+                    'show_description'   => true,
+                    'show_line_items'    => true,
+                    'line_items' => [[
+                        'currency' => 'PHP',
+                        'amount'   => (int)($amount * 100),
+                        'name'     => $description,
+                        'quantity' => 1,
+                    ]],
+                    'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
                 ],
             ],
         ]);
@@ -193,7 +228,8 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
  */
 Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder']);
 Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink']);
-Route::get('/orders/{id}/details', [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails']);
+Route::post('/orders/{id}/verify-payment',       [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment']);
+Route::get('/orders/{id}/details',               [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails']);
 
 /**
  * Staff/Manager Customer Management API

@@ -6,10 +6,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\Traits\ShopScoped;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Invoice extends Model
 {
-    use HasFactory, SoftDeletes, ShopScoped;
+    use HasFactory, SoftDeletes, ShopScoped, LogsActivity;
 
     protected $table = 'finance_invoices';
 
@@ -188,4 +190,16 @@ class Invoice extends Model
 
         return $entry;
     }
-}
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['reference', 'customer_name', 'total', 'status', 'payment_date', 'payment_method'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Invoice {$eventName}");
+    }
+}}

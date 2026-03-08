@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
@@ -18,6 +18,8 @@ type Product = {
     id: number;
     name?: string;
     business_name?: string;
+    latitude?: number | null;
+    longitude?: number | null;
   };
 };
 
@@ -25,19 +27,39 @@ interface Props {
   // will accept products from backend later
 }
 
+// --- Near Me helpers ---
+const haversine = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const formatDistance = (km: number): string => {
+  if (km < 1) return `${Math.round(km * 1000)} m away`;
+  return `${km.toFixed(1)} km away`;
+};
+
 const Products: React.FC<Props> = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const searchParam = urlParams.get('search') || '';
   
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState('featured');
+  const [sortBy, setSortBy] = useState('near_me');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState<string | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const hoverTimersRef = useRef<Record<number, number>>({});
 
@@ -73,34 +95,41 @@ const Products: React.FC<Props> = () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      
-      // Sorting (use - prefix for descending)
-      if (sortBy === 'featured') {
+
+      if (sortBy === 'near_me') {
+        // Fetch all products so we can sort client-side by shop distance
         params.append('sort', '-created_at');
-      } else if (sortBy === 'best_selling') {
-        params.append('sort', '-sales_count');
-      } else if (sortBy === 'name_asc') {
-        params.append('sort', 'name');
-      } else if (sortBy === 'name_desc') {
-        params.append('sort', '-name');
-      } else if (sortBy === 'price_asc') {
-        params.append('sort', 'price');
-      } else if (sortBy === 'price_desc') {
-        params.append('sort', '-price');
-      } else if (sortBy === 'created_at_asc') {
-        params.append('sort', 'created_at');
+        params.append('page', '1');
+        params.append('per_page', '1000');
       } else {
-        params.append('sort', '-created_at');
+        // Sorting (use - prefix for descending)
+        if (sortBy === 'featured') {
+          params.append('sort', '-created_at');
+        } else if (sortBy === 'best_selling') {
+          params.append('sort', '-sales_count');
+        } else if (sortBy === 'name_asc') {
+          params.append('sort', 'name');
+        } else if (sortBy === 'name_desc') {
+          params.append('sort', '-name');
+        } else if (sortBy === 'price_asc') {
+          params.append('sort', 'price');
+        } else if (sortBy === 'price_desc') {
+          params.append('sort', '-price');
+        } else if (sortBy === 'created_at_asc') {
+          params.append('sort', 'created_at');
+        } else {
+          params.append('sort', '-created_at');
+        }
+
+        // Pagination
+        params.append('page', currentPage.toString());
       }
-      
-      // Pagination
-      params.append('page', currentPage.toString());
-      
+
       // Search filter
       if (searchQuery) {
         params.append('filter[search_all]', searchQuery);
       }
-      
+
       const response = await fetch(`/api/products/?${params.toString()}`, {
         headers: { 'Accept': 'application/json' }
       });
@@ -135,9 +164,11 @@ const Products: React.FC<Props> = () => {
     price_desc: 'Price, high to low',
     created_at_asc: 'Date, old to new',
     created_at_desc: 'Date, new to old',
+    near_me: 'Near me 📍',
   };
 
   const sortOptions = [
+    { value: 'near_me', label: 'Near me' },
     { value: 'featured', label: 'Featured' },
     { value: 'best_selling', label: 'Best selling' },
     { value: 'name_asc', label: 'Alphabetically, A-Z' },
@@ -183,6 +214,57 @@ const Products: React.FC<Props> = () => {
     setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
   };
 
+  // --- Near Me ---
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setLocating(true);
+    setLocError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocating(false);
+      },
+      () => {
+        setLocError('Location access denied. Please allow location access and try again.');
+        setLocating(false);
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    if (sortBy === 'near_me' && !userCoords) {
+      requestLocation();
+    }
+  }, [sortBy, userCoords, requestLocation]);
+
+  const sortedProducts = useMemo(() => {
+    if (sortBy !== 'near_me' || !userCoords) return products;
+    return [...products].sort((a, b) => {
+      const aLat = a.shop_owner?.latitude;
+      const aLng = a.shop_owner?.longitude;
+      const bLat = b.shop_owner?.latitude;
+      const bLng = b.shop_owner?.longitude;
+      const aDist =
+        aLat != null && aLng != null
+          ? haversine(userCoords.lat, userCoords.lng, aLat, aLng)
+          : Infinity;
+      const bDist =
+        bLat != null && bLng != null
+          ? haversine(userCoords.lat, userCoords.lng, bLat, bLng)
+          : Infinity;
+      return aDist - bDist;
+    });
+  }, [products, sortBy, userCoords]);
+
+  const getShopDistance = (product: Product): number | null => {
+    if (!userCoords || product.shop_owner?.latitude == null || product.shop_owner?.longitude == null)
+      return null;
+    return haversine(userCoords.lat, userCoords.lng, product.shop_owner.latitude!, product.shop_owner.longitude!);
+  };
+
   return (
     <>
       <Head title="Products" />
@@ -192,58 +274,73 @@ const Products: React.FC<Props> = () => {
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-12 py-8 lg:py-16">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
             <div className="text-xs sm:text-sm text-black/60 tracking-wide">HOME / ALL SHOES</div>
-            <div className="relative" ref={sortMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsSortOpen((prev) => !prev)}
-                className="flex items-center gap-2 text-sm text-black/80"
-              >
-                <span>
-                  <span className="font-semibold">Sort by:</span>{' '}
-                  <span>{sortLabelMap[sortBy]}</span>
-                </span>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
-                  <svg
-                    className={`h-3.5 w-3.5 text-black/70 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-              </button>
+            <div className="flex items-center gap-3">
+              <div className="relative" ref={sortMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen((prev) => !prev)}
+                  className="flex items-center gap-2 text-sm text-black/80"
+                >
+                  <span>
+                    <span className="font-semibold">Sort by:</span>{' '}
+                    <span>{sortLabelMap[sortBy]}</span>
+                  </span>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+                    <svg
+                      className={`h-3.5 w-3.5 text-black/70 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </button>
 
-              {isSortOpen && (
-                <div className="absolute right-0 mt-3 w-52 border border-gray-200 bg-white py-3 shadow-sm z-20" role="menu">
-                  {sortOptions.map((option) => {
-                    const isActive = sortBy === option.value;
+                {isSortOpen && (
+                  <div className="absolute right-0 mt-3 w-52 border border-gray-200 bg-white py-3 shadow-sm z-20" role="menu">
+                    {sortOptions.map((option) => {
+                      const isActive = sortBy === option.value;
 
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setSortBy(option.value);
-                          setIsSortOpen(false);
-                        }}
-                        className="group w-full px-5 py-2 text-left text-sm"
-                      >
-                        <span className={`relative inline-block ${isActive ? 'text-black font-medium' : 'text-black/80'}`}>
-                          {option.label}
-                          <span
-                            className="absolute -bottom-0.5 left-0 h-px w-full bg-black origin-left scale-x-0 transition-transform duration-300 group-hover:scale-x-100"
-                          />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            if (option.value === 'near_me') {
+                              setSortBy('near_me');
+                              setCurrentPage(1);
+                              setIsSortOpen(false);
+                              if (!userCoords) requestLocation();
+                            } else {
+                              setSortBy(option.value);
+                              setIsSortOpen(false);
+                            }
+                          }}
+                          className="group w-full px-5 py-2 text-left text-sm"
+                        >
+                          <span className={`relative inline-block ${isActive ? 'text-black font-medium' : 'text-black/80'}`}>
+                            {option.label}
+                            <span
+                              className="absolute -bottom-0.5 left-0 h-px w-full bg-black origin-left scale-x-0 transition-transform duration-300 group-hover:scale-x-100"
+                            />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+
+          {locError && (
+            <div className="mb-6 rounded bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {locError}
+            </div>
+          )}
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-black mb-3 tracking-tight">
             {searchQuery ? `Search Results for "${searchQuery}"` : 'ALL SHOES'}
@@ -264,10 +361,11 @@ const Products: React.FC<Props> = () => {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {products.map((p) => {
+              {sortedProducts.map((p) => {
                 const productImages = getProductImages(p);
                 const activeImageIndex = activeImageIndexes[p.id] ?? 0;
                 const activeImage = productImages[activeImageIndex] ?? p.main_image;
+                const shopDist = (sortBy === 'near_me' && userCoords) ? getShopDistance(p) : null;
 
                 return (
                 <Link
@@ -342,6 +440,10 @@ const Products: React.FC<Props> = () => {
                           </span>
                         </p>
                       )}
+
+                      {shopDist !== null && (
+                        <p className="text-xs text-black/50 mb-2">📍 {formatDistance(shopDist)}</p>
+                      )}
                       
                       <div className="flex items-baseline justify-between mt-auto pt-2.5 border-t border-gray-100">
                         <div className="flex flex-col gap-0.5">
@@ -363,7 +465,7 @@ const Products: React.FC<Props> = () => {
           )}
 
           {/* Pagination */}
-          {!loading && products.length > 0 && lastPage > 1 && (
+          {!loading && products.length > 0 && lastPage > 1 && sortBy !== 'near_me' && (
             <div className="mt-8 flex items-center justify-center gap-2">
               <button
                 onClick={() => goToPage(currentPage - 1)}
@@ -423,7 +525,9 @@ const Products: React.FC<Props> = () => {
           {/* Results info */}
           {!loading && products.length > 0 && (
             <div className="mt-4 text-center text-sm text-gray-500">
-              Showing {products.length} of {total} products (Page {currentPage} of {lastPage})
+              {sortBy === 'near_me'
+                ? `Showing ${sortedProducts.length} products sorted by distance`
+                : `Showing ${products.length} of ${total} products (Page ${currentPage} of ${lastPage})`}
             </div>
           )}
         </div>

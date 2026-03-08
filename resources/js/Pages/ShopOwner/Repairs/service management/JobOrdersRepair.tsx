@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import ErrorModal from "../../../../components/common/ErrorModal";
 import axios from "axios";
@@ -35,6 +35,7 @@ type RepairOrder = {
   conversation_id?: number | null;
   payment_enabled?: boolean;
   payment_status?: string;
+  payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
 };
@@ -53,6 +54,14 @@ const useStaticData = false;
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
 const REPAIR_REQUEST_LIMIT_KEY = 'repair_request_limit';
 const DEFAULT_REPAIR_REQUEST_LIMIT = 20;
+
+const readRepairRequestLimit = (): number => {
+  if (typeof window === 'undefined') return DEFAULT_REPAIR_REQUEST_LIMIT;
+  const raw = window.localStorage.getItem(REPAIR_REQUEST_LIMIT_KEY);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_REPAIR_REQUEST_LIMIT;
+  return Math.floor(parsed);
+};
 
 type DeliveryMethodOverride = 'pickup' | 'walkin';
 
@@ -73,19 +82,6 @@ const readDeliveryMethodOverrides = (): Record<string, DeliveryMethodOverride> =
   } catch {
     return {};
   }
-};
-
-const readRepairRequestLimit = (): number => {
-  if (typeof window === 'undefined') return DEFAULT_REPAIR_REQUEST_LIMIT;
-
-  const raw = window.localStorage.getItem(REPAIR_REQUEST_LIMIT_KEY);
-  const parsed = Number(raw);
-
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return DEFAULT_REPAIR_REQUEST_LIMIT;
-  }
-
-  return Math.floor(parsed);
 };
 
 const staticOrders: RepairOrder[] = [
@@ -354,10 +350,15 @@ export default function JobOrdersRepair() {
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
-  const [repairRequestLimit, setRepairRequestLimit] = useState<number>(readRepairRequestLimit);
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
-  const [limitInputValue, setLimitInputValue] = useState<string>(String(readRepairRequestLimit()));
-  const [limitInputError, setLimitInputError] = useState<string | null>(null);
+  // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
+  const { repair_workload_limit: propLimit } = usePage().props as any;
+  const initialLimit = typeof propLimit === 'number' && propLimit >= 1 ? propLimit : readRepairRequestLimit();
+  const [repairRequestLimit, setRepairRequestLimit] = useState<number>(initialLimit);
+  // Sync the DB value into localStorage once on mount so other pages/tabs read a fresh value
+  useEffect(() => {
+    window.localStorage.setItem(REPAIR_REQUEST_LIMIT_KEY, String(initialLimit));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const itemsPerPage = 10;
 
   // Predefined rejection reasons
@@ -379,6 +380,7 @@ export default function JobOrdersRepair() {
   useEffect(() => {
     const refreshOverrides = () => {
       setDeliveryMethodOverrides(readDeliveryMethodOverrides());
+      setRepairRequestLimit(readRepairRequestLimit());
     };
 
     refreshOverrides();
@@ -484,7 +486,8 @@ export default function JobOrdersRepair() {
           selectedServices: repair.services?.map((s: any) => ({ name: s.name, price: `₱${s.price}` })) || [],
           conversation_id: repair.conversation_id,
           payment_enabled: repair.payment_enabled || false,
-          payment_status: repair.payment_status || 'pending'
+          payment_status: repair.payment_status || 'pending',
+          payment_policy: repair.payment_policy || 'deposit_50'
         }));
         setOrders(mappedOrders);
       }
@@ -564,27 +567,6 @@ export default function JobOrdersRepair() {
 
     return orders.filter((order) => activeStatuses.includes(order.status)).length;
   }, [orders]);
-
-  const handleSetRepairRequestLimit = () => {
-    setLimitInputValue(String(repairRequestLimit));
-    setLimitInputError(null);
-    setIsLimitModalOpen(true);
-  };
-
-  const handleSaveRepairRequestLimit = () => {
-    const parsed = Number(limitInputValue);
-
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 500) {
-      setLimitInputError('Please enter a limit from 1 to 500.');
-      return;
-    }
-
-    const newLimit = Math.floor(parsed);
-    setRepairRequestLimit(newLimit);
-    window.localStorage.setItem(REPAIR_REQUEST_LIMIT_KEY, String(newLimit));
-    setIsLimitModalOpen(false);
-    setLimitInputError(null);
-  };
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -671,6 +653,43 @@ export default function JobOrdersRepair() {
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
       });
+    }
+  };
+
+  const handleChangeDeliveryMethod = async (order: RepairOrder) => {
+    const current = order.serviceType === 'pickup' ? 'pickup' : 'walkin';
+    const next: 'pickup' | 'walkin' = current === 'pickup' ? 'walkin' : 'pickup';
+    const nextLabel = next === 'walkin' ? 'Walk In (customer brings shoes)' : 'Pick Up (arrange courier)';
+
+    const result = await Swal.fire({
+      title: 'Change Delivery Method?',
+      text: `Switch to: ${nextLabel}`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, change it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/repairer/repairs/${order.database_id}/delivery-method`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken || '', 'Accept': 'application/json' },
+        body: JSON.stringify({ delivery_method: next === 'walkin' ? 'walk_in' : 'pickup' }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, serviceType: next } : o));
+        if (viewOrder && viewOrder.id === order.id) setViewOrder(prev => prev ? { ...prev, serviceType: next } : prev);
+        await Swal.fire({ title: 'Updated', text: `Delivery method changed to ${nextLabel}.`, icon: 'success', confirmButtonText: 'OK', confirmButtonColor: '#2563eb' });
+      } else {
+        throw new Error(data.message || 'Failed to update');
+      }
+    } catch (error: any) {
+      await Swal.fire({ title: 'Failed', text: error.message || 'Please try again.', icon: 'error', confirmButtonText: 'OK' });
     }
   };
 
@@ -1068,7 +1087,7 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repair-requests/${selectedOrder.id}/status`, {
+      const response = await fetch(`/api/shop-owner/repairs/${selectedOrder.database_id}/ship`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1076,7 +1095,6 @@ export default function JobOrdersRepair() {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          status: 'shipped',
           tracking_number: trackingNumber,
           carrier_company: carrierCompany,
           carrier_name: carrierName,
@@ -1277,14 +1295,8 @@ export default function JobOrdersRepair() {
             <p className="text-gray-600 dark:text-gray-400 mt-2">Manage shoe cleaning and repair service orders</p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <button
-              onClick={handleSetRepairRequestLimit}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              Repair Request Limit
-            </button>
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              Active workload: <span className="font-semibold">{activeRepairCount}</span> / {repairRequestLimit}
+              Active workload: <span className={`font-semibold ${activeRepairCount >= repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
             </p>
           </div>
         </div>
@@ -1777,9 +1789,20 @@ export default function JobOrdersRepair() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Delivery Method</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {formatServiceType(viewOrder.serviceType)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {formatServiceType(viewOrder.serviceType)}
+                        </span>
+                        {!['in-progress','awaiting_parts','completed','ready-for-pickup','picked_up','cancelled','rejected'].includes(viewOrder.status) && (
+                          <button
+                            type="button"
+                            onClick={() => handleChangeDeliveryMethod(viewOrder)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                          >
+                            Change
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Service Fee</span>
@@ -1982,13 +2005,19 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={viewOrder.payment_status !== 'completed'}
+                      disabled={viewOrder.payment_policy !== 'pay_after' && !['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${
-                        viewOrder.payment_status === 'completed'
+                        viewOrder.payment_policy === 'pay_after' || ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
                           : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
                       }`}
-                      title={viewOrder.payment_status === 'completed' ? 'Mark shoes as received at shop' : 'Waiting for customer payment'}
+                      title={
+                        viewOrder.payment_policy === 'pay_after'
+                          ? 'Mark shoes as received (payment collected at pickup)'
+                          : ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                          ? 'Mark shoes as received at shop'
+                          : 'Waiting for customer deposit payment'
+                      }
                     >
                       Mark as Received
                     </button>
@@ -2009,13 +2038,19 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={viewOrder.payment_status !== 'completed'}
+                      disabled={viewOrder.payment_policy !== 'pay_after' && !['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        viewOrder.payment_status === 'completed'
+                        viewOrder.payment_policy === 'pay_after' || ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
                           : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
                       }`}
-                      title={viewOrder.payment_status === 'completed' ? 'Mark as received' : 'Waiting for customer payment'}
+                      title={
+                        viewOrder.payment_policy === 'pay_after'
+                          ? 'Mark as received (payment collected at pickup)'
+                          : ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                          ? 'Mark as received'
+                          : 'Waiting for customer deposit payment'
+                      }
                     >
                       Mark as Received
                     </button>
@@ -2376,57 +2411,6 @@ export default function JobOrdersRepair() {
           </div>
         )}
 
-        {isLimitModalOpen && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white text-center">Set Repair Request Limit</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 text-center mt-2">
-                  Set the max active repair job orders this repairer can handle.
-                </p>
-              </div>
-
-              <div className="px-6 py-5">
-                <label className="sr-only" htmlFor="repair-request-limit-input-shop-owner">Repair request limit</label>
-                <input
-                  id="repair-request-limit-input-shop-owner"
-                  type="number"
-                  min={1}
-                  max={500}
-                  step={1}
-                  title="Repair request limit"
-                  value={limitInputValue}
-                  onChange={(e) => {
-                    setLimitInputValue(e.target.value);
-                    if (limitInputError) setLimitInputError(null);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {limitInputError && (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{limitInputError}</p>
-                )}
-              </div>
-
-              <div className="px-6 pb-5 flex items-center justify-center gap-3">
-                <button
-                  onClick={handleSaveRepairRequestLimit}
-                  className="px-5 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
-                >
-                  Save Limit
-                </button>
-                <button
-                  onClick={() => {
-                    setIsLimitModalOpen(false);
-                    setLimitInputError(null);
-                  }}
-                  className="px-5 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </AppLayoutShopOwner>
   );

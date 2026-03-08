@@ -295,8 +295,22 @@ class RepairWorkflowController extends Controller
                         'message' => 'Repair request cannot be accepted in current status'
                     ], 400);
                 }
-                
-                // Find or create conversation between customer and shop owner
+
+                // Enforce repair workload limit
+                $workloadLimit = (int) ($shopOwner->repair_workload_limit ?? 20);
+                $activeStatuses = ['assigned_to_repairer', 'repairer_accepted', 'pending', 'received',
+                    'in-progress', 'in_progress', 'awaiting_parts', 'waiting_customer_confirmation',
+                    'completed', 'ready-for-pickup', 'ready_for_pickup'];
+                $activeCount = RepairRequest::where('shop_owner_id', $shopOwner->id)
+                    ->whereIn('status', $activeStatuses)
+                    ->count();
+                if ($activeCount >= $workloadLimit) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Repair workload limit reached ({$workloadLimit} active repairs). Please complete existing repairs before accepting new ones.",
+                    ], 422);
+                }
                 $conversation = Conversation::firstOrCreate(
                     [
                         'shop_owner_id' => $repairRequest->shop_owner_id,
@@ -380,8 +394,25 @@ class RepairWorkflowController extends Controller
                     'message' => 'Repair request cannot be accepted in current status'
                 ], 400);
             }
-            
-            // Find or create conversation between customer and shop owner
+
+            // Enforce repair workload limit (load shop owner for the limit value)
+            $repairShopOwner = ShopOwner::find($repairRequest->shop_owner_id);
+            if ($repairShopOwner) {
+                $workloadLimit = (int) ($repairShopOwner->repair_workload_limit ?? 20);
+                $activeStatuses = ['assigned_to_repairer', 'repairer_accepted', 'pending', 'received',
+                    'in-progress', 'in_progress', 'awaiting_parts', 'waiting_customer_confirmation',
+                    'completed', 'ready-for-pickup', 'ready_for_pickup'];
+                $activeCount = RepairRequest::where('shop_owner_id', $repairShopOwner->id)
+                    ->whereIn('status', $activeStatuses)
+                    ->count();
+                if ($activeCount >= $workloadLimit) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Repair workload limit reached ({$workloadLimit} active repairs). Please complete existing repairs before accepting new ones.",
+                    ], 422);
+                }
+            }
             $conversation = Conversation::firstOrCreate(
                 [
                     'shop_owner_id' => $repairRequest->shop_owner_id,
@@ -991,8 +1022,8 @@ class RepairWorkflowController extends Controller
             $repairRequest = $query->whereIn('status', ['owner_approved', 'waiting_customer_confirmation', 'confirmed', 'received'])
                 ->firstOrFail();
             
-            // Validate payment is completed before starting work
-            if ($repairRequest->payment_enabled && $repairRequest->payment_status !== 'completed') {
+            // Validate payment is completed (or deposit paid) before starting work
+            if ($repairRequest->payment_enabled && !in_array($repairRequest->payment_status, ['paid', 'completed'])) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1852,6 +1883,102 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to activate payment: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark a repair as shipped and record carrier/tracking details.
+     */
+    public function shipRepair(Request $request, $id)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            $user      = Auth::guard('user')->user();
+
+            if (!$shopOwner && !$user) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $validated = $request->validate([
+                'tracking_number' => ['required', 'string', 'max:100'],
+                'carrier_company' => ['required', 'string', 'max:100'],
+                'carrier_name'    => ['required', 'string', 'max:100'],
+                'carrier_phone'   => ['required', 'string', 'max:30'],
+                'tracking_link'   => ['nullable', 'string', 'max:500'],
+            ]);
+
+            $query = RepairRequest::where('id', $id);
+            if ($shopOwner) {
+                $query->where('shop_owner_id', $shopOwner->id);
+            } else {
+                $query->where('assigned_repairer_id', $user->id);
+            }
+
+            $repairRequest = $query->whereIn('status', ['ready_for_pickup', 'ready-for-pickup'])
+                ->firstOrFail();
+
+            $repairRequest->update(array_merge($validated, [
+                'status'    => 'shipped',
+                'shipped_at' => now(),
+            ]));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Repair marked as shipped.',
+                'repair'  => $repairRequest->fresh(),
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to ship: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Change the delivery method of a repair request (before shoes are received).
+     */
+    public function changeDeliveryMethod(Request $request, $id)
+    {
+        try {
+            $user      = Auth::guard('user')->user();
+            $shopOwner = Auth::guard('shop_owner')->user();
+
+            if (!$user && !$shopOwner) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $validated = $request->validate([
+                'delivery_method' => ['required', 'in:walk_in,pickup'],
+            ]);
+
+            $query = RepairRequest::where('id', $id);
+
+            if ($shopOwner) {
+                $query->where('shop_owner_id', $shopOwner->id);
+            } else {
+                $query->where('assigned_repairer_id', $user->id);
+            }
+
+            // Only allow changes before the shoes are physically received
+            $repairRequest = $query->whereNotIn('status', [
+                'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup',
+                'ready-for-pickup', 'picked_up', 'cancelled', 'rejected',
+            ])->firstOrFail();
+
+            $repairRequest->update(['delivery_method' => $validated['delivery_method']]);
+
+            return response()->json([
+                'success'         => true,
+                'delivery_method' => $repairRequest->delivery_method,
+                'message'         => 'Delivery method updated successfully.',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update delivery method: ' . $e->getMessage(),
             ], 500);
         }
     }

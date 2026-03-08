@@ -181,11 +181,21 @@ const transformAttendanceFromApi = (apiRecord: any) => {
     department: employee.department || apiRecord.department || "Unknown",
     position: employee.position || apiRecord.position || "Unknown",
     date: formattedDate,
+    rawDate: apiRecord.date,
     status: apiRecord.status,
     checkIn: apiRecord.check_in_time || apiRecord.checkInTime || "-",
     checkOut: apiRecord.check_out_time || apiRecord.checkOutTime || "-",
     totalHours: totalHours,
     notes: apiRecord.notes,
+    distanceFromShop: apiRecord.distance_from_shop ?? null,
+    checkInLat: apiRecord.check_in_latitude ?? null,
+    checkInLng: apiRecord.check_in_longitude ?? null,
+    isLate: apiRecord.is_late ?? false,
+    minutesLate: apiRecord.minutes_late ?? 0,
+    isEarlyDeparture: apiRecord.is_early_departure ?? false,
+    minutesEarlyDeparture: apiRecord.minutes_early_departure ?? 0,
+    expectedCheckIn: apiRecord.expected_check_in ?? null,
+    expectedCheckOut: apiRecord.expected_check_out ?? null,
   };
 };
 
@@ -207,6 +217,9 @@ const ViewAttendance: React.FC = () => {
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [paginationMeta, setPaginationMeta] = useState<any>(null);
+  const [geofenceEnabled, setGeofenceEnabled] = useState(false);
+  const [geofenceRadius, setGeofenceRadius] = useState(100);
+  const [violationsOnly, setViolationsOnly] = useState(false);
 
   // Fetch attendance records from API
   useEffect(() => {
@@ -223,6 +236,7 @@ const ViewAttendance: React.FC = () => {
           params.append('date_to', dateTo);
         }
         if (selectedStatus) params.append('status', selectedStatus);
+        if (violationsOnly) params.append('geofence_violations_only', '1');
         params.append('page', String(currentPage));
         params.append('per_page', String(itemsPerPage));
 
@@ -247,6 +261,10 @@ const ViewAttendance: React.FC = () => {
 
         const data = await response.json();
         
+        // Extract geofence metadata
+        if (data.geofence_enabled !== undefined) setGeofenceEnabled(data.geofence_enabled);
+        if (data.geofence_radius  !== undefined) setGeofenceRadius(data.geofence_radius);
+
         // Check if response has Laravel pagination structure
         if (data.data && data.current_page) {
           const transformedData = data.data.map(transformAttendanceFromApi);
@@ -270,19 +288,20 @@ const ViewAttendance: React.FC = () => {
     };
 
     fetchAttendance();
-  }, [filterMonth, selectedStatus, currentPage, itemsPerPage]);
+  }, [filterMonth, selectedStatus, currentPage, itemsPerPage, violationsOnly]);
 
   // Calculate statistics
   const stats = useMemo(() => {
     const total = attendanceData.length;
     const present = attendanceData.filter((a) => a.status === "present").length;
     const absent = attendanceData.filter((a) => a.status === "absent").length;
-    const leave = attendanceData.filter((a) => a.status === "leave").length;
+    const leave = attendanceData.filter((a) => a.status === "leave" || a.status === "on_leave").length;
     const late = attendanceData.filter((a) => a.status === "late").length;
+    const violations = attendanceData.filter((a) => a.distanceFromShop !== null && a.distanceFromShop > geofenceRadius).length;
     const presentPercentage = total > 0 ? Math.round((present / total) * 100) : 0;
 
-    return { total, present, absent, leave, late, presentPercentage };
-  }, [attendanceData]);
+    return { total, present, absent, leave, late, violations, presentPercentage };
+  }, [attendanceData, geofenceRadius]);
 
   // Filter and search data
   const filteredData = useMemo(() => {
@@ -311,6 +330,10 @@ const ViewAttendance: React.FC = () => {
       "Check In",
       "Check Out",
       "Total Hours",
+      "Distance (m)",
+      "Geofence Status",
+      "GPS Lat",
+      "GPS Lng",
       "Notes",
     ];
 
@@ -328,6 +351,12 @@ const ViewAttendance: React.FC = () => {
       d.checkIn,
       d.checkOut,
       d.totalHours ?? "",
+      d.distanceFromShop ?? "",
+      d.distanceFromShop !== null
+        ? (d.distanceFromShop > geofenceRadius ? `Outside (>${geofenceRadius}m)` : `Within (${geofenceRadius}m)`)
+        : "",
+      d.checkInLat ?? "",
+      d.checkInLng ?? "",
       d.notes ?? "",
     ]);
 
@@ -570,10 +599,31 @@ const ViewAttendance: React.FC = () => {
               <option value="present">Present</option>
               <option value="late">Late</option>
               <option value="absent">Absent</option>
-              <option value="leave">Leave</option>
+              <option value="on_leave">On Leave</option>
             </select>
           </div>
         </div>
+        {geofenceEnabled && (
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => { setViolationsOnly(v => !v); setCurrentPage(1); }}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                violationsOnly
+                  ? 'bg-red-600 border-red-600 text-white hover:bg-red-700'
+                  : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              {violationsOnly ? `Geofence Violations Only (>${geofenceRadius}m)` : 'Show Geofence Violations Only'}
+            </button>
+            {stats.violations > 0 && !violationsOnly && (
+              <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full">
+                {stats.violations} violation{stats.violations !== 1 ? 's' : ''} this page
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Attendance Table */}
@@ -601,6 +651,9 @@ const ViewAttendance: React.FC = () => {
                   Hours
                 </th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">
+                  Location
+                </th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">
                   Action
                 </th>
               </tr>
@@ -608,7 +661,7 @@ const ViewAttendance: React.FC = () => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={8} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-2"></div>
                       <p className="text-lg font-medium">Loading attendance records...</p>
@@ -668,6 +721,25 @@ const ViewAttendance: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4">
+                      {record.distanceFromShop !== null ? (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                          record.distanceFromShop > geofenceRadius
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                        }`}>
+                          <svg className="size-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                          {record.distanceFromShop}m
+                          {record.distanceFromShop > geofenceRadius && (
+                            <span className="ml-0.5 font-bold">!</span>
+                          )}
+                        </span>
+                      ) : geofenceEnabled ? (
+                        <span className="text-xs text-gray-400 dark:text-gray-600">No GPS</span>
+                      ) : (
+                        <span className="text-xs text-gray-300 dark:text-gray-700">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => {
@@ -701,7 +773,7 @@ const ViewAttendance: React.FC = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={8} className="px-6 py-12 text-center">
                     <p className="text-gray-500 dark:text-gray-400">
                       No attendance records found
                     </p>
@@ -828,6 +900,39 @@ const ViewAttendance: React.FC = () => {
                   <p className="text-gray-900 dark:text-white font-semibold capitalize">{selectedRecord.status}</p>
                 </div>
               </div>
+
+              {selectedRecord.distanceFromShop !== null && (
+                <>
+                  <div className="border-t border-dashed border-gray-200 dark:border-gray-800" />
+                  <div className="space-y-3 text-base font-mono">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">Geofence</p>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Distance from Shop</span>
+                      <span className={`font-semibold ${
+                        selectedRecord.distanceFromShop > geofenceRadius ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {selectedRecord.distanceFromShop}m
+                        {selectedRecord.distanceFromShop > geofenceRadius
+                          ? ` — OUTSIDE (limit: ${geofenceRadius}m)`
+                          : ` — within limit (${geofenceRadius}m)`}
+                      </span>
+                    </div>
+                    {selectedRecord.checkInLat && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">GPS Coordinates</span>
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedRecord.checkInLat},${selectedRecord.checkInLng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 underline text-sm"
+                        >
+                          {parseFloat(selectedRecord.checkInLat).toFixed(5)}, {parseFloat(selectedRecord.checkInLng).toFixed(5)}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div className="border-t border-dashed border-gray-200 dark:border-gray-800" />
 

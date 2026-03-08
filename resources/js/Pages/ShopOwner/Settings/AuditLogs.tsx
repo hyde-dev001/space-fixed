@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
 import Swal from "sweetalert2";
 
@@ -180,6 +180,14 @@ const MetricCard: React.FC<MetricData> = ({
 export default function ShopOwnerAuditLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const { props } = usePage<any>();
+  const shopOwner = props.auth?.shop_owner;
+  const isIndividual: boolean = shopOwner?.is_individual ?? false;
+  const canManageStaff: boolean = shopOwner?.can_manage_staff ?? false;
+  const businessType: string = shopOwner?.business_type ?? 'repair';
+  const isRepairType = businessType === 'repair' || businessType === 'both (retail & repair)';
+  const isRetailType = businessType === 'retail' || businessType === 'both (retail & repair)';
+
   const [pagination, setPagination] = useState<PaginationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -433,9 +441,12 @@ export default function ShopOwnerAuditLogs() {
       'Order': 'Order',
       'Customer': 'Customer',
       'RepairService': 'Repair Service',
+      'RepairRequest': 'Repair Request',
       'LeaveRequest': 'Leave Request',
+      'AttendanceRecord': 'Attendance Record',
       'Attendance': 'Attendance',
       'Payroll': 'Payroll',
+      'PriceChangeRequest': 'Price Change Request',
     };
     
     return friendlyNames[typeName] || typeName;
@@ -560,12 +571,16 @@ export default function ShopOwnerAuditLogs() {
                   <option value="">All Types</option>
                   <option value="Product">Products</option>
                   <option value="Expense">Expenses</option>
-                  <option value="User">Employees</option>
                   <option value="Order">Orders</option>
                   <option value="Invoice">Invoices</option>
                   <option value="Customer">Customers</option>
-                  <option value="Payroll">Payroll</option>
-                  <option value="Leave">Leave Requests</option>
+                  <option value="PriceChangeRequest">Price Changes</option>
+                  {isRepairType && <option value="RepairRequest">Repair Requests</option>}
+                  {isRepairType && <option value="RepairService">Repair Services</option>}
+                  {canManageStaff && <option value="User">Employees</option>}
+                  {canManageStaff && <option value="Payroll">Payroll</option>}
+                  {canManageStaff && <option value="LeaveRequest">Leave Requests</option>}
+                  {canManageStaff && <option value="AttendanceRecord">Attendance</option>}
                 </select>
               </div>
 

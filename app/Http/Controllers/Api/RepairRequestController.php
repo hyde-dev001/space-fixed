@@ -30,6 +30,7 @@ class RepairRequestController extends Controller
             'images' => 'required|array',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
             'total' => 'required|numeric|min:0',
+            'preferred_date' => 'nullable|date|after:today',
             'service_type' => 'required|in:pickup,walkin',
             'pickup_address_line' => 'required_if:service_type,pickup|string|max:255',
             'pickup_barangay' => 'required_if:service_type,pickup|string|max:255',
@@ -99,6 +100,8 @@ class RepairRequestController extends Controller
                 'pickup_address' => $pickupAddress,
                 'is_high_value' => $isHighValue,
                 'requires_owner_approval' => $requiresOwnerApproval,
+                'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
+                'payment_policy' => $shopOwner ? ($shopOwner->repair_payment_policy ?? 'deposit_50') : 'deposit_50',
             ]);
 
             // Attach services
@@ -318,6 +321,7 @@ class RepairRequestController extends Controller
                     'estimated_completion' => $repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null,
                     'completed_at' => $repair->completed_at ? $repair->completed_at->format('M d, Y') : null,
                     'shop_id' => $repair->shop_owner_id,
+                    'shop_owner_id' => $repair->shop_owner_id,
                     'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
                     'shop_address' => $repair->shopOwner ? $repair->shopOwner->business_address : '',
                     'image' => !empty($images) ? Storage::url($images[0]) : null,
@@ -331,6 +335,9 @@ class RepairRequestController extends Controller
                     'payment_enabled_at' => $repair->payment_enabled_at ? $repair->payment_enabled_at->toISOString() : null,
                     'pickup_enabled' => $repair->pickup_enabled ?? false,
                     'pickup_enabled_at' => $repair->pickup_enabled_at ? $repair->pickup_enabled_at->toISOString() : null,
+                    'assigned_repairer_id' => $repair->assigned_repairer_id,
+                    'repairer_name' => $repair->repairer ? $repair->repairer->name : null,
+                    'payment_policy' => $repair->payment_policy ?? 'deposit_50',
                 ];
             })
         ]);
@@ -453,6 +460,68 @@ class RepairRequestController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Repair request cancelled successfully'
+        ]);
+    }
+
+    /**
+     * Set the preferred drop-off date — called from myRepairs "Set Your Schedule" modal.
+     * Only allowed after the repairer has accepted the request.
+     *
+     * PATCH /api/customer/repairs/{id}/schedule
+     */
+    public function setSchedule(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $repair = RepairRequest::where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json(['success' => false, 'message' => 'Repair request not found'], 404);
+        }
+
+        if (!in_array($repair->status, ['repairer_accepted', 'pending', 'in_progress'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You can only set a schedule after the repairer has accepted your request.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'preferred_date' => 'required|date|after:today',
+        ]);
+
+        $repair->update([
+            'scheduled_dropoff_date' => \Carbon\Carbon::parse($validated['preferred_date'])->startOfDay(),
+        ]);
+
+        // Notify the assigned repairer
+        if ($repair->assigned_repairer_id) {
+            try {
+                $notificationService = app(NotificationService::class);
+                $notificationService->sendToUser(
+                    userId: $repair->assigned_repairer_id,
+                    type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
+                    title: 'Customer Set Drop-off Date',
+                    message: "Customer set drop-off date for repair {$repair->request_id} on " . \Carbon\Carbon::parse($validated['preferred_date'])->format('M d, Y'),
+                    data: ['request_id' => $repair->request_id, 'order_number' => $repair->request_id],
+                    actionUrl: '/erp/staff/job-orders-repair',
+                    priority: 'medium',
+                    requiresAction: false
+                );
+            } catch (\Exception $e) {
+                \Log::warning('Could not notify repairer of schedule: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'preferred_date' => $repair->fresh()->scheduled_dropoff_date->format('M d, Y'),
         ]);
     }
 
@@ -624,6 +693,11 @@ class RepairRequestController extends Controller
                 'payment_link_created_at' => now()
             ]);
 
+            \Log::info('Payment link updated for repair', [
+                'repair_id'        => $repair->id,
+                'paymongo_link_id' => $request->paymongo_link_id,
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Payment link updated successfully',
@@ -657,8 +731,30 @@ class RepairRequestController extends Controller
     private function autoAssignRepairer(RepairRequest $repairRequest)
     {
         try {
-            // STRATEGY 1: Find repairers with Repairer role, sorted by current workload (least busy first)
-            $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
+            // Determine if the customer specified a preferred drop-off date
+            $preferredDate = $repairRequest->scheduled_dropoff_date
+                ? $repairRequest->scheduled_dropoff_date->format('Y-m-d')
+                : null;
+            $preferredMonthKey = $preferredDate ? substr($preferredDate, 0, 7) : null;
+
+            // Helper: get IDs of repairers who have blocked the preferred date
+            $blockedRepairerIds = collect();
+            if ($preferredDate && $preferredMonthKey) {
+                $rows = \Illuminate\Support\Facades\DB::table('repairer_unavailability')
+                    ->where('shop_owner_id', $repairRequest->shop_owner_id)
+                    ->where('month_key', $preferredMonthKey)
+                    ->get(['repairer_id', 'unavailable_dates']);
+
+                foreach ($rows as $row) {
+                    $dates = json_decode($row->unavailable_dates, true) ?? [];
+                    if (in_array($preferredDate, $dates)) {
+                        $blockedRepairerIds->push($row->repairer_id);
+                    }
+                }
+            }
+
+            // Base query builder shared across strategies
+            $baseQuery = fn() => User::where('shop_owner_id', $repairRequest->shop_owner_id)
                 ->whereHas('employee', function($query) {
                     $query->where('status', 'active');
                 })
@@ -667,37 +763,38 @@ class RepairRequestController extends Controller
                 })
                 ->where('status', 'active')
                 ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
-                    // Count only active repairs (not completed/cancelled)
                     $query->whereIn('status', [
                         'assigned_to_repairer',
                         'repairer_accepted',
                         'in_progress',
                         'awaiting_parts'
                     ]);
-                }])
-                ->having('active_repairs_count', '<', 15) // Max capacity limit: 15 active repairs per repairer
-                ->orderBy('active_repairs_count', 'asc')  // Assign to least busy first
-                ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
-                ->first();
-            
-            // FALLBACK STRATEGY 2: If all repairers at capacity, assign to least busy anyway (role-based only)
+                }]);
+
+            // STRATEGY 1: Least-busy repairer who is FREE on the preferred date (under capacity)
+            $repairer = null;
+            if ($preferredDate && $blockedRepairerIds->isNotEmpty()) {
+                // Some repairers have blocked the preferred date — exclude them
+                $repairer = $baseQuery()
+                    ->whereNotIn('id', $blockedRepairerIds)
+                    ->having('active_repairs_count', '<', 15)
+                    ->orderBy('active_repairs_count', 'asc')
+                    ->orderBy('id', 'asc')
+                    ->first();
+            }
+
+            // STRATEGY 2: Normal least-busy pick under capacity (preferred date either not set, or no one blocked it)
             if (!$repairer) {
-                $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                    ->whereHas('employee', function($query) {
-                        $query->where('status', 'active');
-                    })
-                    ->whereHas('roles', function($query) {
-                        $query->where('name', 'Repairer');
-                    })
-                    ->where('status', 'active')
-                    ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
-                        $query->whereIn('status', [
-                            'assigned_to_repairer',
-                            'repairer_accepted',
-                            'in_progress',
-                            'awaiting_parts'
-                        ]);
-                    }])
+                $repairer = $baseQuery()
+                    ->having('active_repairs_count', '<', 15) // Max capacity limit: 15 active repairs per repairer
+                    ->orderBy('active_repairs_count', 'asc')  // Assign to least busy first
+                    ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
+                    ->first();
+            }
+            
+            // FALLBACK STRATEGY 3: All repairers at capacity — assign to least busy regardless
+            if (!$repairer) {
+                $repairer = $baseQuery()
                     ->orderBy('active_repairs_count', 'asc')
                     ->first();
             }
@@ -808,32 +905,218 @@ class RepairRequestController extends Controller
             ], 404);
         }
 
-        // Simulate payment completion
-        $repair->update([
-            'payment_status' => 'completed',
-            'paymongo_payment_id' => 'TEST_PAYMENT_' . time(),
-            'payment_completed_at' => now(),
-        ]);
-
-        // Determine next status based on approval requirements (same logic as webhook)
-        if ($repair->is_high_value && $repair->requires_owner_approval) {
-            // High-value repairs need owner approval before work begins
-            $repair->update([
-                'status' => 'owner_approval_pending',
-            ]);
-        } else {
-            // Regular repairs can start work immediately after payment
-            $repair->update([
-                'status' => 'pending',
-            ]);
-        }
-
-        \Log::info('Test payment simulated for repair: ' . $repair->request_id);
+        // Apply payment based on the shop's policy for this repair
+        $this->applyPaymentCompletion($repair, 'TEST_PAYMENT_' . time());
 
         return response()->json([
             'success' => true,
             'message' => 'Payment simulated successfully',
             'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
+        ]);
+    }
+
+    /**
+     * Shared helper: apply a completed payment to a repair request, respecting the shop's payment policy.
+     *
+     * Policies:
+     *   deposit_50  – two-phase: first payment → 'paid' (50% deposit), second → 'completed' (remaining 50%)
+     *   full_upfront – single payment before drop-off → 'completed' immediately
+     *   pay_after    – single payment at pickup        → 'completed' immediately
+     */
+    private function applyPaymentCompletion(RepairRequest $repair, string $paymentId): void
+    {
+        $policy = $repair->payment_policy ?? 'deposit_50';
+
+        $repair->update([
+            'paymongo_payment_id'  => $paymentId,
+            'payment_completed_at' => now(),
+        ]);
+
+        if ($policy === 'full_upfront') {
+            // Single upfront payment – mark fully paid immediately
+            $repair->update(['payment_status' => 'completed']);
+            if ($repair->is_high_value && $repair->requires_owner_approval) {
+                $repair->update(['status' => 'owner_approval_pending']);
+            } else {
+                $repair->update(['status' => 'pending']);
+            }
+            \Log::info('Full-upfront payment applied for repair: ' . $repair->request_id);
+
+        } elseif ($policy === 'pay_after') {
+            // Payment collected at pickup – mark fully paid, status stays ready_for_pickup
+            $repair->update(['payment_status' => 'completed']);
+            \Log::info('Pay-after payment applied for repair: ' . $repair->request_id);
+
+        } else {
+            // deposit_50 (default): two-phase logic
+            $isDepositPhase = in_array($repair->payment_status ?? 'pending', ['pending', null]);
+            $repair->update(['payment_status' => $isDepositPhase ? 'paid' : 'completed']);
+
+            if ($isDepositPhase) {
+                if ($repair->is_high_value && $repair->requires_owner_approval) {
+                    $repair->update(['status' => 'owner_approval_pending']);
+                } else {
+                    $repair->update(['status' => 'pending']);
+                }
+                \Log::info('Deposit (50%) payment applied for repair: ' . $repair->request_id);
+            } else {
+                \Log::info('Remaining-balance (50%) payment applied for repair: ' . $repair->request_id);
+            }
+        }
+    }
+
+    /**
+     * Verify payment status directly with PayMongo API.
+     * Called when the customer is redirected back from the PayMongo checkout page.
+     * Does NOT rely on webhooks — polls the link status endpoint instead.
+     */
+    public function verifyPayment(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $repair = RepairRequest::where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json(['success' => false, 'message' => 'Repair request not found'], 404);
+        }
+
+        // Idempotent: skip verification if truly fully paid.
+        // For deposit_50: 'paid' = only the deposit was paid, 'completed' = both payments done.
+        // For other policies: a single 'paid' IS full payment.
+        $isFullyPaid = $repair->payment_status === 'completed' ||
+            ($repair->payment_policy !== 'deposit_50' && $repair->payment_status === 'paid');
+
+        if ($isFullyPaid) {
+            return response()->json([
+                'success'          => true,
+                'payment_verified' => true,
+                'already_paid'     => true,
+                'data'             => $repair->fresh(['services', 'shopOwner', 'repairer']),
+            ]);
+        }
+
+        if (!$repair->paymongo_link_id) {
+            return response()->json([
+                'success'          => false,
+                'payment_verified' => false,
+                'message'          => 'No payment link found for this repair',
+            ], 404);
+        }
+
+        // Use the shop's own PayMongo key (same key that created the checkout session)
+        $apiKey = $repair->shopOwner?->paymongo_secret_key
+            ?: config('services.paymongo.secret_key');
+
+        if (!$apiKey) {
+            return response()->json([
+                'success'          => false,
+                'payment_verified' => false,
+                'message'          => 'Payment gateway not configured for this shop.',
+            ], 503);
+        }
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+        ])->get("https://api.paymongo.com/v1/checkout_sessions/{$repair->paymongo_link_id}");
+
+        \Log::info('PayMongo session check', [
+            'repair_id'  => $repair->id,
+            'session_id' => $repair->paymongo_link_id,
+            'http_status' => $response->status(),
+            'raw_body'   => $response->json(),
+        ]);
+
+        if ($response->failed()) {
+            \Log::error('PayMongo session status check failed', [
+                'repair_id'  => $repair->id,
+                'session_id' => $repair->paymongo_link_id,
+                'status'     => $response->status(),
+                'body'       => $response->json(),
+            ]);
+            return response()->json([
+                'success'          => false,
+                'payment_verified' => false,
+                'message'          => 'Could not reach PayMongo to verify payment',
+            ], 502);
+        }
+
+        $data          = $response->json();
+        $paymentStatus = $data['data']['attributes']['payment_status'] ?? null;
+        // Also check nested payments array for paid status
+        $payments      = $data['data']['attributes']['payments'] ?? [];
+        $firstPayment  = $payments[0] ?? null;
+        $firstPaymentStatus = $firstPayment['data']['attributes']['status'] ?? ($firstPayment['attributes']['status'] ?? null);
+        $paymentId     = $firstPayment['data']['id'] ?? ($firstPayment['id'] ?? $data['data']['id'] ?? null);
+
+        \Log::info('PayMongo payment_status extracted', [
+            'repair_id'         => $repair->id,
+            'payment_status'    => $paymentStatus,
+            'first_payment_id'  => $paymentId,
+            'first_pay_status'  => $firstPaymentStatus,
+            'payments_count'    => count($payments),
+        ]);
+
+        // Accept 'paid' on the session OR a paid individual payment in the payments array
+        $isVerified = ($paymentStatus === 'paid') || ($firstPaymentStatus === 'paid');
+
+        if (!$isVerified) {
+            return response()->json([
+                'success'          => false,
+                'payment_verified' => false,
+                'payment_status'   => $paymentStatus,
+                'message'          => 'Payment has not been completed yet',
+            ]);
+        }
+
+        // Payment confirmed — apply policy-aware completion
+        $this->applyPaymentCompletion($repair, $paymentId);
+
+        \Log::info('Payment verified via PayMongo API for repair: ' . $repair->request_id, [
+            'policy'     => $repair->payment_policy ?? 'deposit_50',
+            'link_id'    => $repair->paymongo_link_id,
+            'payment_id' => $paymentId,
+        ]);
+
+        return response()->json([
+            'success'          => true,
+            'payment_verified' => true,
+            'data'             => $repair->fresh(['services', 'shopOwner', 'repairer']),
+        ]);
+    }
+
+    /**
+     * Return the current active repair count and configured workload limit for a shop.
+     * Used by the customer side to show whether the shop is at capacity.
+     * GET /api/customer/shop/{shopOwnerId}/repair-capacity
+     */
+    public function shopRepairCapacity(Request $request, $shopOwnerId)
+    {
+        $shopOwner = ShopOwner::find($shopOwnerId);
+
+        if (!$shopOwner) {
+            return response()->json(['success' => false, 'message' => 'Shop not found'], 404);
+        }
+
+        $activeStatuses = ['assigned_to_repairer', 'repairer_accepted', 'pending', 'received',
+            'in-progress', 'in_progress', 'awaiting_parts', 'waiting_customer_confirmation',
+            'completed', 'ready-for-pickup', 'ready_for_pickup'];
+
+        $activeCount = RepairRequest::where('shop_owner_id', $shopOwner->id)
+            ->whereIn('status', $activeStatuses)
+            ->count();
+
+        $limit = (int) ($shopOwner->repair_workload_limit ?? 20);
+
+        return response()->json([
+            'success'      => true,
+            'active_count' => $activeCount,
+            'limit'        => $limit,
+            'is_full'      => $activeCount >= $limit,
         ]);
     }
 }

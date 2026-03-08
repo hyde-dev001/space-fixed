@@ -425,9 +425,12 @@ export default function ManagerAuditLogs() {
       'Order': 'Order',
       'Customer': 'Customer',
       'RepairService': 'Repair Service',
+      'RepairRequest': 'Repair Request',
       'LeaveRequest': 'Leave Request',
+      'AttendanceRecord': 'Attendance Record',
       'Attendance': 'Attendance',
       'Payroll': 'Payroll',
+      'PriceChangeRequest': 'Price Change Request',
     };
     
     return friendlyNames[typeName] || typeName;
@@ -557,7 +560,11 @@ export default function ManagerAuditLogs() {
                   <option value="Invoice">Invoices</option>
                   <option value="Customer">Customers</option>
                   <option value="Payroll">Payroll</option>
-                  <option value="Leave">Leave Requests</option>
+                  <option value="LeaveRequest">Leave Requests</option>
+                  <option value="AttendanceRecord">Attendance</option>
+                  <option value="RepairRequest">Repair Requests</option>
+                  <option value="RepairService">Repair Services</option>
+                  <option value="PriceChangeRequest">Price Changes</option>
                 </select>
               </div>
 

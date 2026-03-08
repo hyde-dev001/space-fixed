@@ -87,11 +87,7 @@ const LeaveManagement: React.FC = () => {
     setCurrentPage(1);
   }, [selectedTab]);
 
-  useEffect(() => {
-    if (user?.employee_id) {
-      fetchLeaveBalances(user.employee_id);
-    }
-  }, []);
+  // Balance is now fetched as part of fetchLeaveRequests
 
   const fetchLeaveRequests = async () => {
     try {
@@ -100,11 +96,8 @@ const LeaveManagement: React.FC = () => {
       if (selectedTab !== 'all') {
         params.append('status', selectedTab);
       }
-      if (user?.employee_id) {
-        params.append('employee_id', user.employee_id.toString());
-      }
       
-      const response = await fetch(`/api/leave?${params}`, {
+      const response = await fetch(`/api/staff/leave/my-requests?${params}`, {
         credentials: 'include',
       });
       
@@ -113,7 +106,18 @@ const LeaveManagement: React.FC = () => {
       }
       
       const data = await response.json();
-      setLeaveRequests(data.data || []);
+      setLeaveRequests(data.data?.data || data.data || []);
+
+      // Balance comes back in the same response
+      if (data.balance) {
+        const balances = Object.entries(data.balance).map(([leave_type, b]: [string, any]) => ({
+          leave_type,
+          total_days: b.allowed ?? null,
+          used_days: b.used ?? 0,
+          remaining_days: b.remaining ?? 0,
+        }));
+        setLeaveBalances(balances);
+      }
     } catch {
       Swal.fire('Error', 'Failed to fetch leave requests', 'error');
     } finally {
@@ -121,39 +125,20 @@ const LeaveManagement: React.FC = () => {
     }
   };
 
-  const fetchLeaveBalances = async (employeeId: number) => {
-    try {
-      const response = await fetch(`/api/leave/statistics/${employeeId}`, {
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch leave balances');
-      }
-      
-      const data = await response.json();
-      const balances = Object.values(data.balances || {}) as LeaveBalance[];
-      setLeaveBalances(balances);
-    } catch {
-      // silently fail — balance data is supplementary
-    }
-  };
+  // Balance is now fetched as part of fetchLeaveRequests
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      const response = await fetch('/api/leave', {
+      const response = await fetch('/api/staff/leave/request', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          ...formData,
-          employee_id: user?.employee_id,
-        }),
+        body: JSON.stringify(formData),
       });
       
       const data = await response.json();
@@ -177,10 +162,7 @@ const LeaveManagement: React.FC = () => {
         reason: '',
       });
       
-      fetchLeaveRequests();
-      if (user?.employee_id) {
-        fetchLeaveBalances(user.employee_id);
-      }
+      fetchLeaveRequests(); // balance is also refreshed inside
     } catch (error: any) {
       Swal.fire('Error', error.message, 'error');
     }
@@ -199,8 +181,11 @@ const LeaveManagement: React.FC = () => {
     
     if (result.isConfirmed) {
       try {
-        const response = await fetch(`/api/leave/${leaveId}/cancel`, {
+        const response = await fetch(`/api/staff/leave/${leaveId}/cancel`, {
           method: 'DELETE',
+          headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          },
           credentials: 'include',
         });
         

@@ -78,60 +78,127 @@ class LeaveBalance extends Model
     }
 
     /**
+     * Scope to filter by employee
+     */
+    public function scopeForEmployee(Builder $query, $employeeId): Builder
+    {
+        return $query->where('employee_id', $employeeId);
+    }
+
+    /**
+     * Scope to filter by leave type (no-op on the per-column schema; kept for compatibility)
+     * Returns the same query — callers should use getRemainingForType() instead.
+     */
+    public function scopeOfType(Builder $query, string $leaveType): Builder
+    {
+        // The leave_balances table stores all types in one row per employee/year.
+        // This scope intentionally does nothing so chained ->first() still works.
+        return $query;
+    }
+
+    /**
      * Get remaining balance for a specific leave type
      */
     public function getRemainingBalance(string $leaveType): int
     {
-        $allowedField = "{$leaveType}_days";
-        $usedField = "used_{$leaveType}";
+        return $this->getRemainingForType($leaveType);
+    }
 
-        if (!property_exists($this, $allowedField) || !property_exists($this, $usedField)) {
+    /**
+     * Get the remaining days for a given leave type from the per-column schema.
+     * Supports: vacation, sick, personal, maternity, paternity
+     */
+    public function getRemainingForType(string $leaveType): int
+    {
+        $typeMap = [
+            'vacation'  => ['allowed' => 'vacation_days',  'used' => 'used_vacation'],
+            'sick'      => ['allowed' => 'sick_days',      'used' => 'used_sick'],
+            'personal'  => ['allowed' => 'personal_days',  'used' => 'used_personal'],
+            'maternity' => ['allowed' => 'maternity_days', 'used' => 'used_maternity'],
+            'paternity' => ['allowed' => 'paternity_days', 'used' => 'used_paternity'],
+            'unpaid'    => null, // unlimited
+        ];
+
+        if (!array_key_exists($leaveType, $typeMap)) {
             return 0;
         }
 
-        return max(0, $this->$allowedField - $this->$usedField);
+        if ($typeMap[$leaveType] === null) {
+            return 999; // unpaid leave has no cap
+        }
+
+        $allowedField = $typeMap[$leaveType]['allowed'];
+        $usedField    = $typeMap[$leaveType]['used'];
+
+        return max(0, ($this->$allowedField ?? 0) - ($this->$usedField ?? 0));
+    }
+
+    /**
+     * Deduct days for a given leave type.
+     */
+    public function deductForType(string $leaveType, float $days): bool
+    {
+        $typeMap = [
+            'vacation'  => 'used_vacation',
+            'sick'      => 'used_sick',
+            'personal'  => 'used_personal',
+            'maternity' => 'used_maternity',
+            'paternity' => 'used_paternity',
+        ];
+
+        if (!isset($typeMap[$leaveType])) {
+            return true; // unpaid or unknown — no balance to deduct
+        }
+
+        $usedField = $typeMap[$leaveType];
+        $this->$usedField = ($this->$usedField ?? 0) + $days;
+        return $this->save();
+    }
+
+    /**
+     * Restore days for a given leave type (on rejection or cancellation).
+     */
+    public function restoreForType(string $leaveType, float $days): bool
+    {
+        $typeMap = [
+            'vacation'  => 'used_vacation',
+            'sick'      => 'used_sick',
+            'personal'  => 'used_personal',
+            'maternity' => 'used_maternity',
+            'paternity' => 'used_paternity',
+        ];
+
+        if (!isset($typeMap[$leaveType])) {
+            return true;
+        }
+
+        $usedField = $typeMap[$leaveType];
+        $this->$usedField = max(0, ($this->$usedField ?? 0) - $days);
+        return $this->save();
     }
 
     /**
      * Check if employee has sufficient leave balance
      */
-    public function hasSufficientBalance(string $leaveType, int $daysRequested): bool
+    public function hasSufficientBalance(string $leaveType, float $daysRequested): bool
     {
-        return $this->getRemainingBalance($leaveType) >= $daysRequested;
+        return $this->getRemainingForType($leaveType) >= $daysRequested;
     }
 
     /**
      * Deduct leave days from balance
      */
-    public function deductLeave(string $leaveType, int $days): bool
+    public function deductLeave(string $leaveType, float $days): bool
     {
-        if (!$this->hasSufficientBalance($leaveType, $days)) {
-            return false;
-        }
-
-        $usedField = "used_{$leaveType}";
-        
-        if (property_exists($this, $usedField)) {
-            $this->$usedField += $days;
-            return $this->save();
-        }
-
-        return false;
+        return $this->deductForType($leaveType, $days);
     }
 
     /**
      * Add leave days back to balance (for rejected/cancelled requests)
      */
-    public function addBackLeave(string $leaveType, int $days): bool
+    public function addBackLeave(string $leaveType, float $days): bool
     {
-        $usedField = "used_{$leaveType}";
-        
-        if (property_exists($this, $usedField)) {
-            $this->$usedField = max(0, $this->$usedField - $days);
-            return $this->save();
-        }
-
-        return false;
+        return $this->restoreForType($leaveType, $days);
     }
 
     /**
@@ -141,29 +208,34 @@ class LeaveBalance extends Model
     {
         return [
             'vacation' => [
-                'allowed' => $this->vacation_days,
-                'used' => $this->used_vacation,
-                'remaining' => $this->getRemainingBalance('vacation'),
+                'allowed'   => $this->vacation_days,
+                'used'      => $this->used_vacation,
+                'remaining' => $this->getRemainingForType('vacation'),
             ],
             'sick' => [
-                'allowed' => $this->sick_days,
-                'used' => $this->used_sick,
-                'remaining' => $this->getRemainingBalance('sick'),
+                'allowed'   => $this->sick_days,
+                'used'      => $this->used_sick,
+                'remaining' => $this->getRemainingForType('sick'),
             ],
             'personal' => [
-                'allowed' => $this->personal_days,
-                'used' => $this->used_personal,
-                'remaining' => $this->getRemainingBalance('personal'),
+                'allowed'   => $this->personal_days,
+                'used'      => $this->used_personal,
+                'remaining' => $this->getRemainingForType('personal'),
             ],
             'maternity' => [
-                'allowed' => $this->maternity_days,
-                'used' => $this->used_maternity,
-                'remaining' => $this->getRemainingBalance('maternity'),
+                'allowed'   => $this->maternity_days,
+                'used'      => $this->used_maternity,
+                'remaining' => $this->getRemainingForType('maternity'),
             ],
             'paternity' => [
-                'allowed' => $this->paternity_days,
-                'used' => $this->used_paternity,
-                'remaining' => $this->getRemainingBalance('paternity'),
+                'allowed'   => $this->paternity_days,
+                'used'      => $this->used_paternity,
+                'remaining' => $this->getRemainingForType('paternity'),
+            ],
+            'unpaid' => [
+                'allowed'   => null,
+                'used'      => 0,
+                'remaining' => 999,
             ],
         ];
     }

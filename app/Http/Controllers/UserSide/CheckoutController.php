@@ -612,6 +612,117 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Verify order payment status directly with PayMongo API.
+     * Called when the customer lands on /order-success after checkout.
+     */
+    public function verifyPayment(Request $request, $orderId)
+    {
+        try {
+            $order = Order::find($orderId);
+
+            if (!$order) {
+                return response()->json(['success' => false, 'message' => 'Order not found'], 404);
+            }
+
+            // Idempotent: already verified
+            if ($order->payment_status === 'paid') {
+                return response()->json([
+                    'success'          => true,
+                    'payment_verified' => true,
+                    'already_paid'     => true,
+                    'order'            => $order,
+                ]);
+            }
+
+            if (!$order->paymongo_link_id) {
+                return response()->json([
+                    'success'          => false,
+                    'payment_verified' => false,
+                    'message'          => 'No payment link found for this order',
+                ], 404);
+            }
+
+            // Ask PayMongo for the current checkout session status
+            $apiKey   = config('services.paymongo.secret_key');
+            $response = \Illuminate\Support\Facades\Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->get("https://api.paymongo.com/v1/checkout_sessions/{$order->paymongo_link_id}");
+
+            if ($response->failed()) {
+                Log::error('PayMongo order session status check failed', [
+                    'order_id'   => $order->id,
+                    'session_id' => $order->paymongo_link_id,
+                    'status'     => $response->status(),
+                    'body'       => $response->json(),
+                ]);
+                return response()->json([
+                    'success'          => false,
+                    'payment_verified' => false,
+                    'message'          => 'Could not reach PayMongo to verify payment',
+                ], 502);
+            }
+
+            $data          = $response->json();
+            $paymentStatus = $data['data']['attributes']['payment_status'] ?? null;
+            // PayMongo checkout sessions use payments[0].attributes.status, not payment_status
+            $payments             = $data['data']['attributes']['payments'] ?? [];
+            $firstPayment         = $payments[0] ?? null;
+            $firstPaymentStatus   = $firstPayment['data']['attributes']['status'] ?? ($firstPayment['attributes']['status'] ?? null);
+            $paymentId            = $firstPayment['data']['id'] ?? ($firstPayment['id'] ?? $data['data']['id'] ?? null);
+
+            $isVerified = ($paymentStatus === 'paid') || ($firstPaymentStatus === 'paid');
+
+            Log::info('PayMongo order session check', [
+                'order_id'         => $order->id,
+                'session_id'       => $order->paymongo_link_id,
+                'payment_status'   => $paymentStatus,
+                'first_pay_status' => $firstPaymentStatus,
+                'is_verified'      => $isVerified,
+            ]);
+
+            if (!$isVerified) {
+                return response()->json([
+                    'success'          => false,
+                    'payment_verified' => false,
+                    'payment_status'   => $paymentStatus,
+                    'message'          => 'Payment has not been completed yet',
+                ]);
+            }
+
+            // Mark order as paid
+            $order->update([
+                'payment_status'       => 'paid',
+                'paymongo_payment_id'  => $paymentId,
+                'paid_at'              => now(),
+            ]);
+
+            Log::info('Order payment verified via PayMongo API', [
+                'order_id'   => $order->id,
+                'order_num'  => $order->order_number,
+                'link_id'    => $order->paymongo_link_id,
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json([
+                'success'          => true,
+                'payment_verified' => true,
+                'order'            => $order->fresh(),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Order payment verification error', [
+                'order_id' => $orderId,
+                'error'    => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success'          => false,
+                'payment_verified' => false,
+                'message'          => 'Verification error: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Get order details for confirmation page
      */
     public function getOrderDetails($orderId)

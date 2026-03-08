@@ -288,7 +288,7 @@ export default function JobOrdersPage() {
     return `${base}${trackingPart}${linkPart}`;
   };
 
-  if (userRole !== "STAFF" && userRole !== "MANAGER") {
+  if (userRole !== "STAFF") {
     return (
       <AppLayoutERP>
         <div className="max-w-xl mx-auto mt-24 text-center p-8 bg-white dark:bg-gray-900 rounded-xl shadow">

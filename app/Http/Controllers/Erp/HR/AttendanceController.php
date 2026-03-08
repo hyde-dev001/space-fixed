@@ -32,9 +32,11 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance')) {
+        if (!$user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
+
+        $shopOwner = \App\Models\ShopOwner::find($user->shop_owner_id);
 
         $query = AttendanceRecord::forShopOwner($user->shop_owner_id)
             ->with('employee:id,first_name,last_name,name,email,department,position,shop_owner_id');
@@ -60,11 +62,25 @@ class AttendanceController extends Controller
             $query->where('status', $request->status);
         }
 
+        // Filter: only records that violated the geofence
+        if ($request->boolean('geofence_violations_only')) {
+            $radius = $shopOwner->shop_geofence_radius ?? 100;
+            $query->whereNotNull('distance_from_shop')
+                  ->where('distance_from_shop', '>', $radius);
+        }
+
         $attendance = $query->orderBy('date', 'desc')
             ->orderBy('check_in_time', 'asc')
             ->paginate($request->get('per_page', 20));
 
-        return response()->json($attendance);
+        // Merge geofence metadata into the paginator response so the
+        // frontend can determine inside/outside threshold without a
+        // second request.
+        $paginatorArray = $attendance->toArray();
+        $paginatorArray['geofence_enabled'] = (bool) ($shopOwner->attendance_geofence_enabled ?? false);
+        $paginatorArray['geofence_radius']  = $shopOwner->shop_geofence_radius ?? 100;
+
+        return response()->json($paginatorArray);
     }
 
     /**
@@ -75,7 +91,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -128,7 +144,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -147,7 +163,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -182,7 +198,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -202,7 +218,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -273,7 +289,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -325,7 +341,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -479,9 +495,51 @@ class AttendanceController extends Controller
         }
         
         $isSecondShift = false;
-        
+
         // Get shop hours (needed for status determination)
         $shopOwner = \App\Models\ShopOwner::find($user->shop_owner_id);
+
+        // ── GEOFENCE CHECK ──────────────────────────────────────────────
+        if ($shopOwner && $shopOwner->attendance_geofence_enabled && $shopOwner->shop_latitude) {
+            $lat = $request->input('latitude');
+            $lng = $request->input('longitude');
+
+            if (!$lat || !$lng) {
+                return response()->json([
+                    'error' => 'Location required',
+                    'message' => 'Your shop requires location verification to clock in. Please allow location access and try again.',
+                    'geofence_required' => true,
+                ], 422);
+            }
+
+            $distance = $this->haversineDistance(
+                (float) $shopOwner->shop_latitude,
+                (float) $shopOwner->shop_longitude,
+                (float) $lat,
+                (float) $lng
+            );
+
+            $radius = $shopOwner->shop_geofence_radius ?? 100;
+
+            if ($distance > $radius) {
+                return response()->json([
+                    'error' => 'Too far from shop',
+                    'message' => "You are {$distance}m away from the shop. You must be within {$radius}m to clock in.",
+                    'distance_meters' => $distance,
+                    'allowed_radius' => $radius,
+                    'geofence_required' => true,
+                ], 422);
+            }
+
+            $locationData = [
+                'check_in_latitude'  => $lat,
+                'check_in_longitude' => $lng,
+                'distance_from_shop' => (int) round($distance),
+            ];
+        } else {
+            $locationData = [];
+        }
+        // ── END GEOFENCE ────────────────────────────────────────────────
         $dayOfWeek = strtolower($now->format('l')); // monday, tuesday, etc.
         $openField = $dayOfWeek . '_open';
         $shopOpenTimeValue = $shopOwner ? $shopOwner->{$openField} : null;
@@ -529,17 +587,17 @@ class AttendanceController extends Controller
 
         if ($existingRecord) {
             // Update existing record
-            $existingRecord->update([
+            $existingRecord->update(array_merge([
                 'check_in_time' => $checkInTime,
                 'status' => $status,
                 'is_early' => $isEarly,
                 'minutes_early' => $minutesEarly,
                 'expected_check_in' => $expectedCheckIn,
-            ]);
+            ], $locationData));
             $attendance = $existingRecord;
         } else {
             // Create new record
-            $attendance = AttendanceRecord::create([
+            $attendance = AttendanceRecord::create(array_merge([
                 'employee_id' => $employee->id,
                 'date' => $today,
                 'check_in_time' => $checkInTime,
@@ -548,7 +606,7 @@ class AttendanceController extends Controller
                 'is_early' => $isEarly,
                 'minutes_early' => $minutesEarly,
                 'expected_check_in' => $expectedCheckIn,
-            ]);
+            ], $locationData));
         }
 
         // Refresh to get calculated lateness fields
@@ -624,8 +682,17 @@ class AttendanceController extends Controller
         // Calculate working hours
         $checkInDateTime = Carbon::parse($attendance->date)->setTimeFromTimeString($attendance->check_in_time);
         $checkOutDateTime = Carbon::parse($today)->setTimeFromTimeString($checkOutTime);
-        $totalHours = $checkOutDateTime->diffInHours($checkInDateTime, true);
-        
+
+        // Pre-calculate lunch break deduction (minutes)
+        $lunchMinutesDeducted = 0;
+        if ($attendance->lunch_break_start && $attendance->lunch_break_end) {
+            $lunchMinutesDeducted = max(0, (int) $attendance->lunch_break_start->diffInMinutes($attendance->lunch_break_end));
+        }
+
+        // Use minutes for sub-hour precision, then deduct lunch
+        $totalMinutes = max(0, $checkInDateTime->diffInMinutes($checkOutDateTime) - $lunchMinutesDeducted);
+        $totalHours = $totalMinutes / 60;
+
         // SEAMLESS OVERTIME: Automatically calculate overtime hours
         $regularHours = 0;
         $overtimeHours = 0;
@@ -645,17 +712,22 @@ class AttendanceController extends Controller
         // Parse times for comparison
         $regularEndTime = Carbon::parse($today)->setTimeFromTimeString($shopCloseTime);
         
+        // Flag early departure (left before shop closing with no approved overtime)
+        $isEarlyDeparture = !$approvedOvertime && $checkOutDateTime->lessThan($regularEndTime);
+        $minutesEarlyDeparture = $isEarlyDeparture ? (int) $checkOutDateTime->diffInMinutes($regularEndTime) : 0;
+
         if ($approvedOvertime && $checkOutDateTime->greaterThan($regularEndTime)) {
             // Employee worked beyond regular hours with approved OT
-            $regularHours = $regularEndTime->diffInHours($checkInDateTime, true);
-            $overtimeHours = $checkOutDateTime->diffInHours($regularEndTime, true);
-            
+            // Deduct lunch from regular hours only (lunch falls within regular shift)
+            $regularHours = max(0, ($checkInDateTime->diffInMinutes($regularEndTime) - $lunchMinutesDeducted)) / 60;
+            $overtimeHours = max(0, $regularEndTime->diffInMinutes($checkOutDateTime)) / 60;
+
             // Cap overtime at approved amount
             $approvedOvertimeHours = $approvedOvertime->hours;
             if ($overtimeHours > $approvedOvertimeHours) {
                 $overtimeHours = $approvedOvertimeHours;
             }
-            
+
             // Update overtime request with actual hours worked
             $approvedOvertime->update([
                 'actual_hours' => $overtimeHours,
@@ -663,7 +735,7 @@ class AttendanceController extends Controller
                 'actual_end_time' => $checkOutTime,
                 'checked_out_at' => $now,
             ]);
-            
+
             \Log::info('Overtime hours automatically calculated', [
                 'employee_id' => $employee->id,
                 'regular_hours' => $regularHours,
@@ -679,6 +751,8 @@ class AttendanceController extends Controller
             'check_out_time' => $checkOutTime,
             'working_hours' => round($regularHours, 2),
             'overtime_hours' => round($overtimeHours, 2),
+            'is_early_departure' => $isEarlyDeparture,
+            'minutes_early_departure' => $minutesEarlyDeparture,
         ]);
 
         return response()->json([
@@ -913,7 +987,7 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance')) {
+        if (!$user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -933,7 +1007,7 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance')) {
+        if (!$user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -954,7 +1028,7 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance')) {
+        if (!$user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -978,7 +1052,7 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance')) {
+        if (!$user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -997,7 +1071,7 @@ class AttendanceController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance')) {
+        if (!$user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -1040,6 +1114,8 @@ class AttendanceController extends Controller
             'is_open' => !empty($openTime) && !empty($closeTime),
             'open' => $openTime ? substr($openTime, 0, 5) : null,
             'close' => $closeTime ? substr($closeTime, 0, 5) : null,
+            'geofence_enabled' => (bool) ($shopOwner->attendance_geofence_enabled ?? false),
+            'geofence_radius'  => $shopOwner->shop_geofence_radius ?? 100,
         ]);
     }
 
@@ -1177,7 +1253,7 @@ class AttendanceController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -1263,5 +1339,21 @@ class AttendanceController extends Controller
                 ];
             }),
         ]);
+    }
+
+    /**
+     * Haversine formula — distance in meters between two GPS coordinates.
+     */
+    private function haversineDistance(float $lat1, float $lon1, float $lat2, float $lon2): int
+    {
+        $R  = 6371000; // Earth radius in metres
+        $φ1 = deg2rad($lat1);
+        $φ2 = deg2rad($lat2);
+        $Δφ = deg2rad($lat2 - $lat1);
+        $Δλ = deg2rad($lon2 - $lon1);
+
+        $a = sin($Δφ / 2) ** 2 + cos($φ1) * cos($φ2) * sin($Δλ / 2) ** 2;
+
+        return (int) round($R * 2 * atan2(sqrt($a), sqrt(1 - $a)));
     }
 }

@@ -7,9 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Enums\OrderStatus;
 use App\Models\Notification;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Order extends Model
 {
+    use LogsActivity;
+
     protected $table = 'orders';
 
     protected $fillable = [
@@ -43,11 +47,6 @@ class Order extends Model
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
-        // Staff assignment fields
-        'assigned_staff_id',
-        'assigned_at',
-        'assignment_method',
-        'assigned_by',
     ];
 
     protected $casts = [
@@ -85,15 +84,7 @@ class Order extends Model
     }
 
     /**
-     * Get the staff member assigned to process this order
-     */
-    public function assignedStaff(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'assigned_staff_id');
-    }
-
-    /**
-     * Get the user who manually assigned this order (if applicable)
+     * Get the user who last updated this order
      */
     public function assignedByUser(): BelongsTo
     {
@@ -176,5 +167,17 @@ class Order extends Model
                 'shop_id' => $order->shop_owner_id,
             ]);
         });
+    }
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['order_number', 'status', 'payment_status', 'total_amount', 'customer_name'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Order {$eventName}");
     }
 }

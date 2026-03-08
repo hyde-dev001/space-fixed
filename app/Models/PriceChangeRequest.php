@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class PriceChangeRequest extends Model
 {
+    use LogsActivity;
     protected $fillable = [
         'product_id',
         'product_name',
@@ -93,5 +96,17 @@ class PriceChangeRequest extends Model
     {
         if ($this->current_price == 0) return 0;
         return (($this->proposed_price - $this->current_price) / $this->current_price) * 100;
+    }
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['product_name', 'current_price', 'proposed_price', 'status', 'reason'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Price Change Request {$eventName}");
     }
 }

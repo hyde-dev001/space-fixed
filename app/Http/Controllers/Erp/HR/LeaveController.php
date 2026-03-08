@@ -31,7 +31,7 @@ class LeaveController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-employees') && !$user->can('approve-timeoff')) {
+        if (!$user->can('access-employee-directory') && !$user->can('access-leave-approvals')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -91,7 +91,7 @@ class LeaveController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -165,46 +165,29 @@ class LeaveController extends Controller
 
         // ==================== 2. CHECK BALANCE ====================
         $leaveBalance = LeaveBalance::forEmployee($request->employee_id)
-            ->ofType($request->leaveType)
             ->forYear(date('Y', strtotime($request->startDate)))
+            ->forShopOwner($user->shop_owner_id)
             ->first();
 
         if (!$leaveBalance) {
             // Create default leave balance if not exists
-            $leaveBalance = LeaveBalance::create([
-                'employee_id' => $request->employee_id,
-                'leave_type' => $request->leaveType,
-                'year' => date('Y', strtotime($request->startDate)),
-                'total_days' => $policy->calculateAccruedDays($employee),
-                'used_days' => 0,
-                'remaining_days' => $policy->calculateAccruedDays($employee),
-                'shop_owner_id' => $user->shop_owner_id,
-            ]);
+            $leaveBalance = LeaveBalance::createForNewEmployee(
+                $request->employee_id,
+                $user->shop_owner_id,
+                (int) date('Y', strtotime($request->startDate))
+            );
         }
 
-        // Check if balance is sufficient
-        $availableBalance = $leaveBalance->remaining_days;
-        
-        if ($availableBalance < $noOfDays) {
-            // Check if negative balance is allowed
-            if (!$policy->allow_negative_balance) {
-                return response()->json([
-                    'error' => 'Insufficient leave balance',
-                    'message' => "Available: {$availableBalance} days, Requested: {$noOfDays} days",
-                    'available_balance' => $availableBalance,
-                    'requested_days' => $noOfDays
-                ], 422);
-            }
+        // Check if balance is sufficient using per-type columns
+        $availableBalance = $leaveBalance->getRemainingForType($request->leaveType);
 
-            // Check negative balance limit
-            $negativeAmount = $noOfDays - $availableBalance;
-            if ($negativeAmount > $policy->negative_balance_limit) {
-                return response()->json([
-                    'error' => 'Negative balance limit exceeded',
-                    'message' => "Maximum negative balance allowed: {$policy->negative_balance_limit} days",
-                    'negative_balance_limit' => $policy->negative_balance_limit
-                ], 422);
-            }
+        if ($request->leaveType !== 'unpaid' && $availableBalance < $noOfDays) {
+            return response()->json([
+                'error' => 'Insufficient leave balance',
+                'message' => "Available: {$availableBalance} days, Requested: {$noOfDays} days",
+                'available_balance' => $availableBalance,
+                'requested_days' => $noOfDays
+            ], 422);
         }
 
         // ==================== 3. CREATE REQUEST WITH PROPER APPROVAL ROUTING ====================
@@ -307,7 +290,7 @@ class LeaveController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -326,7 +309,7 @@ class LeaveController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -376,7 +359,7 @@ class LeaveController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -412,7 +395,7 @@ class LeaveController extends Controller
         
         // Security Check 2: Role Validation
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             \Log::warning('Unauthorized leave approval attempt', [
                 'user_id' => $user->id,
                 'user_role' => $user->getRoleNames()->first(),
@@ -425,8 +408,7 @@ class LeaveController extends Controller
 
         // Security Check 3: Manager Authority Validation
         if ($user->hasRole('Manager')) {
-            $employee = Employee::find($user->id);
-            if (!$employee || !$this->canManagerApprove($employee, $leaveRequest->employee_id)) {
+            if (!$this->canManagerApprove($user, $leaveRequest->employee_id)) {
                 \Log::warning('Manager attempted to approve leave for non-direct report', [
                     'manager_id' => $user->id,
                     'employee_id' => $leaveRequest->employee_id,
@@ -452,6 +434,22 @@ class LeaveController extends Controller
             'approved_by' => $user->id,
             'approval_date' => now(),
         ]);
+
+        // Deduct leave balance
+        $leaveBalance = LeaveBalance::forEmployee($leaveRequest->employee_id)
+            ->forYear($leaveRequest->start_date->year)
+            ->forShopOwner($leaveRequest->shop_owner_id)
+            ->first();
+
+        if (!$leaveBalance) {
+            $leaveBalance = LeaveBalance::createForNewEmployee(
+                $leaveRequest->employee_id,
+                $leaveRequest->shop_owner_id,
+                $leaveRequest->start_date->year
+            );
+        }
+
+        $leaveBalance->deductForType($leaveRequest->leave_type, $leaveRequest->no_of_days);
 
         // Audit log (if trait is available)
         if (method_exists($this, 'auditApproved')) {
@@ -499,14 +497,23 @@ class LeaveController extends Controller
      */
     private function canManagerApprove($manager, $employeeId): bool
     {
+        // $manager here is a User — look up their Employee record by email
+        $managerEmployee = Employee::where('shop_owner_id', $manager->shop_owner_id)
+            ->where('email', $manager->email)
+            ->first();
+
+        if (!$managerEmployee) {
+            return false;
+        }
+
         $targetEmployee = Employee::find($employeeId);
-        
+
         if (!$targetEmployee) {
             return false;
         }
 
         // Manager can approve if they are the direct manager of the employee
-        return $targetEmployee->manager_id === $manager->id;
+        return $targetEmployee->manager_id === $managerEmployee->id;
     }
 
     /**
@@ -534,7 +541,7 @@ class LeaveController extends Controller
         
         // Security Check 2: Role Validation
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             \Log::warning('Unauthorized leave rejection attempt', [
                 'user_id' => $user->id,
                 'user_role' => $user->getRoleNames()->first(),
@@ -547,8 +554,7 @@ class LeaveController extends Controller
 
         // Security Check 3: Manager Authority Validation
         if ($user->hasRole('Manager')) {
-            $employee = Employee::find($user->id);
-            if (!$employee || !$this->canManagerApprove($employee, $leaveRequest->employee_id)) {
+            if (!$this->canManagerApprove($user, $leaveRequest->employee_id)) {
                 \Log::warning('Manager attempted to reject leave for non-direct report', [
                     'manager_id' => $user->id,
                     'employee_id' => $leaveRequest->employee_id,
@@ -568,6 +574,17 @@ class LeaveController extends Controller
         }
 
         $leaveRequest->reject($request->reason);
+
+        // Restore balance if it was already approved (shouldn't happen normally, but just in case)
+        if ($leaveRequest->getOriginal('status') === 'approved') {
+            $leaveBalance = LeaveBalance::forEmployee($leaveRequest->employee_id)
+                ->forYear($leaveRequest->start_date->year)
+                ->forShopOwner($leaveRequest->shop_owner_id)
+                ->first();
+            if ($leaveBalance) {
+                $leaveBalance->restoreForType($leaveRequest->leave_type, $leaveRequest->no_of_days);
+            }
+        }
 
         // Audit logging
         \Log::info('Leave request rejected', [
@@ -598,6 +615,103 @@ class LeaveController extends Controller
     }
 
     /**
+     * Get pending leave requests (route alias used by hr-api.php).
+     */
+    public function getPending(Request $request): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-leave-approvals')) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $requests = LeaveRequest::forShopOwner($user->shop_owner_id)
+            ->with(['employee:id,first_name,last_name,department'])
+            ->pending()
+            ->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 20));
+
+        return response()->json($requests);
+    }
+
+    /**
+     * Get leave balance for employee (route alias for hr-api.php).
+     */
+    public function getBalance(Request $request, $employeeId): JsonResponse
+    {
+        return $this->balance($request, $employeeId);
+    }
+
+    /**
+     * Staff views their own leave requests.
+     */
+    public function myRequests(Request $request): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+            ->where('email', $user->email)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['data' => [], 'message' => 'No employee record found'], 200);
+        }
+
+        $query = LeaveRequest::where('employee_id', $employee->id)
+            ->where('shop_owner_id', $user->shop_owner_id);
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $requests = $query->orderBy('start_date', 'desc')
+            ->paginate($request->get('per_page', 20));
+
+        // Also return current balance
+        $leaveBalance = LeaveBalance::forEmployee($employee->id)
+            ->forYear(now()->year)
+            ->forShopOwner($user->shop_owner_id)
+            ->first();
+
+        if (!$leaveBalance) {
+            $leaveBalance = LeaveBalance::createForNewEmployee($employee->id, $user->shop_owner_id, now()->year);
+        }
+
+        return response()->json([
+            'data'    => $requests,
+            'balance' => $leaveBalance->getAllBalances(),
+        ]);
+    }
+
+    /**
+     * Staff cancels their own pending leave request.
+     */
+    public function cancelOwn(Request $request, $id): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+            ->where('email', $user->email)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['error' => 'Employee record not found'], 404);
+        }
+
+        $leaveRequest = LeaveRequest::where('employee_id', $employee->id)
+            ->where('shop_owner_id', $user->shop_owner_id)
+            ->findOrFail($id);
+
+        if ($leaveRequest->status !== 'pending') {
+            return response()->json(['error' => 'Only pending leave requests can be cancelled'], 422);
+        }
+
+        $leaveRequest->update(['status' => 'rejected', 'rejection_reason' => 'Cancelled by employee']);
+
+        return response()->json(['message' => 'Leave request cancelled successfully']);
+    }
+
+    /**
      * Get leave statistics.
      */
     public function stats(Request $request): JsonResponse
@@ -605,7 +719,7 @@ class LeaveController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -640,7 +754,7 @@ class LeaveController extends Controller
         $user = Auth::guard('user')->user();
         
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-employees') && !$user->can('view-attendance') && !$user->can('view-payroll')) {
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -706,8 +820,49 @@ class LeaveController extends Controller
         $endDate = Carbon::parse($request->end_date);
         $isHalfDay = $request->boolean('is_half_day', false);
         
-        // Simple day calculation
-        $noOfDays = $isHalfDay ? 0.5 : $startDate->diffInDays($endDate) + 1;
+        // Count business days only
+        $noOfDays = $isHalfDay ? 0.5 : LeaveRequest::calculateDays($request->start_date, $request->end_date);
+
+        // Check for overlapping approved/pending leaves
+        $overlap = LeaveRequest::where('employee_id', $employee->id)
+            ->whereIn('status', ['pending', 'approved'])
+            ->where(function ($q) use ($request) {
+                $q->whereBetween('start_date', [$request->start_date, $request->end_date])
+                  ->orWhereBetween('end_date', [$request->start_date, $request->end_date])
+                  ->orWhere(function ($q2) use ($request) {
+                      $q2->where('start_date', '<=', $request->start_date)
+                         ->where('end_date', '>=', $request->end_date);
+                  });
+            })->exists();
+
+        if ($overlap) {
+            return response()->json([
+                'error' => 'Overlapping leave',
+                'message' => 'You already have a pending or approved leave request covering these dates.',
+            ], 422);
+        }
+
+        // Check leave balance (skip for unpaid leave)
+        if ($request->leave_type !== 'unpaid') {
+            $leaveBalance = LeaveBalance::forEmployee($employee->id)
+                ->forYear($startDate->year)
+                ->forShopOwner($user->shop_owner_id)
+                ->first();
+
+            if (!$leaveBalance) {
+                $leaveBalance = LeaveBalance::createForNewEmployee($employee->id, $user->shop_owner_id, $startDate->year);
+            }
+
+            $available = $leaveBalance->getRemainingForType($request->leave_type);
+            if ($available < $noOfDays) {
+                return response()->json([
+                    'error' => 'Insufficient leave balance',
+                    'message' => "Available: {$available} day(s), Requested: {$noOfDays} day(s)",
+                    'available_balance' => $available,
+                    'requested_days' => $noOfDays,
+                ], 422);
+            }
+        }
 
         // Create leave request
         $leaveRequest = LeaveRequest::create([

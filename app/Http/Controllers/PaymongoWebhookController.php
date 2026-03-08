@@ -146,53 +146,64 @@ class PaymongoWebhookController extends Controller
      */
     private function handleRepairPayment($repairRequest, $paymentId)
     {
-        // Update repair request payment status
+        $policy = $repairRequest->payment_policy ?? 'deposit_50';
+
         $repairRequest->update([
-            'payment_status' => 'completed',
-            'paymongo_payment_id' => $paymentId,
+            'paymongo_payment_id'  => $paymentId,
             'payment_completed_at' => now(),
         ]);
 
-        // Log payment processing
+        if ($policy === 'full_upfront') {
+            // Single upfront payment → fully settled immediately
+            $repairRequest->update(['payment_status' => 'completed']);
+            if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {
+                $repairRequest->update(['status' => 'owner_approval_pending']);
+            } else {
+                $repairRequest->update(['status' => 'pending']);
+            }
+            $phaseLabel = 'full upfront payment';
+
+        } elseif ($policy === 'pay_after') {
+            // Payment at pickup → fully settled, status stays ready_for_pickup
+            $repairRequest->update(['payment_status' => 'completed']);
+            $phaseLabel = 'pay-after (at pickup) payment';
+
+        } else {
+            // deposit_50 (default): two-phase logic
+            $isDepositPhase = in_array($repairRequest->payment_status ?? 'pending', ['pending', null]);
+            $repairRequest->update(['payment_status' => $isDepositPhase ? 'paid' : 'completed']);
+
+            if ($isDepositPhase) {
+                if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {
+                    $repairRequest->update(['status' => 'owner_approval_pending']);
+                } else {
+                    $repairRequest->update(['status' => 'pending']);
+                }
+                $phaseLabel = 'deposit (50%)';
+            } else {
+                $phaseLabel = 'remaining balance (50%)';
+            }
+        }
+
         activity()
             ->performedOn($repairRequest)
             ->withProperties([
-                'request_id' => $repairRequest->request_id,
-                'customer_name' => $repairRequest->customer_name,
-                'amount_paid' => $repairRequest->total,
-                'payment_id' => $paymentId,
+                'request_id'     => $repairRequest->request_id,
+                'policy'         => $policy,
+                'phase'          => $phaseLabel,
+                'payment_id'     => $paymentId,
                 'payment_method' => 'PayMongo',
-                'payment_status' => 'completed',
+                'payment_status' => $repairRequest->fresh()->payment_status,
             ])
-            ->log("Repair payment processed: {$repairRequest->request_id} - ₱{$repairRequest->total}");
+            ->log("Repair payment processed ({$phaseLabel}): {$repairRequest->request_id}");
 
-        // Determine next status based on approval requirements
-        if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {
-            // High-value repairs need owner approval before work begins
-            $repairRequest->update([
-                'status' => 'owner_approval_pending',
-            ]);
-            
-            Log::info('High-value repair payment confirmed - awaiting owner approval', [
-                'repair_id' => $repairRequest->id,
-                'request_id' => $repairRequest->request_id,
-                'payment_id' => $paymentId,
-            ]);
-        } else {
-            // Regular repairs can start work immediately after payment
-            $repairRequest->update([
-                'status' => 'pending',
-            ]);
-            
-            Log::info('Repair payment confirmed - ready for work', [
-                'repair_id' => $repairRequest->id,
-                'request_id' => $repairRequest->request_id,
-                'payment_id' => $paymentId,
-            ]);
-        }
-
-        // TODO: Send confirmation email/notification
-        // Mail::to($repairRequest->email)->send(new RepairPaymentConfirmation($repairRequest));
+        Log::info("Repair payment webhook handled", [
+            'repair_id'  => $repairRequest->id,
+            'request_id' => $repairRequest->request_id,
+            'policy'     => $policy,
+            'phase'      => $phaseLabel,
+            'payment_id' => $paymentId,
+        ]);
 
         return response()->json(['message' => 'Repair payment processed'], 200);
     }

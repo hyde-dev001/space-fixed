@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Payroll extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     protected $table = 'payrolls';
 
@@ -286,5 +288,17 @@ class Payroll extends Model
     public function getFormattedPeriodAttribute(): string
     {
         return \Carbon\Carbon::createFromFormat('Y-m', $this->payroll_period)->format('F Y');
+    }
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['payroll_period', 'net_salary', 'gross_salary', 'status', 'payment_date', 'approval_status', 'approved_by'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Payroll {$eventName}");
     }
 }

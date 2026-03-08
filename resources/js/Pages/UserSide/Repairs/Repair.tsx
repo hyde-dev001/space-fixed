@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Head, router, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
@@ -11,21 +11,42 @@ interface Shop {
   phone?: string;
   email?: string;
   bio?: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface Props {
   shops: Shop[];
 }
 
+// Haversine formula — returns distance in km
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m away`;
+  return `${km.toFixed(1)} km away`;
+}
+
 const Repair: React.FC<Props> = ({ shops }) => {
   const [sortBy, setSortBy] = useState('featured');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState<string | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // Handle image loading errors with fallback
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    const target = e.target as HTMLImageElement;
-    target.src = '/images/shop/shop.jpg'; // Fallback to default shop image
+    (e.target as HTMLImageElement).src = '/images/shop/shop.jpg';
   };
 
   useEffect(() => {
@@ -34,20 +55,46 @@ const Repair: React.FC<Props> = ({ shops }) => {
         setIsSortOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocError('Your browser does not support location.');
+      return;
+    }
+    setLocating(true);
+    setLocError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setSortBy('near_me');
+        setLocating(false);
+      },
+      () => {
+        setLocError('Location access denied. Please allow location in your browser.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }, []);
+
+  const handleSortSelect = (value: string) => {
+    if (value === 'near_me') {
+      requestLocation();
+    } else {
+      setSortBy(value);
+    }
+    setIsSortOpen(false);
+  };
 
   const sortLabelMap: Record<string, string> = {
     featured: 'Featured',
     best_selling: 'Best selling',
     name_asc: 'Alphabetically, A-Z',
     name_desc: 'Alphabetically, Z-A',
-    price_asc: 'Price, low to high',
-    price_desc: 'Price, high to low',
-    created_at_asc: 'Date, old to new',
-    created_at_desc: 'Date, new to old',
+    near_me: 'Near me',
   };
 
   const sortOptions = [
@@ -55,39 +102,44 @@ const Repair: React.FC<Props> = ({ shops }) => {
     { value: 'best_selling', label: 'Best selling' },
     { value: 'name_asc', label: 'Alphabetically, A-Z' },
     { value: 'name_desc', label: 'Alphabetically, Z-A' },
-    { value: 'price_asc', label: 'Price, low to high' },
-    { value: 'price_desc', label: 'Price, high to low' },
-    { value: 'created_at_asc', label: 'Date, old to new' },
-    { value: 'created_at_desc', label: 'Date, new to old' },
+    { value: 'near_me', label: 'Near me 📍' },
   ];
 
+  // Attach computed distance to each shop when we have user coords
+  const shopsWithDistance = useMemo(() => {
+    if (!userCoords) return shops.map(s => ({ ...s, distance: null as number | null }));
+    return shops.map(s => ({
+      ...s,
+      distance:
+        s.latitude != null && s.longitude != null
+          ? haversine(userCoords.lat, userCoords.lng, s.latitude, s.longitude)
+          : null,
+    }));
+  }, [shops, userCoords]);
+
   const sortedShops = useMemo(() => {
-    const items = [...shops];
-
-    if (sortBy === 'best_selling') {
-      return items.sort((a, b) => b.shopRating - a.shopRating);
+    const items = [...shopsWithDistance];
+    switch (sortBy) {
+      case 'best_selling':
+        return items.sort((a, b) => b.shopRating - a.shopRating);
+      case 'name_asc':
+        return items.sort((a, b) => a.shopName.localeCompare(b.shopName));
+      case 'name_desc':
+        return items.sort((a, b) => b.shopName.localeCompare(a.shopName));
+      case 'near_me':
+        return items.sort((a, b) => {
+          if (a.distance == null && b.distance == null) return 0;
+          if (a.distance == null) return 1;
+          if (b.distance == null) return -1;
+          return a.distance - b.distance;
+        });
+      default:
+        return items;
     }
+  }, [shopsWithDistance, sortBy]);
 
-    if (sortBy === 'name_asc') {
-      return items.sort((a, b) => a.shopName.localeCompare(b.shopName));
-    }
-
-    if (sortBy === 'name_desc') {
-      return items.sort((a, b) => b.shopName.localeCompare(a.shopName));
-    }
-
-    if (sortBy === 'created_at_asc') {
-      return items.sort((a, b) => a.id - b.id);
-    }
-
-    if (sortBy === 'created_at_desc') {
-      return items.sort((a, b) => b.id - a.id);
-    }
-
-    return items;
-  }, [shops, sortBy]);
-
-  // (Removed inline request form and requests list — handled elsewhere)
+  const currentSortLabel =
+    sortBy === 'near_me' && locating ? 'Getting location…' : sortLabelMap[sortBy];
 
   return (
     <>
@@ -108,15 +160,12 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 >
                   <span>
                     <span className="font-semibold">Sort by:</span>{' '}
-                    <span>{sortLabelMap[sortBy]}</span>
+                    <span>{currentSortLabel}</span>
                   </span>
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
                     <svg
                       className={`h-3.5 w-3.5 text-black/70 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
+                      viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
                     >
                       <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -130,10 +179,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                         key={option.value}
                         type="button"
                         role="menuitem"
-                        onClick={() => {
-                          setSortBy(option.value);
-                          setIsSortOpen(false);
-                        }}
+                        onClick={() => handleSortSelect(option.value)}
                         className="group w-full px-5 py-2 text-left text-sm"
                       >
                         <span className="relative inline-block text-black/80 group-hover:text-black">
@@ -148,7 +194,40 @@ const Repair: React.FC<Props> = ({ shops }) => {
             </div>
 
             <h1 className="text-4xl lg:text-5xl font-bold text-black mb-4 tracking-tight">ALL REPAIR SERVICES</h1>
-            <p className="text-base text-black/70 mb-8 max-w-2xl leading-relaxed font-light">Browse our curated collection of repair shops. Click a shop card to view details and request service.</p>
+            <p className="text-base text-black/70 mb-4 max-w-2xl leading-relaxed font-light">Browse our curated collection of repair shops. Click a shop card to view details and request service.</p>
+
+            {/* Near Me strip */}
+            {sortBy !== 'near_me' && (
+              <button
+                type="button"
+                onClick={requestLocation}
+                disabled={locating}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-black text-sm font-medium hover:bg-black hover:text-white transition disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                </svg>
+                {locating ? 'Getting your location…' : 'Show shops near me'}
+              </button>
+            )}
+            {sortBy === 'near_me' && userCoords && (
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white text-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                </svg>
+                Sorted by distance from your location
+                <button
+                  type="button"
+                  onClick={() => { setSortBy('featured'); setUserCoords(null); }}
+                  className="ml-2 underline text-white/70 hover:text-white text-xs"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+            {locError && (
+              <p className="mt-2 text-sm text-red-600">{locError}</p>
+            )}
           </div>
 
           {/* Shops Grid */}
@@ -168,9 +247,9 @@ const Repair: React.FC<Props> = ({ shops }) => {
                     type="button"
                   >
                     <div className="aspect-square bg-gray-50 rounded-md flex items-center justify-center p-6 overflow-hidden">
-                      <img 
-                        src={shop.image} 
-                        alt={shop.shopName} 
+                      <img
+                        src={shop.image}
+                        alt={shop.shopName}
                         className="max-h-full max-w-full object-contain"
                         onError={handleImageError}
                         loading="lazy"
@@ -185,6 +264,15 @@ const Repair: React.FC<Props> = ({ shops }) => {
                         {shop.shopLocation}
                         {shop.shopRating > 0 && ` • ${shop.shopRating} ⭐`}
                       </div>
+                      {/* Distance badge — only shown when Near Me is active */}
+                      {shop.distance != null && (
+                        <div className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-black/70">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                          </svg>
+                          {formatDistance(shop.distance)}
+                        </div>
+                      )}
                       <div className="mt-3">
                         <div className="px-4 py-2 border border-black text-black text-sm rounded hover:bg-black hover:text-white transition inline-block">View Shop</div>
                       </div>

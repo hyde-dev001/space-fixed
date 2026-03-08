@@ -96,7 +96,7 @@ export default function TimeIn() {
     const [overtimeHours, setOvertimeHours] = useState('');
     const [overtimeReason, setOvertimeReason] = useState('');
     const [overtimeCustomReason, setOvertimeCustomReason] = useState('');
-    const [shopHours, setShopHours] = useState<{open: string, close: string} | null>(null);
+    const [shopHours, setShopHours] = useState<{open: string; close: string; is_open?: boolean; day?: string; geofence_enabled?: boolean; geofence_radius?: number} | null>(null);
     const [latenessStats, setLatenessStats] = useState<any>(null);
     const [todayOvertimeRequests, setTodayOvertimeRequests] = useState<any[]>([]);
     const [activeOvertimeId, setActiveOvertimeId] = useState<number | null>(null);
@@ -152,14 +152,20 @@ export default function TimeIn() {
                 }
 
                 // Restore lunch break state
-                if (data.is_on_lunch && data.lunch_break_start) {
+                if (data.lunch_break_start) {
                     const [lh, lm] = data.lunch_break_start.split(':');
                     const lunchDate = new Date();
                     lunchDate.setHours(parseInt(lh), parseInt(lm), 0);
                     setLunchStartTime(lunchDate);
-                    setIsOnLunch(true);
                 }
-                
+                if (data.lunch_break_end) {
+                    const [lh2, lm2] = data.lunch_break_end.split(':');
+                    const lunchEndDate = new Date();
+                    lunchEndDate.setHours(parseInt(lh2), parseInt(lm2), 0);
+                    setLunchEndTime(lunchEndDate);
+                }
+                setIsOnLunch(data.is_on_lunch || false);
+
                 // SEAMLESS OVERTIME: Auto-detect if overtime is active
                 if (data.has_approved_overtime && data.overtime_id) {
                     setActiveOvertimeId(data.overtime_id);
@@ -480,20 +486,20 @@ export default function TimeIn() {
 
         // Parse shop hours and current time
         const now = getPHTime();
-        const currentTime = now.getHours() * 60 + now.getMinutes();
-        
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
         // Parse shop open/close times (format: "HH:MM:SS" or "HH:MM")
         const [openHour, openMinute] = shopHours.open.split(':').map(Number);
         const [closeHour, closeMinute] = shopHours.close.split(':').map(Number);
         const shopOpenTime = openHour * 60 + openMinute;
         const shopCloseTime = closeHour * 60 + closeMinute;
-        
+
         // Allow check-in 30 minutes before opening (grace period)
         const gracePeriod = 30;
         const earliestCheckIn = shopOpenTime - gracePeriod;
-        
+
         // Check if current time is before allowed time or after closing
-        if (currentTime < earliestCheckIn || currentTime > shopCloseTime) {
+        if (currentMinutes < earliestCheckIn || currentMinutes > shopCloseTime) {
             const openTimeDisplay = formatTimeFromString(shopHours.open);
             const closeTimeDisplay = formatTimeFromString(shopHours.close);
             
@@ -513,6 +519,38 @@ export default function TimeIn() {
             return;
         }
 
+        // Geofence: get GPS location if required
+        let locationPayload: { latitude?: number; longitude?: number } = {};
+        if (shopHours?.geofence_enabled) {
+            if (!navigator.geolocation) {
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Location Required',
+                    text: 'Your browser does not support GPS location. Please use a modern browser.',
+                    confirmButtonColor: '#ef4444',
+                });
+                return;
+            }
+            try {
+                const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 }),
+                );
+                locationPayload = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+            } catch {
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Location Access Denied',
+                    html: `
+                        <p class="mb-2">Location permission is required to clock in.</p>
+                        <p class="text-sm text-gray-600">Please allow location access in your browser and try again.</p>
+                        <p class="text-sm text-amber-600 mt-2">You must be within ${shopHours.geofence_radius ?? 100} m of the shop.</p>
+                    `,
+                    confirmButtonColor: '#ef4444',
+                });
+                return;
+            }
+        }
+
         setIsLoading(true);
         try {
             const response = await fetch('/api/staff/attendance/check-in', {
@@ -521,6 +559,7 @@ export default function TimeIn() {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
                 },
+                body: Object.keys(locationPayload).length ? JSON.stringify(locationPayload) : undefined,
                 credentials: 'include',
             });
 
@@ -606,8 +645,21 @@ export default function TimeIn() {
                 await fetchAttendanceRecords();
                 await fetchLatenessStats();
             } else {
+                // Handle geofence distance error
+                if (data.error === 'Too far from shop') {
+                    await Swal.fire({
+                        icon: 'error',
+                        title: 'Outside Geofence',
+                        html: `
+                            <p class="mb-2">${data.message}</p>
+                            <p class="text-sm text-gray-600">Your distance: <strong class="text-red-600">${data.distance_meters} m</strong></p>
+                            <p class="text-sm text-gray-600">Allowed radius: <strong class="text-green-600">${data.allowed_radius} m</strong></p>
+                            <p class="text-sm text-amber-600 mt-2">Please move closer to the shop and try again.</p>
+                        `,
+                        confirmButtonColor: '#ef4444',
+                    });
                 // Handle "too early" error (more than 30 minutes before opening)
-                if (data.error === 'Too early to check in') {
+                } else if (data.error === 'Too early to check in') {
                     await Swal.fire({
                         icon: 'warning',
                         title: 'Too Early to Check In',
@@ -952,9 +1004,9 @@ export default function TimeIn() {
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={handleOvertimeClick}
-                                disabled={todayOvertimeRequests.length > 0}
+                                disabled={todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
                                 className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 flex items-center gap-2"
-                                title={todayOvertimeRequests.length > 0 ? 'You already have overtime today' : 'Request overtime'}
+                                title={todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status)) ? 'You already have an active overtime request today' : 'Request overtime'}
                             >
                                 <OvertimeIcon />
                                 Over Time

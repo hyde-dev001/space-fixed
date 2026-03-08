@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { route } from 'ziggy-js';
 import Swal from 'sweetalert2';
+import 'leaflet/dist/leaflet.css';
 import Navigation from "../Shared/Navigation";
 import ComponentCard from "../../../components/common/ComponentCard";
 import Label from "../../../components/form/Label";
@@ -9,7 +10,6 @@ import Input from "../../../components/form/input/InputField";
 import Select from "../../../components/form/Select";
 import Radio from "../../../components/form/input/Radio";
 import DropzoneComponent from "../../../components/form/form-elements/DropZone";
-
 
 export default function ShopOwnerRegistration() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -35,6 +35,18 @@ export default function ShopOwnerRegistration() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Geofence state
+  const [geoLat, setGeoLat] = useState('14.59950000');
+  const [geoLng, setGeoLng] = useState('120.98420000');
+  const [geoAddress, setGeoAddress] = useState('');
+  const [geoRadius, setGeoRadius] = useState<number>(90);
+  const [gettingGPS, setGettingGPS] = useState(false);
+  const [geoError, setGeoError] = useState('');
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const circleRef = useRef<any>(null);
 
   const businessTypeOptions = [
     { value: "retail", label: "Retail" },
@@ -63,12 +75,136 @@ export default function ShopOwnerRegistration() {
     setFormData(prev => ({ ...prev, registrationType: value }));
   };
 
+  const hasValidGeoCoordinates = () => {
+    const lat = parseFloat(geoLat);
+    const lng = parseFloat(geoLng);
+    return Number.isFinite(lat) && Number.isFinite(lng);
+  };
+
+  useEffect(() => {
+    if (currentStep !== 2 || !mapRef.current) return;
+
+    let cancelled = false;
+
+    import('leaflet').then((L) => {
+      if (cancelled || !mapRef.current) return;
+
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      });
+
+      const initLat = parseFloat(geoLat) || 14.5995;
+      const initLng = parseFloat(geoLng) || 120.9842;
+
+      const map = L.map(mapRef.current).setView([initLat, initLng], 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+      }).addTo(map);
+
+      const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
+      const circle = L.circle([initLat, initLng], {
+        radius: geoRadius,
+        color: '#2563eb',
+        fillOpacity: 0.08,
+      }).addTo(map);
+
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        setGeoLat(pos.lat.toFixed(8));
+        setGeoLng(pos.lng.toFixed(8));
+        circle.setLatLng(pos);
+      });
+
+      map.on('click', (e: any) => {
+        marker.setLatLng(e.latlng);
+        circle.setLatLng(e.latlng);
+        setGeoLat(e.latlng.lat.toFixed(8));
+        setGeoLng(e.latlng.lng.toFixed(8));
+      });
+
+      leafletMapRef.current = map;
+      markerRef.current = marker;
+      circleRef.current = circle;
+      window.setTimeout(() => map.invalidateSize(), 0);
+    });
+
+    return () => {
+      cancelled = true;
+      if (leafletMapRef.current) {
+        leafletMapRef.current.remove();
+      }
+      leafletMapRef.current = null;
+      markerRef.current = null;
+      circleRef.current = null;
+    };
+  }, [currentStep]);
+
+  useEffect(() => {
+    if (circleRef.current) {
+      circleRef.current.setRadius(geoRadius);
+    }
+  }, [geoRadius]);
+
+  useEffect(() => {
+    const lat = parseFloat(geoLat);
+    const lng = parseFloat(geoLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (!leafletMapRef.current || !markerRef.current || !circleRef.current) return;
+
+    leafletMapRef.current.setView([lat, lng], 16);
+    markerRef.current.setLatLng([lat, lng]);
+    circleRef.current.setLatLng([lat, lng]);
+  }, [geoLat, geoLng]);
+
+  const handleUseMyGPS = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setGettingGPS(true);
+    setGeoError('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude.toFixed(8);
+        const lng = pos.coords.longitude.toFixed(8);
+        setGeoLat(lat);
+        setGeoLng(lng);
+
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+            { headers: { 'User-Agent': 'SoleSpace/1.0' } },
+          );
+          const data = await res.json();
+          if (data.display_name) {
+            setGeoAddress(data.display_name);
+            setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
+          }
+        } catch {
+          // Keep coordinates even if reverse geocoding fails.
+        }
+
+        setGettingGPS(false);
+      },
+      () => {
+        setGeoError('Could not get your location. Please allow location access.');
+        setGettingGPS(false);
+      },
+      { enableHighAccuracy: true },
+    );
+  };
 
   const validateStep = (step: number): boolean => {
     if (step === 1) {
       return !!(formData.firstName && formData.lastName && formData.email && formData.phone);
     } else if (step === 2) {
-      return !!(formData.businessName && formData.businessAddress && formData.businessType);
+      const hasGeo = hasValidGeoCoordinates();
+      return !!(formData.businessName && formData.businessAddress && formData.businessType && hasGeo);
     } else if (step === 3) {
       return !!(uploadedDocuments.dti.file && uploadedDocuments.mayors_permit.file &&
                 uploadedDocuments.bir.file && uploadedDocuments.valid_id.file);
@@ -87,12 +223,16 @@ export default function ShopOwnerRegistration() {
       }
     }
 
+    if (!hasValidGeoCoordinates()) {
+      return { valid: false, message: 'Please set a valid geofence location (latitude and longitude).'};
+    }
+
     // Check if all documents are uploaded
     if (!uploadedDocuments.dti.file) {
-      return { valid: false, message: 'Business Registration (DTI) is required' };
+      return { valid: false, message: 'Shop Registration (DTI) is required' };
     }
     if (!uploadedDocuments.mayors_permit.file) {
-      return { valid: false, message: "Mayor's Permit / Business Permit is required" };
+      return { valid: false, message: "Mayor's Permit / Shop Permit is required" };
     }
     if (!uploadedDocuments.bir.file) {
       return { valid: false, message: 'BIR Certificate of Registration (COR) is required' };
@@ -108,10 +248,14 @@ export default function ShopOwnerRegistration() {
     if (validateStep(currentStep)) {
       setCurrentStep(currentStep + 1);
     } else {
+      const geofenceMessage = currentStep === 2 && !hasValidGeoCoordinates()
+        ? 'Please place your shop pin on the map or enter valid coordinates before proceeding.'
+        : 'Please fill in all required fields before proceeding.';
+
       Swal.fire({
         icon: 'error',
         title: 'Missing Information',
-        text: 'Please fill in all required fields before proceeding.',
+        text: geofenceMessage,
         confirmButtonColor: '#3085d6',
       });
     }
@@ -160,6 +304,11 @@ export default function ShopOwnerRegistration() {
         submitData.append('business_address', formData.businessAddress);
         submitData.append('business_type', formData.businessType);
         submitData.append('registration_type', formData.registrationType);
+        submitData.append('attendance_geofence_enabled', '1');
+        submitData.append('shop_latitude', geoLat);
+        submitData.append('shop_longitude', geoLng);
+        submitData.append('shop_address', geoAddress || formData.businessAddress);
+        submitData.append('shop_geofence_radius', String(geoRadius));
 
         // Operating hours removed — nothing to append for operating hours
 
@@ -266,7 +415,7 @@ export default function ShopOwnerRegistration() {
                       currentStep >= step ? 'text-gray-900' : 'text-gray-500'
                     }`}>
                       {step === 1 && 'Personal Info'}
-                      {step === 2 && 'Business Info'}
+                      {step === 2 && 'Shop Info'}
                       {step === 3 && 'Documents'}
                       {step === 4 && 'Review & Submit'}
                     </span>
@@ -351,41 +500,53 @@ export default function ShopOwnerRegistration() {
             )}
 
             {currentStep === 2 && (
-              <ComponentCard title="Business Information">
+              <ComponentCard title="Shop Information">
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     <div>
-                      <Label htmlFor="businessName">Business Name</Label>
+                      <Label htmlFor="businessName">Shop Name</Label>
                       <Input
                         type="text"
                         id="businessName"
                         name="businessName"
                         value={formData.businessName}
                         onChange={handleInputChange}
-                        placeholder="Enter business name"
+                        placeholder="Enter shop name"
                         className={errors.business_name ? 'border-red-500' : ''}
                       />
                       {errors.business_name && <p className="mt-1 text-sm text-red-600">{errors.business_name}</p>}
                     </div>
                     <div>
-                      <Label htmlFor="businessAddress">Business Address</Label>
-                      <Input
-                        type="text"
-                        id="businessAddress"
-                        name="businessAddress"
-                        value={formData.businessAddress}
-                        onChange={handleInputChange}
-                        placeholder="Enter business address"
-                        className={errors.business_address ? 'border-red-500' : ''}
-                      />
+                      <Label htmlFor="businessAddress">Shop Address</Label>
+                      <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                        <div className="flex-1">
+                          <Input
+                            type="text"
+                            id="businessAddress"
+                            name="businessAddress"
+                            value={formData.businessAddress}
+                            onChange={handleInputChange}
+                            placeholder="Enter shop address"
+                            className={`w-full ${errors.business_address ? 'border-red-500' : ''}`}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleUseMyGPS}
+                          disabled={gettingGPS}
+                          className="shrink-0 px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {gettingGPS ? 'Getting GPS...' : 'Use My GPS'}
+                        </button>
+                      </div>
                       {errors.business_address && <p className="mt-1 text-sm text-red-600">{errors.business_address}</p>}
                     </div>
                   </div>
                   <div>
-                    <Label>Business Type</Label>
+                    <Label>Shop Type</Label>
                     <Select
                       options={businessTypeOptions}
-                      placeholder="Select business type"
+                      placeholder="Select shop type"
                       onChange={handleSelectChange}
                     />
                     {errors.business_type && <p className="mt-1 text-sm text-red-600">{errors.business_type}</p>}
@@ -412,6 +573,25 @@ export default function ShopOwnerRegistration() {
                       />
                     </div>
                   </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5 space-y-5">
+                    {geoAddress && (
+                      <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                        <span className="font-semibold">Detected address:</span> {geoAddress}. If this is wrong, drag the pin on the map.
+                      </p>
+                    )}
+
+                    <div>
+                      <p className="mb-2 text-sm font-medium text-gray-700">
+                        Shop Location <span className="font-normal text-gray-500">(drag pin or click map to adjust)</span>
+                      </p>
+                      <div ref={mapRef} className="h-72 w-full rounded-xl border border-gray-200 overflow-hidden z-0" />
+                    </div>
+
+                    {geoError && <p className="text-sm text-red-600">{geoError}</p>}
+                    {errors.shop_latitude && <p className="text-sm text-red-600">{errors.shop_latitude}</p>}
+                    {errors.shop_longitude && <p className="text-sm text-red-600">{errors.shop_longitude}</p>}
+                  </div>
                 </div>
                 <div className="flex justify-between pt-4">
                   <button
@@ -435,9 +615,9 @@ export default function ShopOwnerRegistration() {
             {currentStep === 3 && (
               <ComponentCard title="Document Upload">
                 <div className="space-y-4">
-                  <Label>Business Permits & Credentials</Label>
+                  <Label>Shop Permits & Credentials</Label>
                   <p className="text-sm text-gray-600">
-                    Upload your business license, permits, or other relevant credentials for verification.
+                    Upload your shop license, permits, or other relevant credentials for verification.
                   </p>
                   <div className="mb-6">
                     <h4 className="text-lg font-semibold text-gray-800 mb-4">Document Submission Instructions</h4>
@@ -445,8 +625,8 @@ export default function ShopOwnerRegistration() {
                       Please upload clear photos of the following documents:
                     </p>
                     <ul className="list-disc list-inside text-sm text-gray-600 mb-4 space-y-1">
-                      <li>Business Registration (DTI/SEC)</li>
-                      <li>Mayor's Permit / Business Permit</li>
+                      <li>Shop Registration (DTI/SEC)</li>
+                      <li>Mayor's Permit / Shop Permit</li>
                       <li>BIR Certificate of Registration (COR)</li>
                     </ul>
                     <p className="text-sm font-semibold text-gray-800 mb-2">Guidelines for your photos:</p>
@@ -463,7 +643,7 @@ export default function ShopOwnerRegistration() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label>Business Registration (DTI) {uploadedDocuments.dti.file && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
+                      <Label>Shop Registration (DTI) {uploadedDocuments.dti.file && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -476,7 +656,7 @@ export default function ShopOwnerRegistration() {
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>Business Registration (DTI)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
+                              html: `<p><strong>${file.name}</strong> was added to <strong>Shop Registration (DTI)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
                               confirmButtonColor: '#3085d6',
                             });
@@ -501,7 +681,7 @@ export default function ShopOwnerRegistration() {
                       {errors.dti_registration && <p className="mt-1 text-sm text-red-600">{errors.dti_registration}</p>}
                     </div>
                     <div>
-                      <Label>Mayor's Permit / Business Permit {uploadedDocuments.mayors_permit.file && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
+                      <Label>Mayor's Permit / Shop Permit {uploadedDocuments.mayors_permit.file && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -513,7 +693,7 @@ export default function ShopOwnerRegistration() {
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>Mayor's Permit / Business Permit</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
+                              html: `<p><strong>${file.name}</strong> was added to <strong>Mayor's Permit / Shop Permit</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
                               confirmButtonColor: '#3085d6',
                             });
@@ -646,7 +826,7 @@ export default function ShopOwnerRegistration() {
                       <h4 className="font-semibold text-gray-900 mb-2">Review Timeline</h4>
                       <ul className="text-sm text-gray-700 space-y-1">
                         <li>• Review period: 3 to 7 business days</li>
-                        <li>• Our team verifies all documents and business details</li>
+                        <li>• Our team verifies all documents and shop details</li>
                         <li>• You'll receive status updates via email</li>
                       </ul>
                     </div>
@@ -739,7 +919,7 @@ export default function ShopOwnerRegistration() {
                       <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
                         <span className="text-xs font-semibold text-blue-600">2</span>
                       </div>
-                      <p className="text-sm text-gray-700">We verify business registration details</p>
+                      <p className="text-sm text-gray-700">We verify shop registration details</p>
                     </div>
                     <div className="flex items-start space-x-3">
                       <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
@@ -758,13 +938,13 @@ export default function ShopOwnerRegistration() {
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
-                      <span className="text-sm text-gray-700">Business Registration (DTI)</span>
+                      <span className="text-sm text-gray-700">Shop Registration (DTI)</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
-                      <span className="text-sm text-gray-700">Mayor's Permit / Business Permit</span>
+                      <span className="text-sm text-gray-700">Mayor's Permit / Shop Permit</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">

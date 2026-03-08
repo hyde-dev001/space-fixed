@@ -69,14 +69,24 @@ const navItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="10" width="16" height="10" rx="2"></rect>
-        <path d="M8 10V8a4 4 0 018 0v2"></path>
-        <path d="M12 14v2"></path>
+        <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18" />
       </svg>
     ),
     name: "Suspend Accounts",
     route: "shopOwner.suspend-accounts",
     path: "/shopOwner/suspend-accounts",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+        <path d="M8 21h8m-4-4v4"></path>
+        <path d="M7 8h.01M11 8h6M7 12h4m2 0h3"></path>
+      </svg>
+    ),
+    name: "DSS Insights",
+    route: "shop-owner.dss-insights",
+    path: "/shop-owner/dss-insights",
   },
 ];
 
@@ -248,9 +258,15 @@ const AppSidebar_shopOwner: React.FC = () => {
     const isCompany = shopOwner.is_company === true;
     const canManageStaff = shopOwner.can_manage_staff === true;
 
+    // DSS Insights - visible to ALL individual accounts (repair, retail, both) AND company accounts
+    if (menuItem.route === 'shop-owner.dss-insights') {
+      return true;
+    }
+
     // Business-only features (require Business registration)
     const companyOnlyRoutes = [
       'shopOwner.user-access-control',
+      'shop-owner.audit-logs',
       'shop-owner.price-approvals',
       'shop-owner.purchase-request-approval',
       'shop-owner.repair-reject-approval',
@@ -267,7 +283,8 @@ const AppSidebar_shopOwner: React.FC = () => {
       'shop-owner.job-orders-retail',
       'shop-owner.job-orders-repair',
       'shop-owner.product-uploder',
-      'shop-owner.upload-services'
+      'shop-owner.upload-services',
+      'shop-owner.inventory-overview',
     ];
 
     if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
@@ -277,7 +294,7 @@ const AppSidebar_shopOwner: React.FC = () => {
       }
 
       // For individual accounts, show based on business type
-      const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
+      const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder', 'shop-owner.inventory-overview'];
       const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.upload-services'];
 
       if (retailRoutes.includes(menuItem.route)) {

@@ -5,9 +5,12 @@ namespace App\Http\Controllers\ERP\HR;
 use App\Http\Controllers\Controller;
 use App\Models\HR\OvertimeRequest;
 use App\Models\Employee;
+use App\Models\User;
+use App\Notifications\HR\OvertimeRequestApproved;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -164,7 +167,7 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('view-attendance') && !$user->hasRole('Manager')) {
+        if (!$user->can('access-attendance-records') || $user->can('access-overtime-approvals') && !$user->hasRole('Manager')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -219,7 +222,20 @@ class OvertimeController extends Controller
         }
 
         $overtimeRequest->approve($user->id, $request->notes);
-        
+
+        // Send notification to the employee
+        try {
+            $employee = $overtimeRequest->employee()->with('user')->first();
+            if ($employee && $employee->user) {
+                $employee->user->notify(new OvertimeRequestApproved($overtimeRequest->fresh(), $user));
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send overtime approval notification', [
+                'overtime_request_id' => $overtimeRequest->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // SEAMLESS OVERTIME: Automatically extend the employee's shift for this date
         // This eliminates the need for manual "Start Overtime" button clicks
         $this->autoExtendShiftSchedule($overtimeRequest);

@@ -42,7 +42,10 @@ const Payment: React.FC = () => {
   const repairTotalParam = searchParams.get('total');
   const repairTypeParam = searchParams.get('repair_type');
   const repairOrderNumberParam = searchParams.get('order_number');
+  const premiumPlanParam = searchParams.get('plan');
+  const premiumTotalParam = searchParams.get('total');
   const isRepairPayment = searchParams.get('source') === 'repair' && !!repairIdParam && !!repairTotalParam;
+  const isPremiumPayment = searchParams.get('source') === 'premium' && !!premiumPlanParam && !!premiumTotalParam;
 
   const [checkoutData, setCheckoutData] = useState<CheckoutData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -78,6 +81,49 @@ const Payment: React.FC = () => {
               id: `repair-${repairIdParam}`,
               pid: Number(repairIdParam),
               name: repairName,
+              price: totalAmount,
+              qty: 1,
+            },
+          ],
+          total_amount: totalAmount,
+          customer_name: user?.name || '',
+          customer_email: user?.email || '',
+          customer_phone: user?.phone || '',
+          shipping_address: '',
+          address_id: null,
+          shipping_region: null,
+          shipping_province: null,
+          shipping_city: null,
+          shipping_barangay: null,
+          shipping_postal_code: null,
+          shipping_address_line: null,
+          payment_method: 'paymongo',
+        };
+
+        setCheckoutData(data);
+        setSelectedPaymentMethod('paymongo');
+        setCustomerName(data.customer_name);
+        setCustomerEmail(data.customer_email);
+        setCustomerPhone(data.customer_phone);
+        return;
+      }
+
+      if (isPremiumPayment) {
+        const totalAmount = Number.parseFloat(premiumTotalParam || '0') || 0;
+        const normalizedPlan = (premiumPlanParam || '').toLowerCase();
+        const premiumPlanName =
+          normalizedPlan === 'basic'
+            ? 'Premium Plan - Basic'
+            : normalizedPlan === 'pro'
+              ? 'Premium Plan - Pro'
+              : 'Premium Plan - Premium';
+
+        const data: CheckoutData = {
+          items: [
+            {
+              id: `premium-${normalizedPlan || 'plan'}`,
+              pid: 0,
+              name: premiumPlanName,
               price: totalAmount,
               qty: 1,
             },
@@ -305,11 +351,15 @@ const Payment: React.FC = () => {
         body: JSON.stringify({
           amount: checkoutData.total_amount,
           description: `SoleSpace Order #${orderResult.order_number || orderResult.order?.order_number || ''} - ${checkoutData.items.map(item => item.name).join(', ')}`,
+          order_id: orderId,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+        if (errorData.error === 'shop_payment_not_configured') {
+          throw new Error('This shop has not set up online payments yet. Please choose Cash on Delivery or contact the shop.');
+        }
         throw new Error(errorData.error || 'Failed to create payment link');
       }
 
@@ -362,10 +412,20 @@ const Payment: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-white">
       <Head title="Payment" />
 
-      <Navigation />
+      {!isPremiumPayment && <Navigation />}
 
       <main className="flex-1">
         <div className="max-w-7xl mx-auto py-12 px-6 text-black">
+          {isPremiumPayment && (
+            <div className="mb-6">
+              <Link
+                href="/shop-owner/premium-benefits"
+                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 hover:text-gray-900"
+              >
+                Back
+              </Link>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
             {/* Left: Payment Form (span 2 on md) */}
             <div className="md:col-span-2">
@@ -373,7 +433,6 @@ const Payment: React.FC = () => {
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold text-black">Contact</h2>
-                  <button className="text-sm underline text-black">Sign in</button>
                 </div>
                 <input
                   type="email"
@@ -390,7 +449,7 @@ const Payment: React.FC = () => {
 
               {/* Delivery Section */}
               <div className="mb-8">
-                <h2 className="text-lg font-semibold text-black mb-4">Delivery</h2>
+                {!isPremiumPayment && <h2 className="text-lg font-semibold text-black mb-4">Delivery</h2>}
                 <div className="space-y-4">
                   {/* First Name & Last Name */}
                   <div className="grid grid-cols-2 gap-4">
@@ -429,16 +488,18 @@ const Payment: React.FC = () => {
                   </div>
 
                   {/* Barangay */}
-                  <div>
-                    <label className="block text-sm font-medium text-black mb-2">Barangay, Landmarks, Optional (LBC Branch)</label>
-                    <input
-                      type="text"
-                      placeholder="Barangay, Landmarks, Optional (LBC Branch)"
-                      value={shippingBarangay}
-                      onChange={e => setShippingBarangay(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                    />
-                  </div>
+                  {!isPremiumPayment && (
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Barangay, Landmarks, Optional (LBC Branch)</label>
+                      <input
+                        type="text"
+                        placeholder="Barangay, Landmarks, Optional (LBC Branch)"
+                        value={shippingBarangay}
+                        onChange={e => setShippingBarangay(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                      />
+                    </div>
+                  )}
 
                   {/* Postal Code & City */}
                   <div className="grid grid-cols-2 gap-4">
@@ -601,20 +662,22 @@ const Payment: React.FC = () => {
                     </div>
                   </label>
 
-                  <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
-                    <input
-                      type="radio"
-                      name="payment-method"
-                      value="cod"
-                      checked={selectedPaymentMethod === 'cod'}
-                      onChange={() => setSelectedPaymentMethod('cod')}
-                      className="w-4 h-4 mt-1"
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-black">Cash on Delivery (COD)</span>
-                      <p className="text-xs text-gray-600">Pay in cash when your order arrives.</p>
-                    </div>
-                  </label>
+                  {!isPremiumPayment && (
+                    <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                      <input
+                        type="radio"
+                        name="payment-method"
+                        value="cod"
+                        checked={selectedPaymentMethod === 'cod'}
+                        onChange={() => setSelectedPaymentMethod('cod')}
+                        className="w-4 h-4 mt-1"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-black">Cash on Delivery (COD)</span>
+                        <p className="text-xs text-gray-600">Pay in cash when your order arrives.</p>
+                      </div>
+                    </label>
+                  )}
                 </div>
 
                 <div className="w-full">
@@ -651,109 +714,110 @@ const Payment: React.FC = () => {
                 </div>
               </div>
 
-              {/* Billing Address */}
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold text-black mb-4">Billing address</h2>
+              {!isPremiumPayment && (
+                <div className="mb-8">
+                  <h2 className="text-lg font-semibold text-black mb-4">Billing address</h2>
 
-                <label className="flex items-start gap-3 p-4 border border-gray-300 rounded mb-4 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="billing"
-                    checked={billingAddressSame}
-                    onChange={() => setBillingAddressSame(true)}
-                    className="w-4 h-4 mt-1"
-                  />
-                  <span className="text-black font-medium">Same as shipping address</span>
-                </label>
+                  <label className="flex items-start gap-3 p-4 border border-gray-300 rounded mb-4 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="billing"
+                      checked={billingAddressSame}
+                      onChange={() => setBillingAddressSame(true)}
+                      className="w-4 h-4 mt-1"
+                    />
+                    <span className="text-black font-medium">Same as shipping address</span>
+                  </label>
 
-                <label className="flex items-start gap-3 p-4 border border-gray-300 rounded cursor-pointer">
-                  <input
-                    type="radio"
-                    name="billing"
-                    checked={!billingAddressSame}
-                    onChange={() => setBillingAddressSame(false)}
-                    className="w-4 h-4 mt-1"
-                  />
-                  <span className="text-black">Use a different billing address</span>
-                </label>
+                  <label className="flex items-start gap-3 p-4 border border-gray-300 rounded cursor-pointer">
+                    <input
+                      type="radio"
+                      name="billing"
+                      checked={!billingAddressSame}
+                      onChange={() => setBillingAddressSame(false)}
+                      className="w-4 h-4 mt-1"
+                    />
+                    <span className="text-black">Use a different billing address</span>
+                  </label>
 
-                {!billingAddressSame && (
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">Full name</label>
-                      <input
-                        type="text"
-                        placeholder="Full name"
-                        value={billingName}
-                        onChange={e => setBillingName(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">Phone</label>
-                      <input
-                        type="tel"
-                        placeholder="Phone"
-                        value={billingPhone}
-                        onChange={e => setBillingPhone(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">Address line</label>
-                      <input
-                        type="text"
-                        placeholder="House no., street, building"
-                        value={billingAddressLine}
-                        onChange={e => setBillingAddressLine(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">Barangay</label>
-                      <input
-                        type="text"
-                        placeholder="Barangay"
-                        value={billingBarangay}
-                        onChange={e => setBillingBarangay(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {!billingAddressSame && (
+                    <div className="mt-4 space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-black mb-2">City</label>
+                        <label className="block text-sm font-medium text-black mb-2">Full name</label>
                         <input
                           type="text"
-                          placeholder="City"
-                          value={billingCity}
-                          onChange={e => setBillingCity(e.target.value)}
+                          placeholder="Full name"
+                          value={billingName}
+                          onChange={e => setBillingName(e.target.value)}
                           className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-black mb-2">Region</label>
+                        <label className="block text-sm font-medium text-black mb-2">Phone</label>
+                        <input
+                          type="tel"
+                          placeholder="Phone"
+                          value={billingPhone}
+                          onChange={e => setBillingPhone(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-black mb-2">Address line</label>
                         <input
                           type="text"
-                          placeholder="Region"
-                          value={billingRegion}
-                          onChange={e => setBillingRegion(e.target.value)}
+                          placeholder="House no., street, building"
+                          value={billingAddressLine}
+                          onChange={e => setBillingAddressLine(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-black mb-2">Barangay</label>
+                        <input
+                          type="text"
+                          placeholder="Barangay"
+                          value={billingBarangay}
+                          onChange={e => setBillingBarangay(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">City</label>
+                          <input
+                            type="text"
+                            placeholder="City"
+                            value={billingCity}
+                            onChange={e => setBillingCity(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Region</label>
+                          <input
+                            type="text"
+                            placeholder="Region"
+                            value={billingRegion}
+                            onChange={e => setBillingRegion(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                        <input
+                          type="text"
+                          placeholder="Postal code"
+                          value={billingPostalCode}
+                          onChange={e => setBillingPostalCode(e.target.value)}
                           className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                         />
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">Postal code</label>
-                      <input
-                        type="text"
-                        placeholder="Postal code"
-                        value={billingPostalCode}
-                        onChange={e => setBillingPostalCode(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Pay Now Button */}
               <button
@@ -789,8 +853,14 @@ const Payment: React.FC = () => {
                 <div className="border-b border-gray-200 pb-4 mb-4">
                   {checkoutData.items.map((item) => (
                     <div key={item.id} className="flex gap-4 mb-4 last:mb-0">
-                      <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden flex-shrink-0">
-                        {item.image && <img src={item.image} alt={item.name} className="w-full h-full object-cover" />}
+                      <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden shrink-0">
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                        ) : isPremiumPayment ? (
+                          <div className="flex h-full w-full items-center justify-center bg-slate-900 text-[10px] font-semibold tracking-wide text-white">
+                            SOLESPACE
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-black truncate">{item.name}</p>
@@ -825,7 +895,7 @@ const Payment: React.FC = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Shipping</span>
-                    <span className="text-black">Enter shipping address</span>
+                    <span className="text-black">Calculated by carrier</span>
                   </div>
                 </div>
 

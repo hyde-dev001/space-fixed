@@ -8,10 +8,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Builder;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class AttendanceRecord extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     protected $table = 'attendance_records';
 
@@ -35,6 +37,9 @@ class AttendanceRecord extends Model
         'overtime_hours',
         'lunch_break_start',
         'lunch_break_end',
+        'check_in_latitude',
+        'check_in_longitude',
+        'distance_from_shop',
     ];
 
     protected $casts = [
@@ -51,6 +56,9 @@ class AttendanceRecord extends Model
         'minutes_early_departure' => 'integer',
         'is_late' => 'boolean',
         'is_early_departure' => 'boolean',
+        'check_in_latitude' => 'decimal:8',
+        'check_in_longitude' => 'decimal:8',
+        'distance_from_shop' => 'integer',
     ];
 
     /**
@@ -227,5 +235,17 @@ class AttendanceRecord extends Model
                 $attendance->working_hours = $attendance->calculateWorkingHours();
             }
         });
+    }
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['date', 'status', 'check_in_time', 'check_out_time', 'minutes_late', 'working_hours', 'is_late', 'is_early_departure'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Attendance {$eventName}");
     }
 }

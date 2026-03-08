@@ -19,6 +19,13 @@ Schedule::command('attendance:auto-clockout')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Auto-mark absent / on_leave for employees with no clock-in on a working day
+// Runs daily at 00:05 (just after midnight) to process the completed day
+Schedule::command('attendance:mark-absent')
+    ->dailyAt('00:05')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // Inventory Management: Check for low stock and overdue orders
 // Runs daily at 9:00 AM
 Schedule::command('inventory:check-alerts')

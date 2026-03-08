@@ -35,7 +35,6 @@ use App\Http\Controllers\ERP\HR\DepartmentController;
 use App\Http\Controllers\ERP\HR\DocumentController;
 use App\Http\Controllers\ERP\HR\AuditLogController as HRAuditLogController;
 use App\Http\Controllers\ERP\HR\NotificationController;
-// use App\Http\Controllers\ERP\HR\TrainingController; // TODO: Implement this controller
 use App\Http\Controllers\ERP\HR\HRAnalyticsController;
 use App\Http\Controllers\ERP\HR\SuspensionRequestController;
 
@@ -61,7 +60,7 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
  */
-Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-view-payslip', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|access-payslip-generation|access-view-payslip', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -152,6 +151,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         // Core CRUD
         Route::get('/', [PayrollController::class, 'index'])->name('hr.payroll.index');
         Route::post('/', [PayrollController::class, 'store'])->name('hr.payroll.store');
+        Route::get('/periods', [PayrollController::class, 'payrollPeriods'])->name('hr.payroll.periods');
         Route::get('/{id}', [PayrollController::class, 'show'])->name('hr.payroll.show');
         Route::put('/{id}', [PayrollController::class, 'update'])->name('hr.payroll.update');
         Route::delete('/{id}', [PayrollController::class, 'destroy'])->name('hr.payroll.destroy');
@@ -257,37 +257,6 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     });
 
     // ============================================
-    // TRAINING MANAGEMENT
-    // ============================================
-    // TODO: Implement TrainingController
-    // Route::prefix('training')->group(function () {
-    //     // Training Programs
-    //     Route::get('/programs', [TrainingController::class, 'index'])->name('hr.training.programs.index');
-    //     Route::post('/programs', [TrainingController::class, 'store'])->name('hr.training.programs.store');
-    //     Route::get('/programs/{id}', [TrainingController::class, 'show'])->name('hr.training.programs.show');
-    //     Route::put('/programs/{id}', [TrainingController::class, 'update'])->name('hr.training.programs.update');
-    //     Route::delete('/programs/{id}', [TrainingController::class, 'destroy'])->name('hr.training.programs.destroy');
-    //
-    //     // Training Sessions
-    //     Route::get('/sessions', [TrainingController::class, 'sessions'])->name('hr.training.sessions.index');
-    //     Route::post('/sessions', [TrainingController::class, 'storeSession'])->name('hr.training.sessions.store');
-    //     Route::put('/sessions/{id}', [TrainingController::class, 'updateSession'])->name('hr.training.sessions.update');
-    //     Route::delete('/sessions/{id}', [TrainingController::class, 'destroySession'])->name('hr.training.sessions.destroy');
-    //
-    //     // Enrollments
-    //     Route::get('/enrollments', [TrainingController::class, 'enrollments'])->name('hr.training.enrollments.index');
-    //     Route::post('/enroll', [TrainingController::class, 'enroll'])->name('hr.training.enroll');
-    //     Route::put('/enrollments/{id}', [TrainingController::class, 'updateEnrollment'])->name('hr.training.enrollments.update');
-    //     Route::post('/enrollments/{id}/complete', [TrainingController::class, 'completeEnrollment'])->name('hr.training.enrollments.complete');
-    //
-    //     // Certifications
-    //     Route::get('/certifications', [TrainingController::class, 'certifications'])->name('hr.training.certifications.index');
-    //
-    //     // Statistics
-    //     Route::get('/statistics', [TrainingController::class, 'statistics'])->name('hr.training.statistics');
-    // });
-
-    // ============================================
     // PERMISSION MANAGEMENT
     // ============================================
     Route::get('/permissions/available', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'getAvailablePermissions'])->name('hr.permissions.available');
@@ -333,6 +302,8 @@ Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
     // ============================================
     Route::prefix('leave')->group(function () {
         Route::post('/request', [LeaveController::class, 'selfRequestLeave'])->name('staff.leave.request');
+        Route::get('/my-requests', [LeaveController::class, 'myRequests'])->name('staff.leave.my_requests');
+        Route::delete('/{id}/cancel', [LeaveController::class, 'cancelOwn'])->name('staff.leave.cancel');
     });
 
     // ============================================
@@ -361,4 +332,9 @@ Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
         Route::post('/mark-all-read', [\App\Http\Controllers\ErpNotificationController::class, 'markAllAsRead'])->name('erp.notifications.mark-all-read');
         Route::delete('/{id}', [\App\Http\Controllers\ErpNotificationController::class, 'destroy'])->name('erp.notifications.destroy');
     });
+
+    // ============================================================
+    // SELF-SERVICE PAYSLIPS
+    // ============================================================
+    Route::get('/payslips/my', [PayrollController::class, 'myPayslips'])->name('staff.payslips.my');
 });

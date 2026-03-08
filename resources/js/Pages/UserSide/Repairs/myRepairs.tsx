@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from 'sweetalert2';
@@ -32,11 +32,21 @@ type RepairOrder = {
   payment_enabled_at?: string | null;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
+  assigned_repairer_id?: number | null;
+  repairer_name?: string | null;
+  payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
+  shop_owner_id?: number | null;
 };
 
 type ConversationShop = {
   conversation_id?: number;
   unreadCount?: number;
+};
+
+const getMonthKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 };
 
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
@@ -167,6 +177,9 @@ const MyRepairs: React.FC = () => {
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [cancelNote, setCancelNote] = useState<string>('');
 
+  // Shop capacity cache: shopOwnerId → { active_count, limit, is_full }
+  const [shopCapacityCache, setShopCapacityCache] = useState<Record<number, { active_count: number; limit: number; is_full: boolean }>>({});
+
   // Refund modal states
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundOrderId, setRefundOrderId] = useState<number | null>(null);
@@ -185,6 +198,86 @@ const MyRepairs: React.FC = () => {
   const [hoveredRating, setHoveredRating] = useState<number>(0);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [conversationUnreadCounts, setConversationUnreadCounts] = useState<Record<number, number>>({});
+
+  // Schedule modal state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleOrderId, setScheduleOrderId] = useState<number | null>(null);
+  const [scheduleShopId, setScheduleShopId] = useState<number | null>(null);
+  const [scheduleSelectedDate, setScheduleSelectedDate] = useState<string>('');
+  const [scheduleVisibleMonthKey, setScheduleVisibleMonthKey] = useState<string>('');
+  const [shopClosedDayNumbers, setShopClosedDayNumbers] = useState<Set<number>>(new Set());
+  const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+
+  // Derived calendar data for the schedule modal
+  const scheduleCalendarData = useMemo(() => {
+    if (!scheduleVisibleMonthKey) return null;
+    const [yearText, monthText] = scheduleVisibleMonthKey.split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const monthDate = new Date(year, month - 1, 1);
+    const now = new Date();
+    return {
+      firstWeekday: monthDate.getDay(),
+      totalDays: new Date(year, month, 0).getDate(),
+      monthLabel: monthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+      todayKey: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+    };
+  }, [scheduleVisibleMonthKey]);
+
+  // Fetch shop closed days when the schedule modal opens or the shop changes
+  useEffect(() => {
+    if (!showScheduleModal || !scheduleShopId) return;
+    let cancelled = false;
+    const fetchShopHours = async () => {
+      try {
+        const response = await fetch(
+          `/api/repair/shop-hours?shop_id=${scheduleShopId}`,
+          { headers: { Accept: 'application/json' } }
+        );
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (data.success && Array.isArray(data.closed_day_numbers)) {
+          setShopClosedDayNumbers(new Set<number>(data.closed_day_numbers));
+        }
+      } catch { /* silently ignore */ }
+    };
+    fetchShopHours();
+    return () => { cancelled = true; };
+  }, [showScheduleModal, scheduleShopId]);
+
+  const handleConfirmSchedule = async () => {
+    if (!scheduleOrderId || !scheduleSelectedDate) return;
+    setIsSubmittingSchedule(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/customer/repairs/${scheduleOrderId}/schedule`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ preferred_date: scheduleSelectedDate }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setShowScheduleModal(false);
+        await fetchRepairs();
+        Swal.fire({
+          icon: 'success',
+          title: 'Schedule Confirmed!',
+          text: `Your drop-off date has been set to ${data.preferred_date}.`,
+          confirmButtonColor: '#000000',
+        });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Failed', text: data.message || 'Could not set schedule.', confirmButtonColor: '#000000' });
+      }
+    } catch {
+      Swal.fire({ icon: 'error', title: 'Error', text: 'Something went wrong. Please try again.', confirmButtonColor: '#000000' });
+    } finally {
+      setIsSubmittingSchedule(false);
+    }
+  };
 
   const fetchConversationUnreadCounts = async () => {
     try {
@@ -280,34 +373,51 @@ const MyRepairs: React.FC = () => {
   }, [highlightRepairId, orders]);
 
   useEffect(() => {
-    // Check if user just returned from payment
     const checkPaymentReturn = async () => {
-      const pendingRepairId = sessionStorage.getItem('pendingRepairId');
-      const shouldSimulate = sessionStorage.getItem('simulatePayment');
-      
-      if (pendingRepairId) {
-        // Clear the session storage first
-        sessionStorage.removeItem('pendingRepairId');
-        sessionStorage.removeItem('simulatePayment');
-        
-        if (shouldSimulate === 'true') {
-          // Show processing message
-          Swal.fire({
-            icon: 'info',
-            title: 'Processing Payment...',
-            text: 'Please wait while we confirm your payment.',
-            allowOutsideClick: false,
-            showConfirmButton: false,
-            didOpen: () => {
-              Swal.showLoading();
-            }
-          });
+      const urlParams         = new URLSearchParams(window.location.search);
+      const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
+      const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
+      const pendingRepairId   = sessionStorage.getItem('pendingRepairId');
 
-          // Auto-complete the payment for testing
-          try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            
-            const response = await fetch(`/api/customer/repairs/${pendingRepairId}/simulate-payment`, {
+      // Always clean up URL params and session storage
+      if (isPaymongoSuccess || isPaymongoFailed) {
+        window.history.replaceState({}, '', '/my-repairs');
+      }
+
+      if (isPaymongoFailed) {
+        sessionStorage.removeItem('pendingRepairId');
+        fetchRepairs();
+        Swal.fire({
+          icon: 'error',
+          title: 'Payment Not Completed',
+          text: 'You did not finish the payment. You can try again from My Repairs.',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
+      if (pendingRepairId && isPaymongoSuccess) {
+        sessionStorage.removeItem('pendingRepairId');
+        Swal.fire({
+          icon: 'info',
+          title: 'Verifying Payment...',
+          text: 'Please wait while we confirm your payment with PayMongo.',
+          allowOutsideClick: false,
+          showConfirmButton: false,
+          didOpen: () => { Swal.showLoading(); },
+        });
+
+        try {
+          const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+          // PayMongo redirects back before its own status update propagates.
+          // Retry up to 6 times (12 seconds total) waiting for payment_status = 'paid'.
+          const MAX_ATTEMPTS = 6;
+          const RETRY_DELAY  = 2000;
+          let result: any = null;
+
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            const response = await fetch(`/api/customer/repairs/${pendingRepairId}/verify-payment`, {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -316,107 +426,53 @@ const MyRepairs: React.FC = () => {
                 'X-CSRF-TOKEN': csrfToken || '',
               },
             });
+            result = await response.json();
 
-            if (!response.ok) {
-              throw new Error('Failed to process test payment');
+            if (result.success && result.payment_verified) break;
+
+            // Stop retrying on hard errors (network, server crash, wrong ID)
+            if (response.status >= 500 || response.status === 404) break;
+
+            if (attempt < MAX_ATTEMPTS) {
+              await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
             }
+          }
 
-            // Wait a bit for processing
-            await new Promise(resolve => setTimeout(resolve, 1500));
+          await fetchRepairs();
 
-            // Fetch updated data
-            await fetchRepairs();
-
-            // Show success
+          if (result?.success && result?.payment_verified) {
             Swal.fire({
               icon: 'success',
-              title: 'Payment Successful!',
-              text: 'Your payment has been received. Your repair will begin shortly.',
-              confirmButtonColor: '#000000',
-              timer: 3000,
-              timerProgressBar: true,
-            });
-          } catch (error) {
-            console.error('Auto-payment error:', error);
-            Swal.fire({
-              icon: 'error',
-              title: 'Payment Error',
-              text: 'There was an issue processing your payment. Please contact support.',
-              confirmButtonColor: '#000000',
-            });
-            fetchRepairs();
-          }
-        } else {
-          // Original webhook-based flow
-          Swal.fire({
-            icon: 'info',
-            title: 'Processing Payment...',
-            text: 'Please wait while we confirm your payment.',
-            allowOutsideClick: false,
-            showConfirmButton: false,
-            didOpen: () => {
-              Swal.showLoading();
-            }
-          });
-          
-          // Wait for webhook to process and retry until payment is confirmed
-          let attempts = 0;
-          const maxAttempts = 5;
-          let paymentConfirmed = false;
-          
-          while (attempts < maxAttempts && !paymentConfirmed) {
-            // Wait before checking (2 seconds first attempt, then 1.5 seconds)
-            await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 3000 : 1500));
-            
-            // Fetch the latest repair data
-            try {
-              const response = await axios.get('/api/customer/repairs');
-              if (response.data.success) {
-                setOrders(response.data.data);
-                await fetchConversationUnreadCounts();
-                
-                // Check if payment was confirmed
-                const updatedRepair = response.data.data.find((o: RepairOrder) => o.id === parseInt(pendingRepairId));
-                if (updatedRepair && (updatedRepair.payment_status === 'paid' || updatedRepair.payment_status === 'completed')) {
-                  paymentConfirmed = true;
-                }
-              }
-            } catch (error) {
-              console.error('Error fetching repairs:', error);
-            }
-            
-            attempts++;
-          }
-          
-          // Close processing message and show result
-          if (paymentConfirmed) {
-            Swal.fire({
-              icon: 'success',
-              title: 'Payment Successful!',
+              title: 'Payment Confirmed!',
               text: 'Your payment has been received. Your repair will begin shortly.',
               confirmButtonColor: '#000000',
               timer: 3000,
               timerProgressBar: true,
             });
           } else {
-            // Payment not confirmed yet, but show message anyway
             Swal.fire({
-              icon: 'success',
-              title: 'Payment Successful!',
-              text: 'Your payment has been received. Your repair will begin shortly.',
+              icon: 'warning',
+              title: 'Payment Not Verified',
+              text: result?.message || 'We could not confirm your payment yet. Please try again or contact support.',
               confirmButtonColor: '#000000',
-            }).then(() => {
-              // Force one more refresh
-              fetchRepairs();
             });
           }
+        } catch (error) {
+          console.error('Payment verification error:', error);
+          await fetchRepairs();
+          Swal.fire({
+            icon: 'error',
+            title: 'Verification Error',
+            text: 'There was an issue verifying your payment. Please contact support.',
+            confirmButtonColor: '#000000',
+          });
         }
       } else {
-        // Normal fetch if not returning from payment
+        sessionStorage.removeItem('pendingRepairId');
         fetchRepairs();
       }
     };
-    
+
     checkPaymentReturn();
   }, []);
 
@@ -435,8 +491,37 @@ const MyRepairs: React.FC = () => {
       setLoading(true);
       const response = await axios.get('/api/customer/repairs');
       if (response.data.success) {
-        setOrders(response.data.data);
+        const repairList: RepairOrder[] = response.data.data;
+        setOrders(repairList);
         await fetchConversationUnreadCounts();
+
+        // Fetch capacity for shops that have a repair still waiting for acceptance
+        const waitingShopIds = [...new Set(
+          repairList
+            .filter(o => o.status === 'new_request' || o.status === 'assigned_to_repairer')
+            .map(o => o.shop_owner_id)
+            .filter((id): id is number => typeof id === 'number')
+        )];
+        if (waitingShopIds.length > 0) {
+          const results = await Promise.allSettled(
+            waitingShopIds.map(id =>
+              fetch(`/api/customer/shop/${id}/repair-capacity`, { headers: { Accept: 'application/json' } })
+                .then(r => r.json())
+                .then(data => ({ id, data }))
+            )
+          );
+          const cache: Record<number, { active_count: number; limit: number; is_full: boolean }> = {};
+          results.forEach(res => {
+            if (res.status === 'fulfilled' && res.value.data?.success) {
+              cache[res.value.id] = {
+                active_count: res.value.data.active_count,
+                limit: res.value.data.limit,
+                is_full: res.value.data.is_full,
+              };
+            }
+          });
+          setShopCapacityCache(cache);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch repairs:', error);
@@ -550,9 +635,23 @@ const MyRepairs: React.FC = () => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
+    const policy = order.payment_policy ?? 'deposit_50';
     const isRemainingBalancePhase = order.status === 'ready_for_pickup';
-    const paymentAmount = Math.max(1, order.total_amount / 2);
-    const paymentLabel = isRemainingBalancePhase ? 'remaining balance' : 'down payment';
+
+    // Compute amount and label based on policy
+    let paymentAmount: number;
+    let paymentLabel: string;
+    if (policy === 'full_upfront') {
+      paymentAmount = order.total_amount;
+      paymentLabel = 'full payment';
+    } else if (policy === 'pay_after') {
+      paymentAmount = order.total_amount;
+      paymentLabel = 'full payment (at pickup)';
+    } else {
+      // deposit_50: 50% each phase
+      paymentAmount = Math.max(1, order.total_amount / 2);
+      paymentLabel = isRemainingBalancePhase ? 'remaining balance' : 'down payment';
+    }
 
     setProcessingPayment(true);
 
@@ -569,11 +668,17 @@ const MyRepairs: React.FC = () => {
         body: JSON.stringify({
           amount: paymentAmount,
           description: `SoleSpace Repair #${order.order_number} - ${order.repair_type} (${paymentLabel})`,
+          success_url: `${window.location.origin}/my-repairs?paymongo_success=1`,
+          failed_url:  `${window.location.origin}/my-repairs?paymongo_failed=1`,
+          shop_owner_id: order.shop_owner_id ?? order.shop_id,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+        if (errorData.error === 'shop_payment_not_configured') {
+          throw new Error('This shop has not set up online payments yet. Please contact the shop directly to arrange payment.');
+        }
         throw new Error(errorData.error || 'Failed to create payment link');
       }
 
@@ -597,9 +702,8 @@ const MyRepairs: React.FC = () => {
         body: JSON.stringify({ paymongo_link_id: linkId }),
       });
 
-      // Store repair info for auto-completion on return
+      // Store repair info so we can verify on return
       sessionStorage.setItem('pendingRepairId', orderId.toString());
-      sessionStorage.setItem('simulatePayment', 'true');
 
       // Redirect to PayMongo payment page
       window.location.href = checkoutUrl;
@@ -1342,7 +1446,9 @@ const MyRepairs: React.FC = () => {
                           {order.estimated_completion && (
                             <div>
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">
-                                {order.status === 'completed' || order.status === 'picked_up' ? 'Completed On' : 'Estimated Completion'}
+                                {(order.status === 'completed' || order.status === 'picked_up') && order.completed_at
+                                  ? 'Completed On'
+                                  : 'Preferred Date'}
                               </p>
                               <p className="text-sm text-black font-medium">
                                 {order.completed_at || order.estimated_completion}
@@ -1353,6 +1459,21 @@ const MyRepairs: React.FC = () => {
                       </div>
 
                     </div>
+
+                    {/* Shop at capacity notice — shown when the shop can't accept new repairs yet */}
+                    {(order.status === 'new_request' || order.status === 'assigned_to_repairer') &&
+                      order.shop_owner_id != null &&
+                      shopCapacityCache[order.shop_owner_id]?.is_full && (
+                      <div className="mt-6 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        <svg className="mt-0.5 w-4 h-4 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        </svg>
+                        <span>
+                          <strong>Shop is currently at full capacity</strong> ({shopCapacityCache[order.shop_owner_id].active_count}/{shopCapacityCache[order.shop_owner_id].limit} repairs active).
+                          Your request is queued and will be accepted once capacity opens up.
+                        </span>
+                      </div>
+                    )}
 
                     {/* Repair Total */}
                     <div className="mt-8 pt-6 border-t border-gray-200">
@@ -1379,8 +1500,30 @@ const MyRepairs: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
+                      {/* Set Schedule — visible after repairer accepts/payment done and no drop-off date set yet */}
+                      {/* Walk-in: show as soon as status allows. Delivery: require conversation to exist first */}
+                      {(['repairer_accepted', 'pending', 'in_progress'].includes(order.status)) &&
+                        (order.delivery_method === 'walk_in' || order.conversation_id) &&
+                        !order.estimated_completion && (
+                        <button
+                          onClick={() => {
+                            setScheduleOrderId(order.id);
+                            setScheduleShopId(order.shop_owner_id ?? null);
+                            setScheduleVisibleMonthKey(getMonthKey(new Date()));
+                            setScheduleSelectedDate('');
+                            setShopClosedDayNumbers(new Set());
+                            setShowScheduleModal(true);
+                          }}
+                          className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium tracking-wide hover:bg-blue-700 transition-colors rounded-md flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          SET SCHEDULE
+                        </button>
+                      )}
                       {/* Chat with Repairer and Pay Now - For Pickup/Delivery Only (Not Walk-in) */}
-                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
+                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (order.payment_policy ?? 'deposit_50') !== 'pay_after' && (
                         <>
                           <Link
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
@@ -1452,7 +1595,7 @@ const MyRepairs: React.FC = () => {
                         </>
                       )}
                       
-                      {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
+                      {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (order.payment_policy ?? 'deposit_50') !== 'pay_after' && (
                         <>
                           <button
                             onClick={() => handlePayNow(order.id)}
@@ -1490,17 +1633,20 @@ const MyRepairs: React.FC = () => {
                       )}
                       {order.status === 'ready_for_pickup' && (
                         <>
-                          <button
-                            onClick={() => handlePayNow(order.id)}
-                            disabled={!order.payment_enabled || processingPayment}
-                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
-                              order.payment_enabled && !processingPayment
-                                ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            }`}
-                          >
-                            {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
-                          </button>
+                          {/* For deposit_50 and pay_after only — full_upfront is already paid */}
+                          {(order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                            <button
+                              onClick={() => handlePayNow(order.id)}
+                              disabled={!order.payment_enabled || processingPayment}
+                              className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                                order.payment_enabled && !processingPayment
+                                  ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
+                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              }`}
+                            >
+                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => confirmPickup(order.id)}
@@ -2032,6 +2178,122 @@ const MyRepairs: React.FC = () => {
                   }`}
                 >
                   Submit Review
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Schedule Modal */}
+        {showScheduleModal && scheduleCalendarData && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black opacity-50" onClick={() => setShowScheduleModal(false)} />
+            <div className="bg-white rounded-xl shadow-2xl z-50 w-full max-w-md">
+              <div className="px-6 py-4 border-b flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-black">Set Your Schedule</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">Pick a drop-off date after discussing with your repairer.</p>
+                </div>
+                <button onClick={() => setShowScheduleModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                {/* Month navigation */}
+                <div className="flex items-center justify-between mb-4">
+                  <p className="font-semibold text-black">{scheduleCalendarData.monthLabel}</p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [y, m] = scheduleVisibleMonthKey.split('-').map(Number);
+                        setScheduleVisibleMonthKey(getMonthKey(new Date(y, m - 2, 1)));
+                      }}
+                      className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-gray-700" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M12.78 15.78a.75.75 0 01-1.06 0L6.47 10.53a.75.75 0 010-1.06l5.25-5.25a.75.75 0 111.06 1.06L8.06 10l4.72 4.72a.75.75 0 010 1.06z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [y, m] = scheduleVisibleMonthKey.split('-').map(Number);
+                        setScheduleVisibleMonthKey(getMonthKey(new Date(y, m, 1)));
+                      }}
+                      className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-gray-700" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M7.22 4.22a.75.75 0 011.06 0l5.25 5.25a.75.75 0 010 1.06l-5.25 5.25a.75.75 0 11-1.06-1.06L11.94 10 7.22 5.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                {/* Legend */}
+                <div className="flex flex-wrap gap-4 text-xs text-gray-600 mb-3">
+                  <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-gray-200" />Available</span>
+                  <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-gray-700" />Shop Closed</span>
+                  <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-blue-600" />Your selection</span>
+                </div>
+                {/* Day headers */}
+                <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <span key={d}>{d}</span>)}
+                </div>
+                {/* Calendar grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: scheduleCalendarData.firstWeekday }).map((_, i) => <div key={`e-${i}`} className="h-9" />)}
+                  {Array.from({ length: scheduleCalendarData.totalDays }).map((_, i) => {
+                    const day = i + 1;
+                    const dateKey = `${scheduleVisibleMonthKey}-${String(day).padStart(2, '0')}`;
+                    const isPast = dateKey <= scheduleCalendarData.todayKey;
+                    const isShopClosed = shopClosedDayNumbers.has(new Date(`${dateKey}T00:00:00`).getDay());
+                    const isSelected = scheduleSelectedDate === dateKey;
+                    return (
+                      <button
+                        key={dateKey}
+                        type="button"
+                        disabled={isPast || isShopClosed}
+                        onClick={() => setScheduleSelectedDate(dateKey)}
+                        className={`h-9 rounded-lg border text-sm font-medium transition-colors ${
+                          isPast
+                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-blue-600 border-blue-600 text-white'
+                            : isShopClosed
+                            ? 'bg-gray-700 border-gray-700 text-white cursor-not-allowed'
+                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                        title={isPast ? 'Past date' : isShopClosed ? 'Shop is closed this day' : 'Select this date'}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+                {scheduleSelectedDate && (
+                  <p className="mt-3 text-sm text-blue-700 font-medium text-center">
+                    Selected: {new Date(`${scheduleSelectedDate}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </p>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t flex justify-end gap-3">
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  className="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSchedule}
+                  disabled={!scheduleSelectedDate || isSubmittingSchedule}
+                  className={`px-5 py-2 rounded-lg text-white text-sm font-medium transition-colors ${
+                    scheduleSelectedDate && !isSubmittingSchedule
+                      ? 'bg-black hover:bg-gray-800'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                >
+                  {isSubmittingSchedule ? 'Saving...' : 'Confirm Schedule'}
                 </button>
               </div>
             </div>

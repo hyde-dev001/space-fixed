@@ -35,6 +35,11 @@ return [
         ],
     ],
 
+    'paymongo' => [
+        'secret_key'     => env('PAYMONGO_SECRET_KEY'),
+        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+    ],
+
     'mailtrap-sdk' => [
         'host' => env('MAILTRAP_HOST', 'send.api.mailtrap.io'),
         'apiKey' => env('MAILTRAP_API_KEY'),

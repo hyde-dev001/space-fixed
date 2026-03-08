@@ -1,13 +1,66 @@
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 
-export default function BarChartOne() {
+interface BarChartOneProps {
+  categories?: string[];
+  seriesData?: number[];
+  series?: Array<{ name: string; data: number[] }>;
+  seriesName?: string;
+  color?: string;
+  colors?: string[];
+  height?: number;
+  minWidthClass?: string;
+  yAxisFormatter?: (val: number) => string;
+  tooltipFormatter?: (val: number) => string;
+}
+
+export default function BarChartOne({
+  categories,
+  seriesData,
+  series,
+  seriesName = "Sales",
+  color = "#465fff",
+  colors,
+  height = 180,
+  minWidthClass = "min-w-[1000px]",
+  yAxisFormatter,
+  tooltipFormatter,
+}: BarChartOneProps = {}) {
+  const defaultCategories = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  const chartCategories = categories && categories.length > 0 ? categories : defaultCategories;
+  const chartSeriesData = seriesData && seriesData.length > 0
+    ? seriesData
+    : [168, 385, 201, 298, 187, 195, 291, 110, 215, 390, 280, 112];
+
+  const chartSeries = series && series.length > 0
+    ? series
+    : [
+        {
+          name: seriesName,
+          data: chartSeriesData,
+        },
+      ];
+
   const options: ApexOptions = {
-    colors: ["#465fff"],
+    colors: colors && colors.length > 0 ? colors : [color],
     chart: {
       fontFamily: "Outfit, sans-serif",
       type: "bar",
-      height: 180,
+      height,
       toolbar: {
         show: false,
       },
@@ -29,20 +82,7 @@ export default function BarChartOne() {
       colors: ["transparent"],
     },
     xaxis: {
-      categories: [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-      ],
+      categories: chartCategories,
       axisBorder: {
         show: false,
       },
@@ -59,6 +99,9 @@ export default function BarChartOne() {
     yaxis: {
       title: {
         text: undefined,
+      },
+      labels: {
+        formatter: (val: number) => (yAxisFormatter ? yAxisFormatter(val) : `${val}`),
       },
     },
     grid: {
@@ -77,20 +120,15 @@ export default function BarChartOne() {
         show: false,
       },
       y: {
-        formatter: (val: number) => `${val}`,
+        formatter: (val: number) => (tooltipFormatter ? tooltipFormatter(val) : `${val}`),
       },
     },
   };
-  const series = [
-    {
-      name: "Sales",
-      data: [168, 385, 201, 298, 187, 195, 291, 110, 215, 390, 280, 112],
-    },
-  ];
+
   return (
     <div className="max-w-full overflow-x-auto custom-scrollbar">
-      <div id="chartOne" className="min-w-[1000px]">
-        <Chart options={options} series={series} type="bar" height={180} />
+      <div id="chartOne" className={minWidthClass}>
+        <Chart options={options} series={chartSeries} type="bar" height={height} />
       </div>
     </div>
   );

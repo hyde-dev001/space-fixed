@@ -54,7 +54,7 @@ class ProductController extends Controller
                 ->defaultSort('-created_at')
                 ->where('is_active', true)
                 ->with([
-                    'shopOwner:id,first_name,last_name,business_name,business_type',
+                    'shopOwner:id,first_name,last_name,business_name,business_type,shop_latitude,shop_longitude',
                     'colorVariants' => function ($query) {
                         $query->active()->orderBy('sort_order');
                     },
@@ -106,9 +106,14 @@ class ProductController extends Controller
                 // Add shop_owner for frontend compatibility
                 if ($product->shopOwner) {
                     $product->shop_owner = [
-                        'id' => $product->shopOwner->id,
-                        'name' => $product->shopOwner->business_name ?: ($product->shopOwner->first_name . ' ' . $product->shopOwner->last_name),
+                        'id'            => $product->shopOwner->id,
+                        'name'          => $product->shopOwner->business_name ?: ($product->shopOwner->first_name . ' ' . $product->shopOwner->last_name),
+                        'business_name' => $product->shopOwner->business_name,
+                        'latitude'      => $product->shopOwner->shop_latitude  ? (float) $product->shopOwner->shop_latitude  : null,
+                        'longitude'     => $product->shopOwner->shop_longitude ? (float) $product->shopOwner->shop_longitude : null,
                     ];
+                    // Unset the relation so it doesn't overwrite the shop_owner attribute during serialization
+                    $product->unsetRelation('shopOwner');
                 }
                 
                 return $product;

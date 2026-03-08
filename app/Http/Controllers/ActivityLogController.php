@@ -141,12 +141,10 @@ class ActivityLogController extends Controller
         $query = Activity::query()
             ->whereIn('subject_type', [
                 'App\\Models\\User',
+                'App\\Models\\Employee',
                 'App\\Models\\HR\\Payroll',
-                'App\\Models\\HR\\Leave',
-                'App\\Models\\HR\\Training',
-                'App\\Models\\HR\\Attendance',
-                'App\\Models\\HR\\Performance',
-                'App\\Models\\HR\\Employee',
+                'App\\Models\\HR\\LeaveRequest',
+                'App\\Models\\HR\\AttendanceRecord',
                 'App\\Models\\HR\\Department',
             ])
             ->where(function($q) use ($shopOwnerId) {

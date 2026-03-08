@@ -58,6 +58,11 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'tax_id',               // Tax identification number
         'business_type',        // Type: retail, repair, or both
         'registration_type',    // Individual or company registration
+        'high_value_threshold', // Approval threshold for high value repairs
+        'require_two_way_approval', // Require owner approval on high value repairs
+        'repair_payment_policy', // deposit_50 | full_upfront | pay_after
+        'repair_workload_limit', // Max concurrent active repairs (default 20)
+        'paymongo_secret_key',  // Encrypted PayMongo secret key for this shop
         'operating_hours',      // JSON field storing weekly schedule
         'status',               // pending, approved, or rejected
         'rejection_reason',     // Optional reason if rejected
@@ -70,6 +75,12 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'friday_open', 'friday_close',
         'saturday_open', 'saturday_close',
         'sunday_open', 'sunday_close',
+        // Geofence / location
+        'shop_latitude',
+        'shop_longitude',
+        'shop_address',
+        'shop_geofence_radius',
+        'attendance_geofence_enabled',
     ];
 
     /**
@@ -80,6 +91,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        'paymongo_secret_key', // Never expose the key in API responses
     ];
 
     /**
@@ -95,6 +107,11 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'status' => \App\Enums\ShopOwnerStatus::class,
+        'paymongo_secret_key' => 'encrypted', // Stored encrypted in DB
+        'shop_latitude' => 'decimal:8',
+        'shop_longitude' => 'decimal:8',
+        'shop_geofence_radius' => 'integer',
+        'attendance_geofence_enabled' => 'boolean',
     ];
 
     /**

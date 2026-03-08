@@ -52,8 +52,9 @@ class CheckManagerStaffAccess
             // Only MANAGER can access manager pages
             $canAccess = ($userRole === 'MANAGER');
         } elseif ($requiredLevel === 'staff') {
-            // MANAGER, STAFF, and REPAIRER can access staff pages
-            $canAccess = in_array($userRole, ['MANAGER', 'STAFF', 'REPAIRER']);
+            // Only STAFF and REPAIRER can access staff pages by default
+            // Manager has their own module and should not access staff pages without explicit permission
+            $canAccess = in_array($userRole, ['STAFF', 'REPAIRER']);
         }
 
         if (!$canAccess) {

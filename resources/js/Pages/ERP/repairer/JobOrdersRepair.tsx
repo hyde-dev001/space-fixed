@@ -35,8 +35,10 @@ type RepairOrder = {
   conversation_id?: number | null;
   payment_enabled?: boolean;
   payment_status?: string;
+  payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
+  preferredDate?: string | null;
 };
 
 type MetricCardProps = {
@@ -53,6 +55,14 @@ const useStaticData = false;
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
 const REPAIR_REQUEST_LIMIT_KEY = 'repair_request_limit';
 const DEFAULT_REPAIR_REQUEST_LIMIT = 20;
+
+const readRepairRequestLimit = (): number => {
+  if (typeof window === 'undefined') return DEFAULT_REPAIR_REQUEST_LIMIT;
+  const raw = window.localStorage.getItem(REPAIR_REQUEST_LIMIT_KEY);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_REPAIR_REQUEST_LIMIT;
+  return Math.floor(parsed);
+};
 
 type DeliveryMethodOverride = 'pickup' | 'walkin';
 
@@ -75,17 +85,10 @@ const readDeliveryMethodOverrides = (): Record<string, DeliveryMethodOverride> =
   }
 };
 
-const readRepairRequestLimit = (): number => {
-  if (typeof window === 'undefined') return DEFAULT_REPAIR_REQUEST_LIMIT;
-
-  const raw = window.localStorage.getItem(REPAIR_REQUEST_LIMIT_KEY);
-  const parsed = Number(raw);
-
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return DEFAULT_REPAIR_REQUEST_LIMIT;
-  }
-
-  return Math.floor(parsed);
+const getMonthKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 };
 
 const staticOrders: RepairOrder[] = [
@@ -339,6 +342,7 @@ export default function JobOrdersRepair() {
   const [selectedTab, setSelectedTab] = useState<string>("under-review");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewOrder, setViewOrder] = useState<RepairOrder | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
@@ -357,11 +361,15 @@ export default function JobOrdersRepair() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [highlightRepairId, setHighlightRepairId] = useState<number | null>(null);
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
-  const [repairRequestLimit, setRepairRequestLimit] = useState<number>(readRepairRequestLimit);
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
-  const [limitInputValue, setLimitInputValue] = useState<string>(String(readRepairRequestLimit()));
-  const [limitInputError, setLimitInputError] = useState<string | null>(null);
-  const itemsPerPage = 10;
+  // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
+  const { repair_workload_limit: propLimit } = usePage().props as any;
+  const initialLimit = typeof propLimit === 'number' && propLimit >= 1 ? propLimit : readRepairRequestLimit();
+  const [repairRequestLimit, setRepairRequestLimit] = useState<number>(initialLimit);
+  // Sync the DB value into localStorage once on mount so other pages/tabs read a fresh value
+  useEffect(() => {
+    window.localStorage.setItem(REPAIR_REQUEST_LIMIT_KEY, String(initialLimit));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Predefined rejection reasons
   const rejectionReasons = [
@@ -421,6 +429,7 @@ export default function JobOrdersRepair() {
   useEffect(() => {
     const refreshOverrides = () => {
       setDeliveryMethodOverrides(readDeliveryMethodOverrides());
+      setRepairRequestLimit(readRepairRequestLimit());
     };
 
     refreshOverrides();
@@ -490,6 +499,9 @@ export default function JobOrdersRepair() {
           }),
           startedAt: repair.started_at ? new Date(repair.started_at).toLocaleString() : undefined,
           completedAt: repair.completed_at ? new Date(repair.completed_at).toLocaleString() : undefined,
+          preferredDate: repair.scheduled_dropoff_date
+            ? new Date(repair.scheduled_dropoff_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            : null,
           notes: repair.description || '',
           description: repair.description,
           shoeType: repair.shoe_type,
@@ -532,6 +544,7 @@ export default function JobOrdersRepair() {
           conversation_id: repair.conversation_id,
           payment_enabled: repair.payment_enabled || false,
           payment_status: repair.payment_status || 'pending',
+          payment_policy: repair.payment_policy || 'deposit_50',
           pickup_enabled: repair.pickup_enabled || false,
           pickup_enabled_at: repair.pickup_enabled_at || null
         }));
@@ -613,27 +626,6 @@ export default function JobOrdersRepair() {
 
     return orders.filter((order) => activeStatuses.includes(order.status)).length;
   }, [orders]);
-
-  const handleSetRepairRequestLimit = () => {
-    setLimitInputValue(String(repairRequestLimit));
-    setLimitInputError(null);
-    setIsLimitModalOpen(true);
-  };
-
-  const handleSaveRepairRequestLimit = () => {
-    const parsed = Number(limitInputValue);
-
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 500) {
-      setLimitInputError('Please enter a limit from 1 to 500.');
-      return;
-    }
-
-    const newLimit = Math.floor(parsed);
-    setRepairRequestLimit(newLimit);
-    window.localStorage.setItem(REPAIR_REQUEST_LIMIT_KEY, String(newLimit));
-    setIsLimitModalOpen(false);
-    setLimitInputError(null);
-  };
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -720,6 +712,43 @@ export default function JobOrdersRepair() {
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
       });
+    }
+  };
+
+  const handleChangeDeliveryMethod = async (order: RepairOrder) => {
+    const current = order.serviceType === 'pickup' ? 'pickup' : 'walkin';
+    const next: 'pickup' | 'walkin' = current === 'pickup' ? 'walkin' : 'pickup';
+    const nextLabel = next === 'walkin' ? 'Walk In (customer brings shoes)' : 'Pick Up (arrange courier)';
+
+    const result = await Swal.fire({
+      title: 'Change Delivery Method?',
+      text: `Switch to: ${nextLabel}`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, change it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/repairer/repairs/${order.database_id}/delivery-method`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken || '', 'Accept': 'application/json' },
+        body: JSON.stringify({ delivery_method: next === 'walkin' ? 'walk_in' : 'pickup' }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, serviceType: next } : o));
+        if (viewOrder && viewOrder.id === order.id) setViewOrder(prev => prev ? { ...prev, serviceType: next } : prev);
+        await Swal.fire({ title: 'Updated', text: `Delivery method changed to ${nextLabel}.`, icon: 'success', confirmButtonText: 'OK', confirmButtonColor: '#2563eb' });
+      } else {
+        throw new Error(data.message || 'Failed to update');
+      }
+    } catch (error: any) {
+      await Swal.fire({ title: 'Failed', text: error.message || 'Please try again.', icon: 'error', confirmButtonText: 'OK' });
     }
   };
 
@@ -983,7 +1012,7 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repair-requests/${order.id}/status`, {
+      const response = await fetch(`/api/repair-requests/${order.database_id}/status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1097,7 +1126,7 @@ export default function JobOrdersRepair() {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      const response = await fetch(`/api/repair-requests/${selectedOrder.id}/status`, {
+      const response = await fetch(`/api/repairer/repairs/${selectedOrder.database_id}/ship`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1105,7 +1134,6 @@ export default function JobOrdersRepair() {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          status: 'shipped',
           tracking_number: trackingNumber,
           carrier_company: carrierCompany,
           carrier_name: carrierName,
@@ -1306,14 +1334,8 @@ export default function JobOrdersRepair() {
             <p className="text-gray-600 dark:text-gray-400 mt-2">Manage shoe cleaning and repair service orders</p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <button
-              onClick={handleSetRepairRequestLimit}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              Repair Request Limit
-            </button>
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              Active workload: <span className="font-semibold">{activeRepairCount}</span> / {repairRequestLimit}
+              Active workload: <span className={`font-semibold ${activeRepairCount >= repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
             </p>
           </div>
         </div>
@@ -1511,6 +1533,9 @@ export default function JobOrdersRepair() {
                     Created
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Preferred Date
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -1572,15 +1597,22 @@ export default function JobOrdersRepair() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
                         {order.total}
                       </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
-                        isRemainingBalancePaid(order.payment_status)
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {getHalfPriceText(order.total)}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold">
+                        {order.payment_status === 'completed' ? (
+                          <span className="text-green-600 dark:text-green-400">{order.total}</span>
+                        ) : order.payment_status === 'paid' ? (
+                          <span className="text-amber-600 dark:text-amber-400">{getHalfPriceText(order.total)}</span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {order.createdAt}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {order.preferredDate
+                          ? <span className="font-medium text-blue-700 dark:text-blue-400">{order.preferredDate}</span>
+                          : <span className="text-gray-400 dark:text-gray-500">—</span>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center gap-2">
@@ -1597,14 +1629,14 @@ export default function JobOrdersRepair() {
                           {order.status === "received" && (
                             <button
                               onClick={() => handleStartWork(order)}
-                              disabled={order.payment_enabled && order.payment_status !== 'completed'}
+                              disabled={order.payment_enabled && !['paid', 'completed'].includes(order.payment_status ?? '')}
                               className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                                order.payment_enabled && order.payment_status !== 'completed'
+                                order.payment_enabled && !['paid', 'completed'].includes(order.payment_status ?? '')
                                   ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                                   : 'text-white bg-blue-600 hover:bg-blue-700'
                               }`}
                               title={
-                                order.payment_enabled && order.payment_status !== 'completed'
+                                order.payment_enabled && !['paid', 'completed'].includes(order.payment_status ?? '')
                                   ? 'Waiting for customer payment'
                                   : 'Start work on this repair'
                               }
@@ -1828,6 +1860,12 @@ export default function JobOrdersRepair() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Created</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.createdAt}</p>
                   </div>
+                  {viewOrder.preferredDate && (
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Customer's Preferred Date</p>
+                      <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">{viewOrder.preferredDate}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Service Details */}
@@ -1852,9 +1890,20 @@ export default function JobOrdersRepair() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Delivery Method</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {formatServiceType(viewOrder.serviceType)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {formatServiceType(viewOrder.serviceType)}
+                        </span>
+                        {!['in-progress','awaiting_parts','completed','ready-for-pickup','picked_up','cancelled','rejected'].includes(viewOrder.status) && (
+                          <button
+                            type="button"
+                            onClick={() => handleChangeDeliveryMethod(viewOrder)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                          >
+                            Change
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Service Fee</span>
@@ -2040,13 +2089,19 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={viewOrder.payment_status !== 'completed'}
+                      disabled={viewOrder.payment_policy !== 'pay_after' && !['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        viewOrder.payment_status === 'completed'
+                        viewOrder.payment_policy === 'pay_after' || ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'bg-white hover:bg-gray-100 text-gray-900 border border-gray-900'
                           : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
                       }`}
-                      title={viewOrder.payment_status === 'completed' ? 'Mark shoes as received at shop' : 'Waiting for customer payment'}
+                      title={
+                        viewOrder.payment_policy === 'pay_after'
+                          ? 'Mark shoes as received at shop (payment collected at pickup)'
+                          : ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                          ? 'Mark shoes as received at shop'
+                          : 'Waiting for customer deposit payment'
+                      }
                     >
                       Mark as Received
                     </button>
@@ -2378,151 +2433,7 @@ export default function JobOrdersRepair() {
           </div>
         )}
 
-        {isLimitModalOpen && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white text-center">Set Repair Request Limit</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 text-center mt-2">
-                  Set the max active repair job orders this repairer can handle.
-                </p>
-              </div>
-
-              <div className="px-6 py-5">
-                <label className="sr-only" htmlFor="repair-request-limit-input-erp">Repair request limit</label>
-                <input
-                  id="repair-request-limit-input-erp"
-                  type="number"
-                  min={1}
-                  max={500}
-                  step={1}
-                  title="Repair request limit"
-                  value={limitInputValue}
-                  onChange={(e) => {
-                    setLimitInputValue(e.target.value);
-                    if (limitInputError) setLimitInputError(null);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {limitInputError && (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{limitInputError}</p>
-                )}
-              </div>
-
-              <div className="px-6 pb-5 flex items-center justify-center gap-3">
-                <button
-                  onClick={handleSaveRepairRequestLimit}
-                  className="px-5 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
-                >
-                  Save Limit
-                </button>
-                <button
-                  onClick={() => {
-                    setIsLimitModalOpen(false);
-                    setLimitInputError(null);
-                  }}
-                  className="px-5 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </AppLayoutERP>
   );
 }
-
-const sampleRepairOrders: RepairOrder[] = [
-  { 
-    id: 'REP-20260201001', 
-    customer: 'John Doe', 
-    email: 'john@email.com',
-    phone: '+63 912 345 6789',
-    item: 'Nike Air Max 90', 
-    service: 'Sole Replacement',
-    total: '₱650',
-    status: 'pending',
-    createdAt: '2026-02-01 10:30 AM',
-    notes: 'Customer requested white sole replacement. Please use high-quality rubber sole.',
-    imageUrl: '/images/product/product-01.jpg',
-    repairDetails: ['Replace worn-out sole', 'Clean upper material', 'Apply protective coating', 'Quality check after completion']
-  },
-  { 
-    id: 'REP-20260201002', 
-    customer: 'Jane Smith', 
-    email: 'jane@email.com',
-    phone: '+63 923 456 7890',
-    item: 'Adidas Ultraboost', 
-    service: 'Deep Cleaning',
-    total: '₱350',
-    status: 'in-progress',
-    createdAt: '2026-02-01 09:15 AM',
-    startedAt: '2026-02-01 11:00 AM',
-    notes: 'Deep clean with odor removal treatment. Customer wants shoes ready by tomorrow.',
-    imageUrl: '/images/product/product-02.jpg',
-    repairDetails: ['Deep clean with premium solution', 'Remove all dirt and stains', 'Odor removal treatment', 'Sanitize interior', 'Air dry completely']
-  },
-  { 
-    id: 'REP-20260131003', 
-    customer: 'Mike Johnson', 
-    email: 'mike@email.com',
-    phone: '+63 934 567 8901',
-    item: 'New Balance 550', 
-    service: 'Stitch Repair',
-    total: '₱450',
-    status: 'ready-for-pickup',
-    createdAt: '2026-01-31 02:00 PM',
-    startedAt: '2026-01-31 03:00 PM',
-    completedAt: '2026-02-01 10:00 AM',
-    notes: 'Heel stitching came loose. Customer needs it before weekend.',
-    imageUrl: '/images/product/product-03.jpg',
-    repairDetails: ['Re-stitch heel area with reinforced thread', 'Repair side seam tear', 'Strengthen weak points', 'Clean surrounding area']
-  },
-  { 
-    id: 'REP-20260201004', 
-    customer: 'Sarah Williams', 
-    email: 'sarah@email.com',
-    phone: '+63 945 678 9012',
-    item: 'Puma RS-X', 
-    service: 'Color Restoration',
-    total: '₱800',
-    status: 'pending',
-    createdAt: '2026-02-02 08:00 AM',
-    notes: 'Midsole color has faded badly. Customer wants original red color restored.',
-    imageUrl: '/images/product/product-04.jpg',
-    repairDetails: ['Clean midsole thoroughly', 'Remove old/faded paint', 'Apply red color restoration', 'Multiple coating layers', 'Seal with protective finish']
-  },
-  { 
-    id: 'REP-20260131005', 
-    customer: 'David Brown', 
-    email: 'david@email.com',
-    phone: '+63 956 789 0123',
-    item: 'Jordan 1 High', 
-    service: 'Premium Cleaning',
-    total: '₱500',
-    status: 'in-progress',
-    createdAt: '2026-01-31 01:00 PM',
-    startedAt: '2026-02-01 09:00 AM',
-    notes: 'Vintage Jordan 1s need special care. Premium leather conditioning required.',
-    imageUrl: '/images/product/product-05.jpg',
-    repairDetails: ['Deep clean leather upper', 'Condition and moisturize leather', 'Clean white midsoles', 'Polish and shine', 'Apply leather protector']
-  },
-  { 
-    id: 'REP-20260130006', 
-    customer: 'Emma Davis', 
-    email: 'emma@email.com',
-    phone: '+63 967 890 1234',
-    item: 'Vans Old Skool', 
-    service: 'Canvas Repair',
-    total: '₱400',
-    status: 'completed',
-    createdAt: '2026-01-30 10:00 AM',
-    startedAt: '2026-01-30 02:00 PM',
-    completedAt: '2026-01-31 11:00 AM',
-    notes: 'Canvas has small tears on toe area.',
-    imageUrl: '/images/product/product-06.jpg',
-    repairDetails: ['Patch canvas tears on toe box', 'Reinforce weak canvas areas', 'Match original canvas color', 'Ensure seamless repair']
-  },
-];

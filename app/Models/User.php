@@ -124,14 +124,6 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Get product orders assigned to this staff
-     */
-    public function assignedOrders()
-    {
-        return $this->hasMany(Order::class, 'assigned_staff_id');
-    }
-
-    /**
      * Check if user has a specific role (OLD COLUMN - Deprecated)
      * Use Spatie's hasRole() method instead for new code
      * This is kept for backward compatibility only

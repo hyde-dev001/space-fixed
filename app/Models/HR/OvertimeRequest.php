@@ -19,6 +19,11 @@ class OvertimeRequest extends Model
         'start_time',
         'end_time',
         'hours',
+        'actual_start_time',
+        'actual_end_time',
+        'actual_hours',
+        'checked_in_at',
+        'checked_out_at',
         'rate_multiplier',
         'calculated_amount',
         'overtime_type',
@@ -27,6 +32,8 @@ class OvertimeRequest extends Model
         'status',
         'approved_by',
         'approved_at',
+        'confirmed_by',
+        'confirmed_at',
         'rejection_reason',
         'is_paid',
         'payroll_id',
@@ -34,12 +41,16 @@ class OvertimeRequest extends Model
     ];
 
     protected $casts = [
-        'overtime_date' => 'date',
-        'hours' => 'decimal:2',
-        'rate_multiplier' => 'decimal:2',
-        'calculated_amount' => 'decimal:2',
-        'approved_at' => 'datetime',
-        'is_paid' => 'boolean',
+        'overtime_date'  => 'date',
+        'hours'          => 'decimal:2',
+        'actual_hours'   => 'decimal:2',
+        'rate_multiplier'    => 'decimal:2',
+        'calculated_amount'  => 'decimal:2',
+        'approved_at'    => 'datetime',
+        'confirmed_at'   => 'datetime',
+        'checked_in_at'  => 'datetime',
+        'checked_out_at' => 'datetime',
+        'is_paid'        => 'boolean',
     ];
 
     /**

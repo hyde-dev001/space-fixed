@@ -29,6 +29,16 @@ const attendanceItem: NavItem = {
   route: "erp.time-in",
 };
 
+const myPayslipsItem: NavItem = {
+  icon: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  ),
+  name: "My Payslips",
+  route: "erp.my-payslips",
+};
+
 const navItems: NavItem[] = [
   {
     icon: (
@@ -358,13 +368,24 @@ const managerItems: NavItem[] = [
   },
   {
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
         <path d="M12 12v9"></path>
       </svg>
     ),
     name: "Inventory Overview",
     route: "erp.manager.inventory-overview",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+        <path d="M8 21h8m-4-4v4"></path>
+        <path d="M7 8h.01M11 8h6M7 12h4m2 0h3"></path>
+      </svg>
+    ),
+    name: "DSS Insights",
+    route: "erp.manager.dss-insights",
   },
 ];
 
@@ -746,6 +767,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
+    "erp.manager.dss-insights": "/erp/manager/dss-insights",
     // User section routes
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
@@ -764,6 +786,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
+    "erp.my-payslips": "/erp/my-payslips",
   };
 
   const isActive = useCallback(
@@ -889,17 +912,17 @@ const AppSidebar_ERP: React.FC = () => {
     const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
 
     if (hasStaffAccess()) {
-      menuGroups.push({ menuType: "staff", items: getFilteredStaffItems() });
+      menuGroups.push({ menuType: "staff", items: [attendanceItem, ...getFilteredStaffItems(), myPayslipsItem] });
     }
 
     if (hasRepairerAccess()) {
-      menuGroups.push({ menuType: "repair", items: getFilteredRepairItems() });
+      menuGroups.push({ menuType: "repair", items: [attendanceItem, ...getFilteredRepairItems(), myPayslipsItem] });
     }
 
     if (role === "MANAGER") {
       menuGroups.push({
         menuType: "manager",
-        items: hasFinanceAccess() ? managerItems : [attendanceItem, ...managerItems],
+        items: hasFinanceAccess() ? [...managerItems, myPayslipsItem] : [attendanceItem, ...managerItems, myPayslipsItem],
       });
     }
 
@@ -907,12 +930,12 @@ const AppSidebar_ERP: React.FC = () => {
       const filteredHrItems = getFilteredHRItems();
       menuGroups.push({
         menuType: "hr",
-        items: hasFinanceAccess() ? filteredHrItems : [attendanceItem, ...filteredHrItems],
+        items: hasFinanceAccess() ? [...filteredHrItems, myPayslipsItem] : [attendanceItem, ...filteredHrItems, myPayslipsItem],
       });
     }
 
     if (hasFinanceAccess()) {
-      menuGroups.push({ menuType: "finance", items: [attendanceItem, ...getFilteredFinanceItems()] });
+      menuGroups.push({ menuType: "finance", items: [attendanceItem, ...getFilteredFinanceItems(), myPayslipsItem] });
     }
 
     let activeSubmenuKey: string | null = null;
@@ -1068,16 +1091,17 @@ const AppSidebar_ERP: React.FC = () => {
   };
 
   // Check if user has Inventory Manager role or explicit inventory gate permission
+  // NOTE: 'access-inventory-overview' is intentionally excluded — it belongs to the Manager's
+  // own overview page inside the Manager module, NOT the full Inventory module.
   const hasInventoryAccess = () => {
     if (roles.includes('Inventory Manager')) return true;
     if (permissions.includes('view-inventory')) return true;
-    // Also grant access if user has any individual inventory page permission
+    // Only individual inventory module page permissions grant sidebar access
     const inventoryPagePermissions = [
       'access-inventory-dashboard',
       'access-product-inventory',
       'access-stock-movement',
       'access-upload-inventory',
-      'access-inventory-overview',
     ];
     return inventoryPagePermissions.some(p => permissions.includes(p));
   };
@@ -1428,7 +1452,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(getFilteredStaffItems(), "staff")}
+                {renderMenuItems([attendanceItem, ...getFilteredStaffItems(), myPayslipsItem], "staff")}
               </div>
             </div>
           </nav>
@@ -1451,7 +1475,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(getFilteredRepairItems(), "repair")}
+                {renderMenuItems([attendanceItem, ...getFilteredRepairItems(), myPayslipsItem], "repair")}
               </div>
             </div>
           </nav>
@@ -1475,7 +1499,7 @@ const AppSidebar_ERP: React.FC = () => {
                     )}
                   </h2>
                   {renderMenuItems(
-                    hasFinanceAccess() ? managerItems : [attendanceItem, ...managerItems],
+                    hasFinanceAccess() ? [...managerItems, myPayslipsItem] : [attendanceItem, ...managerItems, myPayslipsItem],
                     "manager"
                   )}
                 </div>
@@ -1545,7 +1569,7 @@ const AppSidebar_ERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  hasFinanceAccess() ? getFilteredHRItems() : [attendanceItem, ...getFilteredHRItems()],
+                  hasFinanceAccess() ? [...getFilteredHRItems(), myPayslipsItem] : [attendanceItem, ...getFilteredHRItems(), myPayslipsItem],
                   "hr"
                 )}
               </div>
@@ -1569,7 +1593,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems([attendanceItem, ...getFilteredFinanceItems()], "finance")}
+                {renderMenuItems([attendanceItem, ...getFilteredFinanceItems(), myPayslipsItem], "finance")}
               </div>
             </div>
           </nav>

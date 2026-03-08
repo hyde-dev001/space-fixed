@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from 'sweetalert2';
@@ -17,6 +17,133 @@ interface ShopDetails {
   name: string;
   location: string;
 }
+
+const REGION_OPTIONS = [
+  'Abra',
+  'Agusan del Norte',
+  'Agusan del Sur',
+  'Aklan',
+  'Albay',
+  'Antique',
+  'Apayao',
+  'Aurora',
+  'Basilan',
+  'Bataan',
+  'Batanes',
+  'Batangas',
+  'Benguet',
+  'Biliran',
+  'Bohol',
+  'Bukidnon',
+  'Bulacan',
+  'Cagayan',
+  'Camarines Norte',
+  'Camarines Sur',
+  'Camiguin',
+  'Capiz',
+  'Catanduanes',
+  'Cavite',
+  'Cebu',
+  'Cotabato',
+  'Compostela Valley',
+  'Davao del Norte',
+  'Davao del Sur',
+  'Davao Occidental',
+  'Davao Oriental',
+  'Dinagat Islands',
+  'Eastern Samar',
+  'Guimaras',
+  'Ifugao',
+  'Ilocos Norte',
+  'Ilocos Sur',
+  'Iloilo',
+  'Isabela',
+  'Kalinga',
+  'La Union',
+  'Laguna',
+  'Lanao del Norte',
+  'Lanao del Sur',
+  'Leyte',
+  'Maguindanao',
+  'Marinduque',
+  'Masbate',
+  'Metro Manila',
+  'Misamis Occidental',
+  'Misamis Oriental',
+  'Mountain Province',
+  'Negros Occidental',
+  'Negros Oriental',
+  'Northern Samar',
+  'Nueva Ecija',
+  'Nueva Vizcaya',
+  'Occidental Mindoro',
+  'Oriental Mindoro',
+  'Palawan',
+  'Pampanga',
+  'Pangasinan',
+  'Quezon',
+  'Quirino',
+  'Rizal',
+  'Romblon',
+  'Samar',
+  'Sarangani',
+  'Siquijor',
+  'Sorsogon',
+  'South Cotabato',
+  'Southern Leyte',
+  'Sultan Kudarat',
+  'Sulu',
+  'Surigao del Norte',
+  'Surigao del Sur',
+  'Tarlac',
+  'Tawi-Tawi',
+  'Zambales',
+  'Zamboanga del Norte',
+  'Zamboanga del Sur',
+  'Zamboanga Sibugay',
+];
+
+const SHOE_TYPE_OPTIONS = [
+  'Sneakers',
+  'Running Shoes',
+  'Training Shoes',
+  'Basketball Shoes',
+  'Tennis Shoes',
+  'Football Cleats',
+  'Soccer Cleats',
+  'Golf Shoes',
+  'Skate Shoes',
+  'Hiking Shoes',
+  'Trail Shoes',
+  'Boots',
+  'Work Boots',
+  'Chelsea Boots',
+  'Combat Boots',
+  'Dress Shoes',
+  'Oxfords',
+  'Derbies',
+  'Loafers',
+  'Brogues',
+  'Monk Strap Shoes',
+  'Flats',
+  'Heels',
+  'Pumps',
+  'Wedges',
+  'Sandals',
+  'Slides',
+  'Slippers',
+  'Flip-flops',
+  'Mules',
+  'Clogs',
+  'Espadrilles',
+  'Boat Shoes',
+  'Canvas Shoes',
+  'High-top Shoes',
+  'Low-top Shoes',
+  'School Shoes',
+  'Baby Shoes',
+  'Other',
+];
 
 const RepairProcess: React.FC = () => {
   // Get URL params for pre-selected services
@@ -112,6 +239,10 @@ const RepairProcess: React.FC = () => {
     pickupPostalCode: '',
   });
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
+  const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
+  const [isPickupRegionOpen, setIsPickupRegionOpen] = useState(false);
+  const shoeTypeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const pickupRegionDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Set selected services once repair services are loaded
   useEffect(() => {
@@ -122,8 +253,40 @@ const RepairProcess: React.FC = () => {
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Shop capacity state
+  const [shopCapacity, setShopCapacity] = useState<{ active_count: number; limit: number; is_full: boolean } | null>(null);
 
-  // Calculate totals
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (shoeTypeDropdownRef.current && !shoeTypeDropdownRef.current.contains(event.target as Node)) {
+        setIsShoeTypeOpen(false);
+      }
+      if (pickupRegionDropdownRef.current && !pickupRegionDropdownRef.current.contains(event.target as Node)) {
+        setIsPickupRegionOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Fetch shop capacity when shopId is known
+  useEffect(() => {
+    if (!shopId) return;
+    let cancelled = false;
+    fetch(`/api/customer/shop/${shopId}/repair-capacity`, { headers: { Accept: 'application/json' } })
+      .then(r => r.json())
+      .then(data => {
+        if (!cancelled && data.success) {
+          setShopCapacity({ active_count: data.active_count, limit: data.limit, is_full: data.is_full });
+        }
+      })
+      .catch(() => { /* ignore capacity fetch errors */ });
+    return () => { cancelled = true; };
+  }, [shopId]);
+
   const servicesTotal = useMemo(() => {
     return selectedServices.reduce((sum, serviceId) => {
       const service = repairServices.find(s => s.id === serviceId);
@@ -138,6 +301,7 @@ const RepairProcess: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -400,340 +564,339 @@ const RepairProcess: React.FC = () => {
       <Navigation />
 
       <main className="flex-1">
-        <div className="py-12 px-20">
-          {/* Header */}
-          <div className="mb-12">
-            <h1 className="text-3xl font-bold text-black mb-2">Request Repair Service</h1>
-            <p className="text-sm text-gray-600">Fill out the form below and upload images of your shoes to get started</p>
-          </div>
+        <div className="max-w-7xl mx-auto py-12 px-6 text-black">
+          {shopCapacity?.is_full && (
+            <div className="mb-8 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <svg className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <div>
+                <p className="font-semibold">This shop is currently at full workload capacity ({shopCapacity.active_count}/{shopCapacity.limit} active repairs).</p>
+                <p className="text-amber-800">You can still submit your request and it will be queued once capacity opens up.</p>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-              {/* Left Column - Form Fields (2/3 width) */}
-              <div className="lg:col-span-2 space-y-8">
-                {/* Customer Information */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-black mb-2">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="customerName"
-                      value={formData.customerName}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                      placeholder="Juan Dela Cruz"
-                      required
-                    />
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+              <div className="md:col-span-2">
+                <div className="mb-8">
+                  <h2 className="text-lg font-semibold text-black mb-4">Contact</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Full Name *</label>
+                      <input
+                        type="text"
+                        name="customerName"
+                        value={formData.customerName}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        placeholder="Juan Dela Cruz"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Email Address *</label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        placeholder="juan@example.com"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Phone Number *</label>
+                      <input
+                        type="tel"
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        placeholder="+63 912 345 6789"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="shoeType" className="block text-sm font-medium text-black mb-2">Shoe Type</label>
+                      <div className="relative" ref={shoeTypeDropdownRef}>
+                        <button
+                          type="button"
+                          id="shoeType"
+                          className="w-full px-4 py-3 border border-gray-300 rounded text-left bg-white flex items-center justify-between"
+                          onClick={() => setIsShoeTypeOpen((prev) => !prev)}
+                        >
+                          <span className={formData.shoeType ? 'text-black' : 'text-gray-500'}>
+                            {formData.shoeType || 'Select shoe type'}
+                          </span>
+                          <svg className={`h-4 w-4 text-gray-500 transition-transform ${isShoeTypeOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
 
-                  <div>
-                    <label className="block text-sm font-bold text-black mb-2">
-                      Email Address *
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                      placeholder="juan@example.com"
-                      required
-                    />
+                        {isShoeTypeOpen && (
+                          <div className="absolute left-0 top-full z-30 mt-1 w-full rounded border border-gray-300 bg-white shadow-lg">
+                            <ul className="max-h-56 overflow-y-auto py-1">
+                              <li>
+                                <button
+                                  type="button"
+                                  className="w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100"
+                                  onClick={() => {
+                                    setFormData((prev) => ({ ...prev, shoeType: '' }));
+                                    setIsShoeTypeOpen(false);
+                                  }}
+                                >
+                                  Select shoe type
+                                </button>
+                              </li>
+                              {SHOE_TYPE_OPTIONS.map((shoeType) => (
+                                <li key={shoeType}>
+                                  <button
+                                    type="button"
+                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 ${formData.shoeType === shoeType ? 'bg-gray-100 text-black font-medium' : 'text-black'}`}
+                                    onClick={() => {
+                                      setFormData((prev) => ({ ...prev, shoeType }));
+                                      setIsShoeTypeOpen(false);
+                                    }}
+                                  >
+                                    {shoeType}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-black mb-2">
-                      Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                      placeholder="+63 912 345 6789"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-black mb-2">
-                      Shoe Type
-                    </label>
-                    <input
-                      type="text"
-                      name="shoeType"
-                      value={formData.shoeType}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                      placeholder="e.g., Sneakers, Boots, Loafers"
-                    />
-                  </div>
-
-                  {/* Urgency removed per request */}
                 </div>
 
-                {/* Shoe Details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-bold text-black mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      name="description"
-                      value={formData.description}
-                      onChange={handleInputChange}
-                      rows={4}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black resize-none transition-colors"
-                      placeholder="Describe the issue or repair needed..."
-                    />
+                <div className="mb-8">
+                  <h2 className="text-lg font-semibold text-black mb-4">Repair Details</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Description</label>
+                      <textarea
+                        name="description"
+                        value={formData.description}
+                        onChange={handleInputChange}
+                        rows={4}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white resize-none"
+                        placeholder="Describe the issue or repair needed..."
+                      />
                     </div>
 
-                    {/* Service Type Selection - Pick Up or Walk In */}
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-bold text-black mb-3">
-                        Service Type *
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Pick Up Option */}
-                        <div 
-                          onClick={() => setFormData(prev => ({ ...prev, serviceType: 'pickup' }))}
-                          className={`relative p-6 border-2 rounded-xl cursor-pointer transition-all ${
-                            formData.serviceType === 'pickup' 
-                              ? 'border-black bg-black/5' 
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                              formData.serviceType === 'pickup' 
-                                ? 'border-black' 
-                                : 'border-gray-300'
-                            }`}>
-                              {formData.serviceType === 'pickup' && (
-                                <div className="w-3 h-3 bg-black rounded-full"></div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-bold text-black">Pick Up</p>
-                              <p className="text-sm text-gray-600">Shipping fee is shouldered by the customer</p>
-                            </div>
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Service Type *</label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                          <input
+                            type="radio"
+                            name="serviceType"
+                            value="pickup"
+                            checked={formData.serviceType === 'pickup'}
+                            onChange={(e) => setFormData(prev => ({ ...prev, serviceType: e.target.value }))}
+                            className="w-4 h-4 mt-1"
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-black">Pick Up</span>
+                            <p className="text-xs text-gray-600">Shipping fee is shouldered by the customer.</p>
                           </div>
-                        </div>
-
-                        {/* Walk In Option */}
-                        <div 
-                          onClick={() => setFormData(prev => ({ ...prev, serviceType: 'walkin' }))}
-                          className={`relative p-6 border-2 rounded-xl cursor-pointer transition-all ${
-                            formData.serviceType === 'walkin' 
-                              ? 'border-black bg-black/5' 
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                              formData.serviceType === 'walkin' 
-                                ? 'border-black' 
-                                : 'border-gray-300'
-                            }`}>
-                              {formData.serviceType === 'walkin' && (
-                                <div className="w-3 h-3 bg-black rounded-full"></div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-bold text-black">Walk In</p>
-                              <p className="text-sm text-gray-600">
-                                {shopDetails
-                                  ? `Bring to ${shopDetails.name} - ${shopDetails.location}`
-                                  : 'I will bring my shoes to the shop'}
-                              </p>
-                            </div>
+                        </label>
+                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                          <input
+                            type="radio"
+                            name="serviceType"
+                            value="walkin"
+                            checked={formData.serviceType === 'walkin'}
+                            onChange={(e) => setFormData(prev => ({ ...prev, serviceType: e.target.value }))}
+                            className="w-4 h-4 mt-1"
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-black">Walk In</span>
+                            <p className="text-xs text-gray-600">
+                              {shopDetails
+                                ? `Bring to ${shopDetails.name} - ${shopDetails.location}`
+                                : 'I will bring my shoes to the shop'}
+                            </p>
                           </div>
-                        </div>
+                        </label>
                       </div>
                     </div>
 
                     {formData.serviceType === 'pickup' && (
-                      <div className="md:col-span-2">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="md:col-span-2">
-                            <label className="block text-sm font-bold text-black mb-2">
-                              Address line
-                            </label>
-                            <input
-                              type="text"
-                              name="pickupAddressLine"
-                              value={formData.pickupAddressLine}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                              placeholder="House no., street, building"
-                              required
-                            />
-                          </div>
-
-                          <div className="md:col-span-2">
-                            <label className="block text-sm font-bold text-black mb-2">
-                              Barangay
-                            </label>
-                            <input
-                              type="text"
-                              name="pickupBarangay"
-                              value={formData.pickupBarangay}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                              placeholder="Barangay"
-                              required
-                            />
-                          </div>
-
+                      <div className="space-y-4 border border-gray-300 rounded p-4">
+                        <p className="text-sm font-medium text-black">Pickup Address</p>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Address line</label>
+                          <input
+                            type="text"
+                            name="pickupAddressLine"
+                            value={formData.pickupAddressLine}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="House no., street, building"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Barangay</label>
+                          <input
+                            type="text"
+                            name="pickupBarangay"
+                            value={formData.pickupBarangay}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="Barangay"
+                            required
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-bold text-black mb-2">
-                              City
-                            </label>
+                            <label className="block text-sm font-medium text-black mb-2">City</label>
                             <input
                               type="text"
                               name="pickupCity"
                               value={formData.pickupCity}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
+                              className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                               placeholder="City"
                               required
                             />
                           </div>
-
                           <div>
-                            <label className="block text-sm font-bold text-black mb-2">
-                              Region
-                            </label>
-                            <input
-                              type="text"
-                              name="pickupRegion"
-                              value={formData.pickupRegion}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                              placeholder="Region"
-                              required
-                            />
-                          </div>
+                            <label htmlFor="pickupRegion" className="block text-sm font-medium text-black mb-2">Region</label>
+                            <div className="relative" ref={pickupRegionDropdownRef}>
+                              <button
+                                type="button"
+                                id="pickupRegion"
+                                className="w-full px-4 py-3 border border-gray-300 rounded text-left bg-white flex items-center justify-between"
+                                onClick={() => setIsPickupRegionOpen((prev) => !prev)}
+                              >
+                                <span className={formData.pickupRegion ? 'text-black' : 'text-gray-500'}>
+                                  {formData.pickupRegion || 'Select Region'}
+                                </span>
+                                <svg className={`h-4 w-4 text-gray-500 transition-transform ${isPickupRegionOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
 
-                          <div className="md:col-span-2">
-                            <label className="block text-sm font-bold text-black mb-2">
-                              Postal code
-                            </label>
-                            <input
-                              type="text"
-                              name="pickupPostalCode"
-                              value={formData.pickupPostalCode}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-black focus:outline-none text-black transition-colors"
-                              placeholder="Postal code"
-                              required
-                            />
+                              {isPickupRegionOpen && (
+                                <div className="absolute left-0 top-full z-30 mt-1 w-full rounded border border-gray-300 bg-white shadow-lg">
+                                  <ul className="max-h-56 overflow-y-auto py-1">
+                                    <li>
+                                      <button
+                                        type="button"
+                                        className="w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100"
+                                        onClick={() => {
+                                          setFormData((prev) => ({ ...prev, pickupRegion: '' }));
+                                          setIsPickupRegionOpen(false);
+                                        }}
+                                      >
+                                        Select Region
+                                      </button>
+                                    </li>
+                                    {REGION_OPTIONS.map((region) => (
+                                      <li key={region}>
+                                        <button
+                                          type="button"
+                                          className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 ${formData.pickupRegion === region ? 'bg-gray-100 text-black font-medium' : 'text-black'}`}
+                                          onClick={() => {
+                                            setFormData((prev) => ({ ...prev, pickupRegion: region }));
+                                            setIsPickupRegionOpen(false);
+                                          }}
+                                        >
+                                          {region}
+                                        </button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
                           </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                          <input
+                            type="text"
+                            name="pickupPostalCode"
+                            value={formData.pickupPostalCode}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="Postal code"
+                            required
+                          />
                         </div>
                       </div>
                     )}
 
-                    {/* Repair Services Selection */}
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-bold text-black mb-3">
-                        Select Repair Services *
-                      </label>
-                      
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Select Repair Services *</label>
                       {isLoadingServices ? (
-                        <div className="flex items-center justify-center py-8">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-                          <span className="ml-3 text-gray-600 text-sm">Loading services...</span>
+                        <div className="flex items-center justify-center rounded border border-gray-300 py-8">
+                          <div className="h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
+                          <span className="ml-3 text-sm text-gray-600">Loading services...</span>
                         </div>
                       ) : repairServices.length === 0 ? (
-                        <div className="text-center py-8 bg-gray-50 rounded-xl">
-                          <p className="text-gray-500 font-medium text-sm">No repair services available</p>
-                          <p className="text-xs text-gray-400 mt-2">Please contact the shop for assistance</p>
-                        </div>
+                        <div className="rounded border border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">No repair services available.</div>
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-2">
                           {repairServices.map((service) => (
-                          <div
-                            key={service.id}
-                            onClick={() => handleServiceToggle(service.id)}
-                            className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                              selectedServices.includes(service.id)
-                                ? 'border-black bg-gray-50 shadow-sm'
-                                : 'border-gray-200 hover:border-gray-300 bg-white'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <h3 className="font-bold text-black text-sm mb-1">{service.title}</h3>
-                                <p className="text-xs text-gray-600 mb-1">{service.description}</p>
-                                <div className="text-lg font-bold text-black">
-                                  {typeof service.price === 'string' ? service.price : service.price > 0 ? `₱${service.price}` : 'Price varies'}
+                            <label key={service.id} className="flex items-start justify-between gap-4 p-3 border border-gray-300 rounded cursor-pointer">
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedServices.includes(service.id)}
+                                  onChange={() => handleServiceToggle(service.id)}
+                                  className="w-4 h-4 mt-1"
+                                />
+                                <div>
+                                  <p className="text-sm font-medium text-black">{service.title}</p>
+                                  <p className="text-xs text-gray-600">{service.description}</p>
                                 </div>
                               </div>
-                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                                selectedServices.includes(service.id)
-                                  ? 'border-black bg-black'
-                                  : 'border-gray-300'
-                              }`}>
-                                {selectedServices.includes(service.id) && (
-                                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
+                              <span className="text-sm font-semibold text-black">
+                                {typeof service.price === 'string' ? service.price : service.price > 0 ? `₱${service.price}` : 'Price varies'}
+                              </span>
+                            </label>
+                          ))}
                         </div>
                       )}
                     </div>
 
-                    {/* Image Upload */}
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-bold text-black mb-3">
-                        Upload Images *
-                      </label>
-                      <p className="text-sm text-gray-600 mb-4">Upload up to 5 images of your shoes (front, back, damaged areas)</p>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">Upload Images *</label>
+                      <p className="text-xs text-gray-600 mb-3">Upload up to 5 images of your shoes (front, back, and damaged areas).</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {imageUploadGroups.map((group, index) => (
-                          <div key={group.id} className="relative group">
+                          <div key={group.id} className="border border-gray-300 rounded p-2">
                             {group.preview ? (
-                              <div className="relative inline-block w-full">
-                                <img 
-                                  src={group.preview} 
-                                  alt={`Preview ${index + 1}`} 
-                                  className="w-full h-32 object-cover border-2 border-gray-200 rounded-xl"
-                                />
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 rounded-xl">
+                              <div>
+                                <img src={group.preview} alt={`Preview ${index + 1}`} className="w-full h-24 object-cover rounded" />
+                                <div className="mt-2 flex items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={addImageUploadBox}
-                                    className="bg-white hover:bg-gray-100 text-black rounded-full p-2 transition-all shadow-lg"
-                                    title="Add another image"
+                                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
                                   >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
+                                    Add
                                   </button>
                                   {imageUploadGroups.length > 1 && (
                                     <button
                                       type="button"
                                       onClick={() => removeImageBox(group.id)}
-                                      className="bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-all shadow-lg"
-                                      title="Remove image"
+                                      className="flex-1 px-2 py-1 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50"
                                     >
-                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
+                                      Remove
                                     </button>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <div className="border-2 border-dashed border-gray-300 hover:border-black rounded-xl p-4 text-center h-32 flex flex-col items-center justify-center transition-colors">
+                              <div className="h-24 border border-dashed border-gray-300 rounded flex items-center justify-center text-center">
                                 <input
                                   type="file"
                                   accept="image/*"
@@ -741,11 +904,8 @@ const RepairProcess: React.FC = () => {
                                   className="hidden"
                                   id={`image-upload-${group.id}`}
                                 />
-                                <label htmlFor={`image-upload-${group.id}`} className="cursor-pointer block w-full h-full flex flex-col items-center justify-center">
-                                  <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
-                                  <p className="text-xs text-gray-600 font-medium">Upload</p>
+                                <label htmlFor={`image-upload-${group.id}`} className="cursor-pointer text-xs text-gray-600 px-2">
+                                  Click to upload
                                 </label>
                               </div>
                             )}
@@ -754,135 +914,87 @@ const RepairProcess: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
 
+                <button
+                  type="submit"
+                  disabled={isSubmitting || selectedServices.length === 0}
+                  className={`w-full py-3 rounded-md font-semibold text-white mb-3 transition-colors ${
+                    isSubmitting || selectedServices.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                  }`}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Request'}
+                </button>
+                <Link
+                  href="/repair-services"
+                  className="block w-full py-3 rounded-md font-semibold text-center border border-gray-300 text-black hover:bg-gray-50"
+                >
+                  Cancel
+                </Link>
               </div>
 
-              {/* Right Column - Order Summary (1/3 width) */}
-              <div className="lg:col-span-1">
-                <div>
-                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl border-2 border-gray-200 p-8 shadow-lg">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                        </svg>
-                      </div>
-                      <h3 className="text-2xl font-bold text-black">Order Summary</h3>
-                    </div>
+              <aside className="md:col-span-1 md:sticky md:top-4">
+                <div className="border border-gray-300 rounded-lg p-6 bg-white">
+                  <h3 className="text-lg font-semibold text-black mb-4">Order Summary</h3>
 
-                    {selectedServices.length === 0 ? (
-                      <div className="text-center py-8">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 text-gray-300 mx-auto mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M9 11l3 3L22 4"></path>
-                          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                        </svg>
-                        <p className="text-gray-500 font-medium">No services selected</p>
-                        <p className="text-sm text-gray-400 mt-2">Select repair services to see pricing</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="space-y-4 mb-6">
-                          <div className="text-sm font-bold text-gray-500 uppercase tracking-wider">Selected Services</div>
-                          {selectedServices.map(serviceId => {
-                            const service = repairServices.find(s => s.id === serviceId);
-                            if (!service) return null;
-                            return (
-                              <div key={service.id} className="flex justify-between items-start py-3 border-b border-gray-200">
-                                <div className="flex-1">
-                                  <div className="font-bold text-black text-sm">{service.title}</div>
-                                  <div className="text-xs text-gray-500 mt-1">{service.description}</div>
-                                </div>
-                                <div className="font-bold text-black ml-4">
-                                  {typeof service.price === 'string' ? service.price : service.price > 0 ? `₱${service.price}` : 'TBD'}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div className="border-t-2 border-gray-300 pt-6 space-y-3">
-                          <div className="flex justify-between text-base">
-                            <span className="text-gray-700">Services Subtotal</span>
-                            <span className="font-bold text-black">₱{servicesTotal.toLocaleString()}</span>
-                          </div>
-                          {/* Labor fee removed */}
-                          <div className="flex justify-between text-xl pt-4 border-t-2 border-gray-300">
-                            <span className="font-bold text-black">Grand Total</span>
-                            <span className="font-bold text-black">₱{grandTotal.toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <div className="mt-6 p-4 border border-gray-200 rounded-xl">
-                          <div className="flex items-start gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <circle cx="12" cy="12" r="10"></circle>
-                              <line x1="12" y1="16" x2="12" y2="12"></line>
-                              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                            </svg>
-                            <p className="text-sm text-gray-800 leading-relaxed">
-                              You will not be charged at the moment. Once submitted, wait for the shop to accept your request. You can check the status on the Repair page under the people icon thank you for choosing Solespace as your safe space!.
+                  {selectedServices.length === 0 ? (
+                    <div className="text-sm text-gray-600">No services selected yet.</div>
+                  ) : (
+                    <div className="border-b border-gray-200 pb-4 mb-4 space-y-3">
+                      {selectedServices.map((serviceId) => {
+                        const service = repairServices.find((s) => s.id === serviceId);
+                        if (!service) return null;
+                        return (
+                          <div key={service.id} className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-black truncate">{service.title}</p>
+                              <p className="text-xs text-gray-600">{service.description}</p>
+                            </div>
+                            <p className="text-sm font-semibold text-black whitespace-nowrap">
+                              {typeof service.price === 'string' ? service.price : service.price > 0 ? `₱${service.price}` : 'TBD'}
                             </p>
                           </div>
-                        </div>
-                      </div>
-                    )}
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="space-y-3 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Services Subtotal</span>
+                      <span className="text-black font-medium">₱{servicesTotal.toLocaleString()}</span>
+                    </div>
                   </div>
 
-                  {/* Submit Buttons */}
-                  <div className="mt-6 space-y-3">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || selectedServices.length === 0}
-                      className={`w-full bg-black text-white px-8 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg ${
-                        isSubmitting || selectedServices.length === 0
-                          ? 'opacity-50 cursor-not-allowed' 
-                          : 'hover:bg-gray-800 hover:shadow-xl active:scale-[0.98]'
-                      }`}
-                    >
-                      {isSubmitting ? 'Submitting...' : 'Submit Request'}
-                    </button>
-                    <Link
-                      href="/repair-services"
-                      className="block w-full border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-2xl text-center font-bold text-lg hover:border-black hover:text-black transition-all"
-                    >
-                      Cancel
-                    </Link>
+                  <div className="border-t border-gray-200 pt-4">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-black">Total</span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xs text-gray-600">PHP</span>
+                        <span className="text-2xl font-bold text-black">₱{grandTotal.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
+                    You will not be charged yet. After submission, the shop will review your request and you can track status in Repairs.
                   </div>
                 </div>
-              </div>
+              </aside>
             </div>
           </form>
         </div>
       </main>
 
-      <footer className="mt-32 bg-white border-t border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 py-16">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-            <div>
-              <div className="text-2xl font-bold mb-6 text-black">SoleSpace</div>
-              <p className="text-sm text-gray-500 leading-relaxed max-w-sm">
-                Your premier destination for premium footwear and expert repair services.
-              </p>
+      <footer className="mt-12 bg-gray-100 text-slate-900">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="border-t border-gray-300 pt-6 text-xs text-slate-700 flex items-center justify-between">
+            <div>© 2026 SOLESPACE. All rights reserved.</div>
+            <div className="flex gap-6">
+              <a href="#" className="hover:underline">Privacy</a>
+              <a href="#" className="hover:underline">Terms</a>
+              <a href="#" className="hover:underline">Cookies</a>
             </div>
-            <div className="flex flex-col">
-              <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider mb-6">Quick Links</h3>
-              <nav className="flex flex-col gap-4 text-sm text-gray-700">
-                <Link href="/products" className="hover:text-black transition-colors">Products</Link>
-                <Link href="/repair-services" className="hover:text-black transition-colors">Repair Services</Link>
-                <Link href="/my-orders" className="hover:text-black transition-colors">My Orders</Link>
-              </nav>
-            </div>
-            <div className="flex flex-col">
-              <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider mb-6">Services</h3>
-              <nav className="flex flex-col gap-4 text-sm text-gray-700">
-                <a href="#" className="hover:text-black transition-colors">Shoe Repair</a>
-                <a href="#" className="hover:text-black transition-colors">Custom Fitting</a>
-                <a href="#" className="hover:text-black transition-colors">Maintenance</a>
-              </nav>
-            </div>
-          </div>
-          <div className="border-t border-gray-100 mt-12 pt-8 text-xs text-gray-400 flex items-center justify-between">
-            <div>© 2026 SoleSpace. All rights reserved.</div>
           </div>
         </div>
       </footer>

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 use App\Enums\EmployeeStatus;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 /**
  * Employee Model
@@ -17,7 +19,7 @@ use App\Enums\EmployeeStatus;
  */
 class Employee extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     /**
      * The table associated with the model.
@@ -242,5 +244,17 @@ class Employee extends Model
     public function belongsToShop($shopOwnerId): bool
     {
         return $this->shop_owner_id === $shopOwnerId;
+    }
+
+    /**
+     * Activity Log Configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['first_name', 'last_name', 'email', 'position', 'department', 'status', 'salary'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Employee {$eventName}");
     }
 }

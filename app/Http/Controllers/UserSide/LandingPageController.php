@@ -205,6 +205,8 @@ class LandingPageController extends Controller
                     'phone' => $shop->phone,
                     'email' => $shop->email,
                     'bio' => $shop->bio,
+                    'latitude' => $shop->shop_latitude ? (float) $shop->shop_latitude : null,
+                    'longitude' => $shop->shop_longitude ? (float) $shop->shop_longitude : null,
                 ];
             });
 

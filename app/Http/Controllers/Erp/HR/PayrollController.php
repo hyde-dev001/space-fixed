@@ -46,9 +46,9 @@ class PayrollController extends Controller
 
         if (
             ! $user->hasRole('Manager')
-            && ! $user->can('view-employees')
-            && ! $user->can('view-attendance')
-            && ! $user->can('view-payroll')
+            && ! $user->can('access-employee-directory')
+            && ! $user->can('access-attendance-records')
+            && ! $user->can('access-payslip-generation') && !$user->can('access-view-payslip')
         ) {
             return null;
         }
@@ -356,9 +356,9 @@ class PayrollController extends Controller
 
         if (
             ! $user->hasRole('Manager')
-            && ! $user->can('view-employees')
-            && ! $user->can('view-attendance')
-            && ! $user->can('view-payroll')
+            && ! $user->can('access-employee-directory')
+            && ! $user->can('access-attendance-records')
+            && ! $user->can('access-payslip-generation') && !$user->can('access-view-payslip')
         ) {
             \Log::warning('Unauthorized payroll approval attempt', [
                 'user_id'    => $user->id,
@@ -522,9 +522,9 @@ class PayrollController extends Controller
 
         if (
             ! $user->hasRole('Manager')
-            && ! $user->can('view-employees')
-            && ! $user->can('view-attendance')
-            && ! $user->can('view-payroll')
+            && ! $user->can('access-employee-directory')
+            && ! $user->can('access-attendance-records')
+            && ! $user->can('access-payslip-generation') && !$user->can('access-view-payslip')
         ) {
             \Log::warning('Unauthorized payroll export attempt', [
                 'user_id'    => $user->id,
@@ -771,5 +771,102 @@ class PayrollController extends Controller
     {
         $annual = ($monthlyGross - $monthlyStatutory) * 12;
         return round($this->calculateWithholdingTax($annual) / 12, 2);
+    }
+
+    // ============================================================
+    // PAYROLL PERIODS
+    // ============================================================
+
+    /**
+     * Return the last 12 months + current month as selectable payroll periods.
+     * Each entry includes working-day count (Mon–Fri) and whether attendance
+     * for that month is considered finalized (month has fully ended).
+     */
+    public function payrollPeriods(Request $request): JsonResponse
+    {
+        $user = $this->authorizeUser();
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $today   = Carbon::today();
+        $periods = [];
+
+        // Generate from 11 months ago → current month (12 entries total), newest first
+        for ($offset = 0; $offset <= 11; $offset++) {
+            $month = $today->copy()->startOfMonth()->subMonths($offset);
+            $start = $month->copy()->startOfMonth();
+            $end   = $month->copy()->endOfMonth();
+
+            // Count Mon–Fri working days in the month
+            $workingDays = 0;
+            $cursor = $start->copy();
+            while ($cursor->lte($end)) {
+                if ($cursor->isWeekday()) {
+                    $workingDays++;
+                }
+                $cursor->addDay();
+            }
+
+            // A month is "finalized" once it has fully ended
+            $attendanceStatus = $end->lt($today) ? 'finalized' : 'pending';
+
+            $periods[] = [
+                'month'            => $month->format('F Y'),
+                'startDate'        => $start->format('Y-m-d'),
+                'endDate'          => $end->format('Y-m-d'),
+                'attendanceStatus' => $attendanceStatus,
+                'workingDays'      => $workingDays,
+            ];
+        }
+
+        return response()->json($periods);
+    }
+
+    // ============================================================
+    // STAFF SELF-SERVICE
+    // ============================================================
+
+    /**
+     * Return the authenticated employee's approved/paid payslips.
+     *
+     * GET /api/staff/payslips/my
+     *
+     * Only payslips where Finance has approved (approval_status = 'approved')
+     * or the record is already marked paid are returned — employees cannot
+     * see pending/rejected drafts.
+     */
+    public function myPayslips(Request $request): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        // Resolve the employee record by matching the logged-in user's e-mail
+        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+            ->where('email', $user->email)
+            ->first();
+
+        if (! $employee) {
+            return response()->json(['data' => [], 'message' => 'No employee record found'], 200);
+        }
+
+        $query = Payroll::forShopOwner($user->shop_owner_id)
+            ->where('employee_id', $employee->id)
+            // Show all generated payslips except Finance-rejected ones
+            ->where('approval_status', '!=', 'rejected')
+            ->with([
+                'components' => fn ($q) => $q->orderBy('component_type')->orderBy('display_order'),
+            ]);
+
+        if ($request->filled('period')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('payroll_period', 'like', "%{$request->period}%")
+                  ->orWhere('pay_period_start', 'like', "%{$request->period}%");
+            });
+        }
+
+        $payslips = $query->orderByDesc('pay_period_start')
+            ->paginate($request->get('per_page', 12));
+
+        return response()->json($payslips);
     }
 }

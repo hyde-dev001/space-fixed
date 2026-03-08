@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use App\Services\NotificationService;
 
 class StaffOrderController extends Controller
 {
@@ -241,11 +240,6 @@ class StaffOrderController extends Controller
             ])
             ->log("Order status updated from {$oldStatus} to {$validated['status']}");
 
-        // Auto-assign to staff when status changes to 'processing' (if not already assigned)
-        if ($validated['status'] === 'processing' && !$order->assigned_staff_id) {
-            $this->autoAssignStaff($order);
-        }
-
         Log::info('Order status updated', [
             'order_id' => $id,
             'order_number' => $order->order_number,
@@ -413,89 +407,5 @@ class StaffOrderController extends Controller
         }
     }
 
-    /**
-     * Auto-assign order to staff based on active workload
-     * Similar to the repairer auto-assignment system
-     * 
-     * @param Order $order
-     * @return bool
-     */
-    private function autoAssignStaff(Order $order): bool
-    {
-        try {
-            Log::info('Starting auto-assignment for order', [
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'shop_owner_id' => $order->shop_owner_id,
-            ]);
-
-            // Find staff member with least active workload
-            $staff = User::where('shop_owner_id', $order->shop_owner_id)
-                ->whereHas('roles', function($query) {
-                    $query->where('name', 'Staff');
-                })
-                ->withCount(['assignedOrders as active_orders_count' => function($query) {
-                    // Count only active orders (pending and processing)
-                    $query->whereIn('status', ['pending', 'processing']);
-                }])
-                ->having('active_orders_count', '<', 10) // Max capacity: 10 active orders
-                ->orderBy('active_orders_count', 'asc')
-                ->first();
-
-            // Fallback: if all staff at capacity, assign to staff with least orders anyway
-            if (!$staff) {
-                Log::warning('All staff at capacity, assigning to least busy staff anyway', [
-                    'order_id' => $order->id,
-                ]);
-
-                $staff = User::where('shop_owner_id', $order->shop_owner_id)
-                    ->whereHas('roles', function($query) {
-                        $query->where('name', 'Staff');
-                    })
-                    ->withCount(['assignedOrders as active_orders_count' => function($query) {
-                        $query->whereIn('status', ['pending', 'processing']);
-                    }])
-                    ->orderBy('active_orders_count', 'asc')
-                    ->first();
-            }
-
-            if (!$staff) {
-                Log::error('No staff members available for assignment', [
-                    'order_id' => $order->id,
-                    'shop_owner_id' => $order->shop_owner_id,
-                ]);
-                return false;
-            }
-
-            // Assign the order to the staff member
-            $order->update([
-                'assigned_staff_id' => $staff->id,
-                'assigned_at' => now(),
-                'assignment_method' => 'auto',
-            ]);
-
-            Log::info('Order auto-assigned successfully', [
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'staff_id' => $staff->id,
-                'staff_name' => $staff->name,
-                'active_orders_count' => $staff->active_orders_count ?? 0,
-            ]);
-
-            // Notify the assigned staff member
-            $notificationService = app(NotificationService::class);
-            $notificationService->notifyAssignedStaff($order, $staff);
-
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error('Error during auto-assignment', [
-                'order_id' => $order->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            return false;
-        }
-    }
 }
 

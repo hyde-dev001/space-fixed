@@ -143,7 +143,7 @@ class PayrollService
         $components = collect();
         $basicSalary = $employee->salary ?? 0;
         
-        // Standard earnings
+        // Standard earnings (Philippine SME structure)
         $standardEarnings = [
             [
                 'type' => PayrollComponent::TYPE_EARNING,
@@ -156,12 +156,12 @@ class PayrollService
             ],
             [
                 'type' => PayrollComponent::TYPE_EARNING,
-                'name' => 'House Rent Allowance',
-                'base_amount' => $basicSalary * 0.4, // 40% of basic
-                'method' => PayrollComponent::METHOD_PERCENTAGE_OF_BASIC,
-                'taxable' => true,
+                'name' => '13th Month Pay (Accrual)',
+                'base_amount' => $basicSalary / 12,
+                'method' => PayrollComponent::METHOD_FIXED,
+                'taxable' => false, // Tax-exempt up to ₱90,000 per NIRC Sec. 32(B)(7)(e)
                 'recurring' => true,
-                'description' => '40% of basic salary'
+                'description' => 'Monthly accrual — 1/12 of basic salary (PD 851)'
             ],
             [
                 'type' => PayrollComponent::TYPE_EARNING,
@@ -175,31 +175,15 @@ class PayrollService
         ];
         
         // Standard deductions
-        $standardDeductions = [
-            [
-                'type' => PayrollComponent::TYPE_DEDUCTION,
-                'name' => 'Provident Fund',
-                'base_amount' => $basicSalary * 0.12, // 12% of basic
-                'method' => PayrollComponent::METHOD_PERCENTAGE_OF_BASIC,
-                'taxable' => false,
-                'recurring' => true,
-                'description' => '12% of basic salary for retirement savings'
-            ],
-            [
-                'type' => PayrollComponent::TYPE_DEDUCTION,
-                'name' => 'Professional Tax',
-                'base_amount' => 200,
-                'method' => PayrollComponent::METHOD_FIXED,
-                'taxable' => false,
-                'recurring' => true,
-                'description' => 'State professional tax'
-            ]
-        ];
+        // Statutory deductions (SSS, PhilHealth, Pag-IBIG, withholding tax) are
+        // stored as dedicated columns on the Payroll record and handled by the
+        // controller / Payroll model boot hook — not duplicated here as components.
+        $standardDeductions = [];
         
         // Overtime calculation (if applicable)
         if (($overrides['overtime_hours'] ?? 0) > 0) {
-            $hourlyRate = $basicSalary / 160; // Assuming 160 working hours per month
-            $overtimeRate = $hourlyRate * 1.5; // 1.5x for overtime
+            $hourlyRate = $basicSalary / 160; // 160 working hours per month
+            $overtimeRate = $hourlyRate * 1.25; // 1.25x — Philippine Labor Code Art. 87
             
             $standardEarnings[] = [
                 'type' => PayrollComponent::TYPE_EARNING,
@@ -208,7 +192,7 @@ class PayrollService
                 'method' => PayrollComponent::METHOD_OVERTIME,
                 'taxable' => true,
                 'recurring' => false,
-                'description' => $overrides['overtime_hours'] . ' hours @ 1.5x hourly rate'
+                'description' => $overrides['overtime_hours'] . ' hours @ 1.25x hourly rate (DOLE Art. 87)'
             ];
         }
         
@@ -263,11 +247,12 @@ class PayrollService
     }
     
     /**
-     * Calculate progressive income tax
+     * Calculate progressive income tax (BIR TRAIN Law)
      */
     public function calculateTax(int $shopOwnerId, float $grossIncome): float
     {
-        return TaxBracket::calculateTax($shopOwnerId, $grossIncome);
+        $result = TaxBracket::calculateTax($shopOwnerId, $grossIncome);
+        return (float) ($result['total_tax'] ?? 0);
     }
     
     /**

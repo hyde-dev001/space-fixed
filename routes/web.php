@@ -21,6 +21,7 @@ use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ShopOwnerAuthController;
+use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\UserProfileController;
@@ -452,7 +453,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     // SERVICE MANAGEMENT - Repair or Both only
     Route::middleware('check.business.type:repair,both')->group(function () {
         Route::get('/job-orders-repair', function () {
-            return Inertia::render('ShopOwner/Repairs/service management/JobOrdersRepair');
+            $shopOwner = Auth::guard('shop_owner')->user();
+            return Inertia::render('ShopOwner/Repairs/service management/JobOrdersRepair', [
+                'repair_workload_limit' => (int) ($shopOwner->repair_workload_limit ?? 20),
+            ]);
         })->name('job-orders-repair');
 
         Route::get('/upload-services', function () {
@@ -496,10 +500,29 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::get('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'index'])->name('shop-profile');
     Route::post('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'update'])->name('shop-profile.update');
 
-    // AUDIT LOGS - Available to ALL
-    Route::get('/audit-logs', function () {
-        return Inertia::render('ShopOwner/Settings/AuditLogs');
-    })->name('audit-logs');
+    // SHOP SETTINGS - Available to ALL
+    Route::get('/settings', [ShopSettingsController::class, 'index'])->name('settings');
+    Route::put('/settings', [ShopSettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/paymongo-key', [ShopSettingsController::class, 'updatePaymongoKey'])->name('settings.paymongo-key');
+    Route::delete('/settings/paymongo-key', [ShopSettingsController::class, 'removePaymongoKey'])->name('settings.paymongo-key.remove');
+    Route::post('/settings/geofence', [ShopSettingsController::class, 'updateGeofence'])->name('settings.geofence');
+
+    // PREMIUM BENEFITS - Available to ALL shop owners
+    Route::get('/premium-benefits', function () {
+        return Inertia::render('ShopOwner/Premium/premuimBenefits');
+    })->name('premium-benefits');
+
+    // DSS INSIGHTS - Available to all individual accounts (repair, retail, both) AND company accounts
+    Route::get('/dss-insights', function () {
+        return Inertia::render('ShopOwner/DssInsights');
+    })->name('dss-insights');
+
+    // AUDIT LOGS - Company only (individual has no staff to audit)
+    Route::middleware('check.registration.type:company')->group(function () {
+        Route::get('/audit-logs', function () {
+            return Inertia::render('ShopOwner/Settings/AuditLogs');
+        })->name('audit-logs');
+    });
 
     // REFUND APPROVALS - Available to ALL
     Route::get('/refund-approvals', function () {
@@ -555,6 +578,7 @@ Route::get('/api/activity-logs', [\App\Http\Controllers\ActivityLogController::c
 Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function () {
     Route::get('dashboard/stats', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getStats']);
     Route::get('dashboard/low-stock', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getLowStockAlerts']);
+    Route::get('dashboard/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights']);
     Route::get('orders', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index']);
     Route::get('orders/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show']);
     Route::patch('orders/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus']);
@@ -712,12 +736,21 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     
     // Simulate payment for testing (bypasses PayMongo)
     Route::post('{id}/simulate-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'simulatePayment']);
-    
+
+    // Verify payment with PayMongo API (called when customer returns from checkout)
+    Route::post('{id}/verify-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'verifyPayment']);
+
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
     Route::get('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'getRepairReview']);
     Route::get('{id}/can-review', [\App\Http\Controllers\Api\RepairReviewController::class, 'canReview']);
+
+    // Set preferred drop-off date after repairer accepts and customer chats
+    Route::patch('{id}/schedule', [\App\Http\Controllers\Api\RepairRequestController::class, 'setSchedule']);
 });
+
+// Shop repair capacity check — publicly accessible per shop (no auth needed; returns counts only)
+Route::get('api/customer/shop/{shopOwnerId}/repair-capacity', [\App\Http\Controllers\Api\RepairRequestController::class, 'shopRepairCapacity']);
 
 // Repair Workflow API Routes (Internal - Phase 2)
 Route::middleware('auth:user')->prefix('api/workflow/repairs')->group(function () {
@@ -737,6 +770,9 @@ Route::middleware('auth:user')->prefix('api/repairer')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData']);
 });
 
+// Public shop-hours fetch — no auth needed, used by the customer schedule modal
+Route::get('/api/repair/shop-hours', [\App\Http\Controllers\Api\RepairAvailabilityController::class, 'shopHours']);
+
 Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function () {
     // Get assigned repairs
     Route::get('/', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myAssignedRepairs']);
@@ -749,6 +785,9 @@ Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function (
     
     // Mark shoes as received (after pickup from customer)
     Route::post('{id}/mark-received', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAsReceived']);
+
+    // Change delivery method (before shoes are received)
+    Route::patch('{id}/delivery-method', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'changeDeliveryMethod']);
     
     // Phase 8: Work Progress Tracking
     Route::post('{id}/start-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'startWork']);
@@ -760,6 +799,9 @@ Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function (
     
     // Activate payment for specific repair request
     Route::post('{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair']);
+
+    // Ship a repair (ready-for-pickup → shipped)
+    Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
 });
 
 // Manager API Routes (Phase 5 - Rejection Review)
@@ -788,6 +830,9 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner/repairs')->group(fu
     
     // Reject high-value repair
     Route::post('{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair']);
+
+    // Ship a repair (ready-for-pickup → shipped)
+    Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
 });
 
 // Phase 10D - Shop owner review responses
@@ -1225,7 +1270,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/shoePricing');
-    })->name('shoe-pricing');
+    })->middleware('permission:access-shoe-pricing')->name('shoe-pricing');
     Route::get('/products', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1296,12 +1341,18 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         }
         return Inertia::render('ERP/Manager/repairRejectReview');
     })->name('repair-rejection-review');
+    Route::get('/dss-insights', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ShopOwner/DssInsights');
+    })->name('dss-insights');
 });
 
 // Note: Manager audit-logs route already defined above within the manager group
 
 // INVENTORY MODULE routes (accessible by Inventory Manager role or users with explicit permissions)
-Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user', 'permission:view-inventory|access-inventory-dashboard|access-product-inventory|access-stock-movement|access-upload-inventory|access-inventory-overview'])->group(function () {
+Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user', 'permission:view-inventory|access-inventory-dashboard|access-product-inventory|access-stock-movement|access-upload-inventory'])->group(function () {
     Route::get('/upload-stocks', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1550,7 +1601,11 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/repairer/JobOrdersRepair');
+        $repairerUser = Auth::guard('user')->user();
+        $shopOwner = $repairerUser?->shopOwner;
+        return Inertia::render('ERP/repairer/JobOrdersRepair', [
+            'repair_workload_limit' => (int) ($shopOwner?->repair_workload_limit ?? 20),
+        ]);
     })->middleware('permission:access-repair-job-orders')->name('job-orders-repair');
     
     Route::get('/upload-services', function () {
@@ -1619,6 +1674,14 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         return Inertia::render('ERP/STAFF/timeIn');
     })->middleware('permission:access-staff-time-in')->name('attendance');
 });
+
+// My Payslips — accessible to ALL authenticated ERP employees (every role)
+Route::get('/erp/my-payslips', function () {
+    if (Auth::guard('user')->user()?->force_password_change) {
+        return redirect()->route('erp.profile');
+    }
+    return Inertia::render('ERP/STAFF/MyPayslips');
+})->middleware(['auth:user'])->name('erp.my-payslips');
 
 // Repairer Support Route - Accessible to users with repairer conversation permissions
 Route::get('/erp/staff/repairer-support', function () {
@@ -1695,6 +1758,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
 // Manager API Routes
 Route::prefix('api/manager')->name('api.manager.')->middleware(['web', 'auth:user', 'check.suspension', 'role:Manager'])->group(function () {
     Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])->name('dashboard.stats');
+    Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
     Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])->name('staff-performance');
     Route::get('/analytics', [ManagerController::class, 'getAnalytics'])->name('analytics');
 

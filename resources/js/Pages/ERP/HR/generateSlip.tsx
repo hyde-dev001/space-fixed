@@ -335,41 +335,6 @@ const calculatePayroll = (
 	};
 };
 
-// ==================== Static Config ====================
-// Payroll periods available for selection. In a future iteration these
-// could be fetched from a /api/hr/payroll-periods endpoint so that
-// finance staff can manage them without a code change.
-const payrollPeriods: PayrollPeriod[] = [
-	{
-		month: "January 2026",
-		startDate: "2026-01-01",
-		endDate: "2026-01-31",
-		attendanceStatus: "finalized",
-		workingDays: 22,
-	},
-	{
-		month: "December 2025",
-		startDate: "2025-12-01",
-		endDate: "2025-12-31",
-		attendanceStatus: "finalized",
-		workingDays: 21,
-	},
-	{
-		month: "November 2025",
-		startDate: "2025-11-01",
-		endDate: "2025-11-30",
-		attendanceStatus: "finalized",
-		workingDays: 20,
-	},
-	{
-		month: "February 2026",
-		startDate: "2026-02-01",
-		endDate: "2026-02-28",
-		attendanceStatus: "pending",
-		workingDays: 20,
-	},
-];
-
 // ==================== Transformation Functions ====================
 
 // Transform employee API response
@@ -419,6 +384,8 @@ const getInitials = (firstName: string, lastName: string) =>
 export default function GenerateSlip() {
 	const [employeeData, setEmployeeData] = useState<Employee[]>([]);
 	const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
+	const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
+	const [isLoadingPeriods, setIsLoadingPeriods] = useState(true);
 	const [search, setSearch] = useState("");
 	const [department, setDepartment] = useState<string>("");
 	const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0);
@@ -444,6 +411,38 @@ export default function GenerateSlip() {
 	const [retryQueue, setRetryQueue] = useState<number[]>([]);
 
 	const selectedPeriod = payrollPeriods[selectedPeriodIndex];
+
+	// Fetch payroll periods from API
+	useEffect(() => {
+		const fetchPeriods = async () => {
+			setIsLoadingPeriods(true);
+			try {
+				const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+				const response = await fetch('/api/hr/payroll/periods', {
+					method: 'GET',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-TOKEN': csrfToken || '',
+						'Accept': 'application/json',
+					},
+					credentials: 'include',
+				});
+				if (response.ok) {
+					const data: PayrollPeriod[] = await response.json();
+					if (Array.isArray(data) && data.length > 0) {
+						setPayrollPeriods(data);
+						// Default to the most recent period (index 0)
+						setSelectedPeriodIndex(0);
+					}
+				}
+			} catch (error) {
+				console.error('Error fetching payroll periods:', error);
+			} finally {
+				setIsLoadingPeriods(false);
+			}
+		};
+		fetchPeriods();
+	}, []);
 
 	// Fetch employees from API
 	useEffect(() => {
@@ -1229,14 +1228,21 @@ export default function GenerateSlip() {
 							<select
 								value={selectedPeriodIndex}
 								onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
+								disabled={isLoadingPeriods || payrollPeriods.length === 0}
 								aria-label="Select payroll period"
-								className="ml-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1 text-sm text-gray-900 dark:text-white inline-block"
+								className="ml-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1 text-sm text-gray-900 dark:text-white inline-block disabled:opacity-50"
 							>
-								{payrollPeriods.map((period, index) => (
-									<option key={index} value={index}>
-										{period.month} {period.attendanceStatus === "finalized" ? "✓" : "⏳"}
-									</option>
-								))}
+								{isLoadingPeriods ? (
+									<option>Loading periods...</option>
+								) : payrollPeriods.length === 0 ? (
+									<option>No periods available</option>
+								) : (
+									payrollPeriods.map((period, index) => (
+										<option key={index} value={index}>
+											{period.month} {period.attendanceStatus === "finalized" ? "✓" : "⏳"}
+										</option>
+									))
+								)}
 							</select>
 						</div>
 					</div>
