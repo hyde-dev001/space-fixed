@@ -109,6 +109,7 @@ class ErpNotificationController extends Controller
 
         $notifications = Notification::where('user_id', $user->id)
             ->where('shop_id', $user->shop_owner_id)
+            ->where('is_archived', false)
             ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();

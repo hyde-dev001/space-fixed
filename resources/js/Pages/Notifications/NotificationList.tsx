@@ -8,84 +8,12 @@ import { Head, usePage, Link } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import { 
   Bell, Filter, Trash2, CheckCheck, AlertCircle, Settings, 
-  Search, Calendar, Archive, Download, X, ChevronDown, CheckSquare, Square, ArchiveRestore,
+  Search, Calendar, Archive, Download, X, ChevronDown, CheckSquare, ArchiveRestore,
 } from 'lucide-react';
 import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification, useUnarchiveNotification, type NotificationFilters } from '../../hooks/useNotifications';
 import NotificationItem from '../../Components/common/NotificationItem';
 import ExportModal from '../../Components/Notifications/ExportModal';
 import type { Notification } from '../../hooks/useNotifications';
-import {
-  getShopOwnerStaticNotificationsWithReadState,
-  markAllShopOwnerStaticNotificationsAsRead,
-  markShopOwnerStaticNotificationAsRead,
-  archiveShopOwnerStaticNotification,
-  unarchiveShopOwnerStaticNotification,
-  SHOP_OWNER_STATIC_NOTIFICATIONS_EVENT,
-} from '../../utils/shopOwnerStaticNotificationState';
-import {
-  archiveManagerStaticNotification,
-  getManagerStaticNotificationsWithReadState,
-  MANAGER_STATIC_NOTIFICATIONS_EVENT,
-  markAllManagerStaticNotificationsAsRead,
-  markManagerStaticNotificationAsRead,
-  unarchiveManagerStaticNotification,
-} from '../../utils/managerStaticNotificationState';
-import {
-  archiveFinanceStaticNotification,
-  FINANCE_STATIC_NOTIFICATIONS_EVENT,
-  getFinanceStaticNotificationsWithReadState,
-  markAllFinanceStaticNotificationsAsRead,
-  markFinanceStaticNotificationAsRead,
-  unarchiveFinanceStaticNotification,
-} from '../../utils/financeStaticNotificationState';
-import {
-  archiveHrStaticNotification,
-  getHrStaticNotificationsWithReadState,
-  HR_STATIC_NOTIFICATIONS_EVENT,
-  markAllHrStaticNotificationsAsRead,
-  markHrStaticNotificationAsRead,
-  unarchiveHrStaticNotification,
-} from '../../utils/hrStaticNotificationState';
-import {
-  archiveCrmStaticNotification,
-  CRM_STATIC_NOTIFICATIONS_EVENT,
-  getCrmStaticNotificationsWithReadState,
-  markAllCrmStaticNotificationsAsRead,
-  markCrmStaticNotificationAsRead,
-  unarchiveCrmStaticNotification,
-} from '../../utils/crmStaticNotificationState';
-import {
-  archiveRepairerStaticNotification,
-  getRepairerStaticNotificationsWithReadState,
-  markAllRepairerStaticNotificationsAsRead,
-  markRepairerStaticNotificationAsRead,
-  REPAIRER_STATIC_NOTIFICATIONS_EVENT,
-  unarchiveRepairerStaticNotification,
-} from '../../utils/repairerStaticNotificationState';
-import {
-  archiveStaffStaticNotification,
-  getStaffStaticNotificationsWithReadState,
-  markAllStaffStaticNotificationsAsRead,
-  markStaffStaticNotificationAsRead,
-  STAFF_STATIC_NOTIFICATIONS_EVENT,
-  unarchiveStaffStaticNotification,
-} from '../../utils/staffStaticNotificationState';
-import {
-  archiveInventoryStaticNotification,
-  getInventoryStaticNotificationsWithReadState,
-  INVENTORY_STATIC_NOTIFICATIONS_EVENT,
-  markAllInventoryStaticNotificationsAsRead,
-  markInventoryStaticNotificationAsRead,
-  unarchiveInventoryStaticNotification,
-} from '../../utils/inventoryStaticNotificationState';
-import {
-  archiveProcurementStaticNotification,
-  getProcurementStaticNotificationsWithReadState,
-  markAllProcurementStaticNotificationsAsRead,
-  markProcurementStaticNotificationAsRead,
-  PROCUREMENT_STATIC_NOTIFICATIONS_EVENT,
-  unarchiveProcurementStaticNotification,
-} from '../../utils/procurementStaticNotificationState';
 
 interface NotificationListProps {
   basePath?: string;
@@ -97,7 +25,6 @@ const NotificationList: React.FC<NotificationListProps> = ({
   title = 'Notifications'
 }) => {
   const page = usePage();
-  const { auth } = page.props as any;
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -105,30 +32,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
-  const [shopOwnerNotifications, setShopOwnerNotifications] = useState<Notification[]>([]);
-  const [managerNotifications, setManagerNotifications] = useState<Notification[]>([]);
-  const [financeNotifications, setFinanceNotifications] = useState<Notification[]>([]);
-  const [hrNotifications, setHrNotifications] = useState<Notification[]>([]);
-  const [crmNotifications, setCrmNotifications] = useState<Notification[]>([]);
-  const [repairerNotifications, setRepairerNotifications] = useState<Notification[]>([]);
-  const [staffNotifications, setStaffNotifications] = useState<Notification[]>([]);
-  const [inventoryNotifications, setInventoryNotifications] = useState<Notification[]>([]);
-  const [procurementNotifications, setProcurementNotifications] = useState<Notification[]>([]);
   const isShopOwnerView = basePath.includes('shop-owner');
   const isErpView = basePath.includes('hr') || basePath.includes('staff');
-  const normalizedUserRole = String(auth?.user?.role || '').toUpperCase();
-  const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
-  const hasStaffRole = normalizedUserRole.includes('STAFF') || userRoles.includes('STAFF');
-  const hasRepairerRole = normalizedUserRole === 'REPAIRER' || userRoles.includes('REPAIRER');
-  const isManagerStaticView = isErpView && normalizedUserRole === 'MANAGER';
-  const isFinanceStaticView = isErpView && normalizedUserRole.includes('FINANCE');
-  const isHrStaticView = isErpView && normalizedUserRole.includes('HR') && !isManagerStaticView && !isFinanceStaticView;
-  const isCrmStaticView = isErpView && normalizedUserRole.includes('CRM') && !isManagerStaticView && !isFinanceStaticView && !isHrStaticView;
-  const isStaffStaticView = isErpView && hasStaffRole && !hasRepairerRole && basePath.includes('staff');
-  const isInventoryStaticView = isErpView && normalizedUserRole.includes('INVENTORY') && !isManagerStaticView && !isFinanceStaticView && !isHrStaticView && !isCrmStaticView;
-  const isProcurementStaticView = isErpView && normalizedUserRole.includes('PROCUREMENT') && !isManagerStaticView && !isFinanceStaticView && !isHrStaticView && !isCrmStaticView && !isInventoryStaticView;
-  const isRepairerStaticView = isErpView && hasRepairerRole && basePath.includes('staff');
-  const isStaticView = isShopOwnerView || isManagerStaticView || isFinanceStaticView || isHrStaticView || isCrmStaticView || isStaffStaticView || isInventoryStaticView || isProcurementStaticView;
   const isCustomerView = !isShopOwnerView && !isErpView;
   const highlightedIdFromUrl = useMemo(() => {
     const queryString = page.url.includes('?') ? page.url.split('?')[1] : '';
@@ -184,135 +89,16 @@ const NotificationList: React.FC<NotificationListProps> = ({
     setFilters((prev) => ({ ...prev, archived: archivedFromUrl }));
   }, [archivedFromUrl]);
 
-  useEffect(() => {
-    if (!isShopOwnerView) return;
+  const notifications = useMemo(
+    () => Array.isArray(data?.data) ? data.data : [],
+    [data]
+  );
 
-    const sync = () => setShopOwnerNotifications(getShopOwnerStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(SHOP_OWNER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(SHOP_OWNER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isShopOwnerView, showArchived]);
-
-  useEffect(() => {
-    if (!isManagerStaticView) return;
-
-    const sync = () => setManagerNotifications(getManagerStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(MANAGER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(MANAGER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isManagerStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isFinanceStaticView) return;
-
-    const sync = () => setFinanceNotifications(getFinanceStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(FINANCE_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(FINANCE_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isFinanceStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isHrStaticView) return;
-
-    const sync = () => setHrNotifications(getHrStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(HR_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(HR_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isHrStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isCrmStaticView) return;
-
-    const sync = () => setCrmNotifications(getCrmStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isCrmStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isRepairerStaticView) return;
-
-    const sync = () => setRepairerNotifications(getRepairerStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isRepairerStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isStaffStaticView) return;
-
-    const sync = () => setStaffNotifications(getStaffStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isStaffStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isInventoryStaticView) return;
-
-    const sync = () => setInventoryNotifications(getInventoryStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isInventoryStaticView, showArchived]);
-
-  useEffect(() => {
-    if (!isProcurementStaticView) return;
-
-    const sync = () => setProcurementNotifications(getProcurementStaticNotificationsWithReadState(showArchived));
-    sync();
-
-    window.addEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-    return () => window.removeEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
-  }, [isProcurementStaticView, showArchived]);
-
-  const notifications = useMemo(() => {
-    if (isShopOwnerView) return shopOwnerNotifications;
-    if (isManagerStaticView) return managerNotifications;
-    if (isFinanceStaticView) return financeNotifications;
-    if (isHrStaticView) return hrNotifications;
-    if (isCrmStaticView) return crmNotifications;
-    if (isStaffStaticView) return staffNotifications;
-    if (isInventoryStaticView) return inventoryNotifications;
-    if (isProcurementStaticView) return procurementNotifications;
-    if (isRepairerStaticView) {
-      const liveNotifications = Array.isArray(data?.data) ? data.data : [];
-      return [...repairerNotifications, ...liveNotifications];
-    }
-    return Array.isArray(data?.data) ? data.data : [];
-  }, [isShopOwnerView, shopOwnerNotifications, isManagerStaticView, managerNotifications, isFinanceStaticView, financeNotifications, isHrStaticView, hrNotifications, isCrmStaticView, crmNotifications, isStaffStaticView, staffNotifications, isInventoryStaticView, inventoryNotifications, isProcurementStaticView, procurementNotifications, isRepairerStaticView, repairerNotifications, data]);
-
-  const totalNotifications = isStaticView
-    ? notifications.length
-    : typeof data?.total === 'number'
-      ? data.total
-      : notifications.length;
-  const unreadCount = isStaticView
-    ? notifications.filter((notification: Notification) => !notification.is_read).length
-    : typeof data?.unread_count === 'number'
-      ? data.unread_count
-      : 0;
-  const lastPage = isStaticView ? 1 : typeof data?.last_page === 'number' ? data.last_page : 1;
-  const from = isStaticView
-    ? (notifications.length > 0 ? 1 : 0)
-    : typeof data?.from === 'number'
-      ? data.from
-      : notifications.length > 0
-        ? 1
-        : 0;
-  const to = isStaticView
-    ? notifications.length
-    : typeof data?.to === 'number'
-      ? data.to
-      : notifications.length;
+  const totalNotifications = typeof data?.total === 'number' ? data.total : notifications.length;
+  const unreadCount = typeof data?.unread_count === 'number' ? data.unread_count : 0;
+  const lastPage = typeof data?.last_page === 'number' ? data.last_page : 1;
+  const from = typeof data?.from === 'number' ? data.from : (notifications.length > 0 ? 1 : 0);
+  const to = typeof data?.to === 'number' ? data.to : notifications.length;
 
   useEffect(() => {
     if (!highlightedNotificationId || notifications.length === 0) return;
@@ -335,47 +121,6 @@ const NotificationList: React.FC<NotificationListProps> = ({
   };
 
   const handleMarkAsRead = (id: number) => {
-    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
-    if (isShopOwnerView) {
-      markShopOwnerStaticNotificationAsRead(id);
-      return;
-    }
-    if (isManagerStaticView) {
-      markManagerStaticNotificationAsRead(id);
-      return;
-    }
-    if (isFinanceStaticView) {
-      markFinanceStaticNotificationAsRead(id);
-      return;
-    }
-    if (isHrStaticView) {
-      markHrStaticNotificationAsRead(id);
-      return;
-    }
-    if (isCrmStaticView) {
-      markCrmStaticNotificationAsRead(id);
-      return;
-    }
-    if (isStaffStaticView) {
-      markStaffStaticNotificationAsRead(id);
-      return;
-    }
-    if (isInventoryStaticView) {
-      markInventoryStaticNotificationAsRead(id);
-      return;
-    }
-    if (isProcurementStaticView) {
-      markProcurementStaticNotificationAsRead(id);
-      return;
-    }
-    if (isRepairerStaticView) {
-      if (isRepairerStaticNotification) {
-        markRepairerStaticNotificationAsRead(id);
-        return;
-      }
-      markAsRead.mutate(id);
-      return;
-    }
     markAsRead.mutate(id);
   };
 
@@ -426,34 +171,6 @@ const NotificationList: React.FC<NotificationListProps> = ({
       return null;
     };
 
-    if (isShopOwnerView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isManagerStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isFinanceStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isHrStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isCrmStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isStaffStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isInventoryStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isProcurementStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-    if (isRepairerStaticView && notification.action_url) {
-      return notification.action_url;
-    }
-
     if (basePath.includes('staff')) {
       const staffRoute = getStaffNotificationRoute();
       if (staffRoute) return staffRoute;
@@ -471,6 +188,9 @@ const NotificationList: React.FC<NotificationListProps> = ({
       const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
       return `/shop-owner/job-orders-repair?highlightRepair=${repairId}`;
     }
+
+    // Use explicit action_url when set (all live DB notifications have this)
+    if (notification.action_url) return notification.action_url;
 
     if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {
       const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
@@ -520,45 +240,6 @@ const NotificationList: React.FC<NotificationListProps> = ({
   };
 
   const handleMarkAllAsRead = () => {
-    if (isShopOwnerView) {
-      markAllShopOwnerStaticNotificationsAsRead();
-      return;
-    }
-    if (isManagerStaticView) {
-      markAllManagerStaticNotificationsAsRead();
-      return;
-    }
-    if (isFinanceStaticView) {
-      markAllFinanceStaticNotificationsAsRead();
-      return;
-    }
-    if (isHrStaticView) {
-      markAllHrStaticNotificationsAsRead();
-      return;
-    }
-    if (isCrmStaticView) {
-      markAllCrmStaticNotificationsAsRead();
-      return;
-    }
-    if (isStaffStaticView) {
-      markAllStaffStaticNotificationsAsRead();
-      return;
-    }
-    if (isInventoryStaticView) {
-      markAllInventoryStaticNotificationsAsRead();
-      return;
-    }
-    if (isProcurementStaticView) {
-      markAllProcurementStaticNotificationsAsRead();
-      return;
-    }
-    if (isRepairerStaticView) {
-      markAllRepairerStaticNotificationsAsRead();
-      if (confirm('Mark all notifications as read?')) {
-        markAllAsRead.mutate();
-      }
-      return;
-    }
     if (confirm('Mark all notifications as read?')) {
       markAllAsRead.mutate();
     }
@@ -578,46 +259,6 @@ const NotificationList: React.FC<NotificationListProps> = ({
     });
 
     if (!deleteConfirmation.isConfirmed) return;
-
-    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
-    if (isShopOwnerView) {
-      archiveShopOwnerStaticNotification(id);
-      return;
-    }
-    if (isManagerStaticView) {
-      archiveManagerStaticNotification(id);
-      return;
-    }
-    if (isFinanceStaticView) {
-      archiveFinanceStaticNotification(id);
-      return;
-    }
-    if (isHrStaticView) {
-      archiveHrStaticNotification(id);
-      return;
-    }
-    if (isCrmStaticView) {
-      archiveCrmStaticNotification(id);
-      return;
-    }
-    if (isStaffStaticView) {
-      archiveStaffStaticNotification(id);
-      return;
-    }
-    if (isInventoryStaticView) {
-      archiveInventoryStaticNotification(id);
-      return;
-    }
-    if (isProcurementStaticView) {
-      archiveProcurementStaticNotification(id);
-      return;
-    }
-    if (isRepairerStaticView) {
-      if (isRepairerStaticNotification) {
-        archiveRepairerStaticNotification(id);
-        return;
-      }
-    }
 
     deleteNotification.mutate(id, {
       onSuccess: async () => {
@@ -651,46 +292,6 @@ const NotificationList: React.FC<NotificationListProps> = ({
     });
 
     if (!unarchiveConfirmation.isConfirmed) return;
-
-    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
-    if (isShopOwnerView) {
-      unarchiveShopOwnerStaticNotification(id);
-      return;
-    }
-    if (isManagerStaticView) {
-      unarchiveManagerStaticNotification(id);
-      return;
-    }
-    if (isFinanceStaticView) {
-      unarchiveFinanceStaticNotification(id);
-      return;
-    }
-    if (isHrStaticView) {
-      unarchiveHrStaticNotification(id);
-      return;
-    }
-    if (isCrmStaticView) {
-      unarchiveCrmStaticNotification(id);
-      return;
-    }
-    if (isStaffStaticView) {
-      unarchiveStaffStaticNotification(id);
-      return;
-    }
-    if (isInventoryStaticView) {
-      unarchiveInventoryStaticNotification(id);
-      return;
-    }
-    if (isProcurementStaticView) {
-      unarchiveProcurementStaticNotification(id);
-      return;
-    }
-    if (isRepairerStaticView) {
-      if (isRepairerStaticNotification) {
-        unarchiveRepairerStaticNotification(id);
-        return;
-      }
-    }
 
     unarchiveNotification.mutate(id, {
       onSuccess: async () => {

@@ -6,11 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\SuspensionRequest;
 use App\Enums\SuspensionStatus;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class SuspensionRequestController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     public function index(Request $request)
     {
         $requests = SuspensionRequest::with(['employee', 'requester'])
@@ -91,6 +100,21 @@ class SuspensionRequestController extends Controller
             'manager_status' => 'pending',
             'owner_status' => 'pending',
         ]);
+
+        // Notify all Manager role users in this shop
+        $authUser = Auth::user();
+        if ($authUser && $authUser->shop_owner_id) {
+            try {
+                $employeeName = $this->employeeName($employee);
+                $this->notificationService->notifySuspensionSubmitted($authUser->shop_owner_id, [
+                    'suspension_id' => $req->id,
+                    'employee_name' => $employeeName,
+                    'reason'        => $validated['reason'],
+                ]);
+            } catch (\Exception $e) {
+                \Log::warning('Could not notify manager of suspension request: ' . $e->getMessage());
+            }
+        }
 
         return response()->json([
             'message' => 'Suspension request submitted successfully.',

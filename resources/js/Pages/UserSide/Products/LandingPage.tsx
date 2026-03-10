@@ -25,17 +25,35 @@ interface Props {
 
 const LandingPage: React.FC<Props> = ({ products = [] }) => {
   const heroSlides = [
-    '/images/shop/shop.jpg',
-    '/images/shop/shop1.jpg',
-    '/images/shop/shop2.jpg',
-    '/images/shop/shop3.jpg',
-    '/images/shop/shop4.jpg',
-    '/images/shop/shop5.jpg',
+    {
+      src: '/images/shop/shop3.jpg',
+      imageClass: 'object-center',
+      overlayClass: 'bg-black/45',
+    },
+    {
+      src: '/images/shop/shop4.jpg',
+      imageClass: 'object-center',
+      overlayClass: 'bg-black/45',
+    },
+    {
+      src: '/images/shop/shop5.jpg',
+      // Slightly lower focal point so the image appears moved down.
+      imageClass: 'object-[center_58%] brightness-110 contrast-110',
+      // Improve perceived clarity for this specific slide.
+      overlayClass: 'bg-black/35',
+    },
   ];
 
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
   const hoverTimersRef = useRef<Record<number, number>>({});
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  const heroParallaxRef = useRef<HTMLDivElement | null>(null);
+  const prefersReducedMotionRef = useRef(false);
+
+  useEffect(() => {
+    prefersReducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -51,6 +69,76 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
     return () => window.clearInterval(heroTimer);
   }, [heroSlides.length]);
+
+  useEffect(() => {
+    if (prefersReducedMotionRef.current) {
+      return;
+    }
+
+    let ticking = false;
+
+    const updateParallax = () => {
+      if (heroParallaxRef.current) {
+        const offset = Math.min(window.scrollY * 0.24, 160);
+        heroParallaxRef.current.style.transform = `translate3d(0, ${offset}px, 0) scale(1.12)`;
+      }
+      ticking = false;
+    };
+
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(updateParallax);
+        ticking = true;
+      }
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    const root = revealRootRef.current;
+    if (!root) {
+      return;
+    }
+
+    const revealElements = Array.from(root.querySelectorAll<HTMLElement>('[data-scroll-reveal]'));
+
+    revealElements.forEach((element) => {
+      const delay = Number(element.dataset.scrollDelay ?? 0);
+      if (delay > 0) {
+        element.style.transitionDelay = `${delay}ms`;
+      }
+    });
+
+    if (prefersReducedMotionRef.current) {
+      revealElements.forEach((element) => element.classList.add('is-visible'));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) {
+            return;
+          }
+
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        });
+      },
+      {
+        threshold: 0.16,
+        rootMargin: '0px 0px -10% 0px',
+      }
+    );
+
+    revealElements.forEach((element) => observer.observe(element));
+
+    return () => observer.disconnect();
+  }, []);
 
   const getProductImages = (product: Product) => {
     const images = [
@@ -95,35 +183,35 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div ref={revealRootRef} className="min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative w-full min-h-[90vh] flex items-center overflow-hidden">
-        <div className="absolute inset-0 z-0">
+        <div ref={heroParallaxRef} className="absolute inset-0 z-0 parallax-layer">
           {heroSlides.map((slide, index) => (
             <img
-              key={slide}
-              src={slide}
+              key={slide.src}
+              src={slide.src}
               alt={`Shop background ${index + 1}`}
-              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${slide.imageClass} ${
                 index === activeHeroSlide ? 'opacity-100' : 'opacity-0'
               }`}
             />
           ))}
-          <div className="absolute inset-0 bg-black/45" />
+          <div className={`absolute inset-0 ${heroSlides[activeHeroSlide]?.overlayClass ?? 'bg-black/45'}`} />
         </div>
 
         <div className="w-full max-w-[1920px] mx-auto px-6 lg:px-12 py-20 lg:py-32">
           <div className="max-w-4xl relative z-10">
-            <h1 className="text-6xl lg:text-8xl xl:text-9xl font-bold text-white mb-8 leading-[0.9] tracking-tight">
+            <h1 data-scroll-reveal className="scroll-reveal text-6xl lg:text-8xl xl:text-9xl font-bold text-white mb-8 leading-[0.9] tracking-tight">
               STEP INTO
               <span className="block">EXCELLENCE</span>
             </h1>
-            <p className="text-xl lg:text-2xl text-white/90 mb-12 max-w-2xl leading-relaxed font-light">
+            <p data-scroll-reveal data-scroll-delay={120} className="scroll-reveal text-xl lg:text-2xl text-white/90 mb-12 max-w-2xl leading-relaxed font-light">
               Discover premium footwear and expert repair services in one integrated platform designed for modern lifestyles.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div data-scroll-reveal data-scroll-delay={220} className="scroll-reveal flex flex-col sm:flex-row gap-4">
               <Link
                 href={route("products")}
                 className="px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors inline-flex items-center justify-center gap-3"
@@ -161,7 +249,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
       {/* Stats Section - Adidas Style: Clean, Bold Numbers */}
-      <section className="w-full bg-gray-100 text-black py-20">
+      <section data-scroll-reveal className="scroll-reveal w-full bg-gray-100 text-black py-20">
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12">
           <div className="grid grid-cols-3 gap-12 lg:gap-20 text-center">
             <div>
@@ -181,7 +269,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
       {/* Features Section - Adidas Style: Minimal, Clean */}
-      <section className="w-full bg-white py-24 lg:py-32">
+      <section data-scroll-reveal className="scroll-reveal w-full bg-white py-24 lg:py-32">
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-16 lg:gap-24">
             <div className="text-center">
@@ -218,7 +306,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       {/* Featured Products Section - Adidas Style: Large, Bold */}
       <section className="w-full bg-white py-24 lg:py-32">
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12">
-          <div className="mb-20">
+          <div data-scroll-reveal className="scroll-reveal mb-20">
             <h2 className="text-5xl lg:text-7xl font-bold text-black mb-6 tracking-tight">
               PREMIUM FOOTWEAR
             </h2>
@@ -237,7 +325,9 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
                 <Link
                   key={product.id}
                   href={route('products.show', product.slug)}
-                  className="group bg-white border-2 border-black overflow-hidden hover:shadow-2xl transition-all duration-300"
+                  data-scroll-reveal
+                  data-scroll-delay={Math.min(index * 90, 320)}
+                  className="scroll-reveal group bg-white border-2 border-black overflow-hidden hover:shadow-2xl transition-all duration-300"
                   onMouseEnter={() => startImageCycle(product)}
                   onMouseLeave={() => stopImageCycle(product.id)}
                 >
@@ -285,7 +375,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
               </div>
             )}
           </div>
-          <div className="text-center mt-16">
+          <div data-scroll-reveal className="scroll-reveal text-center mt-16">
             <Link
               href={route("products")}
               className="inline-flex items-center gap-3 px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
@@ -300,7 +390,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
       {/* Services Section - Adidas Style: Full Width Split */}
-      <section className="w-full bg-gray-100 text-black py-24 lg:py-32">
+      <section data-scroll-reveal className="scroll-reveal w-full bg-gray-100 text-black py-24 lg:py-32">
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12">
           <div className="mb-20">
             <h2 className="text-5xl lg:text-7xl font-bold text-black mb-6 tracking-tight">
@@ -357,7 +447,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
       {/* CTA Section - Adidas Style: Bold, Full Width */}
-      <section className="w-full bg-white py-24 lg:py-32">
+      <section data-scroll-reveal className="scroll-reveal w-full bg-white py-24 lg:py-32">
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12 text-center">
           <h2 className="text-5xl lg:text-7xl font-bold text-black mb-8 tracking-tight">
             READY TO STEP INTO STYLE?
@@ -383,7 +473,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
       {/* Footer - Adidas Style: Clean, Minimal */}
-      <footer className="w-full bg-gray-100 text-black py-16">
+      <footer data-scroll-reveal className="scroll-reveal w-full bg-gray-100 text-black py-16">
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
             <div className="md:col-span-2">
@@ -450,6 +540,34 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
           </div>
         </div>
         </footer>
+        <style>{`
+          .parallax-layer {
+            will-change: transform;
+            transform: translate3d(0, 0, 0) scale(1.12);
+            transform-origin: center top;
+          }
+
+          .scroll-reveal {
+            opacity: 0;
+            transform: translate3d(0, 40px, 0);
+            transition: opacity 700ms ease, transform 800ms cubic-bezier(0.22, 1, 0.36, 1);
+          }
+
+          .scroll-reveal.is-visible {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .parallax-layer,
+            .scroll-reveal,
+            .scroll-reveal.is-visible {
+              transition: none !important;
+              transform: none !important;
+              opacity: 1 !important;
+            }
+          }
+        `}</style>
       </div>
     </>
   );

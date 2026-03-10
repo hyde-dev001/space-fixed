@@ -121,7 +121,8 @@ class NotificationController extends Controller
             });
         }
 
-        $notifications = $query->orderBy('created_at', 'desc')
+        $notifications = $query->where('is_archived', false)
+            ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();
 

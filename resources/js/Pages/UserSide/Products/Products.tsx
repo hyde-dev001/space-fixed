@@ -27,6 +27,8 @@ interface Props {
   // will accept products from backend later
 }
 
+const ALLOWED_CATEGORY_FILTERS = ['men', 'women', 'kids', 'sports'] as const;
+
 // --- Near Me helpers ---
 const haversine = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371;
@@ -47,12 +49,17 @@ const formatDistance = (km: number): string => {
 const Products: React.FC<Props> = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const searchParam = urlParams.get('search') || '';
+  const rawCategoryParam = (urlParams.get('category') || '').toLowerCase();
+  const categoryParam = ALLOWED_CATEGORY_FILTERS.includes(rawCategoryParam as typeof ALLOWED_CATEGORY_FILTERS[number])
+    ? rawCategoryParam
+    : '';
   
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState('near_me');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParam);
+  const [activeCategory, setActiveCategory] = useState(categoryParam);
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -66,12 +73,18 @@ const Products: React.FC<Props> = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const search = params.get('search') || '';
+    const category = (params.get('category') || '').toLowerCase();
     setSearchQuery(search);
+    setActiveCategory(
+      ALLOWED_CATEGORY_FILTERS.includes(category as typeof ALLOWED_CATEGORY_FILTERS[number])
+        ? category
+        : ''
+    );
   }, [window.location.search]);
 
   useEffect(() => {
     fetchProducts();
-  }, [sortBy, currentPage, searchQuery]);
+  }, [sortBy, currentPage, searchQuery, activeCategory]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -128,6 +141,11 @@ const Products: React.FC<Props> = () => {
       // Search filter
       if (searchQuery) {
         params.append('filter[search_all]', searchQuery);
+      }
+
+      // Category filter (only for supported storefront categories)
+      if (activeCategory) {
+        params.append('filter[category]', activeCategory);
       }
 
       const response = await fetch(`/api/products/?${params.toString()}`, {

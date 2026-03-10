@@ -269,6 +269,27 @@ class RepairRequestController extends Controller
                 ])
                 ->log("Repair job status updated from {$oldStatus} to {$request->status}");
 
+            // Notify customer of key repair status changes
+            if ($repairRequest->user_id) {
+                try {
+                    $notificationService = app(NotificationService::class);
+                    $repairData = [
+                        'order_number' => $repairRequest->request_id,
+                        'repair_id'    => $repairRequest->id,
+                        'status'       => $request->status,
+                    ];
+                    if ($request->status === 'in-progress') {
+                        $notificationService->notifyRepairInProgress($repairRequest->user_id, $repairData);
+                    } elseif (in_array($request->status, ['ready-for-pickup', 'ready_for_pickup'])) {
+                        $notificationService->notifyRepairReadyForPickup($repairRequest->user_id, $repairData);
+                    } elseif ($request->status === 'completed') {
+                        $notificationService->notifyRepairCompleted($repairRequest->user_id, $repairData);
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Could not notify customer of repair status change: ' . $e->getMessage());
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Status updated successfully'

@@ -1041,6 +1041,7 @@ const ShopSetting: React.FC = () => {
 						</div>
 					</div>
 
+					{!isIndividual && (
 					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-7 lg:order-2">
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Approval Limits</h2>
@@ -1102,6 +1103,7 @@ const ShopSetting: React.FC = () => {
 							})}
 						</div>
 					</div>
+					)}
 				</div>
 				</div>
 			</div>

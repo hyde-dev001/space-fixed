@@ -249,6 +249,14 @@ class OvertimeController extends Controller
             if ($employee && $employee->user) {
                 $employee->user->notify(new OvertimeRequestApproved($overtimeRequest->fresh(), $user));
             }
+            // Also store live DB notification
+            if ($employee && $employee->user_id) {
+                $this->notificationService->notifyOvertimeApproved($employee->user_id, $user->shop_owner_id, [
+                    'overtime_id' => $overtimeRequest->id,
+                    'date'        => $overtimeRequest->overtime_date ?? 'N/A',
+                    'hours'       => $overtimeRequest->hours ?? $overtimeRequest->requested_hours ?? 0,
+                ]);
+            }
         } catch (\Exception $e) {
             \Log::error('Failed to send overtime approval notification', [
                 'overtime_request_id' => $overtimeRequest->id,

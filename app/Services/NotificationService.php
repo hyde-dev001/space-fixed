@@ -619,7 +619,7 @@ class NotificationService
         $this->sendToUser($userId, NotificationType::OVERTIME_REQUEST_REJECTED,
             'Overtime Request Rejected',
             "Your overtime request for {$otData['overtime_date']} was rejected. {$reason}",
-            $otData, null, $shopId
+            $otData, '/erp/my-payslips', $shopId
         );
     }
 
@@ -664,6 +664,36 @@ class NotificationService
             'New Purchase Request',
             "Purchase request {$prData['reference']} of ₱{$prData['total_cost']} requires finance review.",
             $prData, '/erp/finance/invoices', 'medium'
+        );
+    }
+
+    /** Notify employee their overtime request was approved */
+    public function notifyOvertimeApproved(int $userId, int $shopId, array $otData): void
+    {
+        $this->sendToUser($userId, NotificationType::OVERTIME_REQUEST_APPROVED,
+            'Overtime Request Approved',
+            "Your overtime request for {$otData['date']} has been approved.",
+            $otData, '/erp/my-payslips', $shopId
+        );
+    }
+
+    /** Notify Manager role users when a suspension request is submitted */
+    public function notifySuspensionSubmitted(int $shopId, array $suspensionData): void
+    {
+        $this->sendToErpRole('Manager', $shopId, NotificationType::SUSPENSION_REQUEST_PENDING,
+            'Suspension Request Pending',
+            "A suspension request has been submitted for {$suspensionData['employee_name']}.",
+            $suspensionData, '/erp/manager/suspend-approval', 'high'
+        );
+    }
+
+    /** Notify Manager role users when a repairer rejects a repair (needs review) */
+    public function notifyRepairRejectedToManager(int $shopId, array $repairData): void
+    {
+        $this->sendToErpRole('Manager', $shopId, NotificationType::REPAIR_REJECTION_REVIEW,
+            'Repair Rejection Needs Review',
+            "Repairer rejected repair #{$repairData['order_number']}. Review required.",
+            $repairData, '/erp/manager/repair-rejection-review', 'high'
         );
     }
 

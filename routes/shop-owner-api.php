@@ -27,6 +27,15 @@ use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchas
  */
 Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.isolation'])->group(function () {
     // ============================================
+    // CUSTOMERS (Shop Owner)
+    // ============================================
+    Route::prefix('customers')->group(function () {
+        Route::get('/', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'index'])->name('shop_owner.customers.index');
+        Route::get('/{id}/orders', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'orders'])->name('shop_owner.customers.orders');
+        Route::get('/{id}/repairs', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'repairs'])->name('shop_owner.customers.repairs');
+    });
+
+    // ============================================
     // PURCHASE REQUEST APPROVAL (Shop Owner Final Approval)
     // ============================================
     Route::prefix('purchase-requests')->group(function () {

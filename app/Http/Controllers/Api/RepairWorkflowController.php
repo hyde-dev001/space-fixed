@@ -363,7 +363,20 @@ class RepairWorkflowController extends Controller
                 $conversation->update(['last_message_at' => $messageRecord->created_at]);
                 
                 DB::commit();
-                
+
+                // Notify customer that their repair was accepted
+                if ($repairRequest->user_id) {
+                    try {
+                        $this->notificationService->notifyRepairAccepted($repairRequest->user_id, [
+                            'order_number'  => $repairRequest->request_id,
+                            'repair_id'     => $repairRequest->id,
+                            'customer_name' => $repairRequest->customer_name,
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::warning('Could not notify customer of repair acceptance: ' . $e->getMessage());
+                    }
+                }
+
                 $message = $repairRequest->delivery_method === 'walk_in' 
                     ? 'Repair accepted. Waiting for customer to bring the item in.'
                     : 'Repair accepted. Chat conversation updated with customer.';
@@ -470,7 +483,20 @@ class RepairWorkflowController extends Controller
             $conversation->update(['last_message_at' => $messageRecord->created_at]);
             
             DB::commit();
-            
+
+            // Notify customer that their repair was accepted
+            if ($repairRequest->user_id) {
+                try {
+                    $this->notificationService->notifyRepairAccepted($repairRequest->user_id, [
+                        'order_number'  => $repairRequest->request_id,
+                        'repair_id'     => $repairRequest->id,
+                        'customer_name' => $repairRequest->customer_name,
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::warning('Could not notify customer of repair acceptance: ' . $e->getMessage());
+                }
+            }
+
             $message = $repairRequest->delivery_method === 'walk_in' 
                 ? 'Repair accepted. Waiting for customer to bring the item in.'
                 : 'Repair accepted. Chat conversation updated with customer.';
@@ -543,9 +569,19 @@ class RepairWorkflowController extends Controller
                 ]);
                 
                 DB::commit();
-                
-                // TODO: Send notification to customer
-                
+
+                // Notify customer of rejection
+                if ($repairRequest->user_id) {
+                    try {
+                        $this->notificationService->notifyRepairRejected($repairRequest->user_id, [
+                            'order_number' => $repairRequest->request_id,
+                            'reason'       => $request->reason,
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::warning('Could not notify customer of repair rejection: ' . $e->getMessage());
+                    }
+                }
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Repair request rejected. Customer will be notified.',
@@ -596,9 +632,18 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
-            
-            // TODO: Send notification to manager
-            
+
+            // Notify Manager role users to review the rejection
+            try {
+                $this->notificationService->notifyRepairRejectedToManager($repairRequest->shop_owner_id, [
+                    'order_number' => $repairRequest->request_id,
+                    'repair_id'    => $repairRequest->id,
+                    'reason'       => $request->reason,
+                ]);
+            } catch (\Exception $e) {
+                \Log::warning('Could not notify manager of repair rejection: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Repair rejected. Manager has been notified for review.',
@@ -725,9 +770,19 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
-            
-            // TODO: Send notification to customer
-            
+
+            // Notify customer that their repair has been rejected
+            if ($repairRequest->user_id) {
+                try {
+                    $this->notificationService->notifyRepairRejected($repairRequest->user_id, [
+                        'order_number' => $repairRequest->request_id,
+                        'reason'       => $request->notes ?? 'The repair could not be processed at this time.',
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::warning('Could not notify customer of repair rejection approval: ' . $e->getMessage());
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Rejection approved. Customer will be notified.',
