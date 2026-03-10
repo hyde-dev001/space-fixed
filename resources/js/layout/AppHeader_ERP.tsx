@@ -7,18 +7,22 @@ import SuperAdminDropdown from "../components/header/SuperAdminDropdown";
 import NotificationBell from "../Components/common/NotificationBell";
 
 const AppHeader_ERP: React.FC = () => {
-  const { auth } = usePage().props as any;
+  const page = usePage();
+  const { auth } = page.props as any;
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
   // Determine the correct notification API basePath based on user role
-  // Repairers use /api/staff/notifications (requires 'old_role:Staff|Manager|Shop Owner|Repairer')
+  // Staff/Repairers use /api/staff/notifications (requires 'old_role:Staff|Manager|Shop Owner|Repairer')
   // HR/Finance/Manager use /api/hr/notifications (requires HR permissions)
-  const userRole = auth?.user?.role;
-  const notificationBasePath = userRole === 'REPAIRER' 
-    ? '/api/staff/notifications' 
-    : '/api/hr/notifications';
+  const userRole = String(auth?.user?.role || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
+  const isStaffRole = userRole.includes('STAFF') || userRoles.includes('STAFF');
+  const isRepairerRole = userRole === 'REPAIRER' || userRoles.includes('REPAIRER');
+  const isStaffRoute = String(page.url || '').includes('/erp/staff/');
+  const isStaffScopedNotifications = isRepairerRole || isStaffRole || isStaffRoute;
+  const notificationBasePath = isStaffScopedNotifications ? '/api/staff/notifications' : '/api/hr/notifications';
 
   const handleToggle = () => {
     if (window.innerWidth >= 1024) {

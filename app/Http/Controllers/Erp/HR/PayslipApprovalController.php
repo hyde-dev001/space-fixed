@@ -50,7 +50,7 @@ class PayslipApprovalController extends Controller
 
         $query = Payroll::forShopOwner($user->shop_owner_id)
             ->where('status', 'pending')
-            ->with('employee:id,first_name,last_name,department,designation');
+            ->with('employee:id,first_name,last_name,department,position');
 
         if ($request->filled('search')) {
             $term = $request->search;
@@ -83,7 +83,7 @@ class PayslipApprovalController extends Controller
         }
 
         $payslip = Payroll::forShopOwner($user->shop_owner_id)
-            ->with('employee:id,first_name,last_name,department,designation', 'components')
+            ->with('employee:id,first_name,last_name,department,position', 'components')
             ->find($id);
 
         if (! $payslip) {
@@ -100,7 +100,7 @@ class PayslipApprovalController extends Controller
             'employee_name'  => $payslip->employee->first_name . ' ' . $payslip->employee->last_name,
             'employee_id'    => $payslip->employee_id,
             'department'     => $payslip->employee->department,
-            'role'           => $payslip->employee->designation,
+            'role'           => $payslip->employee->position,
             'pay_period'     => $payslip->payroll_period,
             'generated_date' => $payslip->created_at->format('Y-m-d'),
             'generated_by'   => 'HR Payroll',

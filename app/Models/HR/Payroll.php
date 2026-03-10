@@ -43,6 +43,7 @@ class Payroll extends Model
         'pag_ibig',
         'attendance_days',
         'leave_days',
+        'absent_days',
         'overtime_hours',
         'generated_by',
         'generated_at',
@@ -72,6 +73,7 @@ class Payroll extends Model
         'approved_at' => 'datetime',
         'attendance_days' => 'integer',
         'leave_days' => 'integer',
+        'absent_days' => 'integer',
         'overtime_hours' => 'decimal:2',
     ];
 
@@ -224,25 +226,54 @@ class Payroll extends Model
     }
 
     /**
-     * Calculate net salary automatically
+     * Calculate net salary automatically.
+     * Prefers the new canonical columns (basic_salary, total_deductions, tax_amount)
+     * and falls back to the original columns for rows created before the migration.
      */
     public function calculateNetSalary(): float
     {
-        $gross = $this->base_salary + $this->allowances + $this->overtime_pay + $this->bonus;
-        $totalDeductions = $this->deductions + $this->tax_deductions + 
-                          $this->sss_contributions + $this->philhealth + $this->pag_ibig;
-        
-        return round($gross - $totalDeductions, 2);
+        $base  = $this->basic_salary ?? $this->base_salary ?? 0;
+        $gross = $base + ($this->allowances ?? 0) + ($this->overtime_pay ?? 0) + ($this->bonus ?? 0);
+
+        $deductions = ($this->total_deductions ?? $this->deductions ?? 0)
+                    + ($this->tax_amount ?? $this->tax_deductions ?? 0)
+                    + ($this->sss_contributions ?? 0)
+                    + ($this->philhealth ?? 0)
+                    + ($this->pag_ibig ?? 0);
+
+        return round($gross - $deductions, 2);
     }
 
     /**
-     * Auto-calculate net salary before saving
+     * Auto-calculate net salary before saving.
+     *
+     * Rules:
+     * - If the caller explicitly sets net_salary (e.g. PayrollService) → trust it.
+     * - If an existing record's gross_salary is already > 0 and neither gross_salary
+     *   nor net_salary is being changed this save (e.g. a status-only update) → leave
+     *   the service-computed value untouched.
+     * - Otherwise (new record with placeholders, or manual column edits) → derive
+     *   net_salary from the simple column formula.
      */
     protected static function boot()
     {
         parent::boot();
 
         static::saving(function ($payroll) {
+            // The service always sets net_salary explicitly → honour it.
+            if ($payroll->isDirty('net_salary')) {
+                return;
+            }
+
+            // Partial update on an existing record (e.g. status change) where the
+            // service has already written a correct gross/net — do not recalculate.
+            if ($payroll->exists
+                && ($payroll->gross_salary ?? 0) > 0
+                && ! $payroll->isDirty('gross_salary')
+            ) {
+                return;
+            }
+
             $payroll->net_salary = $payroll->calculateNetSalary();
         });
     }

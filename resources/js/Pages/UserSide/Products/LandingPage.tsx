@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, Head } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
@@ -10,6 +10,8 @@ interface Product {
   price: number;
   compare_at_price: number | null;
   main_image: string;
+  hover_image?: string | null;
+  gallery_images?: string[];
   stock_quantity: number;
   shop_owner: {
     id: number;
@@ -22,21 +24,103 @@ interface Props {
 }
 
 const LandingPage: React.FC<Props> = ({ products = [] }) => {
+  const heroSlides = [
+    '/images/shop/shop.jpg',
+    '/images/shop/shop1.jpg',
+    '/images/shop/shop2.jpg',
+    '/images/shop/shop3.jpg',
+    '/images/shop/shop4.jpg',
+    '/images/shop/shop5.jpg',
+  ];
+
+  const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
+  const [activeHeroSlide, setActiveHeroSlide] = useState(0);
+  const hoverTimersRef = useRef<Record<number, number>>({});
+
+  useEffect(() => {
+    return () => {
+      Object.values(hoverTimersRef.current).forEach((timerId) => window.clearInterval(timerId));
+      hoverTimersRef.current = {};
+    };
+  }, []);
+
+  useEffect(() => {
+    const heroTimer = window.setInterval(() => {
+      setActiveHeroSlide((prev) => (prev + 1) % heroSlides.length);
+    }, 4500);
+
+    return () => window.clearInterval(heroTimer);
+  }, [heroSlides.length]);
+
+  const getProductImages = (product: Product) => {
+    const images = [
+      product.main_image,
+      product.hover_image,
+      ...(product.gallery_images ?? []),
+    ].filter(Boolean) as string[];
+
+    return Array.from(new Set(images));
+  };
+
+  const startImageCycle = (product: Product) => {
+    const images = getProductImages(product);
+    if (images.length <= 1) return;
+
+    setActiveImageIndexes((prev) => ({ ...prev, [product.id]: 1 }));
+
+    if (hoverTimersRef.current[product.id]) {
+      window.clearInterval(hoverTimersRef.current[product.id]);
+    }
+
+    hoverTimersRef.current[product.id] = window.setInterval(() => {
+      setActiveImageIndexes((prev) => {
+        const currentIndex = prev[product.id] ?? 1;
+        return {
+          ...prev,
+          [product.id]: (currentIndex + 1) % images.length,
+        };
+      });
+    }, 800);
+  };
+
+  const stopImageCycle = (productId: number) => {
+    if (hoverTimersRef.current[productId]) {
+      window.clearInterval(hoverTimersRef.current[productId]);
+      delete hoverTimersRef.current[productId];
+    }
+
+    setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
+  };
+
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
       <div className="min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
-      {/* Hero Section - Adidas Style: Full Width, Bold Typography */}
-      <section className="relative w-full min-h-[90vh] bg-white flex items-center">
+      {/* Hero Section - Full-bleed Background Carousel */}
+      <section className="relative w-full min-h-[90vh] flex items-center overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          {heroSlides.map((slide, index) => (
+            <img
+              key={slide}
+              src={slide}
+              alt={`Shop background ${index + 1}`}
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${
+                index === activeHeroSlide ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+          ))}
+          <div className="absolute inset-0 bg-black/45" />
+        </div>
+
         <div className="w-full max-w-[1920px] mx-auto px-6 lg:px-12 py-20 lg:py-32">
-          <div className="max-w-4xl">
-            <h1 className="text-6xl lg:text-8xl xl:text-9xl font-bold text-black mb-8 leading-[0.9] tracking-tight">
+          <div className="max-w-4xl relative z-10">
+            <h1 className="text-6xl lg:text-8xl xl:text-9xl font-bold text-white mb-8 leading-[0.9] tracking-tight">
               STEP INTO
               <span className="block">EXCELLENCE</span>
             </h1>
-            <p className="text-xl lg:text-2xl text-black/70 mb-12 max-w-2xl leading-relaxed font-light">
+            <p className="text-xl lg:text-2xl text-white/90 mb-12 max-w-2xl leading-relaxed font-light">
               Discover premium footwear and expert repair services in one integrated platform designed for modern lifestyles.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
@@ -59,6 +143,18 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </Link>
+            </div>
+
+            <div className="mt-8 flex items-center gap-2">
+              {heroSlides.map((_, index) => (
+                <button
+                  key={`hero-dot-${index}`}
+                  type="button"
+                  onClick={() => setActiveHeroSlide(index)}
+                  className={`h-2.5 rounded-full transition-all ${index === activeHeroSlide ? 'w-8 bg-white' : 'w-2.5 bg-white/50 hover:bg-white/80'}`}
+                  aria-label={`Go to slide ${index + 1}`}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -132,15 +228,22 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
             {products.length > 0 ? (
-              products.map((product, index) => (
+              products.map((product, index) => {
+                const productImages = getProductImages(product);
+                const imageIndex = activeImageIndexes[product.id] ?? 0;
+                const currentImage = productImages[imageIndex] || product.main_image || './images/product/default.jpg';
+
+                return (
                 <Link
                   key={product.id}
                   href={route('products.show', product.slug)}
                   className="group bg-white border-2 border-black overflow-hidden hover:shadow-2xl transition-all duration-300"
+                  onMouseEnter={() => startImageCycle(product)}
+                  onMouseLeave={() => stopImageCycle(product.id)}
                 >
                   <div className="relative bg-white overflow-hidden aspect-square">
                     <img
-                      src={product.main_image || './images/product/default.jpg'}
+                      src={currentImage}
                       alt={product.name}
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                       loading="lazy"
@@ -174,7 +277,8 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
                     </div>
                   </div>
                 </Link>
-              ))
+                );
+              })
             ) : (
               <div className="col-span-3 text-center py-12">
                 <p className="text-black/50 text-lg">No products available at the moment.</p>

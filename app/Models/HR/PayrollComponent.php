@@ -18,24 +18,32 @@ class PayrollComponent extends Model
         'component_code',
         'description',
         'amount',
+        'base_amount',
+        'calculated_amount',
         'calculation_method',
         'calculation_value',
         'calculation_base',
         'formula',
         'is_taxable',
         'is_statutory',
+        'is_recurring',
         'affects_gross',
         'display_order',
         'show_on_payslip',
         'category',
         'metadata',
+        'applies_to_grade',
+        'applies_to_department',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'base_amount' => 'decimal:2',
+        'calculated_amount' => 'decimal:2',
         'calculation_value' => 'decimal:2',
         'is_taxable' => 'boolean',
         'is_statutory' => 'boolean',
+        'is_recurring' => 'boolean',
         'affects_gross' => 'boolean',
         'display_order' => 'integer',
         'show_on_payslip' => 'boolean',
@@ -62,12 +70,23 @@ class PayrollComponent extends Model
     public const CODE_LOAN = 'LOAN';
     public const CODE_ADVANCE = 'ADVANCE';
 
-    // Calculation method constants
+    // Calculation method constants (CALC_* for legacy; METHOD_* used by PayrollService)
     public const CALC_FIXED = 'fixed';
     public const CALC_PERCENTAGE = 'percentage';
     public const CALC_FORMULA = 'formula';
     public const CALC_ATTENDANCE = 'attendance_based';
     public const CALC_HOURLY = 'hourly';
+
+    // METHOD_* aliases — referenced by PayrollService and PayrollBatchController
+    public const METHOD_FIXED               = 'fixed';
+    public const METHOD_ALLOWANCE           = 'fixed';          // fixed allowance amount
+    public const METHOD_COMMISSION          = 'fixed';          // pre-calculated commission
+    public const METHOD_OVERTIME            = 'fixed';          // pre-calculated OT pay
+    public const METHOD_CUSTOM              = 'formula';        // custom formula
+    public const METHOD_PERCENTAGE_OF_BASIC = 'percentage';     // % of basic salary
+    public const METHOD_PERCENTAGE_OF_GROSS = 'percentage';     // % of gross salary
+    public const METHOD_DAYS_WORKED         = 'attendance_based'; // prorate by days worked
+    public const METHOD_HOURS_WORKED        = 'hourly';         // hourly rate × hours
 
     // ==================== RELATIONSHIPS ====================
 

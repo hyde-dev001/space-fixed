@@ -18,11 +18,44 @@ class LandingPageController extends Controller
     {
         // Get featured products (limit to 3 for landing page)
         $products = Product::where('is_active', true)
-            ->with('shopOwner:id,first_name,last_name,business_name')
+            ->with([
+                'shopOwner:id,first_name,last_name,business_name',
+                'colorVariants' => function ($query) {
+                    $query->where('is_active', true)->orderBy('sort_order');
+                },
+                'colorVariants.images' => function ($query) {
+                    $query->orderBy('sort_order');
+                },
+            ])
             ->orderBy('created_at', 'desc')
             ->take(3)
             ->get()
             ->map(function ($product) {
+                $mediaImages = collect($product->image_urls ?? [])
+                    ->pluck('url')
+                    ->filter()
+                    ->values();
+
+                $variantImages = collect($product->colorVariants ?? [])
+                    ->flatMap(function ($variant) {
+                        return collect($variant->images ?? [])->map(function ($img) {
+                            return $img->image_url;
+                        });
+                    })
+                    ->filter()
+                    ->values();
+
+                $allImages = $mediaImages
+                    ->merge($variantImages)
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $mainImage = $product->main_image_url;
+                $hoverImage = $allImages->first(function ($url) use ($mainImage) {
+                    return $url !== $mainImage;
+                });
+
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
@@ -30,7 +63,14 @@ class LandingPageController extends Controller
                     'description' => $product->description,
                     'price' => $product->price,
                     'compare_at_price' => $product->compare_at_price,
-                    'main_image' => $product->main_image_url,
+                    'main_image' => $mainImage,
+                    'hover_image' => $hoverImage,
+                    'gallery_images' => $allImages
+                        ->filter(function ($url) use ($mainImage) {
+                            return $url !== $mainImage;
+                        })
+                        ->values()
+                        ->all(),
                     'stock_quantity' => $product->stock_quantity,
                     'shop_owner' => $product->shopOwner ? [
                         'id' => $product->shopOwner->id,

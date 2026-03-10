@@ -8,12 +8,19 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\Finance\Account;
 use App\Models\AuditLog;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class InvoiceController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * List invoices with filtering
      */
@@ -192,6 +199,17 @@ class InvoiceController extends Controller
             ]);
 
             DB::commit();
+
+            // Live notification to all Finance users in this shop
+            try {
+                $this->notificationService->notifyInvoiceCreatedToFinance($shopOwnerId, [
+                    'invoice_id' => $invoice->id,
+                    'reference'  => $invoice->reference,
+                    'total'      => number_format($invoice->total, 2),
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send live invoice notification', ['error' => $e->getMessage()]);
+            }
 
             return response()->json($invoice->load('items'), 201);
         } catch (\Exception $e) {

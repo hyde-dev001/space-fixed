@@ -45,6 +45,9 @@ class PayslipApprovalController extends Controller
 
     /**
      * List payslips awaiting approval (pending status).
+     *
+     * Returns data mapped to the shape expected by payslipApproval.tsx:
+     *   employee_name, pay_period, net_pay, status (= approval_status), etc.
      */
     public function getPayslipsForApproval(Request $request): JsonResponse
     {
@@ -55,7 +58,7 @@ class PayslipApprovalController extends Controller
 
         $query = Payroll::forShopOwner($user->shop_owner_id)
             ->where('status', 'pending')
-            ->with('employee:id,first_name,last_name,department,designation');
+            ->with('employee:id,first_name,last_name,department,position');
 
         if ($request->filled('search')) {
             $term = $request->search;
@@ -72,9 +75,41 @@ class PayslipApprovalController extends Controller
             $query->where('approval_status', $request->status);
         }
 
-        $payslips = $query->orderByDesc('created_at')->paginate($request->per_page ?? 15);
+        $paginator = $query->orderByDesc('created_at')->paginate($request->per_page ?? 15);
 
-        return response()->json($payslips);
+        // Map to the field names expected by the Finance frontend (payslipApproval.tsx).
+        // Crucially, `status` here is the Finance *approval_status* (pending/approved/rejected),
+        // not the HR processing status (pending/processed/paid).
+        $mapped = $paginator->map(function ($payslip) {
+            $emp = $payslip->employee;
+            return [
+                'id'             => $payslip->id,
+                'employee_name'  => $emp ? trim($emp->first_name . ' ' . $emp->last_name) : 'Unknown',
+                'employee_id'    => (string) $payslip->employee_id,
+                'department'     => $emp->department ?? 'N/A',
+                'role'           => $emp->position ?? 'N/A',
+                'pay_period'     => $payslip->payroll_period,
+                'generated_date' => $payslip->created_at?->format('Y-m-d') ?? '',
+                'generated_by'   => 'HR Payroll',
+                'gross_pay'      => (float) ($payslip->gross_salary ?? 0),
+                'deductions'     => (float) ($payslip->total_deductions ?? $payslip->deductions ?? 0),
+                'net_pay'        => (float) ($payslip->net_salary ?? 0),
+                'status'         => $payslip->approval_status ?? 'pending',
+                'notes'          => $payslip->notes ?? '',
+                'approval_notes' => $payslip->approval_notes ?? '',
+                'line_items'     => [],   // full breakdown only loaded on individual detail view
+            ];
+        });
+
+        return response()->json([
+            'data' => $mapped->values(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page'    => $paginator->lastPage(),
+                'per_page'     => $paginator->perPage(),
+                'total'        => $paginator->total(),
+            ],
+        ]);
     }
 
     /**
@@ -88,7 +123,7 @@ class PayslipApprovalController extends Controller
         }
 
         $payslip = Payroll::forShopOwner($user->shop_owner_id)
-            ->with('employee:id,first_name,last_name,department,designation', 'components')
+            ->with('employee:id,first_name,last_name,department,position', 'components')
             ->find($id);
 
         if (! $payslip) {
@@ -102,19 +137,20 @@ class PayslipApprovalController extends Controller
             'employee_name'  => $payslip->employee->first_name . ' ' . $payslip->employee->last_name,
             'employee_id'    => $payslip->employee_id,
             'department'     => $payslip->employee->department,
-            'role'           => $payslip->employee->designation,
+            'role'           => $payslip->employee->position,
             'pay_period'     => $payslip->payroll_period,
             'generated_date' => $payslip->created_at->format('Y-m-d'),
             'generated_by'   => 'HR Payroll',
-            'gross_pay'      => $payslip->gross_salary,
-            'deductions'     => $payslip->total_deductions,
-            'net_pay'        => $payslip->net_salary,
-            'tax_amount'     => $payslip->tax_amount ?? 0,
+            'gross_pay'      => (float) ($payslip->gross_salary ?? 0),
+            'deductions'     => (float) ($payslip->total_deductions ?? $payslip->deductions ?? 0),
+            'net_pay'        => (float) ($payslip->net_salary ?? 0),
+            'tax_amount'     => (float) ($payslip->tax_amount ?? $payslip->tax_deductions ?? 0),
             'status'         => $payslip->approval_status ?? 'pending',
             'notes'          => $payslip->notes ?? '',
+            'approval_notes' => $payslip->approval_notes ?? '',
             'line_items'     => $components->map(fn ($c) => [
                 'label'  => $c->component_name,
-                'amount' => $c->calculated_amount,
+                'amount' => (float) ($c->calculated_amount ?? $c->amount ?? 0),
                 'type'   => $c->component_type,
             ])->values()->toArray(),
         ]);

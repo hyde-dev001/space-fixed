@@ -33,7 +33,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 								<div className="group flex h-full flex-col overflow-hidden border-2 border-black bg-white transition-all duration-300 hover:shadow-2xl">
 									<div className="border-b-2 border-black p-8">
 										<h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black">Basic</h3>
-										<div className="mb-6 text-5xl font-bold text-black">P249</div>
+										<div className="mb-6 text-5xl font-bold text-black">₱249</div>
 										<p className="mb-6 text-sm leading-relaxed text-black/70">Best for getting started with one month of premium showroom access.</p>
 									</div>
 									<div className="grow p-8">
@@ -80,7 +80,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 								<div className="group flex h-full flex-col overflow-hidden border-2 border-black bg-white transition-all duration-300 hover:shadow-2xl">
 									<div className="border-b-2 border-black p-8">
 										<h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black">Pro</h3>
-										<div className="mb-6 text-5xl font-bold text-black">P549</div>
+										<div className="mb-6 text-5xl font-bold text-black">₱399</div>
 										<p className="mb-6 text-sm leading-relaxed text-black/70">Ideal for ongoing premium access and benefits</p>
 									</div>
 									<div className="grow p-8">
@@ -90,14 +90,14 @@ const PremiumBenefits: React.FC<Props> = () => {
 											<li className="flex items-center gap-3"><div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-black"><svg className="h-3 w-3 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></div><span className="text-sm text-black/70">View shoes in horizontally degree detail</span></li>
 											<li className="flex items-center gap-3"><div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-black"><svg className="h-3 w-3 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></div><span className="text-sm text-black/70">Enable to upload a image sequence of the shoes</span></li>
 										</ul>
-										<Link href="/payment?source=premium&plan=pro&total=549" className="block w-full bg-black px-6 py-4 text-center text-sm font-semibold uppercase tracking-wider text-white transition-colors hover:bg-black/80">Subscribe Now</Link>
+										<Link href="/payment?source=premium&plan=pro&total=399" className="block w-full bg-black px-6 py-4 text-center text-sm font-semibold uppercase tracking-wider text-white transition-colors hover:bg-black/80">Subscribe Now</Link>
 									</div>
 								</div>
 
 								<div className="group flex h-full flex-col overflow-hidden border-2 border-black bg-white transition-all duration-300 hover:shadow-2xl">
 									<div className="border-b-2 border-black p-8">
 										<h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black">Premium</h3>
-										<div className="mb-6 text-5xl font-bold text-black">P899</div>
+										<div className="mb-6 text-5xl font-bold text-black">₱599</div>
 										<p className="mb-6 text-sm leading-relaxed text-black/70">Best value for long-term premium membership</p>
 									</div>
 									<div className="grow p-8">
@@ -107,7 +107,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 											<li className="flex items-center gap-3"><div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-black"><svg className="h-3 w-3 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></div><span className="text-sm text-black/70">View shoes in horizontally degree detail</span></li>
 											<li className="flex items-center gap-3"><div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-black"><svg className="h-3 w-3 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></div><span className="text-sm text-black/70">Enable to upload a image sequence of the shoes</span></li>
 										</ul>
-										<Link href="/payment?source=premium&plan=premium&total=899" className="block w-full bg-black px-6 py-4 text-center text-sm font-semibold uppercase tracking-wider text-white transition-colors hover:bg-black/80">Subscribe Now</Link>
+										<Link href="/payment?source=premium&plan=premium&total=599" className="block w-full bg-black px-6 py-4 text-center text-sm font-semibold uppercase tracking-wider text-white transition-colors hover:bg-black/80">Subscribe Now</Link>
 									</div>
 								</div>
 							</div>

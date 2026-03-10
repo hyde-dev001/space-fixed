@@ -675,7 +675,7 @@ export default function JobOrdersRepair() {
 
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/api/repairer/repairs/${order.database_id}/delivery-method`, {
+      const response = await fetch(`/api/shop-owner/repairs/${order.database_id}/delivery-method`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken || '', 'Accept': 'application/json' },
         body: JSON.stringify({ delivery_method: next === 'walkin' ? 'walk_in' : 'pickup' }),

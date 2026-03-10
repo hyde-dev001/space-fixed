@@ -127,6 +127,14 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Get all reports filed against this shop
+     */
+    public function shopReports()
+    {
+        return $this->hasMany(ShopReport::class);
+    }
+
+    /**
      * Get all notifications for this shop owner
      * 
      * @return \Illuminate\Database\Eloquent\Relations\HasMany

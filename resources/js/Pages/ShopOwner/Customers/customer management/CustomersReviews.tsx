@@ -1,4 +1,5 @@
 import { Head } from "@inertiajs/react";
+import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
@@ -152,6 +153,71 @@ export default function CustomerReviews() {
   const [selectedReview, setSelectedReview] = useState<CustomerReview | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  // ── Report state ─────────────────────────────────────────────────────
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState<string>("fake_review");
+  const [reportNotes, setReportNotes] = useState<string>("");
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
+
+  // ── Respond state ────────────────────────────────────────────────────
+  const [responseDraft, setResponseDraft] = useState<string>("");
+  const [submittingResponse, setSubmittingResponse] = useState(false);
+
+  const handleSubmitResponse = async () => {
+    if (!selectedReview || !responseDraft.trim()) return;
+    setSubmittingResponse(true);
+    try {
+      const { data } = await axios.post(
+        `/api/shop-owner/reviews/${selectedReview.id}/respond`,
+        { response: responseDraft.trim() },
+        { headers: { Accept: "application/json" } },
+      );
+      // Update the review in local state so the UI reflects immediately
+      setReviews((prev) =>
+        prev.map((r) =>
+          r.id === selectedReview.id
+            ? { ...r, shopResponse: data.shopResponse, responseStatus: "responded" }
+            : r,
+        ),
+      );
+      setSelectedReview((r) =>
+        r ? { ...r, shopResponse: data.shopResponse, responseStatus: "responded" } : null,
+      );
+      setResponseDraft("");
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        "Failed to submit response. Please try again.";
+      alert(msg);
+    } finally {
+      setSubmittingResponse(false);
+    }
+  };
+
+  const handleReportReview = async () => {
+    if (!selectedReview) return;
+    setSubmittingReport(true);
+    try {
+      await axios.post(
+        "/api/shop-owner/reviews/report",
+        { review_id: selectedReview.id, reason: reportReason, notes: reportNotes },
+        { headers: { Accept: "application/json" } },
+      );
+      setReportedIds((prev) => new Set([...prev, selectedReview.id]));
+      setShowReportModal(false);
+      setReportNotes("");
+      alert("Review reported successfully. Our team will review it shortly.");
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        "Failed to submit report. Please try again.";
+      alert(msg);
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
   const itemsPerPage = 6;
 
   const filteredReviews = useMemo(() => {
@@ -328,6 +394,7 @@ export default function CustomerReviews() {
                         onClick={() => {
                           setSelectedReview(review);
                           setShowReviewModal(true);
+                          setResponseDraft("");
                         }}
                         title={`View feedback from ${review.customerName}`}
                         className="inline-flex items-center justify-center bg-transparent text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -386,15 +453,30 @@ export default function CustomerReviews() {
                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Feedback Details</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{selectedReview.customerName} • {new Date(selectedReview.createdAt).toLocaleDateString()}</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowReviewModal(false);
-                      setSelectedReview(null);
-                    }}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                  >
-                    Close
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {reportedIds.has(selectedReview.id) ? (
+                      <span className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 dark:border-red-700 dark:bg-red-900/20 dark:text-red-400">
+                        Reported
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setShowReportModal(true)}
+                        className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                      >
+                        Report Review
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setShowReviewModal(false);
+                        setSelectedReview(null);
+                        setResponseDraft("");
+                      }}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -416,10 +498,53 @@ export default function CustomerReviews() {
                     <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{selectedReview.comment}</p>
                   </div>
 
-                  {selectedReview.shopResponse && (
+                  {selectedReview.shopResponse ? (
                     <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Shop Response</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Your Response</p>
                       <p className="mt-2 text-sm text-green-800 dark:text-green-300">{selectedReview.shopResponse}</p>
+                      <button
+                        onClick={() => setResponseDraft(selectedReview.shopResponse ?? "")}
+                        className="mt-3 text-xs font-medium text-green-700 underline hover:no-underline dark:text-green-400"
+                      >
+                        Edit response
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {/* Respond form — shown when no response yet OR editing */}
+                  {(!selectedReview.shopResponse || responseDraft !== "") && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
+                        {selectedReview.shopResponse ? "Edit Your Response" : "Write a Response"}
+                      </p>
+                      <textarea
+                        value={responseDraft}
+                        onChange={(e) => setResponseDraft(e.target.value)}
+                        rows={3}
+                        maxLength={1000}
+                        placeholder="Reply publicly to this customer's review…"
+                        className="w-full resize-none rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-blue-700 dark:bg-gray-800 dark:text-white"
+                      />
+                      <div className="mt-2 flex items-center justify-between">
+                        <p className="text-xs text-gray-400">{responseDraft.length}/1000</p>
+                        <div className="flex gap-2">
+                          {responseDraft !== "" && (
+                            <button
+                              onClick={() => setResponseDraft("")}
+                              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                          <button
+                            onClick={handleSubmitResponse}
+                            disabled={!responseDraft.trim() || submittingResponse}
+                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {submittingResponse ? "Saving…" : "Save Response"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -447,8 +572,82 @@ export default function CustomerReviews() {
           </>
         )}
 
-        {selectedImage && (
+        {/* Report Review Modal */}
+        {showReportModal && selectedReview && (
           <>
+            <div className="fixed inset-0 z-200000 bg-black/60" onClick={() => setShowReportModal(false)} />
+            <div className="fixed inset-0 z-200001 flex items-center justify-center p-4">
+              <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                <div className="mb-5">
+                  <h3 className="text-lg font-semibold text-red-600 dark:text-red-400">Report This Review</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Report a review from <span className="font-medium text-gray-700 dark:text-gray-300">{selectedReview.customerName}</span> for
+                    investigation by our admin team.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Reason <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={reportReason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      title="Select report reason"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    >
+                      <option value="fake_review">Fake Review</option>
+                      <option value="harassment">Harassment</option>
+                      <option value="spam">Spam</option>
+                      <option value="inappropriate_content">Inappropriate Content</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Additional Notes <span className="text-gray-400 text-xs">(optional)</span>
+                    </label>
+                    <textarea
+                      value={reportNotes}
+                      onChange={(e) => setReportNotes(e.target.value)}
+                      rows={3}
+                      maxLength={1000}
+                      placeholder="Describe why this review is malicious or misleading…"
+                      className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    />
+                    <p className="mt-1 text-right text-xs text-gray-400">{reportNotes.length}/1000</p>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      ⚠️ False reports may result in your account being reviewed. Only report genuinely malicious content.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    onClick={() => { setShowReportModal(false); setReportNotes(""); }}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReportReview}
+                    disabled={submittingReport}
+                    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {submittingReport ? "Submitting…" : "Submit Report"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {selectedImage && (          <>
             <div
               className="fixed inset-0 z-100002 bg-black/80"
               onClick={() => setSelectedImage(null)}

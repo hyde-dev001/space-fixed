@@ -430,13 +430,6 @@ export default function RepairRejectReview() {
 							<p className="text-sm text-gray-500 dark:text-gray-400">Review repair requests that require your approval</p>
 						</div>
 						<div className="flex items-center gap-2">
-							<button
-								onClick={handleOpenRejectionPriceModal}
-								className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
-								title="Set rejection approval price"
-							>
-								Set Rejection Price
-							</button>
 							<Link
 								href="/shop-owner/history-rejection"
 								className="flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"

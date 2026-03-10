@@ -63,6 +63,7 @@ const AppSidebar: React.FC = () => {
           { name: "Admin Management", route: "admin.admin-management", pro: false },
           { name: "User Management", route: "superAdmin.super-admin-user-management", pro: false },
           { name: "Shop Management", route: "superAdmin.shop-owner-registration-view", pro: false },
+          { name: "Shop Reports", route: "admin.shop-reports", pro: false },
         ],
       },
       {

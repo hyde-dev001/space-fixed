@@ -46,6 +46,46 @@ import {
   markHrStaticNotificationAsRead,
   unarchiveHrStaticNotification,
 } from '../../utils/hrStaticNotificationState';
+import {
+  archiveCrmStaticNotification,
+  CRM_STATIC_NOTIFICATIONS_EVENT,
+  getCrmStaticNotificationsWithReadState,
+  markAllCrmStaticNotificationsAsRead,
+  markCrmStaticNotificationAsRead,
+  unarchiveCrmStaticNotification,
+} from '../../utils/crmStaticNotificationState';
+import {
+  archiveRepairerStaticNotification,
+  getRepairerStaticNotificationsWithReadState,
+  markAllRepairerStaticNotificationsAsRead,
+  markRepairerStaticNotificationAsRead,
+  REPAIRER_STATIC_NOTIFICATIONS_EVENT,
+  unarchiveRepairerStaticNotification,
+} from '../../utils/repairerStaticNotificationState';
+import {
+  archiveStaffStaticNotification,
+  getStaffStaticNotificationsWithReadState,
+  markAllStaffStaticNotificationsAsRead,
+  markStaffStaticNotificationAsRead,
+  STAFF_STATIC_NOTIFICATIONS_EVENT,
+  unarchiveStaffStaticNotification,
+} from '../../utils/staffStaticNotificationState';
+import {
+  archiveInventoryStaticNotification,
+  getInventoryStaticNotificationsWithReadState,
+  INVENTORY_STATIC_NOTIFICATIONS_EVENT,
+  markAllInventoryStaticNotificationsAsRead,
+  markInventoryStaticNotificationAsRead,
+  unarchiveInventoryStaticNotification,
+} from '../../utils/inventoryStaticNotificationState';
+import {
+  archiveProcurementStaticNotification,
+  getProcurementStaticNotificationsWithReadState,
+  markAllProcurementStaticNotificationsAsRead,
+  markProcurementStaticNotificationAsRead,
+  PROCUREMENT_STATIC_NOTIFICATIONS_EVENT,
+  unarchiveProcurementStaticNotification,
+} from '../../utils/procurementStaticNotificationState';
 
 interface NotificationListProps {
   basePath?: string;
@@ -69,13 +109,26 @@ const NotificationList: React.FC<NotificationListProps> = ({
   const [managerNotifications, setManagerNotifications] = useState<Notification[]>([]);
   const [financeNotifications, setFinanceNotifications] = useState<Notification[]>([]);
   const [hrNotifications, setHrNotifications] = useState<Notification[]>([]);
+  const [crmNotifications, setCrmNotifications] = useState<Notification[]>([]);
+  const [repairerNotifications, setRepairerNotifications] = useState<Notification[]>([]);
+  const [staffNotifications, setStaffNotifications] = useState<Notification[]>([]);
+  const [inventoryNotifications, setInventoryNotifications] = useState<Notification[]>([]);
+  const [procurementNotifications, setProcurementNotifications] = useState<Notification[]>([]);
   const isShopOwnerView = basePath.includes('shop-owner');
-  const isErpView = basePath.includes('hr');
+  const isErpView = basePath.includes('hr') || basePath.includes('staff');
   const normalizedUserRole = String(auth?.user?.role || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
+  const hasStaffRole = normalizedUserRole.includes('STAFF') || userRoles.includes('STAFF');
+  const hasRepairerRole = normalizedUserRole === 'REPAIRER' || userRoles.includes('REPAIRER');
   const isManagerStaticView = isErpView && normalizedUserRole === 'MANAGER';
   const isFinanceStaticView = isErpView && normalizedUserRole.includes('FINANCE');
   const isHrStaticView = isErpView && normalizedUserRole.includes('HR') && !isManagerStaticView && !isFinanceStaticView;
-  const isStaticView = isShopOwnerView || isManagerStaticView || isFinanceStaticView || isHrStaticView;
+  const isCrmStaticView = isErpView && normalizedUserRole.includes('CRM') && !isManagerStaticView && !isFinanceStaticView && !isHrStaticView;
+  const isStaffStaticView = isErpView && hasStaffRole && !hasRepairerRole && basePath.includes('staff');
+  const isInventoryStaticView = isErpView && normalizedUserRole.includes('INVENTORY') && !isManagerStaticView && !isFinanceStaticView && !isHrStaticView && !isCrmStaticView;
+  const isProcurementStaticView = isErpView && normalizedUserRole.includes('PROCUREMENT') && !isManagerStaticView && !isFinanceStaticView && !isHrStaticView && !isCrmStaticView && !isInventoryStaticView;
+  const isRepairerStaticView = isErpView && hasRepairerRole && basePath.includes('staff');
+  const isStaticView = isShopOwnerView || isManagerStaticView || isFinanceStaticView || isHrStaticView || isCrmStaticView || isStaffStaticView || isInventoryStaticView || isProcurementStaticView;
   const isCustomerView = !isShopOwnerView && !isErpView;
   const highlightedIdFromUrl = useMemo(() => {
     const queryString = page.url.includes('?') ? page.url.split('?')[1] : '';
@@ -171,13 +224,71 @@ const NotificationList: React.FC<NotificationListProps> = ({
     return () => window.removeEventListener(HR_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
   }, [isHrStaticView, showArchived]);
 
+  useEffect(() => {
+    if (!isCrmStaticView) return;
+
+    const sync = () => setCrmNotifications(getCrmStaticNotificationsWithReadState(showArchived));
+    sync();
+
+    window.addEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isCrmStaticView, showArchived]);
+
+  useEffect(() => {
+    if (!isRepairerStaticView) return;
+
+    const sync = () => setRepairerNotifications(getRepairerStaticNotificationsWithReadState(showArchived));
+    sync();
+
+    window.addEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isRepairerStaticView, showArchived]);
+
+  useEffect(() => {
+    if (!isStaffStaticView) return;
+
+    const sync = () => setStaffNotifications(getStaffStaticNotificationsWithReadState(showArchived));
+    sync();
+
+    window.addEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isStaffStaticView, showArchived]);
+
+  useEffect(() => {
+    if (!isInventoryStaticView) return;
+
+    const sync = () => setInventoryNotifications(getInventoryStaticNotificationsWithReadState(showArchived));
+    sync();
+
+    window.addEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isInventoryStaticView, showArchived]);
+
+  useEffect(() => {
+    if (!isProcurementStaticView) return;
+
+    const sync = () => setProcurementNotifications(getProcurementStaticNotificationsWithReadState(showArchived));
+    sync();
+
+    window.addEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isProcurementStaticView, showArchived]);
+
   const notifications = useMemo(() => {
     if (isShopOwnerView) return shopOwnerNotifications;
     if (isManagerStaticView) return managerNotifications;
     if (isFinanceStaticView) return financeNotifications;
     if (isHrStaticView) return hrNotifications;
+    if (isCrmStaticView) return crmNotifications;
+    if (isStaffStaticView) return staffNotifications;
+    if (isInventoryStaticView) return inventoryNotifications;
+    if (isProcurementStaticView) return procurementNotifications;
+    if (isRepairerStaticView) {
+      const liveNotifications = Array.isArray(data?.data) ? data.data : [];
+      return [...repairerNotifications, ...liveNotifications];
+    }
     return Array.isArray(data?.data) ? data.data : [];
-  }, [isShopOwnerView, shopOwnerNotifications, isManagerStaticView, managerNotifications, isFinanceStaticView, financeNotifications, isHrStaticView, hrNotifications, data]);
+  }, [isShopOwnerView, shopOwnerNotifications, isManagerStaticView, managerNotifications, isFinanceStaticView, financeNotifications, isHrStaticView, hrNotifications, isCrmStaticView, crmNotifications, isStaffStaticView, staffNotifications, isInventoryStaticView, inventoryNotifications, isProcurementStaticView, procurementNotifications, isRepairerStaticView, repairerNotifications, data]);
 
   const totalNotifications = isStaticView
     ? notifications.length
@@ -224,6 +335,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
   };
 
   const handleMarkAsRead = (id: number) => {
+    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
     if (isShopOwnerView) {
       markShopOwnerStaticNotificationAsRead(id);
       return;
@@ -240,10 +352,80 @@ const NotificationList: React.FC<NotificationListProps> = ({
       markHrStaticNotificationAsRead(id);
       return;
     }
+    if (isCrmStaticView) {
+      markCrmStaticNotificationAsRead(id);
+      return;
+    }
+    if (isStaffStaticView) {
+      markStaffStaticNotificationAsRead(id);
+      return;
+    }
+    if (isInventoryStaticView) {
+      markInventoryStaticNotificationAsRead(id);
+      return;
+    }
+    if (isProcurementStaticView) {
+      markProcurementStaticNotificationAsRead(id);
+      return;
+    }
+    if (isRepairerStaticView) {
+      if (isRepairerStaticNotification) {
+        markRepairerStaticNotificationAsRead(id);
+        return;
+      }
+      markAsRead.mutate(id);
+      return;
+    }
     markAsRead.mutate(id);
   };
 
   const getNotificationHref = (notification: Notification) => {
+    const appendQueryParam = (href: string, key: string, value: string | number | null | undefined) => {
+      if (value === null || value === undefined || value === '') return href;
+      const separator = href.includes('?') ? '&' : '?';
+      return `${href}${separator}${key}=${encodeURIComponent(String(value))}`;
+    };
+
+    const getStaffRepairHighlightValue = () => {
+      const data = notification.data || {};
+      return data.repair_id || data.repair_request_id || data.request_id || data.order_number || notification.id;
+    };
+
+    const getStaffNotificationRoute = () => {
+      const type = String(notification.type || '').toLowerCase();
+      const data = notification.data || {};
+
+      const isRepairNotification =
+        type.includes('repair') ||
+        data.repair_id ||
+        data.repair_request_id ||
+        data.request_id ||
+        data.order_number;
+
+      if (isRepairNotification) {
+        const repairHighlight = getStaffRepairHighlightValue();
+        return appendQueryParam('/erp/staff/job-orders-repair', 'highlightRepair', repairHighlight);
+      }
+
+      if (type.includes('price') || type.includes('pricing')) {
+        return '/erp/repairer/pricing-and-services';
+      }
+
+      if (type.includes('stock') || type.includes('inventory') || type.includes('low_stock') || type.includes('out_of_stock')) {
+        return '/erp/staff/stocks-overview';
+      }
+
+      if (type.includes('message') || type.includes('chat') || data.conversation_id) {
+        return appendQueryParam('/erp/staff/repairer-support', 'conversation', data.conversation_id);
+      }
+
+      if (type.includes('payslip') || type.includes('payroll')) {
+        return '/erp/my-payslips';
+      }
+
+      return null;
+    };
+
     if (isShopOwnerView && notification.action_url) {
       return notification.action_url;
     }
@@ -256,10 +438,33 @@ const NotificationList: React.FC<NotificationListProps> = ({
     if (isHrStaticView && notification.action_url) {
       return notification.action_url;
     }
+    if (isCrmStaticView && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isStaffStaticView && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isInventoryStaticView && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isProcurementStaticView && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isRepairerStaticView && notification.action_url) {
+      return notification.action_url;
+    }
 
-    if (basePath.includes('staff') && notification.type?.includes('repair')) {
-      const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
-      return `/erp/staff/job-orders-repair?highlightRepair=${repairId}`;
+    if (basePath.includes('staff')) {
+      const staffRoute = getStaffNotificationRoute();
+      if (staffRoute) return staffRoute;
+
+      if (notification.action_url) {
+        const repairHighlight = getStaffRepairHighlightValue();
+        if (String(notification.type || '').toLowerCase().includes('repair')) {
+          return appendQueryParam(notification.action_url, 'highlightRepair', repairHighlight);
+        }
+        return notification.action_url;
+      }
     }
 
     if (basePath.includes('shop-owner') && notification.type?.includes('repair')) {
@@ -331,12 +536,50 @@ const NotificationList: React.FC<NotificationListProps> = ({
       markAllHrStaticNotificationsAsRead();
       return;
     }
+    if (isCrmStaticView) {
+      markAllCrmStaticNotificationsAsRead();
+      return;
+    }
+    if (isStaffStaticView) {
+      markAllStaffStaticNotificationsAsRead();
+      return;
+    }
+    if (isInventoryStaticView) {
+      markAllInventoryStaticNotificationsAsRead();
+      return;
+    }
+    if (isProcurementStaticView) {
+      markAllProcurementStaticNotificationsAsRead();
+      return;
+    }
+    if (isRepairerStaticView) {
+      markAllRepairerStaticNotificationsAsRead();
+      if (confirm('Mark all notifications as read?')) {
+        markAllAsRead.mutate();
+      }
+      return;
+    }
     if (confirm('Mark all notifications as read?')) {
       markAllAsRead.mutate();
     }
   };
 
   const handleDelete = async (id: number) => {
+    const deleteConfirmation = await Swal.fire({
+      title: showArchived ? 'Delete notification permanently?' : 'Archive notification?',
+      text: showArchived
+        ? 'This notification will be removed permanently.'
+        : 'You can view archived notifications anytime.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: showArchived ? 'Yes, delete it' : 'Yes, archive it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#DC2626',
+    });
+
+    if (!deleteConfirmation.isConfirmed) return;
+
+    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
     if (isShopOwnerView) {
       archiveShopOwnerStaticNotification(id);
       return;
@@ -353,17 +596,28 @@ const NotificationList: React.FC<NotificationListProps> = ({
       archiveHrStaticNotification(id);
       return;
     }
-    const result = await Swal.fire({
-      title: 'Archive notification?',
-      text: 'You can view archived notifications anytime.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, archive it',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#DC2626',
-    });
-
-    if (!result.isConfirmed) return;
+    if (isCrmStaticView) {
+      archiveCrmStaticNotification(id);
+      return;
+    }
+    if (isStaffStaticView) {
+      archiveStaffStaticNotification(id);
+      return;
+    }
+    if (isInventoryStaticView) {
+      archiveInventoryStaticNotification(id);
+      return;
+    }
+    if (isProcurementStaticView) {
+      archiveProcurementStaticNotification(id);
+      return;
+    }
+    if (isRepairerStaticView) {
+      if (isRepairerStaticNotification) {
+        archiveRepairerStaticNotification(id);
+        return;
+      }
+    }
 
     deleteNotification.mutate(id, {
       onSuccess: async () => {
@@ -386,6 +640,19 @@ const NotificationList: React.FC<NotificationListProps> = ({
   };
 
   const handleUnarchive = async (id: number) => {
+    const unarchiveConfirmation = await Swal.fire({
+      title: 'Unarchive notification?',
+      text: 'This will move the notification back to active.',
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, unarchive it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563EB',
+    });
+
+    if (!unarchiveConfirmation.isConfirmed) return;
+
+    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
     if (isShopOwnerView) {
       unarchiveShopOwnerStaticNotification(id);
       return;
@@ -402,17 +669,28 @@ const NotificationList: React.FC<NotificationListProps> = ({
       unarchiveHrStaticNotification(id);
       return;
     }
-    const result = await Swal.fire({
-      title: 'Unarchive notification?',
-      text: 'This will move the notification back to active.',
-      icon: 'info',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, unarchive it',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563EB',
-    });
-
-    if (!result.isConfirmed) return;
+    if (isCrmStaticView) {
+      unarchiveCrmStaticNotification(id);
+      return;
+    }
+    if (isStaffStaticView) {
+      unarchiveStaffStaticNotification(id);
+      return;
+    }
+    if (isInventoryStaticView) {
+      unarchiveInventoryStaticNotification(id);
+      return;
+    }
+    if (isProcurementStaticView) {
+      unarchiveProcurementStaticNotification(id);
+      return;
+    }
+    if (isRepairerStaticView) {
+      if (isRepairerStaticNotification) {
+        unarchiveRepairerStaticNotification(id);
+        return;
+      }
+    }
 
     unarchiveNotification.mutate(id, {
       onSuccess: async () => {
@@ -629,6 +907,24 @@ const NotificationList: React.FC<NotificationListProps> = ({
     return notification.message;
   };
 
+  const getDisplayMessageWithCustomer = (notification: Notification) => {
+    const data = notification.data || {};
+    const message = String(notification.message || '');
+    const messageCustomerMatch = message.match(/-\s*([A-Za-z][A-Za-z\s.'-]{2,})$/);
+    const customerName = data.customer_name || data.customer || data.customerName || data.client_name || data.user_name || (messageCustomerMatch ? messageCustomerMatch[1].trim() : null);
+    const baseMessage = getDisplayMessage(notification);
+
+    if (!customerName || isCustomerView) return baseMessage;
+
+    const lowerMessage = String(baseMessage || '').toLowerCase();
+    const lowerCustomer = String(customerName).toLowerCase();
+    if (lowerMessage.includes(lowerCustomer)) {
+      return baseMessage;
+    }
+
+    return `Customer - ${customerName}: ${baseMessage}`;
+  };
+
   const getShoeName = (notification: Notification) => {
     const data = notification.data || {};
 
@@ -707,6 +1003,106 @@ const NotificationList: React.FC<NotificationListProps> = ({
     );
   };
 
+  const getRoleNotificationIcon = (notification: Notification) => {
+    const iconKey = String(notification?.data?.profile_icon || '').toLowerCase();
+    const actionUrl = String(notification?.action_url || '').toLowerCase();
+
+    if (iconKey.includes('supplier_order_monitoring') || actionUrl.includes('/erp/procurement/supplier-order-monitoring')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="5" width="12" height="14" rx="2"></rect>
+          <path d="M7 9h4"></path>
+          <path d="M7 13h4"></path>
+          <circle cx="18" cy="10" r="3"></circle>
+          <path d="M18 8.5v1.8l1.2.7"></path>
+          <path d="M16 18h5"></path>
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('purchase_request') || actionUrl.includes('/erp/procurement/purchase-request')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 4h10l4 4v12H5z"></path>
+          <path d="M15 4v4h4"></path>
+          <path d="M8 13l5-5 2 2-5 5-3 1z"></path>
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('purchase_orders') || actionUrl.includes('/erp/procurement/purchase-orders')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+          <path d="M7 8h10"></path>
+          <path d="M7 12h10"></path>
+          <path d="M7 16h6"></path>
+          <path d="M16 16l1.5 1.5L20 15"></path>
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('stock_request_approval') || actionUrl.includes('/erp/procurement/stock-request-approval')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="4" y="3" width="16" height="18" rx="2"></rect>
+          <path d="M8 9h8"></path>
+          <path d="M8 13h5"></path>
+          <path d="M14 15l2 2 3-3"></path>
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('job_orders_retail') || actionUrl.includes('/erp/staff/job-orders')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 6h15l-1.5 9h-12z" />
+          <circle cx="9" cy="19" r="1.5" />
+          <circle cx="18" cy="19" r="1.5" />
+          <path d="M6 6L4 2" />
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('product_uploader') || actionUrl.includes('/erp/staff/products')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 15h4.5l2.5-3.5h3.5l2.2 2.2c.8.8 1.9 1.3 3 1.3H21a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 1-1z" />
+          <path d="M8 15l1.5 1.5" />
+          <path d="M11 15l1.5 1.5" />
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('shoe_pricing') || actionUrl.includes('/erp/staff/shoe-pricing')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+          <line x1="7" y1="7" x2="7.01" y2="7"></line>
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('inventory_overview') || actionUrl.includes('/erp/staff/inventory-overview')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
+          <path d="M12 12v9"></path>
+        </svg>
+      );
+    }
+
+    if (iconKey.includes('my_payslips') || iconKey.includes('payslip') || actionUrl.includes('/erp/my-payslips')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z" />
+        </svg>
+      );
+    }
+
+    return <Bell size={16} className="text-gray-600 dark:text-gray-300" />;
+  };
+
   const renderNotificationCard = (notification: Notification) => (
     (() => {
       const shoeName = getShoeName(notification);
@@ -751,8 +1147,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
               className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700"
             />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-              <Bell size={16} className="text-gray-600 dark:text-gray-300" />
+            <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-700 dark:text-gray-200">
+              {getRoleNotificationIcon(notification)}
             </div>
           )}
         </div>
@@ -768,7 +1164,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
               </div>
 
               <p className={`text-sm ${notification.is_read ? 'text-gray-500 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200'} mb-2`}>
-                {getDisplayMessage(notification)}
+                {getDisplayMessageWithCustomer(notification)}
               </p>
               {shoeName && (
                 <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">
@@ -860,29 +1256,15 @@ const NotificationList: React.FC<NotificationListProps> = ({
       <Head title={title} />
 
       <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-950">
-        {isShopOwnerView && (
-          <div className="mb-2">
-            <button
-              type="button"
-              onClick={() => window.history.back()}
-              className="inline-flex items-center px-1 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white"
-            >
-              ← Back
-            </button>
-          </div>
-        )}
-
-        {isCustomerView && (
-          <div className="mb-2">
-            <button
-              type="button"
-              onClick={() => window.history.back()}
-              className="inline-flex items-center px-1 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white"
-            >
-              ← Back
-            </button>
-          </div>
-        )}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
+          >
+            Back
+          </button>
+        </div>
 
         <div className="max-w-7xl mx-auto">
 

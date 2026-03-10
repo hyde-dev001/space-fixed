@@ -39,4 +39,16 @@ export const MANAGER_STATIC_NOTIFICATIONS: Notification[] = [
     is_read: false,
     created_at: now,
   },
+  {
+    id: 910006,
+    type: 'manager_my_payslips',
+    title: 'My Payslips',
+    message: 'View your payslip records and payroll history.',
+    data: {
+      profile_icon: 'my_payslips',
+    },
+    action_url: '/erp/my-payslips',
+    is_read: false,
+    created_at: now,
+  },
 ];

@@ -49,8 +49,8 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
     Route::get('/stats', [NotificationController::class, 'stats'])->name('hr.notifications.stats');
     Route::get('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'getPreferences'])->name('hr.notifications.preferences');
     Route::put('/preferences', [\App\Http\Controllers\ErpNotificationController::class, 'updatePreferences'])->name('hr.notifications.update_preferences');
-    Route::post('/{id}/mark-as-read', [NotificationController::class, 'markAsRead'])->name('hr.notifications.mark_as_read');
-    Route::post('/mark-all-as-read', [NotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark_all_as_read');
+    Route::post('/{id}/read', [NotificationController::class, 'markAsRead'])->name('hr.notifications.mark_as_read');
+    Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark_all_as_read');
     Route::delete('/{id}', [NotificationController::class, 'destroy'])->name('hr.notifications.destroy');
     Route::delete('/clear-read', [NotificationController::class, 'clearRead'])->name('hr.notifications.clear_read');
 });

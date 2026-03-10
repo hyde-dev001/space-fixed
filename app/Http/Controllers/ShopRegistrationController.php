@@ -123,6 +123,15 @@ class ShopRegistrationController extends Controller
             // <!-- Log successful registration for audit trail -->
             \Log::info('Shop owner registered: ' . $shopOwner->id . ' - ' . $shopOwner->email);
 
+            // Notify all super admins
+            \App\Models\Notification::notifyAllSuperAdmins(
+                \App\Enums\NotificationType::SHOP_REGISTRATION_PENDING,
+                'New Shop Registration',
+                "{$shopOwner->business_name} ({$shopOwner->first_name} {$shopOwner->last_name}) submitted a registration and is awaiting approval.",
+                '/admin/shop-owner-registration-view',
+                ['shop_owner_id' => $shopOwner->id, 'business_name' => $shopOwner->business_name]
+            );
+
             // <!-- Return JSON success response -->
             return response()->json([
                 'success' => true,
@@ -211,6 +220,15 @@ class ShopRegistrationController extends Controller
 
             // <!-- Log successful registration for audit trail -->
             \Log::info('Shop owner registered via Inertia: ' . $shopOwner->id . ' - ' . $shopOwner->email);
+
+            // Notify all super admins
+            \App\Models\Notification::notifyAllSuperAdmins(
+                \App\Enums\NotificationType::SHOP_REGISTRATION_PENDING,
+                'New Shop Registration',
+                "{$shopOwner->business_name} ({$shopOwner->first_name} {$shopOwner->last_name}) submitted a registration and is awaiting approval.",
+                '/admin/shop-owner-registration-view',
+                ['shop_owner_id' => $shopOwner->id, 'business_name' => $shopOwner->business_name]
+            );
 
             // <!-- Redirect with success message -->
             return redirect()->back()->with('success', 'Registration submitted successfully! Your application is pending review.');

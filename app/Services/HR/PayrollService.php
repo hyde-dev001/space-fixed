@@ -2,7 +2,7 @@
 
 namespace App\Services\HR;
 
-use App\Models\HR\Employee;
+use App\Models\Employee;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
 use App\Models\HR\TaxBracket;
@@ -121,11 +121,16 @@ class PayrollService
         return Payroll::create([
             'employee_id' => $employee->id,
             'shop_owner_id' => $employee->shop_owner_id,
+            'payroll_period' => date('Y-m', strtotime($startDate)),  // required: e.g. '2026-01'
             'pay_period_start' => $startDate,
             'pay_period_end' => $endDate,
-            'basic_salary' => $employee->salary ?? 0,
+            'basic_salary' => $employee->salary ?? 0,   // new canonical column
+            'base_salary'  => $employee->salary ?? 0,   // original non-nullable column kept in sync
+            'gross_salary' => 0,                        // placeholder; updated after component calculation
+            'net_salary'   => 0,                        // placeholder; updated after component calculation
             'attendance_days' => $overrides['attendance_days'] ?? 0,
             'leave_days' => $overrides['leave_days'] ?? 0,
+            'absent_days' => $overrides['absent_days'] ?? 0,
             'overtime_hours' => $overrides['overtime_hours'] ?? 0,
             'status' => 'pending',
             'payment_date' => $overrides['payment_date'] ?? date('Y-m-d', strtotime($endDate . ' +5 days')),
@@ -196,6 +201,25 @@ class PayrollService
             ];
         }
         
+        // Absent-day deduction: prorate daily rate × absent days
+        // absent_days = working days that were neither attended nor on approved leave.
+        $absentDays = (int) ($overrides['absent_days'] ?? 0);
+        if ($absentDays > 0) {
+            // Daily rate = monthly basic salary / 26 working days (PH DOLE standard)
+            $dailyRate = $basicSalary / 26;
+            $absentDeduction = round($dailyRate * $absentDays, 2);
+
+            $standardDeductions[] = [
+                'type'        => PayrollComponent::TYPE_DEDUCTION,
+                'name'        => 'Absent Day Deduction',
+                'base_amount' => $absentDeduction,
+                'method'      => PayrollComponent::METHOD_FIXED,
+                'taxable'     => false,
+                'recurring'   => false,
+                'description' => "{$absentDays} absent day(s) × ₱" . number_format($dailyRate, 2) . "/day (basic ÷ 26)",
+            ];
+        }
+
         // Merge standard and custom components
         $allComponents = array_merge($standardEarnings, $standardDeductions, $customComponents);
         
@@ -206,7 +230,8 @@ class PayrollService
                 'shop_owner_id' => $employee->shop_owner_id,
                 'component_type' => $componentData['type'],
                 'component_name' => $componentData['name'],
-                'base_amount' => $componentData['base_amount'],
+                'amount' => $componentData['base_amount'],           // raw input amount
+                'base_amount' => $componentData['base_amount'],      // alias stored for reference
                 'calculation_method' => $componentData['method'],
                 'calculated_amount' => $this->calculateComponentAmount(
                     $componentData['method'],

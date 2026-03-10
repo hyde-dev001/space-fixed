@@ -24,6 +24,26 @@ import {
   getHrStaticNotificationsWithReadState,
   HR_STATIC_NOTIFICATIONS_EVENT,
 } from '../../utils/hrStaticNotificationState';
+import {
+  CRM_STATIC_NOTIFICATIONS_EVENT,
+  getCrmStaticNotificationsWithReadState,
+} from '../../utils/crmStaticNotificationState';
+import {
+  getRepairerStaticNotificationsWithReadState,
+  REPAIRER_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/repairerStaticNotificationState';
+import {
+  getStaffStaticNotificationsWithReadState,
+  STAFF_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/staffStaticNotificationState';
+import {
+  getInventoryStaticNotificationsWithReadState,
+  INVENTORY_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/inventoryStaticNotificationState';
+import {
+  getProcurementStaticNotificationsWithReadState,
+  PROCUREMENT_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/procurementStaticNotificationState';
 
 interface NotificationBellProps {
   basePath?: string;
@@ -39,11 +59,19 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
   const { auth } = (usePage().props as any) || {};
   const userRole = auth?.user?.role;
   const normalizedUserRole = String(userRole || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
+  const hasStaffRole = normalizedUserRole.includes('STAFF') || userRoles.includes('STAFF');
+  const hasRepairerRole = normalizedUserRole === 'REPAIRER' || userRoles.includes('REPAIRER');
   const [isOpen, setIsOpen] = useState(false);
   const isShopOwnerStatic = basePath.includes('shop-owner');
-  const isManagerStatic = userRole === 'MANAGER' && basePath.includes('/api/hr/notifications');
+  const isManagerStatic = normalizedUserRole === 'MANAGER' && basePath.includes('/api/hr/notifications');
   const isFinanceStatic = normalizedUserRole.includes('FINANCE') && basePath.includes('/api/hr/notifications');
   const isHrStatic = normalizedUserRole.includes('HR') && !isManagerStatic && !isFinanceStatic && basePath.includes('/api/hr/notifications');
+  const isCrmStatic = normalizedUserRole.includes('CRM') && !isManagerStatic && !isFinanceStatic && !isHrStatic && basePath.includes('/api/hr/notifications');
+  const isStaffStatic = hasStaffRole && !hasRepairerRole && basePath.includes('/api/staff/notifications');
+  const isInventoryStatic = normalizedUserRole.includes('INVENTORY') && !isManagerStatic && !isFinanceStatic && !isHrStatic && !isCrmStatic && basePath.includes('/api/hr/notifications');
+  const isProcurementStatic = normalizedUserRole.includes('PROCUREMENT') && !isManagerStatic && !isFinanceStatic && !isHrStatic && !isCrmStatic && !isInventoryStatic && basePath.includes('/api/hr/notifications');
+  const isRepairerStatic = hasRepairerRole && basePath.includes('/api/staff/notifications');
   const [shopOwnerUnreadCount, setShopOwnerUnreadCount] = useState<number>(() => {
     if (!isShopOwnerStatic) return 0;
     return getShopOwnerStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
@@ -60,6 +88,26 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
     if (!isHrStatic) return 0;
     return getHrStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
   });
+  const [crmUnreadCount, setCrmUnreadCount] = useState<number>(() => {
+    if (!isCrmStatic) return 0;
+    return getCrmStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+  });
+  const [staffUnreadCount, setStaffUnreadCount] = useState<number>(() => {
+    if (!isStaffStatic) return 0;
+    return getStaffStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+  });
+  const [repairerUnreadCount, setRepairerUnreadCount] = useState<number>(() => {
+    if (!isRepairerStatic) return 0;
+    return getRepairerStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+  });
+  const [inventoryUnreadCount, setInventoryUnreadCount] = useState<number>(() => {
+    if (!isInventoryStatic) return 0;
+    return getInventoryStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+  });
+  const [procurementUnreadCount, setProcurementUnreadCount] = useState<number>(() => {
+    if (!isProcurementStatic) return 0;
+    return getProcurementStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+  });
   const { data: apiUnreadCount = 0, isLoading: apiUnreadLoading } = useUnreadCount(basePath);
   const unreadCount = isShopOwnerStatic
     ? shopOwnerUnreadCount
@@ -69,8 +117,18 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
         ? financeUnreadCount
         : isHrStatic
           ? hrUnreadCount
-      : apiUnreadCount;
-  const isLoading = isShopOwnerStatic || isManagerStatic || isFinanceStatic || isHrStatic ? false : apiUnreadLoading;
+          : isCrmStatic
+            ? crmUnreadCount
+            : isStaffStatic
+              ? staffUnreadCount
+            : isInventoryStatic
+              ? inventoryUnreadCount
+              : isProcurementStatic
+                ? procurementUnreadCount
+                : isRepairerStatic
+                  ? apiUnreadCount + repairerUnreadCount
+                  : apiUnreadCount;
+  const isLoading = isShopOwnerStatic || isManagerStatic || isFinanceStatic || isHrStatic || isCrmStatic || isStaffStatic || isInventoryStatic || isProcurementStatic ? false : apiUnreadLoading;
 
   React.useEffect(() => {
     if (!isShopOwnerStatic) return;
@@ -123,6 +181,71 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
     window.addEventListener(HR_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
     return () => window.removeEventListener(HR_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
   }, [isHrStatic]);
+
+  React.useEffect(() => {
+    if (!isCrmStatic) return;
+
+    const sync = () => {
+      const unread = getCrmStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+      setCrmUnreadCount(unread);
+    };
+
+    sync();
+    window.addEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isCrmStatic]);
+
+  React.useEffect(() => {
+    if (!isStaffStatic) return;
+
+    const sync = () => {
+      const unread = getStaffStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+      setStaffUnreadCount(unread);
+    };
+
+    sync();
+    window.addEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isStaffStatic]);
+
+  React.useEffect(() => {
+    if (!isRepairerStatic) return;
+
+    const sync = () => {
+      const unread = getRepairerStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+      setRepairerUnreadCount(unread);
+    };
+
+    sync();
+    window.addEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isRepairerStatic]);
+
+  React.useEffect(() => {
+    if (!isInventoryStatic) return;
+
+    const sync = () => {
+      const unread = getInventoryStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+      setInventoryUnreadCount(unread);
+    };
+
+    sync();
+    window.addEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isInventoryStatic]);
+
+  React.useEffect(() => {
+    if (!isProcurementStatic) return;
+
+    const sync = () => {
+      const unread = getProcurementStaticNotificationsWithReadState().filter((notification) => !notification.is_read).length;
+      setProcurementUnreadCount(unread);
+    };
+
+    sync();
+    window.addEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isProcurementStatic]);
 
   const handleToggle = () => {
     setIsOpen(!isOpen);

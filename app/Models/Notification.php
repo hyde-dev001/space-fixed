@@ -11,6 +11,7 @@ class Notification extends Model
     protected $fillable = [
         'user_id',
         'shop_owner_id',
+        'super_admin_id',
         'type',
         'priority',
         'group_key',
@@ -91,6 +92,41 @@ class Notification extends Model
     public function scopeForShopOwner($query, int $shopOwnerId)
     {
         return $query->where('shop_owner_id', $shopOwnerId);
+    }
+
+    /**
+     * Scope query to notifications for a specific super admin
+     */
+    public function scopeForSuperAdmin($query, int $superAdminId)
+    {
+        return $query->where('super_admin_id', $superAdminId);
+    }
+
+    /**
+     * Create a notification record for every active super admin.
+     * Used to alert all admins about platform-level events.
+     */
+    public static function notifyAllSuperAdmins(
+        \App\Enums\NotificationType $type,
+        string $title,
+        string $message,
+        ?string $actionUrl = null,
+        ?array $data = null
+    ): void {
+        $admins = \App\Models\SuperAdmin::all();
+        foreach ($admins as $admin) {
+            static::create([
+                'super_admin_id' => $admin->id,
+                'type'           => $type->value,
+                'title'          => $title,
+                'message'        => $message,
+                'action_url'     => $actionUrl,
+                'data'           => $data,
+                'is_read'        => false,
+                'requires_action'=> true,
+                'priority'       => 'high',
+            ]);
+        }
     }
 
     /**

@@ -134,13 +134,14 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::post('/{id}/accept', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'acceptRepair'])->name('shop_owner.repairs.accept');
         Route::post('/{id}/reject', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectRepair'])->name('shop_owner.repairs.reject');
         Route::post('/{id}/mark-received', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAsReceived'])->name('shop_owner.repairs.mark-received');
+        Route::patch('/{id}/delivery-method', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'changeDeliveryMethod'])->name('shop_owner.repairs.delivery-method');
         Route::post('/{id}/start-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'startWork'])->name('shop_owner.repairs.start-work');
         Route::post('/{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork'])->name('shop_owner.repairs.resume-work');
         Route::post('/{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted'])->name('shop_owner.repairs.mark-completed');
         Route::post('/{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup'])->name('shop_owner.repairs.mark-ready');
         Route::post('/{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup'])->name('shop_owner.repairs.activate-pickup');
         Route::post('/{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair'])->name('shop_owner.repairs.activate-payment');
-        Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'highValuePending'])->name('shop_owner.repairs.high-value-pending');
+        Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals'])->name('shop_owner.repairs.high-value-pending');
         Route::post('/{id}/approve-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveHighValueRepair'])->name('shop_owner.repairs.approve-high-value');
         Route::post('/{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair'])->name('shop_owner.repairs.reject-high-value');
     });
@@ -161,6 +162,9 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     Route::prefix('reviews')->group(function () {
         Route::get('/', [\App\Http\Controllers\ShopOwner\CustomerReviewController::class, 'index'])->name('shop_owner.reviews.index');
+        // Static route MUST come before the dynamic {id} route to avoid collision
+        Route::post('/report', [\App\Http\Controllers\ShopOwner\CustomerReviewController::class, 'reportReview'])->name('shop_owner.reviews.report');
+        Route::post('/{id}/respond', [\App\Http\Controllers\ShopOwner\CustomerReviewController::class, 'respond'])->name('shop_owner.reviews.respond');
     });
 
     // ============================================

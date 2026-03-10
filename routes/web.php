@@ -186,6 +186,19 @@ Route::get('/register', [LandingPageController::class, 'register'])->name('regis
 Route::get('/login', function () {
     return Inertia::render('UserSide/Auth/UserLogin');
 })->name('login');
+Route::get('/forgot-password', function () {
+    return Inertia::render('UserSide/Auth/Forgot');
+})->name('password.request');
+Route::get('/otp', function (Request $request) {
+    return Inertia::render('UserSide/Auth/Otp', [
+        'email' => $request->query('email'),
+    ]);
+})->name('password.otp');
+Route::get('/new-password', function (Request $request) {
+    return Inertia::render('UserSide/Auth/NewPassword', [
+        'email' => $request->query('email'),
+    ]);
+})->name('password.new');
 Route::get('/shop-owner-register', [LandingPageController::class, 'shopOwnerRegister'])->name('shop-owner-register');
 
 // Employee Invitation Routes (Public - No Authentication Required)
@@ -400,6 +413,9 @@ Route::group([], function () {
 Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
     Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])->name('super-admin-user-management');
     Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
+    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])->name('flagged-accounts.mark-reviewed');
+    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])->name('flagged-accounts.dismiss');
+    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])->name('flagged-accounts.ban');
     Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])->name('shop-owner-registration-view');
     Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])->name('shop-owner-approve');
     Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])->name('shop-owner-reject');
@@ -883,6 +899,11 @@ Route::prefix('api/shops/{shopId}/reviews')->group(function () {
     Route::post('/', [\App\Http\Controllers\Api\ShopReviewController::class, 'store']);
 });
 
+// Shop Reports API — customers submit reports against shops
+Route::post('/api/shops/{shopId}/report', [\App\Http\Controllers\Api\ReportShopController::class, 'store'])
+    ->middleware('auth:user')
+    ->name('api.shops.report');
+
 // Public route to serve review images
 Route::get('/storage/reviews/{filename}', function ($filename) {
     $path = storage_path('app/public/reviews/' . $filename);
@@ -984,6 +1005,15 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/api/search', [\App\Http\Controllers\Api\SearchController::class, 'search']);
 });
 
+// Super Admin Notification API routes
+Route::middleware('super_admin.auth')->prefix('api/admin/notifications')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\AdminNotificationController::class, 'index']);
+    Route::get('/unread-count', [\App\Http\Controllers\Api\AdminNotificationController::class, 'unreadCount']);
+    Route::post('/{id}/read', [\App\Http\Controllers\Api\AdminNotificationController::class, 'markAsRead']);
+    Route::post('/read-all', [\App\Http\Controllers\Api\AdminNotificationController::class, 'markAllAsRead']);
+    Route::delete('/{id}', [\App\Http\Controllers\Api\AdminNotificationController::class, 'destroy']);
+});
+
 // Notification routes
 Route::middleware(['auth:user', 'check.suspension'])->prefix('api/notifications')->group(function () {
     Route::get('/', [\App\Http\Controllers\Api\NotificationController::class, 'index']);
@@ -1046,6 +1076,10 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::post('/users/{id}/suspend', [SuperAdminController::class, 'suspendUser'])->name('users.suspend');
     Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])->name('users.activate');
     Route::delete('/users/{id}', [SuperAdminController::class, 'deleteUser'])->name('users.delete');
+
+    // Shop Reports routes
+    Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])->name('shop-reports');
+    Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])->name('shop-reports.action');
 
     // Additional admin routes
     Route::get('/notifications', function () {

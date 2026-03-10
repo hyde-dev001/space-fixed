@@ -1084,18 +1084,28 @@ export default function GenerateSlip() {
 			// base_salary and deductions are intentionally omitted — store() reads
 			// base salary from the employee record and computes statutory deductions
 			// (SSS, PhilHealth, Pag-IBIG, tax) via PayrollService.
+			const workingDays = selectedPeriod.workingDays;
+			const daysPresent  = Math.round(totalRegularHours / 8);
+			// absent_days = working days that were neither attended nor on approved leave.
+			// leave_days  = days covered by approved leave (no pay deduction).
+			// The backend uses absent_days to create a prorated deduction component.
+			const leaveDays  = 0;  // approved leave (fetched from attendance; 0 if not tracked separately)
+			const absentDays = Math.max(0, workingDays - daysPresent - leaveDays);
+
 			const payrollData = {
 				employee_id:      selectedEmployee.id,
 				payrollPeriod:    selectedPeriod.month,
 				paymentMethod:    'bank_transfer',
 				// Attendance inputs — drive the service's day-worked calculation
-				attendance_days:  Math.round(totalRegularHours / 8),
+				attendance_days:  daysPresent,
+				leave_days:       leaveDays,
+				absent_days:      absentDays,
 				overtime_hours:   totalOvertimeHours,
 				// Extra earnings — appended as custom components by the service
 				salesCommission:  calculation.salesCommission,
 				performanceBonus: calculation.performanceBonus,
 				otherAllowances:  calculation.otherAllowances,
-				notes: `Generated payslip for period ${selectedPeriod.month}. Regular hours: ${totalRegularHours}, Overtime: ${totalOvertimeHours}hrs, Absent: ${totalAbsentDays} days`,
+				notes: `Generated payslip for period ${selectedPeriod.month}. Regular hours: ${totalRegularHours}, Overtime: ${totalOvertimeHours}hrs, Absent: ${absentDays} days`,
 			};
 
 			const response = await fetch('/api/hr/payroll', {

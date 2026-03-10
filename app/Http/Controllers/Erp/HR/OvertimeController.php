@@ -7,6 +7,7 @@ use App\Models\HR\OvertimeRequest;
 use App\Models\Employee;
 use App\Models\User;
 use App\Notifications\HR\OvertimeRequestApproved;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,12 @@ use Carbon\Carbon;
 
 class OvertimeController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Staff submits overtime request
      */
@@ -111,6 +118,19 @@ class OvertimeController extends Controller
             'work_description' => $request->work_description,
             'status' => 'pending',
         ]);
+
+        // Live notification to all HR users in this shop
+        try {
+            $this->notificationService->notifyOvertimeSubmitted($user->shop_owner_id, [
+                'overtime_request_id' => $overtimeRequest->id,
+                'employee_name'       => $employee->first_name . ' ' . $employee->last_name,
+                'hours'               => $hours,
+                'overtime_date'       => $overtimeDate->toDateString(),
+                'reason'              => $request->reason,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send live OT submitted notification', ['error' => $e->getMessage()]);
+        }
 
         return response()->json([
             'message' => 'Overtime request submitted successfully',
@@ -310,6 +330,21 @@ class OvertimeController extends Controller
         }
 
         $overtimeRequest->reject($user->id, $request->rejection_reason);
+
+        // Live notification to employee
+        try {
+            $employee = $overtimeRequest->employee()->with('user')->first();
+            if ($employee && $employee->user_id) {
+                $this->notificationService->notifyOvertimeRejected($employee->user_id, $user->shop_owner_id, [
+                    'overtime_request_id' => $overtimeRequest->id,
+                    'overtime_date'       => $overtimeRequest->overtime_date,
+                    'hours'               => $overtimeRequest->hours,
+                    'rejection_reason'    => $request->rejection_reason,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send live OT rejected notification', ['error' => $e->getMessage()]);
+        }
 
         return response()->json([
             'message' => 'Overtime request rejected',
@@ -529,7 +564,7 @@ class OvertimeController extends Controller
         $overtimeRequests = OvertimeRequest::where('employee_id', $employee->id)
             ->where('shop_owner_id', $user->shop_owner_id)
             ->where('overtime_date', $today)
-            ->whereIn('status', ['approved', 'assigned'])
+            ->whereIn('status', ['pending', 'approved', 'assigned'])
             ->get();
 
         return response()->json(['data' => $overtimeRequests]);

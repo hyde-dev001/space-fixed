@@ -29,9 +29,9 @@ export const FINANCE_STATIC_NOTIFICATIONS: Notification[] = [
   },
   {
     id: 920003,
-    type: 'finance_repair_pricing_approval_2',
-    title: 'Repair Pricing Approval',
-    message: 'Review additional repair pricing approval requests.',
+    type: 'finance_shoe_pricing_approval',
+    title: 'Shoe Pricing Approval',
+    message: 'Review shoe pricing approval requests.',
     data: {
       profile_icon: 'shoe_pricing',
     },
@@ -72,6 +72,18 @@ export const FINANCE_STATIC_NOTIFICATIONS: Notification[] = [
       profile_icon: 'payslip',
     },
     action_url: '/finance?section=payslip-approvals',
+    is_read: false,
+    created_at: now,
+  },
+  {
+    id: 920007,
+    type: 'finance_my_payslips',
+    title: 'My Payslips',
+    message: 'View your payslip records and payroll history.',
+    data: {
+      profile_icon: 'my_payslips',
+    },
+    action_url: '/erp/my-payslips',
     is_read: false,
     created_at: now,
   },

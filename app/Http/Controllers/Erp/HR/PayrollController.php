@@ -8,6 +8,7 @@ use App\Models\HR\PayrollComponent;
 use App\Models\Employee;
 use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
+use App\Services\NotificationService;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
@@ -30,10 +31,12 @@ class PayrollController extends Controller
     use LogsHRActivity;
 
     protected PayrollService $payrollService;
+    protected NotificationService $notificationService;
 
-    public function __construct(PayrollService $payrollService)
+    public function __construct(PayrollService $payrollService, NotificationService $notificationService)
     {
         $this->payrollService = $payrollService;
+        $this->notificationService = $notificationService;
     }
 
     // ============================================================
@@ -145,6 +148,7 @@ class PayrollController extends Controller
             'paymentMethod'    => 'required|in:bank_transfer,check,cash',
             'attendance_days'  => 'nullable|integer|min:0|max:31',
             'leave_days'       => 'nullable|integer|min:0|max:31',
+            'absent_days'      => 'nullable|integer|min:0|max:31',
             'overtime_hours'   => 'nullable|numeric|min:0|max:744',
             'salesCommission'  => 'nullable|numeric|min:0',
             'performanceBonus' => 'nullable|numeric|min:0',
@@ -214,6 +218,7 @@ class PayrollController extends Controller
         $overrides = ['payment_method' => $request->paymentMethod];
         if ($request->filled('attendance_days')) $overrides['attendance_days'] = (int)   $request->attendance_days;
         if ($request->filled('leave_days'))      $overrides['leave_days']      = (int)   $request->leave_days;
+        if ($request->filled('absent_days'))     $overrides['absent_days']     = (int)   $request->absent_days;
         if ($request->filled('overtime_hours'))  $overrides['overtime_hours']  = (float) $request->overtime_hours;
 
         try {
@@ -405,6 +410,15 @@ class PayrollController extends Controller
 
         try {
             if ($payroll->employee && $payroll->employee->user) {
+                // Live DB notification
+                if ($payroll->employee->user_id) {
+                    $this->notificationService->notifyPayslipReady($payroll->employee->user_id, $user->shop_owner_id, [
+                        'payroll_id' => $payroll->id,
+                        'period'     => $payroll->period ?? ($payroll->pay_period_start . ' – ' . $payroll->pay_period_end),
+                        'net_salary' => number_format($payroll->net_salary, 2),
+                    ]);
+                }
+                // Laravel notification (email)
                 $payroll->employee->user->notify(new PayslipGenerated($payroll));
             }
         } catch (\Exception $e) {

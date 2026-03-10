@@ -524,6 +524,7 @@ const DssInsights: React.FC = () => {
   const [error, setError]     = useState<string | null>(null);
   const [period, setPeriod]   = useState(30);
   const [tab, setTab]         = useState<"workload" | "revenue" | "retail" | "trend">("workload");
+  const [trendView, setTrendView] = useState<"repair" | "retail">("repair");
   const [workloadWindow, setWorkloadWindow] = useState<7 | 14>(14);
   const [isRecDropdownOpen, setIsRecDropdownOpen] = useState(false);
   const [recFilter, setRecFilter] = useState<"all" | Recommendation["severity"]>("all");
@@ -557,6 +558,19 @@ const DssInsights: React.FC = () => {
   }, [apiUrl, period]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    if (!data) return;
+
+    if (data.business_type === "retail") {
+      setTrendView("retail");
+      return;
+    }
+
+    if (data.business_type === "repair") {
+      setTrendView("repair");
+    }
+  }, [data]);
 
   useEffect(() => {
     if (!isRecDropdownOpen) return;
@@ -1201,90 +1215,120 @@ const DssInsights: React.FC = () => {
       {tab === "retail" && isRetail && (
         <div className="space-y-5">
           {/* Retail KPI cards */}
-          {data?.retail_sales && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Period Revenue ({period}d)</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(data.retail_sales.period_revenue)}</div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{data.retail_sales.completed_orders} completed orders</div>
-              </div>
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Avg. Order Value</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(data.retail_sales.avg_order_value)}</div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{data.retail_sales.unique_customers} unique customers</div>
-              </div>
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Order Fulfillment</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {data.retail_sales.completion_rate !== null ? `${data.retail_sales.completion_rate}%` : "–"}
-                </div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  {data.retail_sales.completed_orders} of {data.retail_sales.total_orders} orders
-                </div>
-              </div>
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Products Sold</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {data.retail_products?.total_products_sold ?? "–"}
-                </div>
-                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  of {data.retail_products?.active_products ?? "–"} active products
-                </div>
-              </div>
-            </div>
-          )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
+            <KpiCard
+              loading={loading}
+              label={`Period Revenue (${period}d)`}
+              value={data?.retail_sales ? fmt(data.retail_sales.period_revenue) : "-"}
+              sub={
+                data?.retail_sales
+                  ? `${data.retail_sales.completed_orders} completed orders`
+                  : undefined
+              }
+              icon={PesoIcon}
+              color="success"
+            />
+
+            <KpiCard
+              loading={loading}
+              label="Avg. Order Value"
+              value={data?.retail_sales ? fmt(data.retail_sales.avg_order_value) : "-"}
+              sub={
+                data?.retail_sales
+                  ? `${data.retail_sales.unique_customers} unique customers`
+                  : undefined
+              }
+              icon={CartIcon}
+              color="info"
+            />
+
+            <KpiCard
+              loading={loading}
+              label="Order Fulfillment"
+              value={
+                data?.retail_sales
+                  ? data.retail_sales.completion_rate !== null
+                    ? `${data.retail_sales.completion_rate}%`
+                    : "-"
+                  : "-"
+              }
+              sub={
+                data?.retail_sales
+                  ? `${data.retail_sales.completed_orders} of ${data.retail_sales.total_orders} orders`
+                  : undefined
+              }
+              icon={ClockMetricIcon}
+              color="warning"
+            />
+
+            <KpiCard
+              loading={loading}
+              label="Products Sold"
+              value={
+                data?.retail_products
+                  ? fmtNum(data.retail_products.total_products_sold)
+                  : "-"
+              }
+              sub={
+                data?.retail_products
+                  ? `of ${data.retail_products.active_products} active products`
+                  : undefined
+              }
+              icon={BoxMetricIcon}
+              color="info"
+            />
+          </div>
 
           {/* Top Products table */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-800 dark:bg-white/[0.03]">
-            <div className="p-5 border-b border-gray-100 dark:border-gray-800">
-              <h3 className="font-semibold text-gray-700 dark:text-gray-300">Top-Selling Products</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Top-Selling Products</h3>
+              <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
                 Ranked by revenue from completed orders in the selected period
               </p>
             </div>
+
             {loading ? (
-              <div className="p-5 space-y-3">
+              <div className="space-y-3 py-2">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i} className="h-10 bg-gray-50 dark:bg-gray-800 rounded-xl animate-pulse" />
+                  <div key={i} className="h-10 rounded-xl bg-gray-50 animate-pulse dark:bg-gray-800" />
                 ))}
               </div>
             ) : data?.retail_products?.top_products && data.retail_products.top_products.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs">
-                      <th className="text-left px-5 py-3">Product</th>
-                      <th className="text-right px-4 py-3">Orders</th>
-                      <th className="text-right px-4 py-3">Qty Sold</th>
-                      <th className="text-right px-4 py-3">Avg Price</th>
-                      <th className="text-right px-4 py-3">Total Revenue</th>
-                      <th className="text-right px-4 py-3">Rev Share</th>
+              <div className="max-w-full overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-y border-gray-100 dark:border-gray-800">
+                    <tr>
+                      <th className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Product</th>
+                      <th className="py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">Orders</th>
+                      <th className="py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">Qty Sold</th>
+                      <th className="py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">Avg Price</th>
+                      <th className="py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">Total Revenue</th>
+                      <th className="py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">Rev Share</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                     {data.retail_products.top_products.map((p, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                        <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-400 dark:text-gray-500 w-5">#{idx + 1}</span>
-                            {p.product_name}
+                      <tr key={idx}>
+                        <td className="py-3 text-theme-sm text-gray-800 dark:text-white/90">
+                          <div className="flex items-center gap-3">
+                            <span className="w-6 text-theme-xs text-gray-400 dark:text-gray-500">#{idx + 1}</span>
+                            <span className="font-medium">{p.product_name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{p.order_count}</td>
-                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{p.total_qty}</td>
-                        <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{fmt(p.avg_price)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{fmt(p.total_revenue)}</td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="py-3 text-end text-theme-sm text-gray-500 dark:text-gray-400">{p.order_count}</td>
+                        <td className="py-3 text-end text-theme-sm text-gray-500 dark:text-gray-400">{p.total_qty}</td>
+                        <td className="py-3 text-end text-theme-sm text-gray-500 dark:text-gray-400">{fmt(p.avg_price)}</td>
+                        <td className="py-3 text-end text-theme-sm font-medium text-gray-800 dark:text-white/90">{fmt(p.total_revenue)}</td>
+                        <td className="py-3">
                           <div className="flex items-center justify-end gap-2">
-                            <div className="w-16 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                               <div
-                                className="h-full bg-emerald-400 dark:bg-emerald-500 rounded-full"
+                                className="h-full rounded-full bg-emerald-400 dark:bg-emerald-500"
                                 style={{ width: `${p.revenue_share_pct}%` }}
                               />
                             </div>
-                            <span className="text-gray-600 dark:text-gray-400 text-xs w-10 text-right">
-                              {p.revenue_share_pct}%
-                            </span>
+                            <span className="w-10 text-end text-theme-xs text-gray-500 dark:text-gray-400">{p.revenue_share_pct}%</span>
                           </div>
                         </td>
                       </tr>
@@ -1293,10 +1337,8 @@ const DssInsights: React.FC = () => {
                 </table>
               </div>
             ) : (
-              <div className="p-10 text-center text-gray-400 dark:text-gray-500">
-                <div className="text-4xl mb-3">🛍️</div>
-                <div className="font-medium">No retail sales data yet</div>
-                <div className="text-sm mt-1">Data appears once orders are completed or delivered.</div>
+              <div className="py-8 text-center text-gray-500 dark:text-gray-400">
+                No retail sales data yet
               </div>
             )}
           </div>
@@ -1346,166 +1388,153 @@ const DssInsights: React.FC = () => {
 
       {/* ── TRENDS TAB ── */}
       {tab === "trend" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Repair Volume — only if repair shop */}
-          {isRepair && (
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-            <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-4">Repair Volume (Last 12 Months)</h3>
-            {loading ? (
-              <div className="h-56 bg-gray-50 dark:bg-gray-800 rounded-xl animate-pulse" />
-            ) : data?.monthly_trend ? (
-              <div className="space-y-3">
-                <BarChartOne
-                  categories={data.monthly_trend.map((m) => m.month)}
-                  series={[
-                    { name: "Intake", data: data.monthly_trend.map((m) => m.intake) },
-                    { name: "Completed", data: data.monthly_trend.map((m) => m.completed) },
-                  ]}
-                  colors={["#3b82f6", "#10b981"]}
-                  height={220}
-                  minWidthClass="min-w-[650px] xl:min-w-full"
-                  tooltipFormatter={(val) => `${val.toLocaleString("en-PH")} jobs`}
-                />
-                {/* Table summary */}
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-400 dark:text-gray-500">
-                        <th className="text-left pb-1">Month</th>
-                        <th className="text-right pb-1">Intake</th>
-                        <th className="text-right pb-1">Done</th>
-                        <th className="text-right pb-1">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                      {[...data.monthly_trend].reverse().slice(0, 6).map((m) => (
-                        <tr key={m.month_key}>
-                          <td className="py-1 text-gray-700 dark:text-gray-300">{m.month}</td>
-                          <td className="py-1 text-right text-gray-600 dark:text-gray-400">{m.intake}</td>
-                          <td className="py-1 text-right text-gray-600 dark:text-gray-400">{m.completed}</td>
-                          <td className="py-1 text-right font-medium text-gray-900 dark:text-white">{fmt(m.revenue)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+        <div className="space-y-4">
+          {isRepair && isRetail && (
+            <div className="flex items-center justify-end">
+              <div className="inline-flex items-center rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/80">
+                <button
+                  type="button"
+                  onClick={() => setTrendView("repair")}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    trendView === "repair"
+                      ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white"
+                      : "text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white"
+                  }`}
+                >
+                  Repair
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendView("retail")}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    trendView === "retail"
+                      ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white"
+                      : "text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white"
+                  }`}
+                >
+                  Retail
+                </button>
               </div>
-            ) : null}
-          </div>
+            </div>
           )}
 
-          {/* Repair Revenue Trend — only if repair shop */}
-          {isRepair && (
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-            <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Repair Revenue Trend (Last 12 Months)</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Monthly completed repair revenue shown in bars</p>
-            {loading ? (
-              <div className="h-56 bg-gray-50 dark:bg-gray-800 rounded-xl animate-pulse" />
-            ) : data?.monthly_trend ? (
-              <div className="space-y-3">
-                <BarChartOne
-                  categories={data.monthly_trend.map((m) => m.month)}
-                  seriesData={data.monthly_trend.map((m) => m.revenue)}
-                  seriesName="Repair Revenue"
-                  color="#6366f1"
-                  height={220}
-                  minWidthClass="min-w-[650px] xl:min-w-full"
-                  yAxisFormatter={(val) => `P${Math.round(val).toLocaleString("en-PH")}`}
-                  tooltipFormatter={(val) => fmt(val)}
-                />
-                {/* Peak month callout */}
-                {(() => {
-                  const peak = [...data.monthly_trend!].sort((a, b) => b.revenue - a.revenue)[0];
-                  return peak?.revenue > 0 ? (
-                    <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-3 text-sm">
-                      <span className="font-semibold text-purple-700 dark:text-purple-400">Peak month:</span>
-                      <span className="text-gray-700 dark:text-gray-300 ml-2">{peak.month} — {fmt(peak.revenue)}</span>
+          <div className="grid grid-cols-1 gap-6">
+            {(isRepair && (!isRetail || trendView === "repair")) && (
+              <>
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Repair Volume (Last 12 Months)</h3>
+                      <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">Compare monthly intake vs completed repairs</p>
                     </div>
-                  ) : null;
-                })()}
-              </div>
-            ) : null}
-          </div>
-          )}
+                  </div>
 
-          {/* Retail Order Volume Trend — only if retail shop */}
-          {isRetail && (
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-            <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-4">Retail Order Volume (Last 12 Months)</h3>
-            {loading ? (
-              <div className="h-56 bg-gray-50 dark:bg-gray-800 rounded-xl animate-pulse" />
-            ) : data?.retail_trend ? (
-              <div className="space-y-3">
-                <BarChartOne
-                  categories={data.retail_trend.map((m) => m.month)}
-                  series={[
-                    { name: "Total Orders", data: data.retail_trend.map((m) => m.orders) },
-                    { name: "Completed", data: data.retail_trend.map((m) => m.completed) },
-                  ]}
-                  colors={["#3b82f6", "#10b981"]}
-                  height={220}
-                  minWidthClass="min-w-[650px] xl:min-w-full"
-                  tooltipFormatter={(val) => `${val.toLocaleString("en-PH")} orders`}
-                />
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-400 dark:text-gray-500">
-                        <th className="text-left pb-1">Month</th>
-                        <th className="text-right pb-1">Orders</th>
-                        <th className="text-right pb-1">Completed</th>
-                        <th className="text-right pb-1">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                      {[...data.retail_trend].reverse().slice(0, 6).map((m) => (
-                        <tr key={m.month_key}>
-                          <td className="py-1 text-gray-700 dark:text-gray-300">{m.month}</td>
-                          <td className="py-1 text-right text-gray-600 dark:text-gray-400">{m.orders}</td>
-                          <td className="py-1 text-right text-gray-600 dark:text-gray-400">{m.completed}</td>
-                          <td className="py-1 text-right font-medium text-gray-900 dark:text-white">{fmt(m.revenue)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
-          </div>
-          )}
-
-          {/* Retail Revenue Trend line chart — only if retail shop */}
-          {isRetail && (
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-            <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Retail Revenue Trend (Last 12 Months)</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Monthly retail revenue displayed as bar graph</p>
-            {loading ? (
-              <div className="h-56 bg-gray-50 dark:bg-gray-800 rounded-xl animate-pulse" />
-            ) : data?.retail_trend ? (
-              <div className="space-y-3">
-                <BarChartOne
-                  categories={data.retail_trend.map((m) => m.month)}
-                  seriesData={data.retail_trend.map((m) => m.revenue)}
-                  seriesName="Retail Revenue"
-                  color="#10b981"
-                  height={220}
-                  minWidthClass="min-w-[650px] xl:min-w-full"
-                  yAxisFormatter={(val) => `P${Math.round(val).toLocaleString("en-PH")}`}
-                  tooltipFormatter={(val) => fmt(val)}
-                />
-                {(() => {
-                  const peak = [...data.retail_trend!].sort((a, b) => b.revenue - a.revenue)[0];
-                  return peak?.revenue > 0 ? (
-                    <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl p-3 text-sm">
-                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">Peak month:</span>
-                      <span className="text-gray-700 dark:text-gray-300 ml-2">{peak.month} — {fmt(peak.revenue)}</span>
+                  {loading ? (
+                    <div className="h-72 rounded-xl bg-gray-50 animate-pulse dark:bg-gray-800" />
+                  ) : data?.monthly_trend ? (
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-900/40 sm:p-4">
+                        <BarChartOne
+                          categories={data.monthly_trend.map((m) => m.month)}
+                          series={[
+                            { name: "Intake", data: data.monthly_trend.map((m) => m.intake) },
+                            { name: "Completed", data: data.monthly_trend.map((m) => m.completed) },
+                          ]}
+                          colors={["#3b82f6", "#10b981"]}
+                          height={280}
+                          minWidthClass="min-w-[760px] lg:min-w-full"
+                          tooltipFormatter={(val) => `${val.toLocaleString("en-PH")} jobs`}
+                        />
+                      </div>
                     </div>
-                  ) : null;
-                })()}
-              </div>
-            ) : null}
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Repair Revenue Trend (Last 12 Months)</h3>
+                    <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">Monthly completed repair revenue shown in bars</p>
+                  </div>
+                  {loading ? (
+                    <div className="h-72 rounded-xl bg-gray-50 animate-pulse dark:bg-gray-800" />
+                  ) : data?.monthly_trend ? (
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-900/40 sm:p-4">
+                        <BarChartOne
+                          categories={data.monthly_trend.map((m) => m.month)}
+                          seriesData={data.monthly_trend.map((m) => m.revenue)}
+                          seriesName="Repair Revenue"
+                          color="#6366f1"
+                          height={280}
+                          minWidthClass="min-w-[760px] lg:min-w-full"
+                          yAxisFormatter={(val) => `P${Math.round(val).toLocaleString("en-PH")}`}
+                          tooltipFormatter={(val) => fmt(val)}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
+
+            {(isRetail && (!isRepair || trendView === "retail")) && (
+              <>
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Retail Order Volume (Last 12 Months)</h3>
+                      <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">Track monthly order demand and completion performance</p>
+                    </div>
+                  </div>
+
+                  {loading ? (
+                    <div className="h-72 rounded-xl bg-gray-50 animate-pulse dark:bg-gray-800" />
+                  ) : data?.retail_trend ? (
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-900/40 sm:p-4">
+                        <BarChartOne
+                          categories={data.retail_trend.map((m) => m.month)}
+                          series={[
+                            { name: "Total Orders", data: data.retail_trend.map((m) => m.orders) },
+                            { name: "Completed", data: data.retail_trend.map((m) => m.completed) },
+                          ]}
+                          colors={["#3b82f6", "#10b981"]}
+                          height={280}
+                          minWidthClass="min-w-[760px] lg:min-w-full"
+                          tooltipFormatter={(val) => `${val.toLocaleString("en-PH")} orders`}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Retail Revenue Trend (Last 12 Months)</h3>
+                    <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">Monthly retail revenue displayed as bar graph</p>
+                  </div>
+                  {loading ? (
+                    <div className="h-72 rounded-xl bg-gray-50 animate-pulse dark:bg-gray-800" />
+                  ) : data?.retail_trend ? (
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-900/40 sm:p-4">
+                        <BarChartOne
+                          categories={data.retail_trend.map((m) => m.month)}
+                          seriesData={data.retail_trend.map((m) => m.revenue)}
+                          seriesName="Retail Revenue"
+                          color="#10b981"
+                          height={280}
+                          minWidthClass="min-w-[760px] lg:min-w-full"
+                          yAxisFormatter={(val) => `P${Math.round(val).toLocaleString("en-PH")}`}
+                          tooltipFormatter={(val) => fmt(val)}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
-          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import ReportShopModal from '../../../components/ReportShopModal';
 
 interface ShopHours {
   day: string;
@@ -64,6 +65,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
   
+  const [showReportModal, setShowReportModal] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -394,12 +396,23 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
                   </div>
                   <h3 className="text-2xl font-bold text-black">Shop Information</h3>
                 </div>
-                <Link
-                  href={`/message/${shop.id}`}
-                  className="px-6 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all"
-                >
-                  Message
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/message/${shop.id}`}
+                    className="px-6 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all"
+                  >
+                    Message
+                  </Link>
+                  {isAuthenticated && (
+                    <button
+                      type="button"
+                      onClick={() => setShowReportModal(true)}
+                      className="px-4 py-2 border border-red-300 rounded-lg text-sm font-semibold text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all"
+                    >
+                      Report
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="space-y-5 text-sm text-gray-700">
                 <div className="flex items-start gap-3">
@@ -887,6 +900,13 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
             </div>
           </div>
         )}
+
+      <ReportShopModal
+        shopId={shop.id}
+        shopName={shop.name}
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+      />
     </>
   );
 };

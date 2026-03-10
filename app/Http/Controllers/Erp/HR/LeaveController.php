@@ -9,6 +9,7 @@ use App\Models\HR\LeaveBalance;
 use App\Models\HR\LeavePolicy;
 use App\Models\HR\LeaveApprovalHierarchy;
 use App\Models\HR\AuditLog;
+use App\Services\NotificationService;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\LeaveRequestSubmitted;
 use App\Notifications\HR\LeaveRequestApproved;
@@ -24,6 +25,13 @@ use Carbon\Carbon;
 class LeaveController extends Controller
 {
     use LogsHRActivity;
+
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Display a listing of leave requests.
      */
@@ -240,7 +248,21 @@ class LeaveController extends Controller
             ['leave_type' => $request->leaveType, 'days' => $noOfDays]
         );
 
-        // ==================== 4. SEND NOTIFICATION ====================
+        // ==================== 4. SEND LIVE + LARAVEL NOTIFICATIONS ====================
+        // Send live DB notification to all HR users in this shop
+        try {
+            $this->notificationService->notifyLeaveSubmitted($user->shop_owner_id, [
+                'leave_request_id' => $leaveRequest->id,
+                'employee_name'    => $employee->first_name . ' ' . $employee->last_name,
+                'leave_type'       => $request->leaveType,
+                'no_of_days'       => $noOfDays,
+                'start_date'       => $request->startDate,
+                'end_date'         => $request->endDate,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send live leave submitted notification', ['error' => $e->getMessage()]);
+        }
+
         if ($policy->requires_approval && $approverInfo) {
             try {
                 $approver = $approverInfo['approver'];
@@ -461,11 +483,21 @@ class LeaveController extends Controller
             );
         }
 
-        // Send approval notification to employee (optional)
+        // Send live + Laravel notifications to employee
         try {
             $employee = $leaveRequest->employee;
-            if ($employee && $employee->user) {
-                $employee->user->notify(new LeaveRequestApproved($leaveRequest, $user));
+            if ($employee) {
+                if ($employee->user_id) {
+                    $this->notificationService->notifyLeaveApproved($employee->user_id, $user->shop_owner_id, [
+                        'leave_request_id' => $leaveRequest->id,
+                        'leave_type'       => $leaveRequest->leave_type,
+                        'start_date'       => $leaveRequest->start_date?->toDateString(),
+                        'end_date'         => $leaveRequest->end_date?->toDateString(),
+                    ]);
+                }
+                if ($employee->user) {
+                    $employee->user->notify(new LeaveRequestApproved($leaveRequest, $user));
+                }
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send leave approval notification', [
@@ -595,11 +627,22 @@ class LeaveController extends Controller
             'rejection_reason' => $request->reason
         ]);
 
-        // Send rejection notification to employee
+        // Send live + Laravel notifications to employee
         try {
             $employee = $leaveRequest->employee;
-            if ($employee && $employee->user) {
-                $employee->user->notify(new LeaveRequestRejected($leaveRequest, $user));
+            if ($employee) {
+                if ($employee->user_id) {
+                    $this->notificationService->notifyLeaveRejected($employee->user_id, $user->shop_owner_id, [
+                        'leave_request_id' => $leaveRequest->id,
+                        'leave_type'       => $leaveRequest->leave_type,
+                        'start_date'       => $leaveRequest->start_date?->toDateString(),
+                        'end_date'         => $leaveRequest->end_date?->toDateString(),
+                        'reason'           => $request->reason,
+                    ]);
+                }
+                if ($employee->user) {
+                    $employee->user->notify(new LeaveRequestRejected($leaveRequest, $user));
+                }
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send leave rejection notification', [

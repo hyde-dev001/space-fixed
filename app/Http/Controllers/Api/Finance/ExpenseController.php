@@ -9,6 +9,7 @@ use App\Models\Finance\Account;
 use App\Models\Finance\JournalEntry;
 use App\Models\Finance\JournalLine;
 use App\Models\AuditLog;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,12 @@ use Spatie\QueryBuilder\AllowedFilter;
 
 class ExpenseController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     public function index(Request $request)
     {
         $shopId = auth()->user()?->shop_owner_id;
@@ -116,6 +123,19 @@ class ExpenseController extends Controller
             $this->audit('create_expense', $expense->id, $expense->toArray());
 
             DB::commit();
+
+            // Live notification to all Finance users in this shop
+            try {
+                $this->notificationService->notifyExpenseSubmitted($shopId, [
+                    'expense_id' => $expense->id,
+                    'reference'  => $expense->reference ?? "EXP-{$expense->id}",
+                    'amount'     => number_format($expense->amount, 2),
+                    'category'   => $expense->category ?? 'General',
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send live expense notification', ['error' => $e->getMessage()]);
+            }
+
             return response()->json($expense, 201);
         } catch (\Exception $e) {
             DB::rollBack();

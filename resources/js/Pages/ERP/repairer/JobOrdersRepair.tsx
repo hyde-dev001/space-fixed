@@ -359,7 +359,7 @@ export default function JobOrdersRepair() {
   const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
-  const [highlightRepairId, setHighlightRepairId] = useState<number | null>(null);
+  const [highlightRepairToken, setHighlightRepairToken] = useState<string | null>(null);
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
   // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
   const { repair_workload_limit: propLimit } = usePage().props as any;
@@ -402,29 +402,26 @@ export default function JobOrdersRepair() {
       return;
     }
 
-    const parsedId = Number(highlightParam);
-    if (Number.isNaN(parsedId)) {
-      return;
-    }
-
-    setHighlightRepairId(parsedId);
+    setHighlightRepairToken(String(highlightParam).trim());
   }, []);
 
   // Scroll to and highlight repair when ID changes
   useEffect(() => {
-    if (!highlightRepairId || orders.length === 0) {
+    if (!highlightRepairToken || orders.length === 0) {
       return;
     }
 
     const scrollTimer = window.setTimeout(() => {
-      const targetElement = document.querySelector(`[data-repair-id="${highlightRepairId}"]`);
+      const targetElement =
+        document.querySelector(`[data-repair-id="${highlightRepairToken}"]`) ||
+        document.querySelector(`[data-repair-request-id="${highlightRepairToken}"]`);
       if (targetElement) {
         targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 200);
 
     return () => window.clearTimeout(scrollTimer);
-  }, [highlightRepairId, orders]);
+  }, [highlightRepairToken, orders]);
 
   useEffect(() => {
     const refreshOverrides = () => {
@@ -1543,11 +1540,21 @@ export default function JobOrdersRepair() {
               <tbody className="bg-white dark:bg-white/[0.02] divide-y divide-gray-200 dark:divide-gray-800">
                 {paginatedOrders.length > 0 ? (
                   paginatedOrders.map((order) => (
+                    (() => {
+                      const isHighlighted =
+                        Boolean(highlightRepairToken) &&
+                        (
+                          String(order.database_id) === String(highlightRepairToken) ||
+                          String(order.id) === String(highlightRepairToken)
+                        );
+
+                      return (
                     <tr 
                       key={order.id} 
                       data-repair-id={order.database_id}
+                      data-repair-request-id={order.id}
                       className={`hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors ${
-                        highlightRepairId === order.database_id ? 'border-l-4 border-l-black bg-gray-50 dark:bg-gray-900/50' : ''
+                        isHighlighted ? 'border-l-4 border-l-black bg-gray-50 dark:bg-gray-900/50' : ''
                       }`}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -1690,6 +1697,8 @@ export default function JobOrdersRepair() {
                         </div>
                       </td>
                     </tr>
+                      );
+                    })()
                   ))
                 ) : (
                   <tr>

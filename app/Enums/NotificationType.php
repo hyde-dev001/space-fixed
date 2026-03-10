@@ -49,12 +49,34 @@ enum NotificationType: string
     case DOCUMENT_EXPIRING = 'document_expiring';
     case PAYROLL_GENERATED = 'payroll_generated';
     
+    // ==================== ERP EMPLOYEE (self) NOTIFICATIONS ====================
+    case LEAVE_REQUEST_APPROVED = 'leave_request_approved';
+    case LEAVE_REQUEST_REJECTED = 'leave_request_rejected';
+    case OVERTIME_REQUEST_APPROVED = 'overtime_request_approved';
+    case OVERTIME_REQUEST_REJECTED = 'overtime_request_rejected';
+    case PAYSLIP_READY = 'payslip_ready';
+
     // ==================== MANAGER NOTIFICATIONS ====================
     case LEAVE_REQUEST_PENDING = 'leave_request_pending';
+    case OVERTIME_REQUEST_PENDING = 'overtime_request_pending';
     case EXPENSE_REQUEST_PENDING = 'expense_request_pending';
     case SUSPENSION_REQUEST_PENDING = 'suspension_request_pending';
     case PERFORMANCE_REVIEW_DUE = 'performance_review_due';
+
+    // ==================== HR NOTIFICATIONS ====================
+    case LEAVE_SUBMITTED = 'leave_submitted';
+    case OVERTIME_SUBMITTED = 'overtime_submitted';
+
+    // ==================== FINANCE NOTIFICATIONS ====================
+    case INVOICE_CREATED_FINANCE = 'invoice_created_finance';
+    case EXPENSE_SUBMITTED = 'expense_submitted';
+    case PURCHASE_REQUEST_SUBMITTED = 'purchase_request_submitted';
     
+    // ==================== SUPER ADMIN NOTIFICATIONS ====================
+    case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
+    case SHOP_REPORT_FILED = 'shop_report_filed';
+    case REVIEW_REPORTED = 'review_reported';
+
     // ==================== CRM NOTIFICATIONS ====================
     case NEW_LEAD = 'new_lead';
     case LEAD_UPDATED = 'lead_updated';
@@ -114,10 +136,32 @@ enum NotificationType: string
             
             // Manager notifications
             self::LEAVE_REQUEST_PENDING => 'Leave Request Pending',
+            self::OVERTIME_REQUEST_PENDING => 'Overtime Request Pending',
             self::EXPENSE_REQUEST_PENDING => 'Expense Request Pending',
             self::SUSPENSION_REQUEST_PENDING => 'Suspension Request Pending',
             self::PERFORMANCE_REVIEW_DUE => 'Performance Review Due',
+
+            // ERP Employee (self) notifications
+            self::LEAVE_REQUEST_APPROVED => 'Leave Request Approved',
+            self::LEAVE_REQUEST_REJECTED => 'Leave Request Rejected',
+            self::OVERTIME_REQUEST_APPROVED => 'Overtime Request Approved',
+            self::OVERTIME_REQUEST_REJECTED => 'Overtime Request Rejected',
+            self::PAYSLIP_READY => 'Payslip Ready',
+
+            // HR notifications
+            self::LEAVE_SUBMITTED => 'New Leave Request',
+            self::OVERTIME_SUBMITTED => 'New Overtime Request',
+
+            // Finance notifications
+            self::INVOICE_CREATED_FINANCE => 'New Invoice Created',
+            self::EXPENSE_SUBMITTED => 'New Expense Submitted',
+            self::PURCHASE_REQUEST_SUBMITTED => 'New Purchase Request',
             
+            // Super admin notifications
+            self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
+            self::SHOP_REPORT_FILED => 'Shop Report Filed',
+            self::REVIEW_REPORTED => 'Review Reported',
+
             // CRM notifications
             self::NEW_LEAD => 'New Lead',
             self::LEAD_UPDATED => 'Lead Updated',
@@ -146,14 +190,20 @@ enum NotificationType: string
             self::REVIEW_REQUEST => 'reviews',
             
             self::EXPENSE_APPROVAL, self::EXPENSE_REQUEST_PENDING,
-            self::INVOICE_CREATED => 'finance',
+            self::INVOICE_CREATED, self::INVOICE_CREATED_FINANCE,
+            self::EXPENSE_SUBMITTED, self::PURCHASE_REQUEST_SUBMITTED => 'finance',
             
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
+            self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
+            self::OVERTIME_SUBMITTED, self::OVERTIME_REQUEST_PENDING,
+            self::OVERTIME_REQUEST_APPROVED, self::OVERTIME_REQUEST_REJECTED,
             self::ATTENDANCE_REMINDER, self::DOCUMENT_EXPIRING,
-            self::PAYROLL_GENERATED, self::TRAINING_ASSIGNED => 'hr',
+            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::TRAINING_ASSIGNED => 'hr',
             
             self::NEW_LEAD, self::LEAD_UPDATED, self::OPPORTUNITY_CREATED,
             self::CUSTOMER_SUPPORT_TICKET => 'crm',
+
+            self::SHOP_REGISTRATION_PENDING, self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
             
             default => 'general',
         };
@@ -222,6 +272,21 @@ enum NotificationType: string
             self::LEAVE_REQUEST_PENDING,
             self::EXPENSE_REQUEST_PENDING,
             self::SUSPENSION_REQUEST_PENDING,
+            self::SHOP_REGISTRATION_PENDING,
+            self::SHOP_REPORT_FILED,
+            self::REVIEW_REPORTED,
+        ]);
+    }
+
+    /**
+     * Check if notification type is for super admins
+     */
+    public function isSuperAdminNotification(): bool
+    {
+        return in_array($this, [
+            self::SHOP_REGISTRATION_PENDING,
+            self::SHOP_REPORT_FILED,
+            self::REVIEW_REPORTED,
         ]);
     }
 }

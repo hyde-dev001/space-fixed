@@ -938,6 +938,24 @@ const AppSidebar_ERP: React.FC = () => {
       menuGroups.push({ menuType: "finance", items: [attendanceItem, ...getFilteredFinanceItems(), myPayslipsItem] });
     }
 
+    if (hasInventoryAccess()) {
+      menuGroups.push({
+        menuType: "manager",
+        items: hasFinanceAccess() ? [...managerInventoryItems, myPayslipsItem] : [attendanceItem, ...managerInventoryItems, myPayslipsItem],
+      });
+    }
+
+    if (hasProcurementAccess()) {
+      menuGroups.push({
+        menuType: "manager",
+        items: hasFinanceAccess() ? [...procurementItems, myPayslipsItem] : [attendanceItem, ...procurementItems, myPayslipsItem],
+      });
+    }
+
+    if (hasCRMAccess()) {
+      menuGroups.push({ menuType: "crm", items: [attendanceItem, ...crmItems, myPayslipsItem] });
+    }
+
     let activeSubmenuKey: string | null = null;
 
     menuGroups.some(({ menuType, items }) => {
@@ -1524,7 +1542,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(hasFinanceAccess() ? managerInventoryItems : [attendanceItem, ...managerInventoryItems], "manager")}
+                  {renderMenuItems(hasFinanceAccess() ? [...managerInventoryItems, myPayslipsItem] : [attendanceItem, ...managerInventoryItems, myPayslipsItem], "manager")}
                 </div>
               </div>
             </nav>
@@ -1546,7 +1564,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(hasFinanceAccess() ? procurementItems : [attendanceItem, ...procurementItems], "manager")}
+                  {renderMenuItems(hasFinanceAccess() ? [...procurementItems, myPayslipsItem] : [attendanceItem, ...procurementItems, myPayslipsItem], "manager")}
                 </div>
               </div>
             </nav>
@@ -1615,7 +1633,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems([attendanceItem, ...crmItems], "crm")}
+                {renderMenuItems([attendanceItem, ...crmItems, myPayslipsItem], "crm")}
               </div>
             </div>
           </nav>

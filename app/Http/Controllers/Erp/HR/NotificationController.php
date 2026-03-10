@@ -48,15 +48,23 @@ class NotificationController extends Controller
         $notifications = $query->orderBy('created_at', 'desc')
             ->paginate($perPage);
 
+        // Count unread separately for the frontend badge/counter
+        $unreadQuery = Notification::where('user_id', $user->id);
+        if ($user->shop_owner_id) {
+            $unreadQuery->where(function ($q) use ($user) {
+                $q->where('shop_id', $user->shop_owner_id)
+                  ->orWhereNull('shop_id');
+            });
+        }
+        $unreadCount = $unreadQuery->where('is_read', false)->count();
+
         return response()->json([
-            'success' => true,
-            'notifications' => $notifications->items(),
-            'pagination' => [
-                'current_page' => $notifications->currentPage(),
-                'per_page' => $notifications->perPage(),
-                'total' => $notifications->total(),
-                'last_page' => $notifications->lastPage(),
-            ]
+            'data' => $notifications->items(),
+            'current_page' => $notifications->currentPage(),
+            'per_page' => $notifications->perPage(),
+            'total' => $notifications->total(),
+            'last_page' => $notifications->lastPage(),
+            'unread_count' => $unreadCount,
         ]);
     }
 
@@ -81,13 +89,12 @@ class NotificationController extends Controller
             });
         }
         
-        $count = $query->whereNull('read_at')
-            ->count();
+        $count = $query->where('is_read', false)->count();
 
         return response()->json([
             'success' => true,
             'count' => $count,
-            'unread_count' => $count  // Keep for backward compatibility
+            'unread_count' => $count,
         ]);
     }
 
@@ -135,14 +142,16 @@ class NotificationController extends Controller
         $notification = Notification::where('user_id', $user->id)
             ->findOrFail($id);
         
-        if (!$notification->read_at) {
-            $notification->read_at = now();
-            $notification->save();
+        if (!$notification->is_read) {
+            $notification->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Notification marked as read'
+            'message' => 'Notification marked as read',
         ]);
     }
 
@@ -167,12 +176,15 @@ class NotificationController extends Controller
             });
         }
         
-        $query->whereNull('read_at')
-            ->update(['read_at' => now()]);
+        $query->where('is_read', false)
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'All notifications marked as read'
+            'message' => 'All notifications marked as read',
         ]);
     }
 

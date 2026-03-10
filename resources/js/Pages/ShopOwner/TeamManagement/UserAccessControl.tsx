@@ -352,10 +352,12 @@ const UserAccessControl: React.FC = () => {
     Manager: 'Manager',
     Finance: 'Finance',
     HR: 'Human Resources',
-    CRM: 'CRM',
+    CRM: 'Customer Relationship Management',
     Repairer: 'Repairer',
-    'Inventory Manager': 'Inventory Manager',
-    'Procurement Manager': 'Procurement Manager',
+    Inventory: 'Inventory',
+    Procurement: 'Procurement',
+    'Inventory Manager': 'Inventory',
+    'Procurement Manager': 'Procurement',
     Staff: 'Staff',
     MANAGER: 'Manager',
     FINANCE: 'Finance',
@@ -596,6 +598,8 @@ const UserAccessControl: React.FC = () => {
       'HR': 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
       'CRM': 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
+      'Inventory': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
+      'Procurement': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
       'Inventory Manager': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement Manager': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
@@ -630,6 +634,16 @@ const UserAccessControl: React.FC = () => {
         description: 'Handle technical support conversations, repair services, and job orders',
         permissions: 13
       },
+      'Inventory': {
+        title: '📦 Inventory Management',
+        description: 'Manage stock levels, product inventory, upload stocks, and track stock movements',
+        permissions: 9
+      },
+      'Procurement': {
+        title: '🛒 Procurement Management',
+        description: 'Manage purchase requests, purchase orders, supplier management, and order monitoring',
+        permissions: 11
+      },
       'Inventory Manager': {
         title: '📦 Inventory Management',
         description: 'Manage stock levels, product inventory, upload stocks, and track stock movements',
@@ -653,14 +667,14 @@ const UserAccessControl: React.FC = () => {
   // Filter available roles based on business type
   const getAvailableRoles = () => {
     const allRoles = [
-      { value: 'Manager', label: 'Manager - Full System Access' },
-      { value: 'Finance', label: 'Finance - Invoices, Expenses, Reports' },
-      { value: 'HR', label: 'Human Resources - Employees, Payroll, Attendance' },
-      { value: 'CRM', label: 'CRM - Customers, Leads, Sales' },
-      { value: 'Repairer', label: 'Repairer - Technical Support & Repairs' },
-      { value: 'Inventory Manager', label: 'Inventory Manager - Stock Levels, Product Inventory, Movements' },
-      { value: 'Procurement Manager', label: 'Procurement Manager - Purchase Requests, Orders, Suppliers' },
-      { value: 'Staff', label: 'Staff - Basic Access (Customizable)' },
+      { value: 'Manager', label: 'Manager' },
+      { value: 'Finance', label: 'Finance' },
+      { value: 'HR', label: 'Human Resources' },
+      { value: 'CRM', label: 'Customer Relationship Management' },
+      { value: 'Repairer', label: 'Repairer' },
+      { value: 'Inventory', label: 'Inventory' },
+      { value: 'Procurement', label: 'Procurement' },
+      { value: 'Staff', label: 'Staff' },
     ];
 
     // Filter out Repairer if business type is retail only
@@ -2115,7 +2129,7 @@ const UserAccessControl: React.FC = () => {
                     </div>
                   )}
 
-                  {/* CRM Module */}
+                  {/* Customer Relationship Management Module */}
                   {availablePermissions.grouped.crm && availablePermissions.grouped.crm.length > 0 && (
                     <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                       <button
@@ -2131,7 +2145,7 @@ const UserAccessControl: React.FC = () => {
                               <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                               </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">CRM Module</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">Customer Relationship Management Module</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">

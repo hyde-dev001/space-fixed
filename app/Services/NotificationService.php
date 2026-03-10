@@ -532,6 +532,143 @@ class NotificationService
 
     // ==================== SHOP OWNER NOTIFICATIONS ====================
 
+    // ==================== ERP LIVE NOTIFICATION HELPERS ====================
+
+    /**
+     * Send a notification to all users of a given Spatie role within a shop.
+     * Used to fan-out events to HR, Finance, Manager, etc.
+     */
+    public function sendToErpRole(
+        string $roleName,
+        int $shopId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        ?array $data = null,
+        ?string $actionUrl = null,
+        string $priority = 'medium'
+    ): void {
+        $users = User::where('shop_owner_id', $shopId)
+            ->whereHas('roles', fn ($q) => $q->where('name', $roleName))
+            ->get();
+
+        foreach ($users as $user) {
+            try {
+                $this->sendToUser($user->id, $type, $title, $message, $data, $actionUrl, $shopId, $priority);
+            } catch (\Exception $e) {
+                Log::error("Failed to send ERP role notification to user #{$user->id}", [
+                    'role' => $roleName,
+                    'type' => $type->value,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    // ==================== LEAVE NOTIFICATIONS ====================
+
+    /** Notify HR when an employee submits a leave request */
+    public function notifyLeaveSubmitted(int $shopId, array $leaveData): void
+    {
+        $employeeName = $leaveData['employee_name'] ?? 'An employee';
+        $this->sendToErpRole('HR', $shopId, NotificationType::LEAVE_SUBMITTED,
+            'New Leave Request',
+            "{$employeeName} submitted a {$leaveData['leave_type']} leave request for {$leaveData['no_of_days']} day(s).",
+            $leaveData, '/erp/hr?section=leaves', 'medium'
+        );
+    }
+
+    /** Notify employee their leave was approved */
+    public function notifyLeaveApproved(int $userId, int $shopId, array $leaveData): void
+    {
+        $this->sendToUser($userId, NotificationType::LEAVE_REQUEST_APPROVED,
+            'Leave Request Approved',
+            "Your {$leaveData['leave_type']} leave from {$leaveData['start_date']} to {$leaveData['end_date']} has been approved.",
+            $leaveData, '/erp/my-payslips', $shopId
+        );
+    }
+
+    /** Notify employee their leave was rejected */
+    public function notifyLeaveRejected(int $userId, int $shopId, array $leaveData): void
+    {
+        $reason = $leaveData['reason'] ?? '';
+        $this->sendToUser($userId, NotificationType::LEAVE_REQUEST_REJECTED,
+            'Leave Request Rejected',
+            "Your {$leaveData['leave_type']} leave request was rejected. {$reason}",
+            $leaveData, '/erp/my-payslips', $shopId
+        );
+    }
+
+    // ==================== OVERTIME NOTIFICATIONS ====================
+
+    /** Notify HR when an employee submits an OT request */
+    public function notifyOvertimeSubmitted(int $shopId, array $otData): void
+    {
+        $employeeName = $otData['employee_name'] ?? 'An employee';
+        $this->sendToErpRole('HR', $shopId, NotificationType::OVERTIME_SUBMITTED,
+            'New Overtime Request',
+            "{$employeeName} requested {$otData['hours']} hour(s) of overtime on {$otData['overtime_date']}.",
+            $otData, '/erp/hr?section=overtime', 'medium'
+        );
+    }
+
+    /** Notify employee their OT was rejected */
+    public function notifyOvertimeRejected(int $userId, int $shopId, array $otData): void
+    {
+        $reason = $otData['rejection_reason'] ?? '';
+        $this->sendToUser($userId, NotificationType::OVERTIME_REQUEST_REJECTED,
+            'Overtime Request Rejected',
+            "Your overtime request for {$otData['overtime_date']} was rejected. {$reason}",
+            $otData, null, $shopId
+        );
+    }
+
+    // ==================== PAYROLL NOTIFICATIONS ====================
+
+    /** Notify employee their payslip is ready (approved) */
+    public function notifyPayslipReady(int $userId, int $shopId, array $payrollData): void
+    {
+        $this->sendToUser($userId, NotificationType::PAYSLIP_READY,
+            'Your Payslip is Ready',
+            "Your payslip for {$payrollData['period']} (₱{$payrollData['net_salary']}) has been approved.",
+            $payrollData, '/erp/my-payslips', $shopId
+        );
+    }
+
+    // ==================== FINANCE NOTIFICATIONS ====================
+
+    /** Notify Finance users when a new invoice is created */
+    public function notifyInvoiceCreatedToFinance(int $shopId, array $invoiceData): void
+    {
+        $this->sendToErpRole('Finance', $shopId, NotificationType::INVOICE_CREATED_FINANCE,
+            'New Invoice Created',
+            "Invoice {$invoiceData['reference']} (₱{$invoiceData['total']}) has been created.",
+            $invoiceData, '/erp/finance/invoices', 'medium'
+        );
+    }
+
+    /** Notify Finance users when an expense is submitted */
+    public function notifyExpenseSubmitted(int $shopId, array $expenseData): void
+    {
+        $this->sendToErpRole('Finance', $shopId, NotificationType::EXPENSE_SUBMITTED,
+            'New Expense Submitted',
+            "Expense {$expenseData['reference']} of ₱{$expenseData['amount']} ({$expenseData['category']}) needs review.",
+            $expenseData, '/erp/finance/expenses', 'medium'
+        );
+    }
+
+    /** Notify Finance users when a purchase request is submitted */
+    public function notifyPurchaseRequestSubmitted(int $shopId, array $prData): void
+    {
+        $this->sendToErpRole('Finance', $shopId, NotificationType::PURCHASE_REQUEST_SUBMITTED,
+            'New Purchase Request',
+            "Purchase request {$prData['reference']} of ₱{$prData['total_cost']} requires finance review.",
+            $prData, '/erp/finance/invoices', 'medium'
+        );
+    }
+
+    // ==================== SHOP OWNER NOTIFICATIONS ====================
+
     /**
      * Notify shop owner of new order
      * Only sends notification to individual shop owners, not companies
@@ -601,7 +738,7 @@ class NotificationService
                     userId: $repairer->id,
                     type: NotificationType::NEW_REPAIR_REQUEST,
                     title: 'New Repair Request',
-                    message: "New repair request - {$repairData['service_type']}",
+                    message: "New repair request #{$repairData['order_number']} - {$repairData['customer_name']}",
                     data: $repairData,
                     actionUrl: '/erp/staff/job-orders-repair',
                     shopId: $shopOwnerId,
@@ -915,11 +1052,14 @@ class NotificationService
      */
     public function notifyRepairerAssignment(int $repairerId, array $repairData, int $shopId): ?Notification
     {
+        $orderNumber = $repairData['order_number'] ?? $repairData['request_id'] ?? $repairData['repair_id'] ?? 'N/A';
+        $customerName = $repairData['customer_name'] ?? 'Customer';
+
         return $this->sendToUser(
             userId: $repairerId,
             type: NotificationType::REPAIR_ASSIGNED_TO_ME,
             title: 'New Repair Assigned',
-            message: "Repair request has been assigned to you.",
+            message: "Repair request {$orderNumber} has been assigned to you - {$customerName}.",
             data: $repairData,
             actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId
@@ -947,11 +1087,14 @@ class NotificationService
      */
     public function notifyRepairerRejectionApproved(int $repairerId, array $repairData, int $shopId): ?Notification
     {
+        $orderNumber = $repairData['order_number'] ?? $repairData['request_id'] ?? $repairData['repair_id'] ?? 'N/A';
+        $customerName = $repairData['customer_name'] ?? 'Customer';
+
         return $this->sendToUser(
             userId: $repairerId,
             type: NotificationType::REPAIR_REJECTION_REVIEW,
             title: 'Rejection Approved',
-            message: "Your repair rejection has been approved by the manager.",
+            message: "Repair request {$orderNumber} for {$customerName} was approved by the manager.",
             data: $repairData,
             actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId
@@ -963,11 +1106,14 @@ class NotificationService
      */
     public function notifyRepairerRejectionOverridden(int $repairerId, array $repairData, int $shopId): ?Notification
     {
+        $orderNumber = $repairData['order_number'] ?? $repairData['request_id'] ?? $repairData['repair_id'] ?? 'N/A';
+        $customerName = $repairData['customer_name'] ?? 'Customer';
+
         return $this->sendToUser(
             userId: $repairerId,
             type: NotificationType::REPAIR_REJECTION_REVIEW,
             title: 'Rejection Overridden',
-            message: "Your repair rejection has been overridden. The repair has been reassigned.",
+            message: "Repair request {$orderNumber} for {$customerName} was overridden and reassigned.",
             data: $repairData,
             actionUrl: '/erp/staff/job-orders-repair',
             shopId: $shopId

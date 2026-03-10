@@ -131,6 +131,9 @@ const Navigation: React.FC = () => {
     '/register': 'login', // Register page should highlight ACCOUNT
     '/login': 'login', // Login page should highlight ACCOUNT
     '/user/login': 'login', // User login page should highlight ACCOUNT
+    '/forgot-password': 'login', // Forgot password page should highlight ACCOUNT
+    '/otp': 'login', // OTP page should highlight ACCOUNT
+    '/new-password': 'login', // New password page should highlight ACCOUNT
     '/shop-owner/login': 'login', // Shop Owner Login should highlight ACCOUNT
     '/shop-owner-register': 'services', // Shop Owner Registration should highlight Services
     '/shop/register': 'services', // Alternative Shop Owner Registration URL

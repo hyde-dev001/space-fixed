@@ -60,7 +60,20 @@ class ErpNotificationController extends Controller
         $perPage = $request->input('per_page', 15);
         $notifications = $query->paginate($perPage);
 
-        return response()->json($notifications);
+        // Count unread for the badge/counter
+        $unreadCount = Notification::where('user_id', $user->id)
+            ->where('shop_id', $user->shop_owner_id)
+            ->unread()
+            ->count();
+
+        return response()->json([
+            'data' => $notifications->items(),
+            'current_page' => $notifications->currentPage(),
+            'per_page' => $notifications->perPage(),
+            'total' => $notifications->total(),
+            'last_page' => $notifications->lastPage(),
+            'unread_count' => $unreadCount,
+        ]);
     }
 
     /**

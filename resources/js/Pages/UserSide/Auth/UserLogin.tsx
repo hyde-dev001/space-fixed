@@ -4,7 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
-import { MailIcon, LockIcon, GoogleIcon } from '../../../icons/index';
+import { MailIcon, LockIcon } from '../../../icons/index';
 import Swal from 'sweetalert2';
 
 interface FormErrors {
@@ -179,18 +179,10 @@ export default function UserLogin() {
                     Remember me
                   </label>
                 </div>
-                <a href="#" className="text-sm text-blue-600 hover:text-blue-500">
+                <Link href={route('password.request')} className="text-sm text-blue-600 hover:text-blue-500">
                   Forgot password?
-                </a>
+                </Link>
               </div>
-
-              <button
-                type="button"
-                className="w-full px-10 py-4 bg-white border border-gray-300 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-50 transition-colors flex items-center justify-center"
-              >
-                <GoogleIcon className="w-5 h-5 mr-2" />
-                Continue with Google
-              </button>
 
               <button
                 type="submit"

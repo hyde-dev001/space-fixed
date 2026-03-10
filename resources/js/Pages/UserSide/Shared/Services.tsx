@@ -83,7 +83,7 @@ const Services: React.FC<Props> = () => {
               <div className="group bg-white border-2 border-black overflow-hidden hover:shadow-2xl transition-all duration-300 flex flex-col h-full">
                 <div className="p-8 border-b-2 border-black">
                   <h3 className="text-2xl font-bold text-black mb-4 uppercase tracking-wide">Pro</h3>
-                  <div className="text-5xl font-bold text-black mb-6">₱549</div>
+                  <div className="text-5xl font-bold text-black mb-6">₱399</div>
                   <p className="text-black/70 text-sm leading-relaxed mb-6">Ideal for ongoing premium access and benefits</p>
                 </div>
                 <div className="p-8 flex flex-col justify-end flex-grow">
@@ -131,7 +131,7 @@ const Services: React.FC<Props> = () => {
               <div className="group bg-white border-2 border-black overflow-hidden hover:shadow-2xl transition-all duration-300 flex flex-col h-full">
                 <div className="p-8 border-b-2 border-black">
                   <h3 className="text-2xl font-bold text-black mb-4 uppercase tracking-wide">Premium</h3>
-                  <div className="text-5xl font-bold text-black mb-6">₱899</div>
+                  <div className="text-5xl font-bold text-black mb-6">₱599</div>
                   <p className="text-black/70 text-sm leading-relaxed mb-6">Best value for long-term premium membership</p>
                 </div>
                 <div className="p-8 flex flex-col justify-end flex-grow">

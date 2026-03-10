@@ -160,7 +160,8 @@ const AppHeader: React.FC = () => {
         >
           <div className="flex items-center gap-2 2xsm:gap-3">
             <NotificationCenter
-              viewAllHref={auth?.super_admin ? "/admin/notifications" : "/erp/notifications"}
+              apiBasePath={auth?.super_admin ? '/api/admin/notifications' : '/api/notifications'}
+              viewAllHref={auth?.super_admin ? '/admin/notifications' : '/erp/notifications'}
             />
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />

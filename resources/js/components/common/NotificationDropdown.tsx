@@ -37,6 +37,41 @@ import {
   markAllHrStaticNotificationsAsRead,
   markHrStaticNotificationAsRead,
 } from '../../utils/hrStaticNotificationState';
+import {
+  archiveCrmStaticNotification,
+  CRM_STATIC_NOTIFICATIONS_EVENT,
+  getCrmStaticNotificationsWithReadState,
+  markAllCrmStaticNotificationsAsRead,
+  markCrmStaticNotificationAsRead,
+} from '../../utils/crmStaticNotificationState';
+import {
+  archiveRepairerStaticNotification,
+  getRepairerStaticNotificationsWithReadState,
+  markAllRepairerStaticNotificationsAsRead,
+  markRepairerStaticNotificationAsRead,
+  REPAIRER_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/repairerStaticNotificationState';
+import {
+  archiveStaffStaticNotification,
+  getStaffStaticNotificationsWithReadState,
+  markAllStaffStaticNotificationsAsRead,
+  markStaffStaticNotificationAsRead,
+  STAFF_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/staffStaticNotificationState';
+import {
+  archiveInventoryStaticNotification,
+  getInventoryStaticNotificationsWithReadState,
+  INVENTORY_STATIC_NOTIFICATIONS_EVENT,
+  markAllInventoryStaticNotificationsAsRead,
+  markInventoryStaticNotificationAsRead,
+} from '../../utils/inventoryStaticNotificationState';
+import {
+  archiveProcurementStaticNotification,
+  getProcurementStaticNotificationsWithReadState,
+  markAllProcurementStaticNotificationsAsRead,
+  markProcurementStaticNotificationAsRead,
+  PROCUREMENT_STATIC_NOTIFICATIONS_EVENT,
+} from '../../utils/procurementStaticNotificationState';
 
 interface NotificationDropdownProps {
   basePath: string;
@@ -47,11 +82,19 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   const { auth } = (usePage().props as any) || {};
   const userRole = auth?.user?.role;
   const normalizedUserRole = String(userRole || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
+  const hasStaffRole = normalizedUserRole.includes('STAFF') || userRoles.includes('STAFF');
+  const hasRepairerRole = normalizedUserRole === 'REPAIRER' || userRoles.includes('REPAIRER');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const isShopOwnerStatic = basePath.includes('shop-owner');
-  const isManagerStatic = userRole === 'MANAGER' && basePath.includes('/api/hr/notifications');
+  const isManagerStatic = normalizedUserRole === 'MANAGER' && basePath.includes('/api/hr/notifications');
   const isFinanceStatic = normalizedUserRole.includes('FINANCE') && basePath.includes('/api/hr/notifications');
   const isHrStatic = normalizedUserRole.includes('HR') && !isManagerStatic && !isFinanceStatic && basePath.includes('/api/hr/notifications');
+  const isCrmStatic = normalizedUserRole.includes('CRM') && !isManagerStatic && !isFinanceStatic && !isHrStatic && basePath.includes('/api/hr/notifications');
+  const isStaffStatic = hasStaffRole && !hasRepairerRole && basePath.includes('/api/staff/notifications');
+  const isInventoryStatic = normalizedUserRole.includes('INVENTORY') && !isManagerStatic && !isFinanceStatic && !isHrStatic && !isCrmStatic && basePath.includes('/api/hr/notifications');
+  const isProcurementStatic = normalizedUserRole.includes('PROCUREMENT') && !isManagerStatic && !isFinanceStatic && !isHrStatic && !isCrmStatic && !isInventoryStatic && basePath.includes('/api/hr/notifications');
+  const isRepairerStatic = hasRepairerRole && basePath.includes('/api/staff/notifications');
   const [shopOwnerNotifications, setShopOwnerNotifications] = React.useState(() =>
     isShopOwnerStatic ? getShopOwnerStaticNotificationsWithReadState() : []
   );
@@ -63,6 +106,21 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   );
   const [hrNotifications, setHrNotifications] = React.useState(() =>
     isHrStatic ? getHrStaticNotificationsWithReadState() : []
+  );
+  const [crmNotifications, setCrmNotifications] = React.useState(() =>
+    isCrmStatic ? getCrmStaticNotificationsWithReadState() : []
+  );
+  const [staffNotifications, setStaffNotifications] = React.useState(() =>
+    isStaffStatic ? getStaffStaticNotificationsWithReadState() : []
+  );
+  const [repairerNotifications, setRepairerNotifications] = React.useState(() =>
+    isRepairerStatic ? getRepairerStaticNotificationsWithReadState() : []
+  );
+  const [inventoryNotifications, setInventoryNotifications] = React.useState(() =>
+    isInventoryStatic ? getInventoryStaticNotificationsWithReadState() : []
+  );
+  const [procurementNotifications, setProcurementNotifications] = React.useState(() =>
+    isProcurementStatic ? getProcurementStaticNotificationsWithReadState() : []
   );
   const { data: recentNotifications = [], isLoading: isLoadingRecent } = useRecentNotifications(10, basePath);
   const markAsRead = useMarkAsRead(basePath);
@@ -77,10 +135,20 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           ? financeNotifications
           : isHrStatic
             ? hrNotifications
-          : recentNotifications),
-    [isShopOwnerStatic, shopOwnerNotifications, isManagerStatic, managerNotifications, isFinanceStatic, financeNotifications, isHrStatic, hrNotifications, recentNotifications]
+            : isCrmStatic
+              ? crmNotifications
+              : isStaffStatic
+                ? staffNotifications
+              : isInventoryStatic
+                ? inventoryNotifications
+                : isProcurementStatic
+                  ? procurementNotifications
+                  : isRepairerStatic
+                    ? [...repairerNotifications, ...recentNotifications]
+                    : recentNotifications),
+    [isShopOwnerStatic, shopOwnerNotifications, isManagerStatic, managerNotifications, isFinanceStatic, financeNotifications, isHrStatic, hrNotifications, isCrmStatic, crmNotifications, isStaffStatic, staffNotifications, isInventoryStatic, inventoryNotifications, isProcurementStatic, procurementNotifications, isRepairerStatic, repairerNotifications, recentNotifications]
   );
-  const isLoading = isShopOwnerStatic || isManagerStatic || isFinanceStatic || isHrStatic ? false : isLoadingRecent;
+  const isLoading = isShopOwnerStatic || isManagerStatic || isFinanceStatic || isHrStatic || isCrmStatic || isStaffStatic || isInventoryStatic || isProcurementStatic ? false : isLoadingRecent;
 
   useEffect(() => {
     if (!isShopOwnerStatic) return;
@@ -122,6 +190,56 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     return () => window.removeEventListener(HR_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
   }, [isHrStatic]);
 
+  useEffect(() => {
+    if (!isCrmStatic) return;
+
+    const sync = () => setCrmNotifications(getCrmStaticNotificationsWithReadState());
+    sync();
+
+    window.addEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(CRM_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isCrmStatic]);
+
+  useEffect(() => {
+    if (!isStaffStatic) return;
+
+    const sync = () => setStaffNotifications(getStaffStaticNotificationsWithReadState());
+    sync();
+
+    window.addEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(STAFF_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isStaffStatic]);
+
+  useEffect(() => {
+    if (!isRepairerStatic) return;
+
+    const sync = () => setRepairerNotifications(getRepairerStaticNotificationsWithReadState());
+    sync();
+
+    window.addEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(REPAIRER_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isRepairerStatic]);
+
+  useEffect(() => {
+    if (!isInventoryStatic) return;
+
+    const sync = () => setInventoryNotifications(getInventoryStaticNotificationsWithReadState());
+    sync();
+
+    window.addEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(INVENTORY_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isInventoryStatic]);
+
+  useEffect(() => {
+    if (!isProcurementStatic) return;
+
+    const sync = () => setProcurementNotifications(getProcurementStaticNotificationsWithReadState());
+    sync();
+
+    window.addEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+    return () => window.removeEventListener(PROCUREMENT_STATIC_NOTIFICATIONS_EVENT, sync as EventListener);
+  }, [isProcurementStatic]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -135,6 +253,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   }, [onClose]);
 
   const handleMarkAsRead = (id: number) => {
+    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
     if (isShopOwnerStatic) {
       markShopOwnerStaticNotificationAsRead(id);
       return;
@@ -149,6 +268,30 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     }
     if (isHrStatic) {
       markHrStaticNotificationAsRead(id);
+      return;
+    }
+    if (isCrmStatic) {
+      markCrmStaticNotificationAsRead(id);
+      return;
+    }
+    if (isStaffStatic) {
+      markStaffStaticNotificationAsRead(id);
+      return;
+    }
+    if (isInventoryStatic) {
+      markInventoryStaticNotificationAsRead(id);
+      return;
+    }
+    if (isProcurementStatic) {
+      markProcurementStaticNotificationAsRead(id);
+      return;
+    }
+    if (isRepairerStatic) {
+      if (isRepairerStaticNotification) {
+        markRepairerStaticNotificationAsRead(id);
+        return;
+      }
+      markAsRead.mutate(id);
       return;
     }
     markAsRead.mutate(id);
@@ -175,6 +318,36 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       markAllHrStaticNotificationsAsRead();
       return;
     }
+    if (isCrmStatic) {
+      if (unreadCount === 0) return;
+      markAllCrmStaticNotificationsAsRead();
+      return;
+    }
+    if (isStaffStatic) {
+      if (unreadCount === 0) return;
+      markAllStaffStaticNotificationsAsRead();
+      return;
+    }
+    if (isInventoryStatic) {
+      if (unreadCount === 0) return;
+      markAllInventoryStaticNotificationsAsRead();
+      return;
+    }
+    if (isProcurementStatic) {
+      if (unreadCount === 0) return;
+      markAllProcurementStaticNotificationsAsRead();
+      return;
+    }
+    if (isRepairerStatic) {
+      const staticUnread = repairerNotifications.filter((notification) => !notification.is_read).length;
+      if (staticUnread > 0) {
+        markAllRepairerStaticNotificationsAsRead();
+      }
+      if (!markAllAsRead.isPending) {
+        markAllAsRead.mutate();
+      }
+      return;
+    }
     if (unreadCount === 0 || markAllAsRead.isPending) return;
     markAllAsRead.mutate();
   };
@@ -187,6 +360,52 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       ? '/erp/notifications'
       : '/notifications';
   const archivedListHref = `${notificationsListHref}?archived=1`;
+
+  const appendQueryParam = (href: string, key: string, value: string | number | null | undefined) => {
+    if (value === null || value === undefined || value === '') return href;
+    const separator = href.includes('?') ? '&' : '?';
+    return `${href}${separator}${key}=${encodeURIComponent(String(value))}`;
+  };
+
+  const getStaffRepairHighlightValue = (notification: { id: number; data?: any }) => {
+    const data = notification.data || {};
+    return data.repair_id || data.repair_request_id || data.request_id || data.order_number || notification.id;
+  };
+
+  const getStaffNotificationRoute = (notification: { id: number; type?: string; data?: any; action_url?: string | null }) => {
+    const type = String(notification.type || '').toLowerCase();
+    const data = notification.data || {};
+
+    const isRepairNotification =
+      type.includes('repair') ||
+      data.repair_id ||
+      data.repair_request_id ||
+      data.request_id ||
+      data.order_number;
+
+    if (isRepairNotification) {
+      const repairHighlight = getStaffRepairHighlightValue(notification);
+      return appendQueryParam('/erp/staff/job-orders-repair', 'highlightRepair', repairHighlight);
+    }
+
+    if (type.includes('price') || type.includes('pricing')) {
+      return '/erp/repairer/pricing-and-services';
+    }
+
+    if (type.includes('stock') || type.includes('inventory') || type.includes('low_stock') || type.includes('out_of_stock')) {
+      return '/erp/staff/stocks-overview';
+    }
+
+    if (type.includes('message') || type.includes('chat') || data.conversation_id) {
+      return appendQueryParam('/erp/staff/repairer-support', 'conversation', data.conversation_id);
+    }
+
+    if (type.includes('payslip') || type.includes('payroll')) {
+      return '/erp/my-payslips';
+    }
+
+    return null;
+  };
 
   const getNotificationHref = (notification: { id: number; type?: string; data?: any; action_url?: string | null }) => {
     if (isShopOwnerStatic && notification.action_url) {
@@ -201,11 +420,33 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     if (isHrStatic && notification.action_url) {
       return notification.action_url;
     }
+    if (isCrmStatic && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isStaffStatic && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isInventoryStatic && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isProcurementStatic && notification.action_url) {
+      return notification.action_url;
+    }
+    if (isRepairerStatic && notification.action_url) {
+      return notification.action_url;
+    }
 
-    // Repairer: repair_assigned notifications go to Job Orders Repair page
-    if (basePath.includes('staff') && notification.type?.includes('repair')) {
-      const repairId = notification.data?.repair_id || notification.id;
-      return `/erp/staff/job-orders-repair?highlightRepair=${repairId}`;
+    if (basePath.includes('staff')) {
+      const staffRoute = getStaffNotificationRoute(notification);
+      if (staffRoute) return staffRoute;
+
+      if (notification.action_url) {
+        const repairHighlight = getStaffRepairHighlightValue(notification);
+        if (String(notification.type || '').toLowerCase().includes('repair')) {
+          return appendQueryParam(notification.action_url, 'highlightRepair', repairHighlight);
+        }
+        return notification.action_url;
+      }
     }
 
     // Shop owner: repair notifications go to Job Orders Repair page
@@ -274,6 +515,19 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   );
 
   const handleArchiveFromDropdown = async (id: number) => {
+    const result = await Swal.fire({
+      title: 'Archive notification?',
+      text: 'This notification will be moved to archives.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, archive it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#DC2626',
+    });
+
+    if (!result.isConfirmed) return;
+
+    const isRepairerStaticNotification = repairerNotifications.some((notification) => notification.id === id);
     if (isShopOwnerStatic) {
       archiveShopOwnerStaticNotification(id);
       return;
@@ -290,18 +544,28 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       archiveHrStaticNotification(id);
       return;
     }
-
-    const result = await Swal.fire({
-      title: 'Archive notification?',
-      text: 'This notification will be moved to archives.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, archive it',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#DC2626',
-    });
-
-    if (!result.isConfirmed) return;
+    if (isCrmStatic) {
+      archiveCrmStaticNotification(id);
+      return;
+    }
+    if (isStaffStatic) {
+      archiveStaffStaticNotification(id);
+      return;
+    }
+    if (isInventoryStatic) {
+      archiveInventoryStaticNotification(id);
+      return;
+    }
+    if (isProcurementStatic) {
+      archiveProcurementStaticNotification(id);
+      return;
+    }
+    if (isRepairerStatic) {
+      if (isRepairerStaticNotification) {
+        archiveRepairerStaticNotification(id);
+        return;
+      }
+    }
 
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -344,7 +608,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   return (
     <div
       ref={dropdownRef}
-      className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 max-h-[600px] flex flex-col dark:bg-gray-900 dark:border-gray-700"
+      className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 max-h-150 flex flex-col dark:bg-gray-900 dark:border-gray-700"
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -426,7 +690,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
                   />
                 ))}
               </>
-            ) : isShopOwnerStatic || isManagerStatic || isFinanceStatic || isHrStatic ? (
+            ) : isShopOwnerStatic || isManagerStatic || isFinanceStatic || isHrStatic || isCrmStatic || isStaffStatic || isInventoryStatic ? (
               <>
                 {notifications.map((notification) => (
                   <NotificationItem

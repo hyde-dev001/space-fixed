@@ -20,6 +20,8 @@ class ProductReview extends Model
         'images',
         'is_verified_purchase',
         'is_approved',
+        'shop_response',
+        'shop_responded_at',
     ];
 
     protected $casts = [

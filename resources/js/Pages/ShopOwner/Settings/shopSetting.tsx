@@ -120,6 +120,7 @@ const readRepairRequestLimit = (): number => {
 
 const ShopSetting: React.FC = () => {
 	const { shop_settings } = usePage<ShopSettingsPageProps>().props;
+	const isIndividual = shop_settings.registration_type === 'individual';
 	const LAST_SHOP_OWNER_PAGE_KEY = 'shop_owner_last_sidebar_page';
 	const [saveSuccess, setSaveSuccess] = useState(false);
 	const [processing, setProcessing] = useState(false);
@@ -206,7 +207,6 @@ const ShopSetting: React.FC = () => {
 		}
 	};
 
-	const isIndividual = shop_settings.registration_type === 'individual';
 	const accountLabel = isIndividual ? 'Individual Account' : 'Business Account';
 	const businessTypeLabel =
 		shop_settings.business_type === 'retail'
@@ -390,7 +390,7 @@ const ShopSetting: React.FC = () => {
 			await axios.post(
 				'/shop-owner/settings/geofence',
 				{
-					attendance_geofence_enabled: geofenceEnabled,
+					attendance_geofence_enabled: isIndividual ? false : geofenceEnabled,
 					shop_latitude: geoLat ? parseFloat(geoLat) : null,
 					shop_longitude: geoLng ? parseFloat(geoLng) : null,
 					shop_address: geoAddress || null,
@@ -876,24 +876,30 @@ const ShopSetting: React.FC = () => {
 						</div>
 					</div>
 
-					{/* Attendance Geofence */}
+					{/* Shop Location / Attendance Geofence */}
 					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-6">
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex items-start justify-between gap-4">
 								<div>
 									<div className="flex items-center gap-2 mb-1">
 										<MapPin size={18} className="text-blue-600" />
-										<h2 className="text-xl font-semibold text-gray-900">Attendance Geofence</h2>
+										<h2 className="text-xl font-semibold text-gray-900">
+											{isIndividual ? 'Shop Location' : 'Attendance Geofence'}
+										</h2>
 									</div>
 									<p className="text-sm text-gray-600">
-										When enabled, employees can only clock in when they are within the allowed distance from your shop.
+										{isIndividual
+											? 'Set your shop\'s location so customers can discover your shop when browsing nearby listings.'
+											: 'When enabled, employees can only clock in when they are within the allowed distance from your shop.'}
 									</p>
 								</div>
-								<ToggleSwitch
-									enabled={geofenceEnabled}
-									onChange={setGeofenceEnabled}
-									ariaLabel={geofenceEnabled ? 'Disable geofence' : 'Enable geofence'}
-								/>
+								{!isIndividual && (
+									<ToggleSwitch
+										enabled={geofenceEnabled}
+										onChange={setGeofenceEnabled}
+										ariaLabel={geofenceEnabled ? 'Disable geofence' : 'Enable geofence'}
+									/>
+								)}
 							</div>
 						</div>
 
@@ -985,7 +991,8 @@ const ShopSetting: React.FC = () => {
 								</div>
 							</div>
 
-							{/* Radius slider */}
+							{/* Radius slider — company only */}
+							{!isIndividual && (
 							<div>
 								<div className="flex items-center justify-between mb-2">
 									<label className="text-sm font-medium text-gray-700">Allowed Radius</label>
@@ -1009,6 +1016,7 @@ const ShopSetting: React.FC = () => {
 									Employees must be within this distance from the pin to clock in. The blue circle on the map shows the boundary.
 								</p>
 							</div>
+							)}
 
 							{geoError && (
 								<div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
@@ -1018,7 +1026,7 @@ const ShopSetting: React.FC = () => {
 							)}
 							{geoSuccess && (
 								<p className="flex items-center gap-1 text-xs font-medium text-green-700">
-									<Check size={13} /> Geofence settings saved.
+									<Check size={13} /> {isIndividual ? 'Location saved.' : 'Geofence settings saved.'}
 								</p>
 							)}
 
@@ -1028,7 +1036,7 @@ const ShopSetting: React.FC = () => {
 								disabled={savingGeo}
 								className="rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
 							>
-								{savingGeo ? 'Saving…' : 'Save Geofence Settings'}
+								{savingGeo ? 'Saving…' : isIndividual ? 'Save Location' : 'Save Geofence Settings'}
 							</button>
 						</div>
 					</div>

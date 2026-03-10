@@ -509,7 +509,13 @@ class RepairRequestController extends Controller
                     type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
                     title: 'Customer Set Drop-off Date',
                     message: "Customer set drop-off date for repair {$repair->request_id} on " . \Carbon\Carbon::parse($validated['preferred_date'])->format('M d, Y'),
-                    data: ['request_id' => $repair->request_id, 'order_number' => $repair->request_id],
+                    data: [
+                        'repair_id' => $repair->id,
+                        'repair_request_id' => $repair->id,
+                        'request_id' => $repair->request_id,
+                        'order_number' => $repair->request_id,
+                        'customer_name' => $repair->customer_name,
+                    ],
                     actionUrl: '/erp/staff/job-orders-repair',
                     priority: 'medium',
                     requiresAction: false
@@ -818,6 +824,8 @@ class RepairRequestController extends Controller
                     title: 'New Repair Assigned',
                     message: "Repair request {$repairRequest->request_id} has been assigned to you - {$repairRequest->customer_name}",
                     data: [
+                        'repair_id' => $repairRequest->id,
+                        'repair_request_id' => $repairRequest->id,
                         'request_id' => $repairRequest->request_id,
                         'order_number' => $repairRequest->request_id,
                         'customer_name' => $repairRequest->customer_name,

@@ -813,6 +813,12 @@ class AttendanceController extends Controller
             'lunch_break_start' => $attendance ? $attendance->lunch_break_start : null,
             'lunch_break_end' => $attendance ? $attendance->lunch_break_end : null,
             'is_on_lunch' => $attendance && $attendance->lunch_break_start && !$attendance->lunch_break_end,
+            // Attendance punctuality fields used by the "Today's Status" card in TimeIn.tsx
+            'is_late' => $attendance ? (bool) ($attendance->is_late ?? false) : false,
+            'minutes_late' => $attendance ? (int) ($attendance->minutes_late ?? 0) : 0,
+            'expected_check_in' => $attendance ? $attendance->expected_check_in : null,
+            'is_early_departure' => $attendance ? (bool) ($attendance->is_early_departure ?? false) : false,
+            'minutes_early_departure' => $attendance ? (int) ($attendance->minutes_early_departure ?? 0) : 0,
         ];
         
         // SEAMLESS OVERTIME: Include extended schedule information

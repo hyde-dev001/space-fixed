@@ -42,6 +42,7 @@ export default function ShopOwnerRegistration() {
   const [geoAddress, setGeoAddress] = useState('');
   const [geoRadius, setGeoRadius] = useState<number>(90);
   const [gettingGPS, setGettingGPS] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
   const [geoError, setGeoError] = useState('');
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
@@ -199,6 +200,33 @@ export default function ShopOwnerRegistration() {
     );
   };
 
+  const handleSaveAddress = async () => {
+    const lat = parseFloat(geoLat);
+    const lng = parseFloat(geoLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setSavingAddress(true);
+    setGeoError('');
+
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+        { headers: { 'User-Agent': 'SoleSpace/1.0' } },
+      );
+      const data = await res.json();
+      if (data.display_name) {
+        setGeoAddress(data.display_name);
+        setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
+      } else {
+        setGeoError('Could not find an address for this location. Please type the address manually.');
+      }
+    } catch {
+      setGeoError('Failed to fetch address. Please type the address manually.');
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
   const validateStep = (step: number): boolean => {
     if (step === 1) {
       return !!(formData.firstName && formData.lastName && formData.email && formData.phone);
@@ -224,7 +252,7 @@ export default function ShopOwnerRegistration() {
     }
 
     if (!hasValidGeoCoordinates()) {
-      return { valid: false, message: 'Please set a valid geofence location (latitude and longitude).'};
+      return { valid: false, message: 'Please set a valid shop location (latitude and longitude).' };
     }
 
     // Check if all documents are uploaded
@@ -304,11 +332,15 @@ export default function ShopOwnerRegistration() {
         submitData.append('business_address', formData.businessAddress);
         submitData.append('business_type', formData.businessType);
         submitData.append('registration_type', formData.registrationType);
-        submitData.append('attendance_geofence_enabled', '1');
+        // Only enable attendance geofence for company accounts (they have staff to clock in)
+        const isIndividual = formData.registrationType === 'individual';
+        submitData.append('attendance_geofence_enabled', isIndividual ? '0' : '1');
         submitData.append('shop_latitude', geoLat);
         submitData.append('shop_longitude', geoLng);
         submitData.append('shop_address', geoAddress || formData.businessAddress);
-        submitData.append('shop_geofence_radius', String(geoRadius));
+        if (!isIndividual) {
+          submitData.append('shop_geofence_radius', String(geoRadius));
+        }
 
         // Operating hours removed — nothing to append for operating hours
 
@@ -586,6 +618,16 @@ export default function ShopOwnerRegistration() {
                         Shop Location <span className="font-normal text-gray-500">(drag pin or click map to adjust)</span>
                       </p>
                       <div ref={mapRef} className="h-72 w-full rounded-xl border border-gray-200 overflow-hidden z-0" />
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleSaveAddress}
+                          disabled={savingAddress}
+                          className="px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 whitespace-nowrap rounded"
+                        >
+                          {savingAddress ? 'Saving...' : 'Save Location'}
+                        </button>
+                      </div>
                     </div>
 
                     {geoError && <p className="text-sm text-red-600">{geoError}</p>}

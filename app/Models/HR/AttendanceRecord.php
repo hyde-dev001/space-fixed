@@ -40,6 +40,8 @@ class AttendanceRecord extends Model
         'check_in_latitude',
         'check_in_longitude',
         'distance_from_shop',
+        'has_approved_overtime',
+        'overtime_end_time',
     ];
 
     protected $casts = [
@@ -59,6 +61,7 @@ class AttendanceRecord extends Model
         'check_in_latitude' => 'decimal:8',
         'check_in_longitude' => 'decimal:8',
         'distance_from_shop' => 'integer',
+        'has_approved_overtime' => 'boolean',
     ];
 
     /**

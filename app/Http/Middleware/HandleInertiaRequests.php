@@ -105,6 +105,7 @@ class HandleInertiaRequests extends Middleware
             
             // Share session flash data
             'success' => fn () => $request->session()->get('success'),
+            'error' => fn () => $request->session()->get('error'),
             'employee' => fn () => $request->session()->get('employee'),
             'user_id' => fn () => $request->session()->get('user_id'),
             'invite_url' => fn () => $request->session()->get('invite_url'),

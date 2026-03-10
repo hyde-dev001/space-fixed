@@ -2374,17 +2374,17 @@ export const EmployeeManagement: React.FC<{
                                 department: e.target.value,
                               })
                             }
-                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
                           >
                             <option value="">Select department/role</option>
-                            <option value="Manager">Manager - User Management & System Oversight Only</option>
-                            <option value="Finance">Finance - Invoices, Expenses, Reports</option>
-                            <option value="HR">Human Resources - Employees, Payroll, Attendance</option>
-                            <option value="CRM">CRM - Customers, Leads, Sales</option>
-                            <option value="Repairer">Repairer - Technical Support & Repairs</option>
-                            <option value="Inventory Manager">Inventory Manager - Stock Levels, Product Inventory, Movements</option>
-                            <option value="Procurement Manager">Procurement Manager - Purchase Requests, Orders, Suppliers</option>
-                            <option value="Staff">Staff - Basic Access (Customizable)</option>
+                            <option value="Manager">Manager</option>
+                            <option value="Finance">Finance</option>
+                            <option value="HR">Human Resources</option>
+                            <option value="CRM">Customer Relationship Management</option>
+                            <option value="Repairer">Repairer</option>
+                            <option value="Inventory">Inventory</option>
+                            <option value="Procurement">Procurement</option>
+                            <option value="Staff">Staff</option>
                           </select>
                         </div>
 
@@ -2418,8 +2418,8 @@ export const EmployeeManagement: React.FC<{
                               </p>
                               <p className="text-sm text-amber-700 dark:text-amber-400">
                                 Managers can ONLY access <span className="font-semibold">Manager pages</span> (user management, role assignment, system oversight, audit logs, and settings). 
-                                <span className="font-semibold"> Managers do NOT have access to HR, CRM, Finance, or operational modules.</span> 
-                                For full module access, assign specific department roles (HR, CRM, Finance) or grant additional permissions.
+                                <span className="font-semibold"> Managers do NOT have access to HR, Customer Relationship Management, Finance, or operational modules.</span> 
+                                For full module access, assign specific department roles (HR, Customer Relationship Management, Finance) or grant additional permissions.
                               </p>
                             </div>
                           </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import ReportShopModal from '../../../components/ReportShopModal';
 
 interface Product {
   id: number;
@@ -54,7 +55,10 @@ interface Props {
 }
 
 const ShopProfile: React.FC<Props> = ({ shop, products }) => {
+  const { auth } = usePage().props as any;
+  const isAuthenticated = !!auth?.user;
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('Shoes');
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const hoverTimersRef = useRef<Record<number, number>>({});
@@ -122,6 +126,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
   };
 
   return (
+    <>
     <div className="min-h-screen flex flex-col bg-white">
       <Head title={shop.name} />
       <Navigation />
@@ -159,6 +164,15 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
               >
                 Message
               </Link>
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => setShowReportModal(true)}
+                  className="inline-block bg-white text-red-600 border border-red-300 px-4 py-1 rounded text-sm font-medium hover:bg-red-50 transition-colors"
+                >
+                  Report Shop
+                </button>
+              )}
             </div>
 
             <div className="flex flex-col md:flex-row gap-8 items-start">
@@ -391,6 +405,13 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
         </div>
       </footer>
     </div>
+      <ReportShopModal
+        shopId={shop.id}
+        shopName={shop.name}
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+      />
+    </>
   );
 };
 

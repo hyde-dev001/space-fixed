@@ -43,9 +43,13 @@ const Payment: React.FC = () => {
   const repairTypeParam = searchParams.get('repair_type');
   const repairOrderNumberParam = searchParams.get('order_number');
   const premiumPlanParam = searchParams.get('plan');
-  const premiumTotalParam = searchParams.get('total');
+  const premiumPlanPrices: Record<string, number> = {
+    basic: 249,
+    pro: 399,
+    premium: 599,
+  };
   const isRepairPayment = searchParams.get('source') === 'repair' && !!repairIdParam && !!repairTotalParam;
-  const isPremiumPayment = searchParams.get('source') === 'premium' && !!premiumPlanParam && !!premiumTotalParam;
+  const isPremiumPayment = searchParams.get('source') === 'premium' && !!premiumPlanParam;
 
   const [checkoutData, setCheckoutData] = useState<CheckoutData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -109,8 +113,8 @@ const Payment: React.FC = () => {
       }
 
       if (isPremiumPayment) {
-        const totalAmount = Number.parseFloat(premiumTotalParam || '0') || 0;
         const normalizedPlan = (premiumPlanParam || '').toLowerCase();
+        const totalAmount = premiumPlanPrices[normalizedPlan] ?? 0;
         const premiumPlanName =
           normalizedPlan === 'basic'
             ? 'Premium Plan - Basic'
@@ -476,16 +480,18 @@ const Payment: React.FC = () => {
                   </div>
 
                   {/* Address Line */}
-                  <div>
-                    <label className="block text-sm font-medium text-black mb-2">House No., Street, Subdivision / Building</label>
-                    <input
-                      type="text"
-                      placeholder="House No., Street, Subdivision / Building"
-                      value={shippingAddressLine}
-                      onChange={e => setShippingAddressLine(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                    />
-                  </div>
+                  {!isPremiumPayment && (
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">House No., Street, Subdivision / Building</label>
+                      <input
+                        type="text"
+                        placeholder="House No., Street, Subdivision / Building"
+                        value={shippingAddressLine}
+                        onChange={e => setShippingAddressLine(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                      />
+                    </div>
+                  )}
 
                   {/* Barangay */}
                   {!isPremiumPayment && (
@@ -501,34 +507,35 @@ const Payment: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Postal Code & City */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">Postal code</label>
-                      <input
-                        type="text"
-                        placeholder="Postal code"
-                        value={shippingPostalCode}
-                        onChange={e => setShippingPostalCode(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">City</label>
-                      <input
-                        type="text"
-                        placeholder="City"
-                        value={shippingCity}
-                        onChange={e => setShippingCity(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
-                    </div>
-                  </div>
+                  {/* Postal Code, City, and Region */}
+                  {!isPremiumPayment && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                          <input
+                            type="text"
+                            placeholder="Postal code"
+                            value={shippingPostalCode}
+                            onChange={e => setShippingPostalCode(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">City</label>
+                          <input
+                            type="text"
+                            placeholder="City"
+                            value={shippingCity}
+                            onChange={e => setShippingCity(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                          />
+                        </div>
+                      </div>
 
-                  {/* Region */}
-                  <div>
-                    <label className="block text-sm text-black mb-2">Region</label>
-                    <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
+                      <div>
+                        <label className="block text-sm text-black mb-2">Region</label>
+                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
                       <option value="">Select Region</option>
                       <option value="Abra">Abra</option>
                       <option value="Agusan del Norte">Agusan del Norte</option>
@@ -612,8 +619,10 @@ const Payment: React.FC = () => {
                       <option value="Zamboanga del Norte">Zamboanga del Norte</option>
                       <option value="Zamboanga del Sur">Zamboanga del Sur</option>
                       <option value="Zamboanga Sibugay">Zamboanga Sibugay</option>
-                    </select>
-                  </div>
+                        </select>
+                      </div>
+                    </>
+                  )}
 
                   {/* Phone */}
                   <div>
