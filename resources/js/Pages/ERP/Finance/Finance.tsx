@@ -1,0 +1,209 @@
+import { useMemo, useState, useEffect } from "react";
+import { Head, usePage } from "@inertiajs/react";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { hasPermission, hasAnyPermission } from "../../../utils/permissions";
+// REMOVED: Enterprise-level features not needed for SMEs
+// import ChartoOfAccounts from "../Finance/ChartoOfAccounts";
+// import { JournalEntries } from "../Finance/JournalEntries";
+import Invoice from "../Finance/Invoice";
+import Expense from "../Finance/Expense";
+// import FinancialReporting from "../Finance/FinancialReporting";
+// import BudgetAnalysis from "../Finance/BudgetAnalysis";
+// import Reconciliation from "../Finance/Reconciliation";
+import CreateInvoice from "../Finance/createInvoice";
+import RepairPriceApproval from "../Finance/repairPriceApproval";
+import ShoePriceApproval from "../Finance/shoePriceApproval";
+import PurchaseRequestApproval from "../Finance/PurchaseRequestApproval";
+import PayslipApproval from "../Finance/payslipApproval";
+import RefundApproval from "../Finance/refundApproval";
+import ErrorModal from "../../../components/common/ErrorModal";
+
+// Simplified for SMEs - only essential features
+type Section =
+  | "invoice-generation"
+  | "create-invoice"
+  | "expense-tracking"
+  | "repair-pricing"
+  | "shoe-pricing"
+  | "purchase-request-approval"
+  | "payslip-approvals"
+  | "refund-approvals";
+
+export default function FinancePage() {
+  const { auth, url, purchaseRequests } = usePage().props as any;
+  const userRole = auth?.user?.role;
+  const [error, setError] = useState<string | null>(null);
+  const [isPurchaseRequestModalOpen, setIsPurchaseRequestModalOpen] = useState(false);
+
+  // Mark page as successfully loaded
+  useEffect(() => {
+    sessionStorage.setItem('finance_page_loaded', Date.now().toString());
+  }, []);
+
+  const section: Section = useMemo(() => {
+    // Extract section from the URL query parameter
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const value = urlParams.get("section") || "invoice-generation";
+      if (["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"].includes(value)) return value as Section;
+      return "invoice-generation";
+    }
+    return "invoice-generation";
+  }, []);
+
+  const headTitle = useMemo(() => {
+    if (section === "invoice-generation") return "Invoices - Solespace ERP";
+    if (section === "create-invoice") return "Create Invoice - Solespace ERP";
+    if (section === "expense-tracking") return "Expense Tracking - Solespace ERP";
+    if (section === "repair-pricing") return "Repair Price Approval - Solespace ERP";
+    if (section === "shoe-pricing") return "Shoe Price Approval - Solespace ERP";
+    if (section === "purchase-request-approval") return "Purchase Request Approval - Solespace ERP";
+    if (section === "payslip-approvals") return "Payslip Approvals - Solespace ERP";
+    if (section === "refund-approvals") return "Refund Approvals - Solespace ERP";
+    return "Finance - Solespace ERP";
+  }, [section]);
+
+  const renderContent = () => {
+    try {
+      switch (section) {
+        case "invoice-generation":
+          // Check invoice permissions
+          if (!hasAnyPermission(auth, ['access-finance-invoices'])) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to view invoices.</p>
+                </div>
+              </div>
+            );
+          }
+          return <Invoice />;
+          
+        case "create-invoice":
+          // Check create invoice permission
+          if (!hasPermission(auth, 'access-finance-invoices')) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to create invoices.</p>
+                </div>
+              </div>
+            );
+          }
+          return <CreateInvoice />;
+          
+        case "expense-tracking":
+          // Check expense permissions
+          if (!hasAnyPermission(auth, ['access-finance-expenses'])) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to view expenses.</p>
+                </div>
+              </div>
+            );
+          }
+          return <Expense />;
+          
+        case "repair-pricing": {
+          const businessType = (auth?.user?.shop_owner?.business_type ?? auth?.shop_owner?.business_type ?? '').toLowerCase();
+          if (businessType === 'retail') {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-gray-400 text-6xl mb-4">🔧</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Not Applicable</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Repair pricing is not available for retail-only shops.</p>
+                </div>
+              </div>
+            );
+          }
+          // Check pricing permissions
+          if (!hasAnyPermission(auth, ['access-repair-price-approval'])) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to manage repair pricing.</p>
+                </div>
+              </div>
+            );
+          }
+          return <RepairPriceApproval />;
+        }
+          
+        case "shoe-pricing": {
+          const businessType = (auth?.user?.shop_owner?.business_type ?? auth?.shop_owner?.business_type ?? '').toLowerCase();
+          if (businessType === 'repair') {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-gray-400 text-6xl mb-4">👟</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Not Applicable</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Shoe pricing is not available for repair-only shops.</p>
+                </div>
+              </div>
+            );
+          }
+          // Check pricing permissions
+          if (!hasAnyPermission(auth, ['access-shoe-price-approval'])) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to manage shoe pricing.</p>
+                </div>
+              </div>
+            );
+          }
+          return <ShoePriceApproval />;
+        }
+
+        case "purchase-request-approval":
+          return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} requests={purchaseRequests || []} />;
+
+        case "payslip-approvals":
+          // Check payslip approval permissions
+          if (!hasAnyPermission(auth, ['access-payslip-approval'])) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to view payslip approvals.</p>
+                </div>
+              </div>
+            );
+          }
+          return <PayslipApproval />;
+
+        case "refund-approvals":
+          return <RefundApproval />;
+          
+        default:
+          return <Invoice />;
+      }
+    } catch (e: any) {
+      setError(e?.message || "An unexpected error occurred. Please try again later.");
+      return null;
+    }
+  };
+
+  return (
+    <AppLayoutERP hideHeader={section === "purchase-request-approval" && isPurchaseRequestModalOpen}>
+      <Head title={headTitle} />
+      {error && (
+        <ErrorModal message={error} onClose={() => setError(null)} />
+      )}
+      <div className="w-full">{renderContent()}</div>
+    </AppLayoutERP>
+  );
+}
