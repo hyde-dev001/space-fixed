@@ -57,16 +57,6 @@ class Expense extends Model
         return $this->belongsTo(\App\Models\SupplierOrder::class, 'purchase_order_id');
     }
 
-    public function expenseAccount()
-    {
-        return $this->belongsTo(Account::class, 'expense_account_id');
-    }
-
-    public function paymentAccount()
-    {
-        return $this->belongsTo(Account::class, 'payment_account_id');
-    }
-
     /**
      * Query scope for date range filtering (from)
      */

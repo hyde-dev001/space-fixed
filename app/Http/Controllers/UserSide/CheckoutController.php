@@ -32,6 +32,15 @@ class CheckoutController extends Controller
     public function createOrder(Request $request)
     {
         try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please log in to place an order.',
+                ], 401);
+            }
+
             $validated = $request->validate([
                 'items' => 'required|array|min:1',
                 'items.*.id' => 'required',
@@ -59,9 +68,7 @@ class CheckoutController extends Controller
                 'shipping_address_line' => 'nullable|string|max:255',
             ]);
 
-            // Get authenticated user
-            $user = Auth::guard('user')->user();
-            $customerId = $user ? $user->id : null;
+            $customerId = $user->id;
 
             // Group items by shop owner (products from same shop go to same order)
             $itemsByShop = [];

@@ -19,7 +19,12 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware(['auth:sanctum'])->prefix('erp/procurement')->group(function () {
+Route::middleware([
+    'web',
+    'auth:user',
+    'permission:view-procurement|access-procurement-dashboard|access-purchase-requests|access-purchase-orders|access-stock-request-approval|access-suppliers-management|access-supplier-order-monitoring',
+    'shop.isolation',
+])->prefix('erp/procurement')->group(function () {
     
     // Purchase Requests Routes
     Route::prefix('purchase-requests')->group(function () {

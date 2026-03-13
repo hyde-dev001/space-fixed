@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Validator;
  * approves / rejects them before they are released to employees.
  *
  * Routes: /api/finance/payslip-approvals/...
- * Permission required: approve-payroll
+ * Permission required: approve-payroll or access-payslip-approval
  *
  * Note: This controller intentionally reads HR models (Payroll,
  * PayrollComponent) — Finance is a consumer of HR data, not a generator.
@@ -36,7 +36,7 @@ class PayslipApprovalController extends Controller
     private function authorizeApprover(): ?\Illuminate\Contracts\Auth\Authenticatable
     {
         $user = Auth::guard('user')->user();
-        return $user->can('approve-payroll') ? $user : null;
+        return ($user && ($user->can('approve-payroll') || $user->can('access-payslip-approval'))) ? $user : null;
     }
 
     // ============================================================

@@ -156,6 +156,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-overtime-approvals',
             'access-payslip-generation',
             'access-view-payslip',
+            'access-audit-logs',
             // Global Access
             'access-global-search',
             'access-notification-center',

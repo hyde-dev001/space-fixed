@@ -72,6 +72,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::post('/from-job', [InvoiceController::class, 'createFromJob'])->name('finance.invoices.from_job');
         Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.invoices.update');
         Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.invoices.destroy');
+        Route::post('/{id}/send', [InvoiceController::class, 'send'])->name('finance.invoices.send');
+        Route::post('/{id}/void', [InvoiceController::class, 'void'])->name('finance.invoices.void');
+        Route::post('/{id}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('finance.invoices.mark_paid');
         
         // Post to ledger (requires access-finance-invoices permission)
         Route::middleware('permission:access-finance-invoices')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.invoices.post');
@@ -108,7 +111,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Separated from the HR module intentionally: Finance approves, HR generates.
  * Permission required: approve-payroll
  */
-Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'permission:approve-payroll', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'permission:approve-payroll|access-payslip-approval', 'shop.isolation'])->group(function () {
     Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
     Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->name('finance.payslip_approval.show');
     Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->name('finance.payslip_approval.approve');
@@ -153,6 +156,9 @@ Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permissio
         Route::post('/from-job', [InvoiceController::class, 'createFromJob'])->name('finance.session.invoices.from_job');
         Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.session.invoices.update');
         Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.session.invoices.destroy');
+        Route::post('/{id}/send', [InvoiceController::class, 'send'])->name('finance.session.invoices.send');
+        Route::post('/{id}/void', [InvoiceController::class, 'void'])->name('finance.session.invoices.void');
+        Route::post('/{id}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('finance.session.invoices.mark_paid');
         
         // Post to ledger (requires access-finance-invoices permission)
         Route::middleware('permission:access-finance-invoices')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.session.invoices.post');

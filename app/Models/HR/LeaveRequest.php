@@ -132,14 +132,14 @@ class LeaveRequest extends Model
     /**
      * Calculate number of days automatically
      */
-    public function calculateDays(): int
+    public static function calculateDays($startDateInput, $endDateInput): int
     {
-        if (!$this->start_date || !$this->end_date) {
+        if (!$startDateInput || !$endDateInput) {
             return 0;
         }
 
-        $startDate = \Carbon\Carbon::parse($this->start_date);
-        $endDate = \Carbon\Carbon::parse($this->end_date);
+        $startDate = \Carbon\Carbon::parse($startDateInput);
+        $endDate = \Carbon\Carbon::parse($endDateInput);
         
         // Calculate business days (excluding weekends)
         $days = 0;
@@ -162,7 +162,7 @@ class LeaveRequest extends Model
 
         static::saving(function ($leaveRequest) {
             if ($leaveRequest->start_date && $leaveRequest->end_date) {
-                $leaveRequest->no_of_days = $leaveRequest->calculateDays();
+                $leaveRequest->no_of_days = self::calculateDays($leaveRequest->start_date, $leaveRequest->end_date);
             }
         });
     }

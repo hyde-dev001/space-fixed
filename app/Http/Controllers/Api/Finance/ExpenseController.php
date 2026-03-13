@@ -5,9 +5,7 @@ namespace App\Http\Controllers\Api\Finance;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\Expense;
-use App\Models\Finance\Account;
 use App\Models\Finance\JournalEntry;
-use App\Models\Finance\JournalLine;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Auth;
@@ -79,8 +77,8 @@ class ExpenseController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'tax_amount' => 'nullable|numeric|min:0',
             'status' => 'nullable|in:draft,submitted,approved,posted,rejected',
-            'expense_account_id' => 'nullable|integer|exists:finance_accounts,id',
-            'payment_account_id' => 'nullable|integer|exists:finance_accounts,id',
+            'expense_account_id' => 'nullable|integer',
+            'payment_account_id' => 'nullable|integer',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:10240', // 10MB max
         ]);
 
@@ -129,7 +127,7 @@ class ExpenseController extends Controller
                 $this->notificationService->notifyExpenseSubmitted($shopId, [
                     'expense_id' => $expense->id,
                     'reference'  => $expense->reference ?? "EXP-{$expense->id}",
-                    'amount'     => number_format($expense->amount, 2),
+                    'amount'     => number_format((float) $expense->amount, 2),
                     'category'   => $expense->category ?? 'General',
                 ]);
             } catch (\Exception $e) {
@@ -164,8 +162,8 @@ class ExpenseController extends Controller
             'description' => 'sometimes|nullable|string',
             'amount' => 'sometimes|numeric|min:0.01',
             'tax_amount' => 'sometimes|numeric|min:0',
-            'expense_account_id' => 'sometimes|nullable|integer|exists:finance_accounts,id',
-            'payment_account_id' => 'sometimes|nullable|integer|exists:finance_accounts,id',
+            'expense_account_id' => 'sometimes|nullable|integer',
+            'payment_account_id' => 'sometimes|nullable|integer',
         ]);
 
         $expense->update($data);
@@ -295,23 +293,14 @@ class ExpenseController extends Controller
             }
 
             $entry = $expense->journalEntry;
-            $entry->status = 'posted';
-            $entry->posted_at = now();
-            $entry->posted_by = auth()->id();
-            $entry->save();
+            if ($entry) {
+                $entry->status = 'posted';
+                $entry->posted_at = now();
+                $entry->posted_by = (string) auth()->id();
+                $entry->save();
+            }
 
             $expense->update(['status' => 'posted']);
-
-            foreach ($entry->lines as $line) {
-                $account = Account::find($line->account_id);
-                $oldBalance = $account->balance;
-                if ($account->normal_balance === 'Debit') {
-                    $newBalance = $oldBalance + $line->debit - $line->credit;
-                } else {
-                    $newBalance = $oldBalance + $line->credit - $line->debit;
-                }
-                $account->update(['balance' => $newBalance]);
-            }
 
             // Activity log for posting with journal entry details
             activity()
@@ -375,45 +364,6 @@ class ExpenseController extends Controller
 
     private function createJournalEntry(Expense $expense): JournalEntry
     {
-        $total = (float)$expense->amount + (float)$expense->tax_amount;
-
-        $expenseAccount = $expense->expenseAccount ?: Account::where('type', 'Expense')
-            ->where('active', true)
-            ->orderBy('code')
-            ->first();
-
-        if (!$expenseAccount) {
-            $expenseAccount = Account::create([
-                'code' => '5000',
-                'name' => 'General Expense',
-                'type' => 'Expense',
-                'normal_balance' => 'Debit',
-                'group' => 'Operating Expenses',
-                'active' => true,
-                'shop_id' => $expense->shop_id,
-            ]);
-        }
-
-        $paymentAccount = $expense->paymentAccount ?: Account::where('type', 'Liability')
-            ->where('active', true)
-            ->where(function ($q) {
-                $q->where('code', '2000')->orWhere('name', 'LIKE', '%Payable%');
-            })
-            ->orderBy('code')
-            ->first();
-
-        if (!$paymentAccount) {
-            $paymentAccount = Account::create([
-                'code' => '2000',
-                'name' => 'Accounts Payable',
-                'type' => 'Liability',
-                'normal_balance' => 'Credit',
-                'group' => 'Payables',
-                'active' => true,
-                'shop_id' => $expense->shop_id,
-            ]);
-        }
-
         $entry = JournalEntry::create([
             'reference' => 'EXP-' . $expense->reference,
             'date' => $expense->date,
@@ -423,26 +373,6 @@ class ExpenseController extends Controller
                 'source' => 'expense',
                 'expense_id' => $expense->id,
             ],
-        ]);
-
-        JournalLine::create([
-            'journal_entry_id' => $entry->id,
-            'account_id' => $expenseAccount->id,
-            'account_code' => $expenseAccount->code,
-            'account_name' => $expenseAccount->name,
-            'debit' => $total,
-            'credit' => 0,
-            'memo' => "Expense {$expense->reference}",
-        ]);
-
-        JournalLine::create([
-            'journal_entry_id' => $entry->id,
-            'account_id' => $paymentAccount->id,
-            'account_code' => $paymentAccount->code,
-            'account_name' => $paymentAccount->name,
-            'debit' => 0,
-            'credit' => $total,
-            'memo' => "Expense payable {$expense->reference}",
         ]);
 
         return $entry;

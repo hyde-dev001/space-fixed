@@ -1551,6 +1551,14 @@ class RepairWorkflowController extends Controller
                         'message' => 'Pickup confirmation is already activated'
                     ], 400);
                 }
+
+                if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
+                    ], 422);
+                }
                 
                 // Enable pickup confirmation
                 $repairRequest->update([
@@ -1616,6 +1624,14 @@ class RepairWorkflowController extends Controller
                     'message' => 'Pickup confirmation is already activated'
                 ], 400);
             }
+
+            if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
+                ], 422);
+            }
             
             // Enable pickup confirmation
             $repairRequest->update([
@@ -1644,6 +1660,25 @@ class RepairWorkflowController extends Controller
                 'message' => 'Failed to activate pickup: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function isRepairFullyPaidForRelease(RepairRequest $repairRequest): bool
+    {
+        $paymentStatus = strtolower((string) ($repairRequest->payment_status ?? ''));
+        $paymentPolicy = $repairRequest->payment_policy ?? 'deposit_50';
+
+        return $paymentStatus === 'completed'
+            || ($paymentPolicy !== 'deposit_50' && $paymentStatus === 'paid');
+    }
+
+    private function getReleasePaymentRequiredMessage(RepairRequest $repairRequest): string
+    {
+        return match ($repairRequest->payment_policy ?? 'deposit_50') {
+            'deposit_50' => 'Customer must pay the remaining 50% balance before receive confirmation can be activated.',
+            'pay_after' => 'Customer must complete the pay-after payment before receive confirmation can be activated.',
+            'full_upfront' => 'Customer payment must be completed before receive confirmation can be activated.',
+            default => 'Customer payment must be completed before receive confirmation can be activated.',
+        };
     }
 
     /**
@@ -1972,6 +2007,13 @@ class RepairWorkflowController extends Controller
 
             $repairRequest = $query->whereIn('status', ['ready_for_pickup', 'ready-for-pickup'])
                 ->firstOrFail();
+
+            if (($repairRequest->delivery_method ?? null) !== 'pickup') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Walk-in repairs cannot be marked as shipped. Use the receive/pickup confirmation flow instead.',
+                ], 422);
+            }
 
             $repairRequest->update(array_merge($validated, [
                 'status'    => 'shipped',

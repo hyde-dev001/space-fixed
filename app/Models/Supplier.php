@@ -50,6 +50,14 @@ class Supplier extends Model
     }
 
     /**
+     * Backward-compatible alias used by ERP SupplierController.
+     */
+    public function orders(): HasMany
+    {
+        return $this->supplierOrders();
+    }
+
+    /**
      * Scope to active suppliers
      */
     public function scopeActive(Builder $query): void

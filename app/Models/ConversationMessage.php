@@ -4,11 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ConversationMessage extends Model
 {
     protected $fillable = [
         'conversation_id',
+        'parent_message_id',
         'sender_type',
         'sender_id',
         'content',
@@ -27,6 +29,22 @@ class ConversationMessage extends Model
     public function conversation(): BelongsTo
     {
         return $this->belongsTo(Conversation::class);
+    }
+
+    /**
+     * Get the message being replied to.
+     */
+    public function parentMessage(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_message_id');
+    }
+
+    /**
+     * Get replies for this message.
+     */
+    public function replies(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_message_id');
     }
 
     /**

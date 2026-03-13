@@ -187,7 +187,7 @@ class OvertimeController extends Controller
     {
         $user = Auth::guard('user')->user();
         
-        if (!$user->can('access-attendance-records') || $user->can('access-overtime-approvals') && !$user->hasRole('Manager')) {
+        if (! $user->hasRole('Manager') && ! $user->can('access-overtime-approvals') && ! $user->can('access-attendance-records')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

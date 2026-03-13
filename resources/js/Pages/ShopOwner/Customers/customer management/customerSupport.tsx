@@ -10,6 +10,13 @@ interface Message {
   content: string;
   timestamp: string;
   images?: string[];
+  parentMessageId?: number | null;
+  parentMessage?: {
+    id: number;
+    sender: "customer" | "staff";
+    content: string;
+    images?: string[];
+  } | null;
 }
 
 interface Ticket {
@@ -41,6 +48,11 @@ export default function CustomerSupport() {
   const [transferNote, setTransferNote] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<number, string>>({});
+  const quickReactionList = ['❤️', '😂', '😍', '😮', '😢', '😡', '👍', '🎉'];
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,7 +96,7 @@ export default function CustomerSupport() {
             customerRole: conv.customer?.email || "",
             lastMessage: conv.messages?.[0]?.content || "No messages yet",
             lastMessageTime: formatTime(conv.last_message_at),
-            status: "active",
+            status: "active" as const,
             messages: existingTicket?.messages || [], // Keep existing messages
             priority: conv.priority,
             conversationStatus: conv.status,
@@ -174,6 +186,15 @@ export default function CustomerSupport() {
           hour12: true,
         }),
         images: msg.attachments || undefined,
+        parentMessageId: msg.parent_message_id || null,
+        parentMessage: msg.parent_message
+          ? {
+              id: msg.parent_message.id,
+              sender: msg.parent_message.sender_type === 'customer' ? 'customer' : 'staff',
+              content: msg.parent_message.content || '',
+              images: msg.parent_message.attachments || undefined,
+            }
+          : null,
       }));
 
       setTickets((prev) =>
@@ -211,6 +232,9 @@ export default function CustomerSupport() {
         if (newMessage.trim()) {
           formData.append("content", newMessage);
         }
+        if (replyingToMessage?.id) {
+          formData.append('parent_message_id', String(replyingToMessage.id));
+        }
         selectedImages.forEach((file) => {
           formData.append("images[]", file);
         });
@@ -235,6 +259,15 @@ export default function CustomerSupport() {
             hour12: true,
           }),
           images: messageData.attachments || undefined,
+          parentMessageId: messageData.parent_message_id || null,
+          parentMessage: messageData.parent_message
+            ? {
+                id: messageData.parent_message.id,
+                sender: messageData.parent_message.sender_type === 'customer' ? 'customer' : 'staff',
+                content: messageData.parent_message.content || '',
+                images: messageData.parent_message.attachments || undefined,
+              }
+            : null,
         };
 
         setTickets((prev) =>
@@ -252,6 +285,7 @@ export default function CustomerSupport() {
 
         setNewMessage("");
         setSelectedImages([]);
+        setReplyingToMessage(null);
       } catch (error) {
         console.error("Error sending message:", error);
         setNotification({ type: 'error', message: 'Failed to send message. Please try again.' });
@@ -314,6 +348,68 @@ export default function CustomerSupport() {
     }
   };
 
+  const getReplySenderLabel = (message: NonNullable<Message['parentMessage']>) => {
+    return message.sender === 'staff'
+      ? 'You'
+      : selectedTicket?.customerName || 'Customer';
+  };
+
+  const getReplyPreviewText = (message: Pick<Message, 'content' | 'images'>) => {
+    if (message.content?.trim()) {
+      return message.content.trim();
+    }
+    const attachmentCount = message.images?.length || 0;
+    if (attachmentCount > 1) return `${attachmentCount} photos`;
+    if (attachmentCount === 1) return 'Photo';
+    return 'Message';
+  };
+
+  const getReplyContextLabel = (message: Message) => {
+    if (!message.parentMessage) return null;
+    if (message.sender === 'staff') {
+      return message.parentMessage.sender === 'staff'
+        ? 'You replied to yourself'
+        : `You replied to ${selectedTicket?.customerName || 'Customer'}`;
+    }
+    return message.parentMessage.sender === 'staff'
+      ? `${selectedTicket?.customerName || 'Customer'} replied to you`
+      : `${selectedTicket?.customerName || 'Customer'} replied to themselves`;
+  };
+
+  const handleReply = (message: Message) => {
+    setReplyingToMessage(message);
+    setReactionPickerMessageId(null);
+  };
+
+  const clearReply = () => {
+    setReplyingToMessage(null);
+  };
+
+  const handleReactToMessage = (messageId: number, emoji: string) => {
+    setMessageReactions((prev) => {
+      if (prev[messageId] === emoji) {
+        const { [messageId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [messageId]: emoji };
+    });
+    setReactionPickerMessageId(null);
+  };
+
+  const renderQuotedReply = (message: Message, isOutgoing: boolean) => {
+    if (!message.parentMessage) return null;
+    return (
+      <div className={`rounded-2xl px-3 py-2 border ${isOutgoing ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-white border-gray-300 text-gray-700'}`}>
+        <p className={`text-[11px] font-semibold ${isOutgoing ? 'text-blue-700' : 'text-gray-500'}`}>
+          {getReplySenderLabel(message.parentMessage)}
+        </p>
+        <p className={`text-xs mt-1 whitespace-nowrap overflow-hidden text-ellipsis ${isOutgoing ? 'text-blue-900' : 'text-gray-600'}`}>
+          {getReplyPreviewText(message.parentMessage)}
+        </p>
+      </div>
+    );
+  };
+
   const filteredTickets = tickets.filter((ticket) =>
     ticket.customerName.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -354,23 +450,23 @@ export default function CustomerSupport() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <AppLayoutShopOwner fullBleed>
       <Head title="Customer Support" />
       
       {/* Notification Toast */}
       {notification && (
-        <div className="fixed top-4 right-4 z-[60] animate-in slide-in-from-top-2">
+        <div className="fixed top-4 right-4 z-60 animate-in slide-in-from-top-2">
           <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg ${
             notification.type === 'success' 
               ? 'bg-green-500 text-white' 
               : 'bg-red-500 text-white'
           }`}>
             {notification.type === 'success' ? (
-              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
             ) : (
-              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
             )}
@@ -378,6 +474,8 @@ export default function CustomerSupport() {
             <button
               onClick={() => setNotification(null)}
               className="ml-2 hover:opacity-80 transition-opacity"
+              title="Close notification"
+              aria-label="Close notification"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -388,9 +486,9 @@ export default function CustomerSupport() {
       )}
       
       <div className="h-full flex flex-col bg-gray-50 overflow-hidden max-h-screen">
-        <div className="flex gap-4 h-[calc(100vh-120px)] p-4">
+        <div className="flex gap-0 h-[calc(100vh-120px)] p-0">
           {/* Left Sidebar - Chat List */}
-          <div className="w-80 bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
+          <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="border-b border-gray-200 px-6 py-4 relative z-20">
               <h1 className="text-2xl font-bold text-black mb-4">Chat</h1>
@@ -440,7 +538,7 @@ export default function CustomerSupport() {
                             : "text-gray-700 hover:bg-gray-50"
                         }`}
                       >
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${
                           statusFilter === status
                             ? "bg-blue-600"
                             : "bg-gray-400"
@@ -505,7 +603,7 @@ export default function CustomerSupport() {
 
           {/* Right Side - Chat Area */}
           {selectedTicket ? (
-            <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="flex-1 flex flex-col bg-white overflow-hidden">
               {/* Header */}
               <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-4">
@@ -541,13 +639,114 @@ export default function CustomerSupport() {
                   </div>
                 ) : (
                   <>
-                    {selectedTicket.messages.map((message) => (
+                    {selectedTicket.messages.map((message) => {
+                      const normalizedContent = (message.content || '')
+                        .replace(/\\n/g, '\n')
+                        .replace(/\\\*/g, '*')
+                        .replace(/\\"/g, '"');
+                      const isRepairOrderAccepted = /repair order accepted/i.test(normalizedContent) && /\*\*type:\*\*/i.test(normalizedContent);
+
+                      if (isRepairOrderAccepted) {
+                        const titleMatch = normalizedContent.match(/\*\*(Repair Order Accepted[^*]*)\*\*/i);
+                        const typeMatch = normalizedContent.match(/\*\*Type:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+                        const itemMatch = normalizedContent.match(/\*\*Item:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+                        const issueMatch = normalizedContent.match(/\*\*Issue:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+                        const deliveryMatch = normalizedContent.match(/\*\*Delivery:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+                        const scheduledMatch = normalizedContent.match(/\*\*Scheduled:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+                        const estimateMatch = normalizedContent.match(/\*\*Estimate:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+                        const statusMatch = normalizedContent.match(/\*\*Status:\*\*\s*(.+?)(?=\n\*\*|$)/i);
+
+                        const title = titleMatch ? titleMatch[1].trim() : 'Repair Order Accepted';
+                        const typeValue = typeMatch ? typeMatch[1].trim() : '';
+                        const itemValue = itemMatch ? itemMatch[1].trim() : '';
+                        const issueValue = issueMatch ? issueMatch[1].trim() : '';
+                        const deliveryValue = deliveryMatch ? deliveryMatch[1].trim() : '';
+                        const scheduledValue = scheduledMatch ? scheduledMatch[1].trim() : '';
+                        const estimateValue = estimateMatch ? estimateMatch[1].trim() : '';
+                        const statusValue = statusMatch ? statusMatch[1].trim() : '';
+
+                        return (
+                          <div key={message.id} className={`flex ${message.sender === 'staff' ? 'justify-end' : 'justify-start'} my-4`}>
+                            <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm w-full max-w-2xl">
+                              <div className="flex items-start justify-between mb-4 gap-3">
+                                <div>
+                                  <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+                                  <p className="text-xs text-gray-500 mt-1">{message.timestamp}</p>
+                                </div>
+                                {statusValue && (
+                                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-800">
+                                    {statusValue}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                {typeValue && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Service:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{typeValue}</span>
+                                  </div>
+                                )}
+                                {itemValue && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Item:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{itemValue}</span>
+                                  </div>
+                                )}
+                                {issueValue && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Issue:</span>
+                                    <span className="text-sm text-gray-900">{issueValue}</span>
+                                  </div>
+                                )}
+                                {deliveryValue && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Delivery:</span>
+                                    <span className="text-sm text-gray-900">{deliveryValue}</span>
+                                  </div>
+                                )}
+                                {scheduledValue && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Scheduled:</span>
+                                    <span className="text-sm text-gray-900">{scheduledValue}</span>
+                                  </div>
+                                )}
+                                {estimateValue && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Estimate:</span>
+                                    <span className="text-sm text-gray-900 font-semibold">{estimateValue}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="border-t border-gray-100 pt-3 mb-3">
+                                <p className="text-sm font-semibold text-gray-900">SoleSpace Shop</p>
+                              </div>
+
+                              <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
+                                <p className="text-xs text-blue-900 leading-relaxed">💡 We'll keep you updated on the progress of your repair.</p>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                              >
+                                View Full Details
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
                       <div
                         key={message.id}
                         className={`flex flex-col ${message.sender === "staff" ? "items-end" : "items-start"}`}
+                        onMouseEnter={() => setHoveredMessageId(message.id)}
+                        onMouseLeave={() => setHoveredMessageId(null)}
                       >
                         {message.images && message.images.length > 0 ? (
-                          <div>
+                          <div className="relative group">
                             <div className="flex flex-wrap gap-2 mb-2">
                               {message.images.map((img, idx) => (
                                 <img
@@ -559,31 +758,119 @@ export default function CustomerSupport() {
                                 />
                               ))}
                             </div>
-                            {message.content && (
-                              <div
-                                className={`${
-                                  message.sender === "staff"
-                                    ? "bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm"
-                                    : "bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm"
-                                }`}
-                              >
-                                <p className="wrap-break-word text-sm leading-relaxed">
-                                  {message.content}
-                                </p>
+                            {(message.content || message.parentMessage) && (
+                              <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'staff' ? 'items-end' : 'items-start'}`}>
+                                {message.parentMessage && (
+                                  <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>
+                                )}
+                                {renderQuotedReply(message, message.sender === 'staff')}
+                                {message.content && (
+                                  <div className={`${message.sender === "staff" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-900"} px-4 py-2 text-sm rounded-lg shadow-sm inline-block w-fit max-w-full`}>
+                                    <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                  </div>
+                                )}
                               </div>
+                            )}
+                            {hoveredMessageId === message.id && (
+                              <div className={`absolute top-0 ${message.sender === 'staff' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
+                                <button
+                                  onClick={() => handleReply(message)}
+                                  title="Reply"
+                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                >
+                                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                                  title="React with emoji"
+                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                >
+                                  <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
+                            {reactionPickerMessageId === message.id && (
+                              <div className={`absolute -top-12 ${message.sender === 'staff' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
+                                {quickReactionList.map((emoji) => (
+                                  <button
+                                    key={`${message.id}-${emoji}`}
+                                    onClick={() => handleReactToMessage(message.id, emoji)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {messageReactions[message.id] && (
+                              <button
+                                onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
+                                className={`absolute -bottom-3 ${message.sender === 'staff' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
+                              >
+                                {messageReactions[message.id]}
+                              </button>
                             )}
                           </div>
                         ) : (
-                          <div
-                            className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                              message.sender === "staff"
-                                ? "bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
-                                : "bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
-                            }`}
-                          >
-                            <p className="wrap-break-word text-sm leading-relaxed">
-                              {message.content}
-                            </p>
+                          <div className="relative group">
+                            <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'staff' ? 'items-end' : 'items-start'}`}>
+                              {message.parentMessage && (
+                                <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>
+                              )}
+                              {renderQuotedReply(message, message.sender === 'staff')}
+                              <div className={`${message.sender === "staff" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-900"} inline-block w-fit max-w-full px-4 py-2 text-sm rounded-lg shadow-sm`}>
+                                <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                              </div>
+                            </div>
+                            {hoveredMessageId === message.id && (
+                              <div className={`absolute top-0 ${message.sender === 'staff' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
+                                <button
+                                  onClick={() => handleReply(message)}
+                                  title="Reply"
+                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                >
+                                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                                  title="React with emoji"
+                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                >
+                                  <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
+                            {reactionPickerMessageId === message.id && (
+                              <div className={`absolute -top-12 ${message.sender === 'staff' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
+                                {quickReactionList.map((emoji) => (
+                                  <button
+                                    key={`${message.id}-${emoji}`}
+                                    onClick={() => handleReactToMessage(message.id, emoji)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {messageReactions[message.id] && (
+                              <button
+                                onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
+                                className={`absolute -bottom-3 ${message.sender === 'staff' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
+                              >
+                                {messageReactions[message.id]}
+                              </button>
+                            )}
                           </div>
                         )}
                         <div className={`mt-2 ${message.sender === "staff" ? "text-right" : "text-left"}`}>
@@ -592,14 +879,32 @@ export default function CustomerSupport() {
                           </span>
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                     <div ref={messagesEndRef} />
                   </>
                 )}
               </div>
 
               {/* Message Input */}
-              <div className="border-t border-gray-200 bg-white px-6 py-4 rounded-b-2xl">
+              <div className="border-t border-gray-200 bg-white px-6 py-4">
+                {replyingToMessage && (
+                  <div className="mb-3 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-start justify-between shadow-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 font-semibold mb-1">
+                        Replying to {replyingToMessage.sender === 'staff' ? 'You' : (selectedTicket?.customerName || 'Customer')}
+                      </p>
+                      <p className="text-sm text-gray-700 truncate">{getReplyPreviewText(replyingToMessage)}</p>
+                    </div>
+                    <button
+                      onClick={clearReply}
+                      className="ml-2 text-gray-400 hover:text-gray-600 shrink-0"
+                      title="Cancel reply"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 {/* Image Previews */}
                 {selectedImages.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-2">
@@ -736,6 +1041,8 @@ export default function CustomerSupport() {
               <button
                 onClick={() => setShowTransferModal(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
+                title="Close"
+                aria-label="Close"
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
@@ -747,7 +1054,7 @@ export default function CustomerSupport() {
             <div className="px-6 py-4">
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
                 <div className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-orange-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div className="text-sm text-orange-800">

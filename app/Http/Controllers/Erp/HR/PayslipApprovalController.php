@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Validator;
  * HR generates payrolls; Finance (or a designated approver) reviews and
  * approves / rejects before they are released to employees.
  *
- * Permission required: 'approve-payroll'
+ * Permission required: 'approve-payroll' or 'access-payslip-approval'
  */
 class PayslipApprovalController extends Controller
 {
@@ -31,7 +31,7 @@ class PayslipApprovalController extends Controller
     private function authorizeApprover(): ?\Illuminate\Contracts\Auth\Authenticatable
     {
         $user = Auth::guard('user')->user();
-        return $user->can('approve-payroll') ? $user : null;
+        return ($user && ($user->can('approve-payroll') || $user->can('access-payslip-approval'))) ? $user : null;
     }
 
     // ============================================================

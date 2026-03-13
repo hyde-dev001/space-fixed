@@ -973,23 +973,22 @@ const MyRepairs: React.FC = () => {
     setReviewImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const canSwitchToWalkIn = (order: RepairOrder) => {
-    if (order.delivery_method === 'walk_in') return false;
-
-    return order.status === 'ready_for_pickup';
+  const canSwitchDeliveryMethod = (order: RepairOrder) => {
+    return order.status === 'ready_for_pickup' && !order.pickup_enabled;
   };
 
-  const handleSwitchToWalkIn = async (order: RepairOrder) => {
+  const handleSwitchDeliveryMethod = async (order: RepairOrder, nextMethod: 'walk_in' | 'pickup') => {
+    const switchingToWalkIn = nextMethod === 'walk_in';
     const result = await Swal.fire({
-      title: 'Switch to Self Pick-up?',
+      title: switchingToWalkIn ? 'Switch to Self Pick-up?' : 'Switch to Carrier Pickup?',
       html: `
-        <p class="text-gray-700 mb-2">You are changing this order from <strong>carrier pickup</strong> to <strong>shop pickup</strong>.</p>
-        <p class="text-gray-700">You will get your shoes to the shop.</p>
+        <p class="text-gray-700 mb-2">You are changing this order from <strong>${order.delivery_method === 'walk_in' ? 'shop pickup' : 'carrier pickup'}</strong> to <strong>${switchingToWalkIn ? 'shop pickup' : 'carrier pickup'}</strong>.</p>
+        <p class="text-gray-700">${switchingToWalkIn ? 'You will go to the shop yourself to receive the repaired shoes.' : 'The order will remain under carrier pickup handling.'}</p>
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Yes, switch to shop pickup',
-      cancelButtonText: 'Keep carrier pickup',
+      confirmButtonText: switchingToWalkIn ? 'Yes, switch to shop pickup' : 'Yes, switch to carrier pickup',
+      cancelButtonText: 'Cancel',
       confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
       reverseButtons: true,
@@ -997,39 +996,44 @@ const MyRepairs: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
-    let persisted = false;
-
     try {
-      await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
-        delivery_method: 'walk_in',
+      const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
+        delivery_method: nextMethod,
       });
-      persisted = true;
-    } catch (error) {
-      console.warn('Delivery method endpoint unavailable, applying frontend-only update:', error);
+
+      const updatedMethod = response.data?.delivery_method ?? nextMethod;
+      const updatedPickupAddress = response.data?.pickup_address;
+
+      setOrders(prev =>
+        prev.map(item =>
+          item.id === order.id
+            ? {
+                ...item,
+                delivery_method: updatedMethod,
+                pickup_address: updatedPickupAddress,
+              }
+            : item
+        )
+      );
+
+      saveDeliveryMethodOverride(order.id, updatedMethod === 'walk_in' ? 'walkin' : 'pickup');
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Pickup Method Updated',
+        text: response.data?.message || (updatedMethod === 'walk_in'
+          ? 'Your order is now set to self pick-up at the shop.'
+          : 'Your order is now set to carrier pickup.'),
+        confirmButtonColor: '#000000',
+      });
+    } catch (error: any) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Unable to Update Pickup Method',
+        text: error?.response?.data?.message || 'Failed to update the pickup method.',
+        confirmButtonColor: '#000000',
+      });
     }
-
-    setOrders(prev =>
-      prev.map(item =>
-        item.id === order.id
-          ? {
-              ...item,
-              delivery_method: 'walk_in',
-              pickup_address: undefined,
-            }
-          : item
-      )
-    );
-
-    saveDeliveryMethodOverride(order.id, 'walkin');
-
-    await Swal.fire({
-      icon: 'success',
-      title: 'Pickup Method Updated',
-      text: persisted
-        ? 'Your order is now set to self pick-up at the shop.'
-        : 'Updated in frontend. Add backend endpoint to persist this change.',
-      confirmButtonColor: '#000000',
-    });
   };
 
   const getStatusColor = (status: RepairStatus) => {
@@ -1502,7 +1506,7 @@ const MyRepairs: React.FC = () => {
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
                       {/* Set Schedule — visible after repairer accepts/payment done and no drop-off date set yet */}
                       {/* Walk-in: show as soon as status allows. Delivery: require conversation to exist first */}
-                      {(['repairer_accepted', 'pending', 'in_progress'].includes(order.status)) &&
+                      {(['repairer_accepted', 'pending'].includes(order.status)) &&
                         (order.delivery_method === 'walk_in' || order.conversation_id) &&
                         !order.estimated_completion && (
                         <button
@@ -1622,13 +1626,22 @@ const MyRepairs: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {canSwitchToWalkIn(order) && (
+                      {canSwitchDeliveryMethod(order) && order.delivery_method !== 'walk_in' && (
                         <button
-                          onClick={() => handleSwitchToWalkIn(order)}
+                          onClick={() => handleSwitchDeliveryMethod(order, 'walk_in')}
                           disabled={processingPayment}
                           className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
                         >
                           SWITCH TO SHOP PICKUP
+                        </button>
+                      )}
+                      {canSwitchDeliveryMethod(order) && order.delivery_method === 'walk_in' && (
+                        <button
+                          onClick={() => handleSwitchDeliveryMethod(order, 'pickup')}
+                          disabled={processingPayment}
+                          className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                        >
+                          SWITCH TO CARRIER PICKUP
                         </button>
                       )}
                       {order.status === 'ready_for_pickup' && (

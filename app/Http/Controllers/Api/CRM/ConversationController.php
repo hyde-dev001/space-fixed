@@ -15,6 +15,19 @@ use Illuminate\Support\Facades\Validator;
 
 class ConversationController extends Controller
 {
+    private function resolveUserShopOwnerId(User $user): ?int
+    {
+        return $user->shop_owner_id ?? $user->id;
+    }
+
+    private function canAccessCrmConversation(User $user, Conversation $conversation): bool
+    {
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
+
+        return $conversation->shop_owner_id === $userShopOwnerId
+            && $conversation->assigned_to_type === 'crm';
+    }
+
     /**
      * Get all conversations for the CRM's shop
      * Supports filtering by status, priority, and assigned staff
@@ -26,7 +39,7 @@ class ConversationController extends Controller
         // Get shop_owner_id from authenticated user
         // For employees, they should have shop_owner_id set
         // For shop owners, they have their own id
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $shopOwnerId = $this->resolveUserShopOwnerId($user);
 
         if (!$shopOwnerId) {
             \Log::error('CRM: User not associated with a shop', [
@@ -42,6 +55,7 @@ class ConversationController extends Controller
         ]);
 
         $query = Conversation::where('shop_owner_id', $shopOwnerId)
+            ->where('assigned_to_type', 'crm')
             ->with(['customer', 'order', 'assignedTo', 'messages' => function ($q) {
                 $q->latest()->limit(1); // Only load last message
             }]);
@@ -75,15 +89,12 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
 
-        // Get shop_owner_id for comparison
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
-
-        // Verify user has access to this shop's conversation
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$this->canAccessCrmConversation($user, $conversation)) {
             \Log::warning('CRM: Unauthorized access to conversation', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
-                'user_shop_owner_id' => $userShopOwnerId,
+                'user_shop_owner_id' => $this->resolveUserShopOwnerId($user),
+                'assigned_to_type' => $conversation->assigned_to_type,
             ]);
             return response()->json(['error' => 'Unauthorized'], 403);
         }
@@ -93,6 +104,7 @@ class ConversationController extends Controller
             'order',
             'assignedTo',
             'messages.sender',
+            'messages.parentMessage.sender',
             'transfers.fromUser',
             'transfers.toUser'
         ]);
@@ -122,6 +134,13 @@ class ConversationController extends Controller
                     'content' => $msg->content,
                     'attachments' => $msg->attachments,
                     'created_at' => $msg->created_at,
+                    'parent_message_id' => $msg->parent_message_id,
+                    'parent_message' => $msg->parentMessage ? [
+                        'id' => $msg->parentMessage->id,
+                        'sender_type' => $msg->parentMessage->sender_type,
+                        'content' => $msg->parentMessage->content,
+                        'attachments' => $msg->parentMessage->attachments,
+                    ] : null,
                 ];
             }),
         ]);
@@ -134,15 +153,15 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $user->shop_owner_id) {
+        if (!$this->canAccessCrmConversation($user, $conversation)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $validator = Validator::make($request->all(), [
             'content' => 'nullable|string|max:5000',
             'images' => 'nullable|array|max:5',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120' // 5MB max per image
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max per image
+            'parent_message_id' => 'nullable|integer|exists:conversation_messages,id',
         ]);
 
         if ($validator->fails()) {
@@ -152,6 +171,14 @@ class ConversationController extends Controller
         // Must have either content or images
         if (!$request->get('content') && !$request->hasFile('images')) {
             return response()->json(['error' => 'Message must contain text or images'], 422);
+        }
+
+        // Verify parent message belongs to this conversation
+        if ($request->get('parent_message_id')) {
+            $parentMsg = ConversationMessage::find($request->get('parent_message_id'));
+            if (!$parentMsg || $parentMsg->conversation_id !== $conversation->id) {
+                return response()->json(['error' => 'Invalid parent message'], 422);
+            }
         }
 
         // Handle image uploads
@@ -172,6 +199,7 @@ class ConversationController extends Controller
             'sender_id' => $user->id,
             'content' => $request->get('content'),
             'attachments' => count($attachments) > 0 ? $attachments : null,
+            'parent_message_id' => $request->get('parent_message_id'),
         ]);
 
         // Update conversation's last_message_at
@@ -180,7 +208,7 @@ class ConversationController extends Controller
             'status' => $conversation->status === 'open' ? 'in_progress' : $conversation->status
         ]);
 
-        $message->load('sender');
+        $message->load(['sender', 'parentMessage']);
 
         return response()->json([
             'message' => 'Message sent successfully',
@@ -195,8 +223,7 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $user->shop_owner_id) {
+        if (!$this->canAccessCrmConversation($user, $conversation)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -213,7 +240,7 @@ class ConversationController extends Controller
         // Verify target user belongs to the same shop
         if ($request->to_user_id) {
             $targetUser = User::find($request->to_user_id);
-            if ($targetUser->shop_owner_id !== $user->shop_owner_id) {
+            if (($targetUser->shop_owner_id ?? $targetUser->id) !== $this->resolveUserShopOwnerId($user)) {
                 return response()->json(['error' => 'Target user not in same shop'], 422);
             }
         }
@@ -247,8 +274,7 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $user->shop_owner_id) {
+        if (!$this->canAccessCrmConversation($user, $conversation)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -275,8 +301,7 @@ class ConversationController extends Controller
     {
         $user = Auth::user();
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $user->shop_owner_id) {
+        if (!$this->canAccessCrmConversation($user, $conversation)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

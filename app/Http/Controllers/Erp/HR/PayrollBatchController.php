@@ -49,9 +49,10 @@ class PayrollBatchController extends Controller
 
         if (
             ! $user->hasRole('Manager')
-            && ! $user->can('view-employees')
-            && ! $user->can('view-attendance')
-            && ! $user->can('view-payroll')
+            && ! $user->can('access-employee-directory')
+            && ! $user->can('access-attendance-records')
+            && ! $user->can('access-payslip-generation')
+            && ! $user->can('access-view-payslip')
         ) {
             return null;
         }

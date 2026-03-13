@@ -25,6 +25,7 @@ class Invoice extends Model
         'total',
         'tax_amount',
         'status',
+        'journal_entry_id',
         'payment_date',
         'payment_method',
         'job_order_id',
@@ -56,6 +57,11 @@ class Invoice extends Model
         return $this->belongsTo(\App\Models\Order::class, 'job_order_id');
     }
 
+    public function journalEntry()
+    {
+        return $this->belongsTo(JournalEntry::class, 'journal_entry_id');
+    }
+
     /**
      * Generate automatic journal entry for invoice posting
      * Debit: Accounts Receivable (Asset)
@@ -63,24 +69,8 @@ class Invoice extends Model
      */
     public function createJournalEntry()
     {
-        // Get or create AR account - prefer existing AR account by code 1100
-        $arAccount = Account::where('code', '1100')
-            ->orWhere(function ($q) {
-                $q->where('type', 'Asset')
-                    ->where('name', 'LIKE', '%Receivable%');
-            })
-            ->first();
-
-        if (!$arAccount) {
-            $arAccount = Account::create([
-                'code' => '1100',
-                'name' => 'Accounts Receivable',
-                'type' => 'Asset',
-                'normal_balance' => 'Debit',
-                'group' => 'Receivables',
-                'active' => true,
-                'shop_id' => $this->shop_id,
-            ]);
+        if ($this->journal_entry_id) {
+            return $this->journalEntry;
         }
 
         // Create journal entry in draft status
@@ -95,51 +85,8 @@ class Invoice extends Model
             ],
         ]);
 
-        // Create debit line for AR (total amount including tax)
-        JournalLine::create([
-            'journal_entry_id' => $entry->id,
-            'account_id' => $arAccount->id,
-            'account_code' => $arAccount->code,
-            'account_name' => $arAccount->name,
-            'debit' => $this->total,
-            'credit' => 0,
-            'memo' => "A/R for Invoice #{$this->reference}",
-        ]);
-
-        // Get or create default revenue account - use first active Revenue account
-        $revenueAccount = Account::where('type', 'Revenue')
-            ->where('active', true)
-            ->orderBy('code')
-            ->first();
-
-        if (!$revenueAccount) {
-            $revenueAccount = Account::create([
-                'code' => '4000',
-                'name' => 'Sales Revenue',
-                'type' => 'Revenue',
-                'normal_balance' => 'Credit',
-                'group' => 'Revenue',
-                'active' => true,
-                'shop_id' => $this->shop_id,
-            ]);
-        }
-
-        // Create single credit line for revenue
-        JournalLine::create([
-            'journal_entry_id' => $entry->id,
-            'account_id' => $revenueAccount->id,
-            'account_code' => $revenueAccount->code,
-            'account_name' => $revenueAccount->name,
-            'debit' => 0,
-            'credit' => $this->total,
-            'memo' => "Revenue from Invoice #{$this->reference}",
-            'tax' => 'GST',
-        ]);
-
-        // Update invoice with journal entry link
-        $this->update([
-            'journal_entry_id' => $entry->id,
-        ]);
+        $this->journal_entry_id = $entry->id;
+        $this->save();
 
         return $entry;
     }
@@ -160,33 +107,16 @@ class Invoice extends Model
 
         $entry = $this->journalEntry;
 
-        // Post the journal entry
-        $entry->status = 'posted';
-        $entry->posted_at = now();
-        $entry->posted_by = auth()->id();
-        $entry->save();
+        if ($entry) {
+            $entry->status = 'posted';
+            $entry->posted_at = now();
+            $entry->posted_by = (string) auth()->id();
+            $entry->save();
+        }
 
         // Update invoice status
         $this->status = 'posted';
         $this->save();
-
-        // Update account balances
-        foreach ($entry->lines as $line) {
-            $account = Account::find($line->account_id);
-            $oldBalance = $account->balance;
-
-            if ($account->normal_balance === 'Debit') {
-                // Debit accounts (Assets, Expenses): increase with debits, decrease with credits
-                $newBalance = $oldBalance + $line->debit - $line->credit;
-            } else {
-                // Credit accounts (Liabilities, Equity, Revenue): increase with credits, decrease with debits
-                $newBalance = $oldBalance + $line->credit - $line->debit;
-            }
-
-            \Log::info("Updating account {$account->code}: {$oldBalance} → {$newBalance}");
-            $account->update(['balance' => $newBalance]);
-            \Log::info("Account {$account->code} updated, new balance in DB: " . $account->fresh()->balance);
-        }
 
         return $entry;
     }

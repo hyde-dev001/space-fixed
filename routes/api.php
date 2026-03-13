@@ -226,7 +226,8 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
 /**
  * Checkout and Order Management
  */
-Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder']);
+Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder'])
+    ->middleware(['web', 'auth:user']);
 Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink']);
 Route::post('/orders/{id}/verify-payment',       [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment']);
 Route::get('/orders/{id}/details',               [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails']);

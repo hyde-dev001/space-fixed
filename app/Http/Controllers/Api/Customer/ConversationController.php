@@ -218,6 +218,7 @@ class ConversationController extends Controller
 
         $validator = Validator::make($request->all(), [
             'content' => 'nullable|string|max:5000',
+            'parent_message_id' => 'nullable|integer|exists:conversation_messages,id',
             'images' => 'nullable|array|max:5',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120' // 5MB max per image
         ]);
@@ -231,6 +232,19 @@ class ConversationController extends Controller
             return response()->json(['error' => 'Message must contain text or images'], 422);
         }
 
+        $parentMessageId = $request->integer('parent_message_id');
+        $parentMessage = null;
+
+        if ($parentMessageId) {
+            $parentMessage = ConversationMessage::query()
+                ->where('conversation_id', $conversation->id)
+                ->find($parentMessageId);
+
+            if (!$parentMessage) {
+                return response()->json(['error' => 'Reply target was not found in this conversation'], 422);
+            }
+        }
+
         // Handle image uploads
         $attachments = [];
         if ($request->hasFile('images')) {
@@ -242,6 +256,7 @@ class ConversationController extends Controller
 
         $message = ConversationMessage::create([
             'conversation_id' => $conversation->id,
+            'parent_message_id' => $parentMessage?->id,
             'sender_type' => 'customer',
             'sender_id' => $user->id,
             'content' => $request->get('content'),
@@ -251,7 +266,7 @@ class ConversationController extends Controller
         // Update conversation's last_message_at
         $conversation->update(['last_message_at' => now()]);
 
-        $message->load('sender');
+        $message->load(['sender', 'parentMessage.sender']);
 
         return response()->json([
             'message' => 'Message sent successfully',
@@ -272,7 +287,7 @@ class ConversationController extends Controller
         }
 
         $messages = $conversation->messages()
-            ->with('sender')
+            ->with(['sender', 'parentMessage.sender'])
             ->orderBy('created_at', 'asc')
             ->get();
 

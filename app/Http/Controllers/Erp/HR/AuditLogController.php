@@ -9,6 +9,19 @@ use Illuminate\Support\Facades\Validator;
 
 class AuditLogController extends Controller
 {
+    private function canAccessAuditLogs($user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasRole('Manager')
+            || $user->can('access-audit-logs')
+            || $user->can('view-finance-audit-logs')
+            || $user->can('view-hr-audit-logs')
+            || $user->can('view-all-audit-logs');
+    }
+
     /**
      * Get audit logs with advanced filtering
      * 
@@ -25,7 +38,7 @@ class AuditLogController extends Controller
 
         // Check if user has permission to view audit logs
         // Managers have all permissions, others need specific audit log permissions
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'You don\'t have permission to access audit logs'], 403);
         }
 
@@ -128,7 +141,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'No permission to access audit log stats'], 403);
         }
 
@@ -159,7 +172,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -204,7 +217,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -257,7 +270,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -337,7 +350,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -421,7 +434,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -478,7 +491,7 @@ class AuditLogController extends Controller
         }
 
         // Check if user has permission to view audit logs
-        if (!$user->hasRole('Manager') && !$user->can('view-finance-audit-logs') && !$user->can('view-hr-audit-logs') && !$user->can('view-all-audit-logs')) {
+        if (! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

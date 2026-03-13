@@ -177,6 +177,7 @@ class ConversationController extends Controller
             'order',
             'assignedTo',
             'messages.sender',
+            'messages.parentMessage.sender',
             'transfers.fromUser',
             'transfers.toUser'
         ]);
@@ -222,11 +223,20 @@ class ConversationController extends Controller
                 return [
                     'id' => $msg->id,
                     'conversation_id' => $msg->conversation_id,
+                    'parent_message_id' => $msg->parent_message_id,
                     'sender_id' => $msg->sender_id,
                     'sender_type' => $msg->sender_type,
                     'content' => $msg->content,
                     'attachments' => $msg->attachments,
                     'created_at' => $msg->created_at,
+                    'parent_message' => $msg->parentMessage ? [
+                        'id' => $msg->parentMessage->id,
+                        'sender_id' => $msg->parentMessage->sender_id,
+                        'sender_type' => $msg->parentMessage->sender_type,
+                        'content' => $msg->parentMessage->content,
+                        'attachments' => $msg->parentMessage->attachments,
+                        'created_at' => $msg->parentMessage->created_at,
+                    ] : null,
                 ];
             }),
             'transfer_note' => $latestTransfer?->transfer_note,
@@ -261,6 +271,7 @@ class ConversationController extends Controller
 
         $validator = Validator::make($request->all(), [
             'content' => 'nullable|string|max:5000',
+            'parent_message_id' => 'nullable|integer|exists:conversation_messages,id',
             'images' => 'nullable|array|max:5',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120' // 5MB max per image
         ]);
@@ -272,6 +283,18 @@ class ConversationController extends Controller
         // Require either content or images
         if (!$request->content && !$request->hasFile('images')) {
             return response()->json(['error' => 'Message must have content or images'], 422);
+        }
+
+        $parentMessageId = $request->integer('parent_message_id');
+        $parentMessage = null;
+        if ($parentMessageId) {
+            $parentMessage = ConversationMessage::query()
+                ->where('conversation_id', $conversation->id)
+                ->find($parentMessageId);
+
+            if (!$parentMessage) {
+                return response()->json(['error' => 'Reply target was not found in this conversation'], 422);
+            }
         }
 
         // Handle image uploads
@@ -286,11 +309,14 @@ class ConversationController extends Controller
         // Create message
         $message = ConversationMessage::create([
             'conversation_id' => $conversation->id,
+            'parent_message_id' => $parentMessage?->id,
             'sender_id' => $user->id,
             'sender_type' => 'repairer',
             'content' => $request->content,
             'attachments' => !empty($attachments) ? $attachments : null,
         ]);
+
+        $message->load('parentMessage');
 
         // Update conversation's last message time
         $conversation->update([
@@ -302,11 +328,20 @@ class ConversationController extends Controller
             'data' => [
                 'id' => $message->id,
                 'conversation_id' => $message->conversation_id,
+                'parent_message_id' => $message->parent_message_id,
                 'sender_id' => $message->sender_id,
                 'sender_type' => $message->sender_type,
                 'content' => $message->content,
                 'attachments' => $message->attachments,
                 'created_at' => $message->created_at,
+                'parent_message' => $message->parentMessage ? [
+                    'id' => $message->parentMessage->id,
+                    'sender_id' => $message->parentMessage->sender_id,
+                    'sender_type' => $message->parentMessage->sender_type,
+                    'content' => $message->parentMessage->content,
+                    'attachments' => $message->parentMessage->attachments,
+                    'created_at' => $message->parentMessage->created_at,
+                ] : null,
             ]
         ]);
     }

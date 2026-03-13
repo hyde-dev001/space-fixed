@@ -652,6 +652,26 @@ export default function JobOrdersRepair() {
     return normalized === 'completed';
   };
 
+  const isFullyPaidForRelease = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
+    const policy = order.payment_policy ?? 'deposit_50';
+    const normalizedStatus = (order.payment_status || '').toLowerCase();
+
+    return normalizedStatus === 'completed' || (policy !== 'deposit_50' && normalizedStatus === 'paid');
+  };
+
+  const getReleasePaymentBlockedMessage = (order: Pick<RepairOrder, 'payment_policy'>) => {
+    switch (order.payment_policy ?? 'deposit_50') {
+      case 'deposit_50':
+        return 'Waiting for customer to pay the remaining 50% balance';
+      case 'pay_after':
+        return 'Waiting for customer to complete the pay-after payment';
+      case 'full_upfront':
+        return 'Waiting for customer payment to be completed';
+      default:
+        return 'Waiting for customer payment to be completed';
+    }
+  };
+
   const handleMarkReceived = async (order: RepairOrder) => {
     const result = await Swal.fire({
       title: "Mark as Received?",
@@ -912,12 +932,28 @@ export default function JobOrdersRepair() {
   };
 
   const handleActivatePickup = async (orderId: string) => {
+    const targetOrder =
+      (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null) ||
+      orders.find((order) => String(order.database_id) === orderId) ||
+      null;
+    const isWalkInOrder = targetOrder?.serviceType !== 'pickup';
+
+    if (targetOrder && !isFullyPaidForRelease(targetOrder)) {
+      await Swal.fire({
+        title: 'Payment Required',
+        text: getReleasePaymentBlockedMessage(targetOrder),
+        icon: 'warning',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
+
     const result = await Swal.fire({
-      title: 'Activate Pickup Confirmation?',
+      title: isWalkInOrder ? 'Activate Receive Confirmation?' : 'Activate Pickup Confirmation?',
       text: 'This will allow the customer to confirm they have received their item.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Activate',
+      confirmButtonText: isWalkInOrder ? 'Enable Receive' : 'Activate',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
@@ -929,7 +965,7 @@ export default function JobOrdersRepair() {
       
       if (response.data.success) {
         await Swal.fire({
-          title: 'Pickup Activated!',
+          title: isWalkInOrder ? 'Receive Activated!' : 'Pickup Activated!',
           text: 'Customer can now confirm they received their item.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
@@ -939,7 +975,7 @@ export default function JobOrdersRepair() {
     } catch (error: any) {
       await Swal.fire({
         title: 'Error',
-        text: error.response?.data?.message || 'Failed to activate pickup',
+        text: error.response?.data?.message || (isWalkInOrder ? 'Failed to activate receive' : 'Failed to activate pickup'),
         icon: 'error',
       });
     }
@@ -1056,6 +1092,16 @@ export default function JobOrdersRepair() {
   };
 
   const handleShipOrder = (order: RepairOrder) => {
+    if (order.serviceType !== 'pickup') {
+      Swal.fire({
+        title: 'Walk-in pickup order',
+        text: 'Walk-in repairs should be handed directly to the customer. Use Receive instead of Ship.',
+        icon: 'info',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
+
     setSelectedOrder(order);
     setEtaPreset("1-2 business days");
     setCarrierCompany("");
@@ -1685,13 +1731,33 @@ export default function JobOrdersRepair() {
                             </button>
                           )}
 
-                          {order.status === "ready-for-pickup" && (
+                          {order.status === "ready-for-pickup" && order.serviceType === "pickup" && (
                             <button
                               onClick={() => handleShipOrder(order)}
                               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
                               title="Ship this repair order"
                             >
                               Ship
+                            </button>
+                          )}
+                          {order.status === "ready-for-pickup" && order.serviceType !== "pickup" && (
+                            <button
+                              onClick={() => handleActivatePickup(String(order.database_id))}
+                              disabled={Boolean(order.pickup_enabled || order.pickup_enabled_at) || !isFullyPaidForRelease(order)}
+                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                order.pickup_enabled || order.pickup_enabled_at || !isFullyPaidForRelease(order)
+                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  : 'text-white bg-purple-600 hover:bg-purple-700'
+                              }`}
+                              title={
+                                order.pickup_enabled || order.pickup_enabled_at
+                                  ? 'Receive already activated'
+                                  : !isFullyPaidForRelease(order)
+                                  ? getReleasePaymentBlockedMessage(order)
+                                  : 'Activate customer receive confirmation'
+                              }
+                            >
+                              {order.pickup_enabled || order.pickup_enabled_at ? '✓ Receive Activated' : 'Receive'}
                             </button>
                           )}
                         </div>
@@ -2140,25 +2206,53 @@ export default function JobOrdersRepair() {
                 )}
                 {viewOrder.status === "ready-for-pickup" && (
                   <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => handleShipOrder(viewOrder)}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-                      title="Ship this repair order"
-                    >
-                      Ship
-                    </button>
-                    <button
-                      onClick={() => handleActivatePickup(String(viewOrder.database_id))}
-                      disabled={viewOrder.pickup_enabled}
-                      className={`px-4 py-2 border border-black rounded-lg font-medium transition-colors ${
-                        viewOrder.pickup_enabled
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-white hover:bg-gray-100 text-black'
-                      }`}
-                      title={viewOrder.pickup_enabled ? 'Pickup already activated' : 'Activate pickup confirmation'}
-                    >
-                      {viewOrder.pickup_enabled ? '✓ Pickup Activated' : 'Activate Receive'}
-                    </button>
+                    {(() => {
+                      const isPickupDelivery = viewOrder.serviceType === 'pickup';
+                      const isPickupActivated = Boolean(viewOrder.pickup_enabled || viewOrder.pickup_enabled_at);
+                      const canActivateRelease = isFullyPaidForRelease(viewOrder);
+
+                      return (
+                        <>
+                          {isPickupDelivery && (
+                            <button
+                              onClick={() => handleShipOrder(viewOrder)}
+                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                              title="Ship this repair order"
+                            >
+                              Ship
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleActivatePickup(String(viewOrder.database_id))}
+                            disabled={isPickupActivated || !canActivateRelease}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                              isPickupDelivery
+                                ? `border border-black ${
+                                    isPickupActivated || !canActivateRelease
+                                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                      : 'bg-white hover:bg-gray-100 text-black'
+                                  }`
+                                : `${
+                                    isPickupActivated || !canActivateRelease
+                                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                      : 'bg-purple-600 hover:bg-purple-700 text-white'
+                                  }`
+                            }`}
+                            title={
+                              isPickupActivated
+                                ? (isPickupDelivery ? 'Pickup already activated' : 'Receive already activated')
+                                : !canActivateRelease
+                                ? getReleasePaymentBlockedMessage(viewOrder)
+                                : (isPickupDelivery ? 'Activate pickup confirmation' : 'Activate customer receive confirmation')
+                            }
+                          >
+                            {isPickupActivated
+                              ? (isPickupDelivery ? '✓ Pickup Activated' : '✓ Receive Activated')
+                              : (isPickupDelivery ? 'Activate Receive' : 'Receive')}
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
                 <button

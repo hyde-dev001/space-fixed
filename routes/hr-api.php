@@ -72,7 +72,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     Route::prefix('employees')->group(function () {
         Route::get('/', [EmployeeController::class, 'index'])->name('hr.employees.index');
         Route::post('/', [EmployeeController::class, 'store'])->name('hr.employees.store');
-        Route::get('/statistics', [EmployeeController::class, 'statistics'])->name('hr.employees.statistics');
+        Route::get('/statistics', [EmployeeController::class, 'stats'])->name('hr.employees.statistics');
         Route::get('/{id}', [EmployeeController::class, 'show'])->name('hr.employees.show');
         Route::put('/{id}', [EmployeeController::class, 'update'])->name('hr.employees.update');
         Route::delete('/{id}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
@@ -101,7 +101,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     Route::prefix('attendance')->group(function () {
         Route::get('/', [AttendanceController::class, 'index'])->name('hr.attendance.index');
         Route::post('/', [AttendanceController::class, 'store'])->name('hr.attendance.store');
-        Route::get('/statistics', [AttendanceController::class, 'statistics'])->name('hr.attendance.statistics');
+        Route::get('/statistics', [AttendanceController::class, 'stats'])->name('hr.attendance.statistics');
         Route::post('/check-in', [AttendanceController::class, 'checkIn'])->name('hr.attendance.checkin');
         Route::post('/check-out', [AttendanceController::class, 'checkOut'])->name('hr.attendance.checkout');
         Route::get('/employee/{employeeId}', [AttendanceController::class, 'getByEmployee'])->name('hr.attendance.by_employee');
@@ -152,20 +152,16 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/', [PayrollController::class, 'index'])->name('hr.payroll.index');
         Route::post('/', [PayrollController::class, 'store'])->name('hr.payroll.store');
         Route::get('/periods', [PayrollController::class, 'payrollPeriods'])->name('hr.payroll.periods');
+        Route::get('/stats', [PayrollController::class, 'stats'])->name('hr.payroll.stats');
+        Route::get('/summary', [PayrollController::class, 'summary'])->name('hr.payroll.summary');
+        Route::post('/calculate-preview', [PayrollController::class, 'calculatePreview'])->name('hr.payroll.calculate_preview');
+        Route::post('/process', [PayrollController::class, 'process'])->name('hr.payroll.process');
         Route::get('/{id}', [PayrollController::class, 'show'])->name('hr.payroll.show');
         Route::put('/{id}', [PayrollController::class, 'update'])->name('hr.payroll.update');
         Route::delete('/{id}', [PayrollController::class, 'destroy'])->name('hr.payroll.destroy');
 
         // Approval (generation is via POST /)
         Route::post('/{id}/approve', [PayrollController::class, 'approve'])->name('hr.payroll.approve');
-
-        // Status transitions
-        Route::post('/process', [PayrollController::class, 'process'])->name('hr.payroll.process');
-
-        // Preview & analytics
-        Route::post('/calculate-preview', [PayrollController::class, 'calculatePreview'])->name('hr.payroll.calculate_preview');
-        Route::get('/stats', [PayrollController::class, 'stats'])->name('hr.payroll.stats');
-        Route::get('/summary', [PayrollController::class, 'summary'])->name('hr.payroll.summary');
         Route::post('/{id}/recalculate', [PayrollController::class, 'recalculate'])->name('hr.payroll.recalculate');
 
         // Export

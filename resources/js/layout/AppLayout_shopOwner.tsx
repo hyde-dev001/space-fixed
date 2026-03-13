@@ -6,9 +6,10 @@ import { ReactNode } from "react";
 
 interface AppLayoutShopOwnerProps {
   children: ReactNode;
+  fullBleed?: boolean;
 }
 
-const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
+const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean }> = ({ children, fullBleed }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
@@ -18,11 +19,11 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
         <Backdrop />
       </div>
       <div
-        className={`flex-1 transition-all duration-300 ease-in-out ${isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
+        className={`flex-1 transition-all duration-300 ease-in-out ${isExpanded || isHovered ? "lg:ml-72.5" : "lg:ml-22.5"
           } ${isMobileOpen ? "ml-0" : ""}`}
       >
         <AppHeader_shopOwner />
-        <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
+        <div className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
           {children}
         </div>
       </div>
@@ -30,10 +31,10 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
   );
 };
 
-const AppLayoutShopOwner: React.FC<AppLayoutShopOwnerProps> = ({ children }) => {
+const AppLayoutShopOwner: React.FC<AppLayoutShopOwnerProps> = ({ children, fullBleed }) => {
   return (
     <SidebarProvider>
-      <LayoutContent>{children}</LayoutContent>
+      <LayoutContent fullBleed={fullBleed}>{children}</LayoutContent>
     </SidebarProvider>
   );
 };

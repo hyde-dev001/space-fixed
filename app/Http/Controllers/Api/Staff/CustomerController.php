@@ -12,14 +12,6 @@ use Illuminate\Support\Facades\DB;
 class CustomerController extends Controller
 {
     /**
-     * Create a new controller instance.
-     */
-    public function __construct()
-    {
-        $this->middleware('auth:user');
-    }
-
-    /**
      * Get customers who have purchased from the staff's shop
      */
     public function index(Request $request)

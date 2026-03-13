@@ -5,11 +5,20 @@ import Navigation from '../Shared/Navigation';
 interface ConversationMessage {
   id: number;
   conversation_id: number;
+  parent_message_id?: number | null;
   sender_id: number;
   sender_type: string;
   content: string;
   attachments?: string[];
   created_at: string;
+  parent_message?: {
+    id: number;
+    sender_id: number;
+    sender_type: string;
+    content: string;
+    attachments?: string[];
+    created_at: string;
+  } | null;
 }
 
 interface Conversation {
@@ -91,11 +100,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [lastMessageByConversationId, setLastMessageByConversationId] = useState<Record<number, string>>({});
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<ConversationMessage | null>(null);
-  const [showInputEmojiPicker, setShowInputEmojiPicker] = useState(false);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<number, string>>({});
   
-  const emojiList = ['😀', '😂', '❤️', '👍', '🎉', '🔥', '😍', '🤔', '😢', '😡', '👌', '💯', '✨', '😎', '🙏'];
   const quickReactionList = ['❤️', '😂', '😍', '😮', '😢', '😡', '👍', '🎉'];
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -445,6 +452,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (inputValue.trim()) {
         formData.append('content', inputValue);
       }
+      if (replyingToMessage?.id) {
+        formData.append('parent_message_id', String(replyingToMessage.id));
+      }
       
       selectedImages.forEach((image) => {
         formData.append('images[]', image);
@@ -475,6 +485,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       setMessages((prev) => [...prev, newMessage]);
       setInputValue('');
       setSelectedImages([]);
+      setReplyingToMessage(null);
     } catch (error) {
       console.error('Failed to send message:', error);
     } finally {
@@ -523,10 +534,6 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
   const clearReply = () => {
     setReplyingToMessage(null);
-  };
-
-  const handleAddEmoji = (emoji: string) => {
-    setInputValue(prev => prev + emoji);
   };
 
   const handleReactToMessage = (messageId: number, emoji: string) => {
@@ -640,6 +647,71 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     return (
       <div className={`w-7 h-7 rounded-full ${bgClass} flex items-center justify-center text-[11px] font-semibold`}>
         {getInitials(name)}
+      </div>
+    );
+  };
+
+  const getReplySenderLabel = (message: Pick<ConversationMessage, 'sender_type'>) => {
+    return message.sender_type === 'customer'
+      ? 'You'
+      : selectedConversation?.shopOwner?.business_name || 'Shop';
+  };
+
+  const getReplyPreviewText = (message: Pick<ConversationMessage, 'content' | 'attachments'>) => {
+    if (message.content?.trim()) {
+      return message.content.trim();
+    }
+
+    const attachmentCount = message.attachments?.length || 0;
+
+    if (attachmentCount > 1) {
+      return `${attachmentCount} photos`;
+    }
+
+    if (attachmentCount === 1) {
+      return 'Photo';
+    }
+
+    return 'Message';
+  };
+
+  const getReplyContextLabel = (message: ConversationMessage) => {
+    if (!message.parent_message) {
+      return null;
+    }
+
+    const shopName = selectedConversation?.shopOwner?.business_name || 'Shop';
+
+    if (message.sender_type === 'customer') {
+      return message.parent_message.sender_type === 'customer'
+        ? 'You replied to yourself'
+        : `You replied to ${shopName}`;
+    }
+
+    return message.parent_message.sender_type === 'customer'
+      ? `${shopName} replied to you`
+      : `${shopName} replied to themselves`;
+  };
+
+  const renderQuotedReply = (message: ConversationMessage, isOutgoing: boolean) => {
+    if (!message.parent_message) {
+      return null;
+    }
+
+    return (
+      <div
+        className={`rounded-2xl px-3 py-2 border ${
+          isOutgoing
+            ? 'bg-blue-50 border-blue-200 text-blue-800'
+            : 'bg-white border-gray-300 text-gray-700'
+        }`}
+      >
+        <p className={`text-[11px] font-semibold ${isOutgoing ? 'text-blue-700' : 'text-gray-500'}`}>
+          {getReplySenderLabel(message.parent_message)}
+        </p>
+        <p className={`text-xs mt-1 whitespace-nowrap overflow-hidden text-ellipsis ${isOutgoing ? 'text-blue-900' : 'text-gray-600'}`}>
+          {getReplyPreviewText(message.parent_message)}
+        </p>
       </div>
     );
   };
@@ -784,7 +856,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="relative flex-shrink-0">
+                      <div className="relative shrink-0">
                         {conversation.shopOwner?.profile_photo ? (
                           <img
                             src={`/storage/${conversation.shopOwner.profile_photo}`}
@@ -810,7 +882,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                           <h3 className="font-bold text-black text-lg truncate">
                             {conversation.shopOwner?.business_name || 'Unknown Shop'}
                           </h3>
-                          <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                          <span className="text-xs text-gray-500 ml-2 shrink-0">
                             {conversation.last_message_at ? new Date(conversation.last_message_at).toLocaleDateString() : 'No messages'}
                           </span>
                         </div>
@@ -1288,21 +1360,35 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                                     key={idx}
                                     src={img}
                                     alt={`Attachment ${idx + 1}`}
-                                    className="rounded-lg max-w-[150px] max-h-[150px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                    className="rounded-lg max-w-37.5 max-h-37.5 object-cover cursor-pointer hover:opacity-80 transition-opacity"
                                     onClick={() => setFullscreenImage(img)}
                                   />
                                 ))}
                               </div>
-                              {message.content && (
+                              {(message.content || message.parent_message) && (
                                 <div className="relative group">
                                   <div
-                                    className={
-                                      message.sender_type === 'customer'
-                                        ? 'bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm'
-                                        : 'bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm'
-                                    }
+                                    className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${
+                                      message.sender_type === 'customer' ? 'items-end' : 'items-start'
+                                    }`}
                                   >
-                                    <p className="break-words text-sm leading-relaxed">{message.content}</p>
+                                    {message.parent_message && (
+                                      <p className="text-[11px] text-gray-500 px-1">
+                                        {getReplyContextLabel(message)}
+                                      </p>
+                                    )}
+                                    {renderQuotedReply(message, message.sender_type === 'customer')}
+                                    {message.content && (
+                                      <div
+                                        className={
+                                          message.sender_type === 'customer'
+                                            ? 'bg-blue-500 text-white px-4 py-3 text-sm rounded-[20px] shadow-sm inline-block w-fit max-w-full'
+                                            : 'bg-gray-100 text-gray-900 px-4 py-3 text-sm rounded-[20px] shadow-sm inline-block w-fit max-w-full'
+                                        }
+                                      >
+                                        <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                      </div>
+                                    )}
                                   </div>
                                   {hoveredMessageId === message.id && (
                                     <div className={`absolute top-0 ${message.sender_type === 'customer' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
@@ -1356,13 +1442,25 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                           ) : (
                             <div className="relative group">
                               <div
-                                className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                                  message.sender_type === 'customer'
-                                    ? 'bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
-                                    : 'bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm'
+                                className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${
+                                  message.sender_type === 'customer' ? 'items-end' : 'items-start'
                                 }`}
                               >
-                                <p className="break-words text-sm leading-relaxed">{message.content}</p>
+                                {message.parent_message && (
+                                  <p className="text-[11px] text-gray-500 px-1">
+                                    {getReplyContextLabel(message)}
+                                  </p>
+                                )}
+                                {renderQuotedReply(message, message.sender_type === 'customer')}
+                                <div
+                                  className={
+                                    message.sender_type === 'customer'
+                                      ? 'bg-blue-500 text-white inline-block w-fit max-w-full px-4 py-3 text-sm rounded-[20px] shadow-sm'
+                                      : 'bg-gray-100 text-gray-900 inline-block w-fit max-w-full px-4 py-3 text-sm rounded-[20px] shadow-sm'
+                                  }
+                                >
+                                  <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                </div>
                               </div>
                               {hoveredMessageId === message.id && (
                                 <div className={`absolute top-0 ${message.sender_type === 'customer' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
@@ -1429,14 +1527,14 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
             <div className="border-t border-gray-200 bg-white px-6 py-4">
               {replyingToMessage && (
-                <div className="mb-3 bg-gray-50 border-l-4 border-blue-500 rounded p-3 flex items-start justify-between">
+                <div className="mb-3 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-start justify-between shadow-sm">
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500 font-semibold mb-1">Replying to {replyingToMessage.sender_type === 'customer' ? 'You' : selectedConversation?.shopOwner?.business_name || 'Shop'}</p>
-                    <p className="text-sm text-gray-700 truncate">{replyingToMessage.content}</p>
+                    <p className="text-xs text-gray-500 font-semibold mb-1">Replying to {getReplySenderLabel(replyingToMessage)}</p>
+                    <p className="text-sm text-gray-700 truncate">{getReplyPreviewText(replyingToMessage)}</p>
                   </div>
                   <button
                     onClick={clearReply}
-                    className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                    className="ml-2 text-gray-400 hover:text-gray-600 shrink-0"
                     title="Cancel reply"
                   >
                     ×
@@ -1477,7 +1575,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                 />
                 <button
                   onClick={handleUploadClick}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors shrink-0"
                   title="Upload images"
                 >
                   <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1498,40 +1596,11 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   />
                 </div>
 
-                <div className="relative">
-                  <button
-                    onClick={() => setShowInputEmojiPicker(!showInputEmojiPicker)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
-                    title="Add emoji"
-                  >
-                    <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
-                    </svg>
-                  </button>
-                  {showInputEmojiPicker && (
-                    <div className="absolute bottom-full mb-2 right-0 bg-white border border-gray-200 rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1 z-20">
-                      {emojiList.map((emoji) => (
-                        <button
-                          key={emoji}
-                          onClick={() => {
-                            handleAddEmoji(emoji);
-                            setShowInputEmojiPicker(false);
-                          }}
-                          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-lg transition-colors"
-                          title={emoji}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
                 <button
                   onClick={handleSendMessage}
                   title="Send message"
                   disabled={!selectedConversation || isSending || (!inputValue.trim() && selectedImages.length === 0)}
-                  className={`p-2 rounded-full transition-colors flex-shrink-0 ${
+                  className={`p-2 rounded-full transition-colors shrink-0 ${
                     selectedConversation && (inputValue.trim() || selectedImages.length > 0) && !isSending
                       ? 'text-gray-600 hover:text-gray-800'
                       : 'text-gray-300 cursor-not-allowed'

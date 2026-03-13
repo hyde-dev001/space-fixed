@@ -18,6 +18,16 @@ interface ShopDetails {
   location: string;
 }
 
+interface RepairProcessPageProps {
+  auth?: {
+    user?: {
+      id: number;
+      name?: string;
+      email?: string;
+    } | null;
+  };
+}
+
 const REGION_OPTIONS = [
   'Abra',
   'Agusan del Norte',
@@ -148,6 +158,8 @@ const SHOE_TYPE_OPTIONS = [
 const CHECKOUT_INFO_STORAGE_KEY = 'repair_process_checkout_info';
 
 const RepairProcess: React.FC = () => {
+  const page = usePage<RepairProcessPageProps>();
+  const authUser = page.props.auth?.user ?? null;
   // Get URL params for pre-selected services
   const urlParams = new URLSearchParams(window.location.search);
   const preSelectedIds = urlParams.get('services')?.split(',').map(Number).filter(Boolean) || [];
@@ -448,6 +460,17 @@ const RepairProcess: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!authUser) {
+      await Swal.fire({
+        title: 'Login Required',
+        text: 'Please log in first before submitting a repair request.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
     
     // Validation
     if (!formData.customerName || !formData.email || !formData.phone) {
@@ -582,6 +605,18 @@ const RepairProcess: React.FC = () => {
       });
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        setIsSubmitting(false);
+        await Swal.fire({
+          title: 'Login Required',
+          text: data.message || 'Please log in first before submitting a repair request.',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        return;
+      }
       
       if (data.success) {
         setIsSubmitting(false);

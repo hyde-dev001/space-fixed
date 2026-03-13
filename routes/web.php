@@ -764,6 +764,9 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
 
     // Set preferred drop-off date after repairer accepts and customer chats
     Route::patch('{id}/schedule', [\App\Http\Controllers\Api\RepairRequestController::class, 'setSchedule']);
+
+    // Change pickup/delivery method before final receipt confirmation
+    Route::patch('{id}/delivery-method', [\App\Http\Controllers\Api\RepairRequestController::class, 'changeDeliveryMethod']);
 });
 
 // Shop repair capacity check — publicly accessible per shop (no auth needed; returns counts only)

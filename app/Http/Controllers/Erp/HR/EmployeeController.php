@@ -411,8 +411,8 @@ class EmployeeController extends Controller
 
         $totalEmployees = Employee::forShopOwner($user->shop_owner_id)->count();
         $activeEmployees = Employee::forShopOwner($user->shop_owner_id)->active()->count();
-        $onLeaveEmployees = Employee::forShopOwner($user->shop_owner_id)->withStatus('on-leave')->count();
-        $suspendedEmployees = Employee::forShopOwner($user->shop_owner_id)->withStatus('suspended')->count();
+        $onLeaveEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'on-leave')->count();
+        $suspendedEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'suspended')->count();
 
         return response()->json([
             'totalEmployees' => $totalEmployees,

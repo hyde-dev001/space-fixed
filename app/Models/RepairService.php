@@ -77,4 +77,13 @@ class RepairService extends Model
     {
         return $this->belongsTo(\App\Models\ShopOwner::class, 'owner_reviewed_by');
     }
+
+    /**
+     * Packages that include this service.
+     */
+    public function packages()
+    {
+        return $this->belongsToMany(RepairPackage::class, 'repair_package_service')
+            ->withTimestamps();
+    }
 }

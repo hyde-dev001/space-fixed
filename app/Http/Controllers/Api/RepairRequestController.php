@@ -17,6 +17,13 @@ class RepairRequestController extends Controller
 {
     public function store(Request $request)
     {
+        if (!Auth::guard('user')->check()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please log in to submit a repair request.',
+            ], 401);
+        }
+
         $validator = Validator::make($request->all(), [
             'customer_name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
@@ -61,7 +68,7 @@ class RepairRequestController extends Controller
             }
 
             // Get authenticated user if available
-            $userId = Auth::guard('user')->check() ? Auth::guard('user')->id() : null;
+            $userId = Auth::guard('user')->id();
             
             // Get shop owner for high value check
             $shopOwner = ShopOwner::find($request->shop_owner_id);
@@ -506,10 +513,10 @@ class RepairRequestController extends Controller
             return response()->json(['success' => false, 'message' => 'Repair request not found'], 404);
         }
 
-        if (!in_array($repair->status, ['repairer_accepted', 'pending', 'in_progress'])) {
+        if (!in_array($repair->status, ['repairer_accepted', 'pending'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'You can only set a schedule after the repairer has accepted your request.',
+                'message' => 'You can only set a schedule before the repair is in progress.',
             ], 422);
         }
 
@@ -549,6 +556,115 @@ class RepairRequestController extends Controller
         return response()->json([
             'success' => true,
             'preferred_date' => $repair->fresh()->scheduled_dropoff_date->format('M d, Y'),
+        ]);
+    }
+
+    /**
+     * Change the delivery method for the authenticated customer's repair.
+     * Allowed while the repair is ready for pickup, before final receipt confirmation.
+     */
+    public function changeDeliveryMethod(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated',
+            ], 401);
+        }
+
+        $validated = $request->validate([
+            'delivery_method' => ['required', 'in:walk_in,pickup'],
+        ]);
+
+        $repair = RepairRequest::query()
+            ->where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found',
+            ], 404);
+        }
+
+        if ($repair->status !== 'ready_for_pickup') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pickup method can only be changed when the repair is ready for pickup.',
+            ], 422);
+        }
+
+        if ($repair->pickup_enabled) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pickup method can no longer be changed after pickup confirmation has been activated.',
+            ], 422);
+        }
+
+        $newMethod = $validated['delivery_method'];
+        $previousMethod = $repair->delivery_method;
+
+        if ($repair->delivery_method === $newMethod) {
+            return response()->json([
+                'success' => true,
+                'delivery_method' => $repair->delivery_method,
+                'pickup_address' => $repair->pickup_address,
+                'message' => 'Pickup method is already set to that option.',
+            ]);
+        }
+
+        $updatePayload = [
+            'delivery_method' => $newMethod,
+        ];
+
+        if ($newMethod === 'walk_in') {
+            $updatePayload['pickup_address'] = null;
+        }
+
+        $repair->update($updatePayload);
+        $updatedRepair = $repair->fresh();
+
+        if ($repair->assigned_repairer_id) {
+            try {
+                $notificationService = app(NotificationService::class);
+                $notificationService->sendToUser(
+                    userId: $repair->assigned_repairer_id,
+                    type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
+                    title: 'Customer Changed Pickup Method',
+                    message: sprintf(
+                        'Customer changed the pickup method for repair %s from %s to %s.',
+                        $repair->request_id,
+                        $previousMethod === 'walk_in' ? 'Walk-in' : 'Carrier Pickup',
+                        $newMethod === 'walk_in' ? 'Walk-in' : 'Carrier Pickup'
+                    ),
+                    data: [
+                        'repair_id' => $repair->id,
+                        'repair_request_id' => $repair->id,
+                        'request_id' => $repair->request_id,
+                        'order_number' => $repair->request_id,
+                        'customer_name' => $repair->customer_name,
+                        'previous_delivery_method' => $previousMethod,
+                        'delivery_method' => $newMethod,
+                    ],
+                    actionUrl: '/erp/staff/job-orders-repair',
+                    priority: 'medium',
+                    requiresAction: false
+                );
+            } catch (\Exception $e) {
+                \Log::warning('Could not notify repairer of pickup method change: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'delivery_method' => $updatedRepair->delivery_method,
+            'pickup_address' => $updatedRepair->pickup_address,
+            'message' => $newMethod === 'walk_in'
+                ? 'Your order is now set to self pick-up at the shop.'
+                : 'Your order is now set to carrier pickup.',
         ]);
     }
 

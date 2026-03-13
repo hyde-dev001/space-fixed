@@ -12,6 +12,13 @@ interface Message {
   timestamp: string;
   createdAt?: string;
   images?: string[];
+  parentMessageId?: number | null;
+  parentMessage?: {
+    id: number;
+    sender: "customer" | "repairer";
+    content: string;
+    images?: string[];
+  } | null;
 }
 
 interface Ticket {
@@ -58,6 +65,11 @@ export default function RepairerSupport() {
   const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [orderStatusByNumber, setOrderStatusByNumber] = useState<Record<string, string>>({});
+  const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<number, string>>({});
+  const quickReactionList = ['❤️', '😂', '😍', '😮', '😢', '😡', '👍', '🎉'];
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -339,6 +351,74 @@ export default function RepairerSupport() {
     );
   };
 
+  const getReplySenderLabel = (message: NonNullable<Message['parentMessage']>) => {
+    return message.sender === 'repairer'
+      ? 'You'
+      : selectedTicket?.customerName || 'Customer';
+  };
+
+  const getReplyPreviewText = (message: Pick<Message, 'content' | 'images'>) => {
+    if (message.content?.trim()) {
+      return message.content.trim();
+    }
+
+    const attachmentCount = message.images?.length || 0;
+    if (attachmentCount > 1) return `${attachmentCount} photos`;
+    if (attachmentCount === 1) return 'Photo';
+    return 'Message';
+  };
+
+  const getReplyContextLabel = (message: Message) => {
+    if (!message.parentMessage) return null;
+
+    const targetName = selectedTicket?.shopName || selectedTicket?.customerName || 'Shop';
+
+    if (message.sender === 'repairer') {
+      return message.parentMessage.sender === 'repairer'
+        ? 'You replied to yourself'
+        : `You replied to ${targetName}`;
+    }
+
+    return message.parentMessage.sender === 'repairer'
+      ? `${targetName} replied to you`
+      : `${targetName} replied to themselves`;
+  };
+
+  const handleReply = (message: Message) => {
+    setReplyingToMessage(message);
+    setReactionPickerMessageId(null);
+  };
+
+  const clearReply = () => {
+    setReplyingToMessage(null);
+  };
+
+  const handleReactToMessage = (messageId: number, emoji: string) => {
+    setMessageReactions((prev) => {
+      if (prev[messageId] === emoji) {
+        const { [messageId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [messageId]: emoji };
+    });
+    setReactionPickerMessageId(null);
+  };
+
+  const renderQuotedReply = (message: Message, isOutgoing: boolean) => {
+    if (!message.parentMessage) return null;
+
+    return (
+      <div className={`rounded-2xl px-3 py-2 border ${isOutgoing ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-white border-gray-300 text-gray-700'}`}>
+        <p className={`text-[11px] font-semibold ${isOutgoing ? 'text-blue-700' : 'text-gray-500'}`}>
+          {getReplySenderLabel(message.parentMessage)}
+        </p>
+        <p className={`text-xs mt-1 whitespace-nowrap overflow-hidden text-ellipsis ${isOutgoing ? 'text-blue-900' : 'text-gray-600'}`}>
+          {getReplyPreviewText(message.parentMessage)}
+        </p>
+      </div>
+    );
+  };
+
   const systemCardWidthClass = "w-[26rem] max-w-[calc(100vw-9rem)]";
 
   useEffect(() => {
@@ -393,6 +473,15 @@ export default function RepairerSupport() {
         }),
         createdAt: msg.created_at,
         images: msg.attachments || undefined,
+        parentMessageId: msg.parent_message_id || null,
+        parentMessage: msg.parent_message
+          ? {
+              id: msg.parent_message.id,
+              sender: msg.parent_message.sender_type === 'customer' ? 'customer' : 'repairer',
+              content: msg.parent_message.content || '',
+              images: msg.parent_message.attachments || undefined,
+            }
+          : null,
       }));
 
       setTickets((prev) =>
@@ -432,6 +521,9 @@ export default function RepairerSupport() {
         if (newMessage.trim()) {
           formData.append("content", newMessage);
         }
+        if (replyingToMessage?.id) {
+          formData.append('parent_message_id', String(replyingToMessage.id));
+        }
         selectedImages.forEach((file) => {
           formData.append("images[]", file);
         });
@@ -457,6 +549,15 @@ export default function RepairerSupport() {
           }),
           createdAt: messageData.created_at,
           images: messageData.attachments || undefined,
+          parentMessageId: messageData.parent_message_id || null,
+          parentMessage: messageData.parent_message
+            ? {
+                id: messageData.parent_message.id,
+                sender: messageData.parent_message.sender_type === 'customer' ? 'customer' : 'repairer',
+                content: messageData.parent_message.content || '',
+                images: messageData.parent_message.attachments || undefined,
+              }
+            : null,
         };
 
         setTickets((prev) =>
@@ -474,6 +575,7 @@ export default function RepairerSupport() {
 
         setNewMessage("");
         setSelectedImages([]);
+        setReplyingToMessage(null);
       } catch (error) {
         console.error("Error sending message:", error);
         setNotification({ type: 'error', message: 'Failed to send message. Please try again.' });
@@ -545,18 +647,18 @@ export default function RepairerSupport() {
       
       {/* Notification Toast */}
       {notification && (
-        <div className="fixed top-20 right-4 z-[999999] animate-in slide-in-from-top-2">
+        <div className="fixed top-20 right-4 z-999999 animate-in slide-in-from-top-2">
           <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg ${
             notification.type === 'success' 
               ? 'bg-green-500 text-white' 
               : 'bg-red-500 text-white'
           }`}>
             {notification.type === 'success' ? (
-              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
             ) : (
-              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
             )}
@@ -677,7 +779,7 @@ export default function RepairerSupport() {
                         <h3 className="font-semibold text-black text-sm truncate">
                           {ticket.customerName}
                         </h3>
-                        <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{ticket.lastMessageTime}</span>
+                        <span className="text-xs text-gray-500 ml-2 shrink-0">{ticket.lastMessageTime}</span>
                       </div>
                       <p className="text-xs text-gray-500 truncate">{getStatusText(ticket.status)}</p>
                       {ticket.transferredFrom && (
@@ -903,6 +1005,8 @@ export default function RepairerSupport() {
                       <div
                         key={message.id}
                         className={`flex ${message.sender === "repairer" ? "justify-end" : "justify-start"}`}
+                        onMouseEnter={() => setHoveredMessageId(message.id)}
+                        onMouseLeave={() => setHoveredMessageId(null)}
                       >
                         <div className={`flex items-start gap-2 ${message.sender === "repairer" ? "flex-row-reverse" : ""}`}>
                           {message.sender === "repairer"
@@ -910,43 +1014,127 @@ export default function RepairerSupport() {
                             : renderCustomerAvatar(customerAvatarUrl, customerName, "w-7 h-7")}
                           <div className={`flex flex-col ${message.sender === "repairer" ? "items-end" : "items-start"}`}>
                             {message.images && message.images.length > 0 ? (
-                              <div>
+                              <div className="relative group">
                                 <div className="flex flex-wrap gap-2 mb-2">
                                   {message.images.map((img, idx) => (
                                     <img
                                       key={idx}
                                       src={resolveAttachmentUrl(img)}
                                       alt={`Attachment ${idx + 1}`}
-                                      className="rounded-lg max-w-[150px] max-h-[150px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                      className="rounded-lg max-w-37.5 max-h-37.5 object-cover cursor-pointer hover:opacity-80 transition-opacity"
                                       onClick={() => setFullscreenImage(resolveAttachmentUrl(img))}
                                     />
                                   ))}
                                 </div>
-                                {message.content && (
-                                  <div
-                                    className={
-                                      message.sender === "repairer"
-                                        ? "bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm"
-                                        : "bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm"
-                                    }
-                                  >
-                                    <p className="wrap-break-word text-sm leading-relaxed">
-                                      {message.content}
-                                    </p>
+                                {(message.content || message.parentMessage) && (
+                                  <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'repairer' ? 'items-end' : 'items-start'}`}>
+                                    {message.parentMessage && <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>}
+                                    {renderQuotedReply(message, message.sender === 'repairer')}
+                                    {message.content && (
+                                      <div className={message.sender === "repairer" ? "bg-blue-500 text-white px-4 py-2 text-sm rounded-lg shadow-sm inline-block w-fit max-w-full" : "bg-gray-100 text-gray-900 px-4 py-2 text-sm rounded-lg shadow-sm inline-block w-fit max-w-full"}>
+                                        <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                      </div>
+                                    )}
                                   </div>
+                                )}
+                                {hoveredMessageId === message.id && message.senderType !== 'system' && (
+                                  <div className={`absolute top-0 ${message.sender === 'repairer' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
+                                    <button
+                                      onClick={() => handleReply(message)}
+                                      title="Reply"
+                                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                    >
+                                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                                      title="React with emoji"
+                                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                    >
+                                      <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                )}
+                                {reactionPickerMessageId === message.id && (
+                                  <div className={`absolute -top-12 ${message.sender === 'repairer' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
+                                    {quickReactionList.map((emoji) => (
+                                      <button
+                                        key={`${message.id}-${emoji}`}
+                                        onClick={() => handleReactToMessage(message.id, emoji)}
+                                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {messageReactions[message.id] && (
+                                  <button
+                                    onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
+                                    className={`absolute -bottom-3 ${message.sender === 'repairer' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
+                                  >
+                                    {messageReactions[message.id]}
+                                  </button>
                                 )}
                               </div>
                             ) : (
-                              <div
-                                className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                                  message.sender === "repairer"
-                                    ? "bg-blue-500 text-white inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
-                                    : "bg-gray-100 text-gray-900 inline-block px-4 py-2 text-sm rounded-lg shadow-sm"
-                                }`}
-                              >
-                                <p className="wrap-break-word text-sm leading-relaxed">
-                                  {message.content}
-                                </p>
+                              <div className="relative group">
+                                <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'repairer' ? 'items-end' : 'items-start'}`}>
+                                  {message.parentMessage && <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>}
+                                  {renderQuotedReply(message, message.sender === 'repairer')}
+                                  <div className={`${message.sender === "repairer" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-900"} inline-block w-fit max-w-full px-4 py-2 text-sm rounded-lg shadow-sm`}>
+                                    <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                  </div>
+                                </div>
+                                {hoveredMessageId === message.id && message.senderType !== 'system' && (
+                                  <div className={`absolute top-0 ${message.sender === 'repairer' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
+                                    <button
+                                      onClick={() => handleReply(message)}
+                                      title="Reply"
+                                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                    >
+                                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                                      title="React with emoji"
+                                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                    >
+                                      <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                )}
+                                {reactionPickerMessageId === message.id && (
+                                  <div className={`absolute -top-12 ${message.sender === 'repairer' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
+                                    {quickReactionList.map((emoji) => (
+                                      <button
+                                        key={`${message.id}-${emoji}`}
+                                        onClick={() => handleReactToMessage(message.id, emoji)}
+                                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {messageReactions[message.id] && (
+                                  <button
+                                    onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
+                                    className={`absolute -bottom-3 ${message.sender === 'repairer' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
+                                  >
+                                    {messageReactions[message.id]}
+                                  </button>
+                                )}
                               </div>
                             )}
                             <div className={`mt-2 ${message.sender === "repairer" ? "text-right" : "text-left"}`}>
@@ -966,6 +1154,24 @@ export default function RepairerSupport() {
 
               {/* Message Input */}
               <div className="border-t border-gray-200 bg-white px-6 py-4">
+                {replyingToMessage && (
+                  <div className="mb-3 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-start justify-between shadow-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 font-semibold mb-1">
+                        Replying to {replyingToMessage.sender === 'repairer' ? 'You' : (selectedTicket?.shopName || selectedTicket?.customerName || 'Shop')}
+                      </p>
+                      <p className="text-sm text-gray-700 truncate">{getReplyPreviewText(replyingToMessage)}</p>
+                    </div>
+                    <button
+                      onClick={clearReply}
+                      className="ml-2 text-gray-400 hover:text-gray-600 shrink-0"
+                      title="Cancel reply"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
                 {/* Image Previews */}
                 {selectedImages.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-2">

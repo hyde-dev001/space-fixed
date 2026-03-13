@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
-use App\Models\Finance\Account;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Auth;
@@ -130,7 +129,6 @@ class InvoiceController extends Controller
             'items.*.quantity' => 'required|numeric|min:0.01',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.account_id' => 'required|integer|exists:finance_accounts,id',
         ]);
 
         try {
@@ -183,7 +181,7 @@ class InvoiceController extends Controller
                     'unit_price' => $item['unit_price'],
                     'tax_rate' => $item['tax_rate'] ?? 0,
                     'amount' => $itemAmount + $itemTax,
-                    'account_id' => $item['account_id'],
+                    'account_id' => null,
                 ]);
             }
 
@@ -246,7 +244,6 @@ class InvoiceController extends Controller
             'items.*.quantity' => 'required_with:items|numeric|min:0.01',
             'items.*.unit_price' => 'required_with:items|numeric|min:0',
             'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
-            'items.*.account_id' => 'required_with:items|integer|exists:finance_accounts,id',
         ]);
 
         try {
@@ -275,7 +272,7 @@ class InvoiceController extends Controller
                         'unit_price' => $item['unit_price'],
                         'tax_rate' => $item['tax_rate'] ?? 0,
                         'amount' => $itemAmount + $itemTax,
-                        'account_id' => $item['account_id'],
+                        'account_id' => null,
                     ]);
                 }
 
@@ -323,13 +320,23 @@ class InvoiceController extends Controller
         try {
             DB::beginTransaction();
 
-            // Create journal entry if not exists
-            if (!$invoice->journal_entry_id) {
-                $invoice->createJournalEntry();
+            // Lightweight posting: mark invoice as posted without account/journal dependency
+            try {
+                $invoice->update(['status' => 'posted']);
+            } catch (\Throwable $statusError) {
+                // Backward-compat: some DBs may not include `posted` in enum yet
+                $meta = is_array($invoice->meta) ? $invoice->meta : [];
+                $meta['ledger_posted'] = true;
+                $meta['ledger_posted_at'] = now()->toDateTimeString();
+                $meta['ledger_posted_by'] = Auth::id();
+                DB::table('finance_invoices')
+                    ->where('id', $invoice->id)
+                    ->update([
+                        'meta' => json_encode($meta),
+                        'updated_at' => now(),
+                    ]);
+                $invoice->refresh();
             }
-
-            // Post the journal entry
-            $invoice->postToLedger();
 
             // Audit log
             $actorUserId = Auth::guard('user')->id() ?? Auth::id();
@@ -344,7 +351,7 @@ class InvoiceController extends Controller
 
             DB::commit();
 
-            return response()->json($invoice->load('items', 'journalEntry.lines'));
+            return response()->json($invoice->load('items'));
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Invoice posting failed: ' . $e->getMessage(), ['exception' => $e]);
@@ -469,11 +476,6 @@ class InvoiceController extends Controller
             $description = 'Order #' . $job->order_number . 
                           (isset($job->status) ? ' - ' . ucfirst($job->status) : '');
             
-            // Get revenue account (first revenue account, or null if none exists)
-            $revenueAccount = Account::where('shop_id', $shopOwnerId)
-                ->where('type', 'LIKE', '%revenue%')
-                ->first();
-            
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
                 'description' => $description,
@@ -481,7 +483,7 @@ class InvoiceController extends Controller
                 'unit_price' => $total,
                 'tax_rate' => 0,
                 'amount' => $total,
-                'account_id' => $revenueAccount ? $revenueAccount->id : null
+                'account_id' => null,
             ]);
             
             // Note: orders table doesn't have invoice_generated or invoice_id columns
@@ -572,16 +574,66 @@ class InvoiceController extends Controller
     }
 
     /**
+     * Void invoice (cancel before payment)
+     */
+    public function void($id)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+
+            $invoice = Invoice::where('shop_id', $shopOwnerId)
+                ->where('id', $id)
+                ->firstOrFail();
+
+            if (in_array($invoice->status, ['paid', 'cancelled'])) {
+                return response()->json(['error' => 'Paid/cancelled invoices cannot be voided'], 422);
+            }
+
+            $previousStatus = $invoice->status;
+            $invoice->update(['status' => 'cancelled']);
+
+            AuditLog::create([
+                'shop_owner_id' => $shopOwnerId,
+                'actor_user_id' => $user->id,
+                'action' => 'void_invoice',
+                'target_type' => 'invoice',
+                'target_id' => $invoice->id,
+                'metadata' => [
+                    'reference' => $invoice->reference,
+                    'previous_status' => $previousStatus,
+                ],
+            ]);
+
+            return response()->json([
+                'message' => 'Invoice voided successfully',
+                'invoice' => $invoice->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to void invoice: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to void invoice',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Mark invoice as paid
      */
     public function markAsPaid(Request $request, $id)
     {
-        try {
-            $validated = $request->validate([
-                'payment_date' => 'required|date',
-                'payment_method' => 'required|string|in:cash,bank_transfer,check,gcash,maya,paypal,other',
-            ]);
+        $validated = $request->validate([
+            'payment_date' => 'required|date',
+            'payment_method' => 'required|string|in:cash,bank_transfer,check,gcash,maya,paypal,other',
+        ]);
 
+        try {
             $user = Auth::guard('user')->user();
             
             if (!$user) {

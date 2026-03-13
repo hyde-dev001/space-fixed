@@ -19,7 +19,12 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware(['auth:sanctum'])->prefix('erp/inventory')->group(function () {
+Route::middleware([
+    'web',
+    'auth:user',
+    'permission:view-inventory|access-inventory-dashboard|access-product-inventory|access-stock-movement|access-upload-inventory|access-product-upload-staff|access-product-management',
+    'shop.isolation',
+])->prefix('erp/inventory')->group(function () {
     
     // =====================================
     // Inventory Dashboard

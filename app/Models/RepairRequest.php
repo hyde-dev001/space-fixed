@@ -21,6 +21,7 @@ class RepairRequest extends Model
         'brand',
         'description',
         'shop_owner_id',
+        'repair_package_id',
         'user_id',
         'assigned_repairer_id',
         'assigned_manager_id',
@@ -33,6 +34,12 @@ class RepairRequest extends Model
         'conversation_id',
         'images',
         'total',
+        'package_price',
+        'add_ons_total',
+        'final_total',
+        'included_services_snapshot',
+        'add_on_services_snapshot',
+        'pricing_breakdown',
         'paymongo_link_id',
         'paymongo_payment_id',
         'payment_link_created_at',
@@ -93,6 +100,9 @@ class RepairRequest extends Model
         'payment_enabled_at' => 'datetime',
         'pickup_enabled_at' => 'datetime',
         'total' => 'decimal:2',
+        'package_price' => 'decimal:2',
+        'add_ons_total' => 'decimal:2',
+        'final_total' => 'decimal:2',
         'is_high_value' => 'boolean',
         'requires_owner_approval' => 'boolean',
         'payment_enabled' => 'boolean',
@@ -100,6 +110,9 @@ class RepairRequest extends Model
         'reassignment_count' => 'integer',
         'images' => 'array',
         'pickup_address' => 'array',
+        'included_services_snapshot' => 'array',
+        'add_on_services_snapshot' => 'array',
+        'pricing_breakdown' => 'array',
     ];
 
     /**
@@ -161,6 +174,11 @@ class RepairRequest extends Model
     public function services()
     {
         return $this->belongsToMany(RepairService::class, 'repair_request_service');
+    }
+
+    public function repairPackage()
+    {
+        return $this->belongsTo(RepairPackage::class, 'repair_package_id');
     }
 
     public function shopOwner()

@@ -8,6 +8,17 @@ interface Props {
   onClose: () => void;
 }
 
+interface ReportShopPageProps {
+  auth?: {
+    user?: {
+      id: number;
+      name?: string;
+      email?: string;
+    } | null;
+  };
+  csrf_token?: string;
+}
+
 const REASONS = [
   { value: 'fraud',         label: 'Fraud / Scam' },
   { value: 'fake_products', label: 'Fake / Counterfeit Products' },
@@ -38,10 +49,17 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
     onClose();
   };
 
-  const { csrf_token } = usePage().props as any;
+  const page = usePage<ReportShopPageProps>();
+  const { csrf_token, auth } = page.props;
+  const authUser = auth?.user ?? null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!authUser) {
+      window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      return;
+    }
+
     if (!reason || description.trim().length < 20) return;
 
     setSubmitting(true);
@@ -60,6 +78,11 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        return;
+      }
+
       if (response.ok) {
         setStep('success');
       } else {
@@ -76,7 +99,7 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -91,11 +114,13 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900">Report Shop</h2>
-              <p className="text-xs text-gray-500 truncate max-w-[200px]">{shopName}</p>
+              <p className="text-xs text-gray-500 truncate max-w-50">{shopName}</p>
             </div>
           </div>
           <button
             onClick={handleClose}
+            aria-label="Close report shop modal"
+            title="Close"
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -153,8 +178,39 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
           </div>
         )}
 
+        {/* Guest state */}
+        {!authUser && step === 'form' && (
+          <div className="px-6 py-10 text-center">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0-1.657 1.343-3 3-3s3 1.343 3 3v3m-6-3V9a4 4 0 118 0v2m-9 10h10a2 2 0 002-2v-5a2 2 0 00-2-2H7a2 2 0 00-2 2v5a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Login Required</h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Please log in first before reporting a shop.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={handleClose}
+                className="px-6 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                }}
+                className="px-6 py-2.5 bg-black text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-colors"
+              >
+                Login
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Form state */}
-        {step === 'form' && (
+        {authUser && step === 'form' && (
           <form onSubmit={handleSubmit}>
             <div className="px-6 py-5 space-y-5">
               {/* Notice */}
@@ -172,6 +228,8 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   required
+                  aria-label="Reason for report"
+                  title="Reason for report"
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white text-gray-900 focus:ring-2 focus:ring-red-400 focus:border-red-400 outline-none"
                 >
                   <option value="">Select a reason…</option>

@@ -78,7 +78,7 @@ class ShopSettingsController extends Controller
                 'attendance_geofence_enabled' => (bool) $shopOwner->attendance_geofence_enabled,
                 'shop_latitude'          => $shopOwner->shop_latitude,
                 'shop_longitude'         => $shopOwner->shop_longitude,
-                'shop_address'           => $shopOwner->shop_address,
+                'shop_address'           => $shopOwner->shop_address ?? $shopOwner->business_address,
                 'shop_geofence_radius'   => $shopOwner->shop_geofence_radius ?? 100,
             ],
         ]);
@@ -185,11 +185,17 @@ class ShopSettingsController extends Controller
             ], 422);
         }
 
+        $resolvedAddress = trim((string) ($validated['shop_address'] ?? ''));
+        if ($resolvedAddress === '') {
+            $resolvedAddress = $shopOwner->shop_address ?: $shopOwner->business_address;
+        }
+
         $shopOwner->update([
             'attendance_geofence_enabled' => $validated['attendance_geofence_enabled'],
             'shop_latitude'  => $validated['shop_latitude'] ?? null,
             'shop_longitude' => $validated['shop_longitude'] ?? null,
-            'shop_address'   => $validated['shop_address'] ?? null,
+            'shop_address'   => $resolvedAddress,
+            'business_address' => $resolvedAddress,
             'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
         ]);
 
