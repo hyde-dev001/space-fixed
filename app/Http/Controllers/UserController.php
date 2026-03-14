@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\Events\Registered;
+use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
 
 /**
@@ -38,7 +39,7 @@ class UserController extends Controller
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
-                'email' => 'required|string|email|max:255|unique:users,email',
+                'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', new NotDisposableEmail()],
                 'phone' => 'required|string|max:15|min:10',
                 'age' => 'required|integer|min:18|max:120',
                 'password' => [

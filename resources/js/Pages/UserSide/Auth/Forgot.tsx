@@ -34,9 +34,19 @@ export default function Forgot() {
 		if (!validateForm()) return;
 
 		setIsLoading(true);
-		setTimeout(() => {
-			router.visit(route('password.otp', { email: email.trim() }));
-		}, 900);
+		router.post(route('password.otp.send'), {
+			email: email.trim(),
+		}, {
+			onError: (err) => {
+				setErrors({
+					email: (err.email as string) || 'Unable to send OTP. Please try again.',
+				});
+				setIsLoading(false);
+			},
+			onFinish: () => {
+				setIsLoading(false);
+			},
+		});
 	};
 
 	return (
@@ -86,7 +96,7 @@ export default function Forgot() {
 									disabled={isLoading}
 									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									{isLoading ? 'Sending...' : 'Send Reset Link'}
+									{isLoading ? 'Sending...' : 'Send OTP'}
 								</button>
 							</Form>
 

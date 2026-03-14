@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\Events\Registered;
+use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
 
 /**
@@ -38,7 +39,7 @@ class ShopOwnerAuthController extends Controller
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
-                'email' => 'required|string|email|max:255|unique:shop_owners,email',
+                'email' => ['required', 'string', 'email', 'max:255', 'unique:shop_owners,email', new NotDisposableEmail()],
                 'phone' => 'required|string|max:20|min:10',
                 'business_name' => 'required|string|max:255',
                 'business_address' => 'required|string|max:500',

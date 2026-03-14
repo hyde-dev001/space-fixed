@@ -9,13 +9,14 @@ const TIMER_SECONDS = 30;
 
 export default function Otp() {
 	const page = usePage();
-	const props = page.props as { email?: string };
+	const props = page.props as { email?: string; status?: string; errors?: Record<string, string> };
 
 	const emailFromQuery = typeof window !== 'undefined'
 		? new URLSearchParams(window.location.search).get('email') || ''
 		: '';
 
 	const email = props.email || emailFromQuery;
+	const status = props.status;
 
 	const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
 	const [errors, setErrors] = useState<string>('');
@@ -84,18 +85,29 @@ export default function Otp() {
 		if (secondsLeft > 0) return;
 
 		setIsResending(true);
-		setTimeout(() => {
-			setIsResending(false);
-			setSecondsLeft(TIMER_SECONDS);
-			setDigits(Array(OTP_LENGTH).fill(''));
-			inputRefs.current[0]?.focus();
-			Swal.fire({
-				icon: 'success',
-				title: 'OTP Sent',
-				text: 'A new OTP has been sent to your email.',
-				confirmButtonColor: '#000000',
-			});
-		}, 700);
+
+		router.post(route('password.otp.resend'), {
+			email,
+		}, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setSecondsLeft(TIMER_SECONDS);
+				setDigits(Array(OTP_LENGTH).fill(''));
+				inputRefs.current[0]?.focus();
+				Swal.fire({
+					icon: 'success',
+					title: 'OTP Sent',
+					text: 'A new OTP has been sent to your email.',
+					confirmButtonColor: '#000000',
+				});
+			},
+			onError: (err) => {
+				setErrors((err.otp as string) || (err.email as string) || 'Unable to resend OTP. Please try again.');
+			},
+			onFinish: () => {
+				setIsResending(false);
+			},
+		});
 	};
 
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -107,9 +119,18 @@ export default function Otp() {
 		}
 
 		setIsLoading(true);
-		setTimeout(() => {
-			router.visit(route('password.new', { email }));
-		}, 800);
+		router.post(route('password.otp.verify'), {
+			email,
+			otp: otpValue,
+		}, {
+			onError: (err) => {
+				setErrors((err.otp as string) || 'Invalid OTP. Please try again.');
+				setIsLoading(false);
+			},
+			onFinish: () => {
+				setIsLoading(false);
+			},
+		});
 	};
 
 	return (
@@ -127,6 +148,9 @@ export default function Otp() {
 						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
 							A 6 digit email OTP was sent to {email || 'your email'}. Enter that code here to proceed.
 						</p>
+						{status === 'otp-sent' && (
+							<p className="text-sm text-green-700 mt-4">OTP sent. Please check your inbox and spam folder.</p>
+						)}
 					</div>
 
 					<div className="max-w-lg mx-auto">
@@ -147,7 +171,7 @@ export default function Otp() {
 												}}
 												type="text"
 												inputMode="numeric"
-												autoComplete={index === 0 ? 'one-time-code' : 'off'}
+												autoComplete="one-time-code"
 												autoCorrect="off"
 												spellCheck={false}
 												maxLength={1}

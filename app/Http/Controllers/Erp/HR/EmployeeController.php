@@ -78,7 +78,7 @@ class EmployeeController extends Controller
             'firstName' => 'required|string|max:50',
             'lastName' => 'required|string|max:50',
             'email' => 'required|email|unique:employees,email|unique:users,email',
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'nullable|string|max:20|unique:employees,phone|unique:users,phone',
             'position' => 'required|string|max:100',
             'department' => 'required|string|max:100',
             'hireDate' => 'nullable|date',

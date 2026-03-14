@@ -24,6 +24,7 @@ use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\EmailVerificationController;
+use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\UserProfileController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\Api\ManagerController;
@@ -57,10 +58,15 @@ Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 've
     ->name('verification.verify');
 
 Route::post('/email/verification-notification', function (Request $request) {
-    $request->user()->sendEmailVerificationNotification();
+    // Support both regular user (web guard) and shop owner guard
+    $user = Auth::guard('web')->user() ?? Auth::guard('shop_owner')->user();
+
+    if ($user && ! $user->hasVerifiedEmail()) {
+        $user->sendEmailVerificationNotification();
+    }
 
     return back()->with('status', 'verification-link-sent');
-})->middleware(['auth', 'throttle:6,1'])->name('verification.send');
+})->middleware(['auth:web,shop_owner', 'throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
@@ -190,14 +196,33 @@ Route::get('/login', function () {
 Route::get('/forgot-password', function () {
     return Inertia::render('UserSide/Auth/Forgot');
 })->name('password.request');
+
+Route::post('/forgot-password/otp', [ForgotPasswordOtpController::class, 'sendOtp'])
+    ->middleware('throttle:5,1')
+    ->name('password.otp.send');
+
+Route::post('/forgot-password/otp/resend', [ForgotPasswordOtpController::class, 'resendOtp'])
+    ->middleware('throttle:6,1')
+    ->name('password.otp.resend');
+
+Route::post('/forgot-password/otp/verify', [ForgotPasswordOtpController::class, 'verifyOtp'])
+    ->middleware('throttle:10,1')
+    ->name('password.otp.verify');
+
+Route::post('/forgot-password/reset', [ForgotPasswordOtpController::class, 'resetPassword'])
+    ->middleware('throttle:6,1')
+    ->name('password.otp.reset');
+
 Route::get('/otp', function (Request $request) {
     return Inertia::render('UserSide/Auth/Otp', [
         'email' => $request->query('email'),
+        'status' => session('status'),
     ]);
 })->name('password.otp');
 Route::get('/new-password', function (Request $request) {
     return Inertia::render('UserSide/Auth/NewPassword', [
         'email' => $request->query('email'),
+        'status' => session('status'),
     ]);
 })->name('password.new');
 Route::get('/shop-owner-register', [LandingPageController::class, 'shopOwnerRegister'])->name('shop-owner-register');

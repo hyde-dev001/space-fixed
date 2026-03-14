@@ -5,7 +5,6 @@ import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
 import { LockIcon } from '../../../icons/index';
-import Swal from '@/Pages/UserSide/Shared/UserModal';
 
 interface FormErrors {
 	password?: string;
@@ -14,7 +13,7 @@ interface FormErrors {
 
 export default function NewPassword() {
 	const page = usePage();
-	const props = page.props as { email?: string };
+	const props = page.props as { email?: string; status?: string };
 
 	const emailFromQuery = typeof window !== 'undefined'
 		? new URLSearchParams(window.location.search).get('email') || ''
@@ -62,17 +61,22 @@ export default function NewPassword() {
 		if (!validateForm()) return;
 
 		setIsLoading(true);
-		setTimeout(() => {
-			setIsLoading(false);
-			Swal.fire({
-				icon: 'success',
-				title: 'Password Updated',
-				text: 'Your password has been reset successfully.',
-				confirmButtonColor: '#000000',
-			}).then(() => {
-				router.visit(route('user.login.form'));
-			});
-		}, 900);
+		router.post(route('password.otp.reset'), {
+			email,
+			password: formData.password,
+			password_confirmation: formData.confirmPassword,
+		}, {
+			onError: (err) => {
+				setErrors({
+					password: (err.password as string) || undefined,
+					confirmPassword: (err.password_confirmation as string) || undefined,
+				});
+				setIsLoading(false);
+			},
+			onFinish: () => {
+				setIsLoading(false);
+			},
+		});
 	};
 
 	return (
