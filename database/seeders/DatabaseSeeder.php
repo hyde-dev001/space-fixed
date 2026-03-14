@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             ShopOwnerSeeder::class,
             RolesAndPermissionsSeeder::class,
             RepairServiceSeeder::class,
+            RepairPackageSeeder::class,
             EmployeeSeeder::class,
             CustomerSeeder::class,
             TaxRateSeeder::class,

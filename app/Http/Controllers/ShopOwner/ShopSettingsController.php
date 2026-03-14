@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProcurementSettings;
+use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -166,7 +167,7 @@ class ShopSettingsController extends Controller
     /**
      * Save attendance geofence settings for this shop.
      */
-    public function updateGeofence(Request $request): JsonResponse
+    public function updateGeofence(Request $request, CaviteLocationPolicyService $caviteLocationPolicy): JsonResponse
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
@@ -190,10 +191,35 @@ class ShopSettingsController extends Controller
             $resolvedAddress = $shopOwner->shop_address ?: $shopOwner->business_address;
         }
 
+        $nextLatitude = $request->has('shop_latitude') ? ($validated['shop_latitude'] ?? null) : $shopOwner->shop_latitude;
+        $nextLongitude = $request->has('shop_longitude') ? ($validated['shop_longitude'] ?? null) : $shopOwner->shop_longitude;
+
+        $locationPolicy = $caviteLocationPolicy->validateUpdateLocation(
+            $nextLatitude,
+            $nextLongitude,
+            $resolvedAddress,
+            $request,
+            $shopOwner,
+            $shopOwner->id,
+            [
+                'email' => $shopOwner->email,
+                'business_name' => $shopOwner->business_name,
+                'target_type' => 'shop_owner',
+                'target_id' => $shopOwner->id,
+            ]
+        );
+
+        if (!$locationPolicy['allowed']) {
+            return response()->json([
+                'message' => $caviteLocationPolicy->denialMessage(),
+                'errors' => $locationPolicy['errors'],
+            ], 422);
+        }
+
         $shopOwner->update([
             'attendance_geofence_enabled' => $validated['attendance_geofence_enabled'],
-            'shop_latitude'  => $validated['shop_latitude'] ?? null,
-            'shop_longitude' => $validated['shop_longitude'] ?? null,
+            'shop_latitude'  => $nextLatitude,
+            'shop_longitude' => $nextLongitude,
             'shop_address'   => $resolvedAddress,
             'business_address' => $resolvedAddress,
             'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,

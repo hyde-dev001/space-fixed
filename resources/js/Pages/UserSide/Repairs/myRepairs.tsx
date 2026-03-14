@@ -36,6 +36,33 @@ type RepairOrder = {
   repairer_name?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
   shop_owner_id?: number | null;
+  repair_package_id?: number | null;
+  package_price?: number | null;
+  add_ons_total?: number | null;
+  final_total?: number | null;
+  included_services_snapshot?: Array<{
+    id: number;
+    name: string;
+    category?: string;
+    price?: number;
+    duration?: string;
+  }> | null;
+  add_on_services_snapshot?: Array<{
+    id: number;
+    name: string;
+    category?: string;
+    price?: number;
+    duration?: string;
+  }> | null;
+  pricing_breakdown?: {
+    mode?: string;
+    package_id?: number;
+    package_name?: string;
+    included_services_total?: number;
+    package_price?: number;
+    add_ons_total?: number;
+    final_total?: number;
+  } | null;
 };
 
 type ConversationShop = {
@@ -64,6 +91,8 @@ const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walkin' |
     console.warn('Failed to store delivery method override:', error);
   }
 };
+
+const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
 
 // Static mock data for testing
 const getStaticRepairOrders = (): RepairOrder[] => {
@@ -1419,6 +1448,50 @@ const MyRepairs: React.FC = () => {
                         <h3 className="font-bold text-black text-xl mb-2">{order.repair_type}</h3>
                         <p className="text-gray-600 mb-4">{order.description}</p>
 
+                        {order.repair_package_id && (
+                          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-gray-500">Package</p>
+                                <p className="text-sm font-semibold text-black">{order.pricing_breakdown?.package_name || 'Repair package selected'}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs uppercase tracking-wide text-gray-500">Base Price</p>
+                                <p className="text-sm font-semibold text-black">{formatCurrency(order.package_price)}</p>
+                              </div>
+                            </div>
+
+                            {!!order.included_services_snapshot?.length && (
+                              <div className="mt-3">
+                                <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">Included Services</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {order.included_services_snapshot.map((service) => (
+                                    <span key={`included-${order.id}-${service.id}`} className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-gray-700 border border-gray-200">
+                                      {service.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {!!order.add_on_services_snapshot?.length && (
+                              <div className="mt-3">
+                                <div className="flex items-center justify-between gap-4 mb-2">
+                                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Add-ons</p>
+                                  <p className="text-xs font-semibold text-black">{formatCurrency(order.add_ons_total)}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {order.add_on_services_snapshot.map((service) => (
+                                    <span key={`addon-${order.id}-${service.id}`} className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-gray-700 border border-gray-200">
+                                      {service.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                           <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Shop Location</p>
@@ -1497,7 +1570,12 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Repair Total</p>
-                          <p className="font-bold text-black text-2xl">₱{order.total_amount.toLocaleString()}</p>
+                          <p className="font-bold text-black text-2xl">{formatCurrency(order.final_total ?? order.total_amount)}</p>
+                          {order.repair_package_id && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Package {formatCurrency(order.package_price)}{Number(order.add_ons_total || 0) > 0 ? ` + Add-ons ${formatCurrency(order.add_ons_total)}` : ''}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

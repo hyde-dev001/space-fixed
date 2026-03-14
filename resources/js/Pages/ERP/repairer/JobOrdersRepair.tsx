@@ -39,6 +39,17 @@ type RepairOrder = {
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
   preferredDate?: string | null;
+  repairPackageId?: number | null;
+  packageName?: string | null;
+  packagePrice?: string | null;
+  addOnsSubtotal?: string | null;
+  finalPrice?: string | null;
+  pricingBreakdown?: {
+    package_name?: string;
+    package_price?: number | string;
+    add_ons_total?: number | string;
+    final_total?: number | string;
+  } | null;
 };
 
 type MetricCardProps = {
@@ -213,6 +224,28 @@ const normalizeRepairStatus = (status: string | null | undefined): RepairOrder["
     default:
       return value as RepairOrder["status"];
   }
+};
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[^0-9.-]/g, '');
+    if (!normalized) {
+      return null;
+    }
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const formatPesoAmount = (value: unknown): string | null => {
+  const parsed = toNumber(value);
+  return parsed === null ? null : `₱${parsed.toFixed(2)}`;
 };
 
 // Icons
@@ -485,6 +518,12 @@ export default function JobOrdersRepair() {
           item: repair.shoe_type || 'N/A',
           service: repair.services?.map((s: any) => s.name).join(', ') || 'N/A',
           total: `₱${parseFloat(repair.total || 0).toFixed(2)}`,
+          repairPackageId: repair.repair_package_id ?? null,
+          packageName: repair.pricing_breakdown?.package_name || repair.repair_package?.name || null,
+          packagePrice: formatPesoAmount(repair.package_price ?? repair.pricing_breakdown?.package_price),
+          addOnsSubtotal: formatPesoAmount(repair.add_ons_total ?? repair.pricing_breakdown?.add_ons_total),
+          finalPrice: formatPesoAmount(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total),
+          pricingBreakdown: repair.pricing_breakdown || null,
           status: normalizeRepairStatus(repair.status),
           createdAt: new Date(repair.created_at).toLocaleString('en-US', {
             year: 'numeric',
@@ -1613,7 +1652,14 @@ export default function JobOrdersRepair() {
                         <span className="text-sm text-gray-900 dark:text-white">{order.item}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{order.service}</span>
+                        <div className="space-y-1">
+                          <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">{order.service}</span>
+                          {order.packageName && (
+                            <span className="block text-xs text-blue-700 dark:text-blue-400">
+                              Package: {order.packageName}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
@@ -1963,6 +2009,14 @@ export default function JobOrdersRepair() {
                         {viewOrder.service || 'Not specified'}
                       </span>
                     </div>
+                    {viewOrder.packageName && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Package Name</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {viewOrder.packageName}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Delivery Method</span>
                       <div className="flex items-center gap-2">
@@ -1984,6 +2038,22 @@ export default function JobOrdersRepair() {
                       <span className="text-sm text-gray-600 dark:text-gray-400">Service Fee</span>
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.total}</span>
                     </div>
+                    {(viewOrder.packagePrice || viewOrder.addOnsSubtotal || viewOrder.finalPrice) && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Package Base Price</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.packagePrice || '₱0.00'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Add-ons Subtotal</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.addOnsSubtotal || '₱0.00'}</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Final Total</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.finalPrice || viewOrder.total}</span>
+                        </div>
+                      </>
+                    )}
                     {viewOrder.startedAt && (
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600 dark:text-gray-400">Started At</span>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\CaviteLocationPolicyService;
 use App\Models\ShopOwner;
 use App\Enums\ShopOwnerStatus;
 use App\Models\ShopDocument;
@@ -30,7 +31,7 @@ class ShopOwnerAuthController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
-    public function register(Request $request)
+    public function register(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         try {
             // Validate registration data
@@ -43,6 +44,11 @@ class ShopOwnerAuthController extends Controller
                 'business_address' => 'required|string|max:500',
                 'business_type' => 'required|in:retail,repair,both (retail & repair)',
                 'registration_type' => 'required|in:individual,company',
+                'attendance_geofence_enabled' => 'sometimes|boolean',
+                'shop_latitude' => 'nullable|numeric|between:-90,90',
+                'shop_longitude' => 'nullable|numeric|between:-180,180',
+                'shop_address' => 'nullable|string|max:500',
+                'shop_geofence_radius' => 'nullable|integer|min:10|max:5000',
                 // operating hours removed from required validation
 
                 // Document uploads
@@ -67,6 +73,19 @@ class ShopOwnerAuthController extends Controller
                 'valid_id.required' => 'Valid ID is required',
             ]);
 
+            $caviteLocationPolicy->assertRegistrationLocation(
+                $validated['shop_latitude'] ?? null,
+                $validated['shop_longitude'] ?? null,
+                $validated['business_address'] ?? null,
+                $request,
+                null,
+                [
+                    'email' => $validated['email'] ?? null,
+                    'business_name' => $validated['business_name'] ?? null,
+                    'target_type' => 'shop_owner_registration',
+                ]
+            );
+
             DB::beginTransaction();
 
             // Create shop owner with pending status
@@ -80,6 +99,11 @@ class ShopOwnerAuthController extends Controller
                 'business_address' => $validated['business_address'],
                 'business_type' => $validated['business_type'],
                 'registration_type' => $validated['registration_type'],
+                'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                'shop_latitude' => $validated['shop_latitude'] ?? null,
+                'shop_longitude' => $validated['shop_longitude'] ?? null,
+                'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
                 // operating_hours intentionally omitted (removed client-side)
                 'status' => 'pending', // Requires admin approval
             ]);
@@ -148,7 +172,9 @@ class ShopOwnerAuthController extends Controller
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation failed',
+                    'message' => $caviteLocationPolicy->isLocationPolicyValidationException($e)
+                        ? $caviteLocationPolicy->denialMessage()
+                        : 'Validation failed',
                     'errors' => $e->errors(),
                 ], 422);
             }

@@ -12,7 +12,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE conversations MODIFY COLUMN assigned_to_type ENUM('crm', 'repairer', 'shop_owner') NULL");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE conversations MODIFY COLUMN assigned_to_type ENUM('crm', 'repairer', 'shop_owner') NULL");
+        }
     }
 
     /**
@@ -20,6 +22,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("ALTER TABLE conversations MODIFY COLUMN assigned_to_type ENUM('crm', 'repairer') NULL");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE conversations MODIFY COLUMN assigned_to_type ENUM('crm', 'repairer') NULL");
+        }
     }
 };

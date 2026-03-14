@@ -11,6 +11,58 @@ import Select from "../../../components/form/Select";
 import Radio from "../../../components/form/input/Radio";
 import DropzoneComponent from "../../../components/form/form-elements/DropZone";
 
+const CAVITE_CENTER = {
+  lat: '14.28140000',
+  lng: '120.86850000',
+};
+
+const CAVITE_BOUNDS = {
+  minLat: 14.05,
+  maxLat: 14.52,
+  minLng: 120.55,
+  maxLng: 121.05,
+};
+
+const CAVITE_CITIES = [
+  'Alfonso',
+  'Amadeo',
+  'Bacoor',
+  'Carmona',
+  'Cavite City',
+  'Dasmariñas',
+  'General Emilio Aguinaldo',
+  'General Mariano Alvarez',
+  'General Trias',
+  'Imus',
+  'Indang',
+  'Kawit',
+  'Magallanes',
+  'Maragondon',
+  'Mendez',
+  'Naic',
+  'Noveleta',
+  'Rosario',
+  'Silang',
+  'Tagaytay',
+  'Tanza',
+  'Ternate',
+  'Trece Martires',
+];
+
+const CAVITE_ADDRESS_KEYWORDS = ['cavite', ...CAVITE_CITIES].map((entry) => entry.toLowerCase());
+
+const inferCaviteCity = (text: string) => {
+  const normalized = text.toLowerCase();
+  return CAVITE_CITIES.find((city) => normalized.includes(city.toLowerCase())) ?? '';
+};
+
+const isWithinCaviteBounds = (lat: number, lng: number) => (
+  lat >= CAVITE_BOUNDS.minLat
+  && lat <= CAVITE_BOUNDS.maxLat
+  && lng >= CAVITE_BOUNDS.minLng
+  && lng <= CAVITE_BOUNDS.maxLng
+);
+
 export default function ShopOwnerRegistration() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -23,6 +75,7 @@ export default function ShopOwnerRegistration() {
     businessType: "",
     registrationType: "individual",
   });
+  const [selectedCity, setSelectedCity] = useState("");
 
 
   const [uploadedDocuments, setUploadedDocuments] = useState({
@@ -37,8 +90,8 @@ export default function ShopOwnerRegistration() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Geofence state
-  const [geoLat, setGeoLat] = useState('14.59950000');
-  const [geoLng, setGeoLng] = useState('120.98420000');
+  const [geoLat, setGeoLat] = useState(CAVITE_CENTER.lat);
+  const [geoLng, setGeoLng] = useState(CAVITE_CENTER.lng);
   const [geoAddress, setGeoAddress] = useState('');
   const [geoRadius, setGeoRadius] = useState<number>(90);
   const [gettingGPS, setGettingGPS] = useState(false);
@@ -58,6 +111,9 @@ export default function ShopOwnerRegistration() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    if (name === 'businessAddress') {
+      setSelectedCity(inferCaviteCity(value));
+    }
     // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
@@ -75,6 +131,39 @@ export default function ShopOwnerRegistration() {
   const handleRegistrationTypeChange = (value: string) => {
     setFormData(prev => ({ ...prev, registrationType: value }));
   };
+
+  const getCaviteLocationState = () => {
+    const lat = parseFloat(geoLat);
+    const lng = parseFloat(geoLng);
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      if (isWithinCaviteBounds(lat, lng)) {
+        return { allowed: true, message: '' };
+      }
+
+      return {
+        allowed: false,
+        message: 'Shop pin must be placed within Cavite to continue registration.',
+      };
+    }
+
+    const addressSource = `${formData.businessAddress} ${selectedCity} Cavite`.trim().toLowerCase();
+    if (!addressSource) {
+      return {
+        allowed: false,
+        message: 'Set your shop pin within Cavite or enter a Cavite address.',
+      };
+    }
+
+    const hasCaviteKeyword = CAVITE_ADDRESS_KEYWORDS.some((keyword) => addressSource.includes(keyword));
+
+    return {
+      allowed: hasCaviteKeyword,
+      message: hasCaviteKeyword ? '' : 'Address must resolve to Cavite.',
+    };
+  };
+
+  const caviteLocationState = getCaviteLocationState();
 
   const hasValidGeoCoordinates = () => {
     const lat = parseFloat(geoLat);
@@ -97,8 +186,8 @@ export default function ShopOwnerRegistration() {
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      const initLat = parseFloat(geoLat) || 14.5995;
-      const initLng = parseFloat(geoLng) || 120.9842;
+      const initLat = parseFloat(geoLat) || parseFloat(CAVITE_CENTER.lat);
+      const initLng = parseFloat(geoLng) || parseFloat(CAVITE_CENTER.lng);
 
       const map = L.map(mapRef.current).setView([initLat, initLng], 16);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -185,6 +274,7 @@ export default function ShopOwnerRegistration() {
           if (data.display_name) {
             setGeoAddress(data.display_name);
             setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
+            setSelectedCity(inferCaviteCity(data.display_name));
           }
         } catch {
           // Keep coordinates even if reverse geocoding fails.
@@ -217,6 +307,7 @@ export default function ShopOwnerRegistration() {
       if (data.display_name) {
         setGeoAddress(data.display_name);
         setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
+        setSelectedCity(inferCaviteCity(data.display_name));
       } else {
         setGeoError('Could not find an address for this location. Please type the address manually.');
       }
@@ -232,7 +323,7 @@ export default function ShopOwnerRegistration() {
       return !!(formData.firstName && formData.lastName && formData.email && formData.phone);
     } else if (step === 2) {
       const hasGeo = hasValidGeoCoordinates();
-      return !!(formData.businessName && formData.businessAddress && formData.businessType && hasGeo);
+      return !!(formData.businessName && formData.businessAddress && formData.businessType && hasGeo && caviteLocationState.allowed);
     } else if (step === 3) {
       return !!(uploadedDocuments.dti.file && uploadedDocuments.mayors_permit.file &&
                 uploadedDocuments.bir.file && uploadedDocuments.valid_id.file);
@@ -253,6 +344,10 @@ export default function ShopOwnerRegistration() {
 
     if (!hasValidGeoCoordinates()) {
       return { valid: false, message: 'Please set a valid shop location (latitude and longitude).' };
+    }
+
+    if (!caviteLocationState.allowed) {
+      return { valid: false, message: caviteLocationState.message || 'Shop location must be within Cavite.' };
     }
 
     // Check if all documents are uploaded
@@ -276,8 +371,10 @@ export default function ShopOwnerRegistration() {
     if (validateStep(currentStep)) {
       setCurrentStep(currentStep + 1);
     } else {
-      const geofenceMessage = currentStep === 2 && !hasValidGeoCoordinates()
-        ? 'Please place your shop pin on the map or enter valid coordinates before proceeding.'
+      const geofenceMessage = currentStep === 2
+        ? (!hasValidGeoCoordinates()
+          ? 'Please place your shop pin on the map or enter valid coordinates before proceeding.'
+          : caviteLocationState.message || 'Only shops located within Cavite can register.')
         : 'Please fill in all required fields before proceeding.';
 
       Swal.fire({
@@ -302,6 +399,16 @@ export default function ShopOwnerRegistration() {
         icon: 'error',
         title: 'Missing Required Information',
         text: validation.message,
+        confirmButtonColor: '#3085d6',
+      });
+      return;
+    }
+
+    if (!caviteLocationState.allowed) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Outside Cavite',
+        text: caviteLocationState.message || 'Only Cavite shop locations can register.',
         confirmButtonColor: '#3085d6',
       });
       return;
@@ -574,6 +681,38 @@ export default function ShopOwnerRegistration() {
                       {errors.business_address && <p className="mt-1 text-sm text-red-600">{errors.business_address}</p>}
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="province">Province</Label>
+                      <Input
+                        type="text"
+                        id="province"
+                        name="province"
+                        value="Cavite"
+                        disabled
+                        className="w-full bg-gray-100 text-gray-600"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Registration is limited to shops within Cavite.</p>
+                    </div>
+                    <div>
+                      <Label htmlFor="caviteCity">City / Municipality (optional)</Label>
+                      <select
+                        id="caviteCity"
+                        name="caviteCity"
+                        aria-label="Cavite city or municipality"
+                        title="Cavite city or municipality"
+                        value={selectedCity}
+                        onChange={(e) => setSelectedCity(e.target.value)}
+                        className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pr-11 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10"
+                      >
+                        <option value="">Select Cavite city/municipality</option>
+                        {CAVITE_CITIES.map((city) => (
+                          <option key={city} value={city}>{city}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">Use this to confirm the shop is within a Cavite locality.</p>
+                    </div>
+                  </div>
                   <div>
                     <Label>Shop Type</Label>
                     <Select
@@ -607,6 +746,12 @@ export default function ShopOwnerRegistration() {
                   </div>
 
                   <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5 space-y-5">
+                    {!caviteLocationState.allowed && (
+                      <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        <span className="font-semibold">Cavite-only policy:</span> {caviteLocationState.message}
+                      </p>
+                    )}
+
                     {geoAddress && (
                       <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
                         <span className="font-semibold">Detected address:</span> {geoAddress}. If this is wrong, drag the pin on the map.
@@ -646,6 +791,7 @@ export default function ShopOwnerRegistration() {
                   <button
                     type="button"
                     onClick={handleNext}
+                    disabled={!caviteLocationState.allowed}
                     className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
                   >
                     Next
@@ -890,11 +1036,17 @@ export default function ShopOwnerRegistration() {
                       <p className="text-sm text-gray-600">
                         Review all information before submitting your application for approval.
                       </p>
+                      {!caviteLocationState.allowed && (
+                        <p className="mt-2 text-sm font-medium text-red-600">
+                          {caviteLocationState.message}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="submit"
                       onClick={handleSubmit}
-                      className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
+                      disabled={isSubmitting || !caviteLocationState.allowed}
+                      className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Submit Registration
                     </button>

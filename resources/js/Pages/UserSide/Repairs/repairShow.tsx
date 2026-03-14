@@ -32,6 +32,23 @@ interface RepairService {
   duration: string;
 }
 
+interface RepairPackage {
+  id: number;
+  name: string;
+  description?: string | null;
+  package_price: number;
+  service_count: number;
+  services_total_price: number;
+  savings_amount: number;
+  services: Array<{
+    id: number;
+    name: string;
+    category: string;
+    price: number;
+    duration: string;
+  }>;
+}
+
 interface Review {
   id: number;
   user_name: string;
@@ -56,53 +73,22 @@ interface ReviewStats {
 interface Props {
   shop: Shop;
   repairServices: RepairService[];
+  repairPackages: RepairPackage[];
   auth?: {
     user?: any;
   };
 }
 
-const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
+const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
-  const promoServices = [
-    {
-      value: 'regular_cleaning',
-      label: 'Regular Cleaning',
-      price: '₱299',
-      duration: '1 day',
-      details: [
-        'Basic cleaning and quick refresh for everyday use.',
-        'Surface wipe-down for upper, outsole, and laces.',
-      ],
-    },
-    {
-      value: 'pro_cleaning',
-      label: 'Pro Cleaning',
-      price: '₱499',
-      duration: '1-2 days',
-      details: [
-        'Deep treatment for stubborn dirt and yellowing.',
-        'Includes stain lifting and detailed sole brushing.',
-      ],
-    },
-    {
-      value: 'premium_cleaning',
-      label: 'Premium Cleaning',
-      price: '₱799',
-      duration: '2-3 days',
-      details: [
-        'Full premium care with deep clean and finishing touch.',
-        'With odor treatment, lace care, and premium finishing.',
-      ],
-    },
-  ] as const;
   
   const [showReportModal, setShowReportModal] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
-  const [selectedPromoService, setSelectedPromoService] = useState<string | null>(null);
+  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
   
@@ -170,13 +156,19 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
   };
 
   const handleServiceToggle = (serviceId: number) => {
+    setSelectedPackageId(null);
     setSelectedServices(prev => {
       if (prev.includes(serviceId)) {
         return prev.filter(id => id !== serviceId);
       }
 
-      return [serviceId];
+      return [...prev, serviceId];
     });
+  };
+
+  const handlePackageToggle = (packageId: number) => {
+    setSelectedServices([]);
+    setSelectedPackageId((prev) => (prev === packageId ? null : packageId));
   };
 
   const handleRequestRepair = () => {
@@ -189,6 +181,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
       id: shop.id,
       name: shop.name,
       location: shop.location,
+      address: shop.address || shop.location,
     }));
   };
 
@@ -567,163 +560,153 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices }) => {
           {/* Repair Services Section */}
           <div className="mb-12">
             <div className="mb-8">
-              <h2 className="text-3xl font-bold text-black mb-5">Services</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {promoServices.map((promo) => {
-                  const isSelected = selectedPromoService === promo.value;
+              <h2 className="text-3xl font-bold text-black mb-5">Packages</h2>
+              {repairPackages && repairPackages.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {repairPackages.map((pkg) => {
+                    const isSelected = selectedPackageId === pkg.id;
 
-                  return (
-                    <button
-                      key={promo.value}
-                      type="button"
-                      onClick={() => {
-                        setSelectedPromoService(promo.value);
-                        setSelectedServices([]);
-                      }}
-                      className={`bg-white rounded-2xl p-6 border-2 transition-all h-full cursor-pointer w-full text-left ${
-                        isSelected
-                          ? 'border-black shadow-md'
-                          : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
-                      }`}
-                    >
-                      <div className="flex flex-col h-full">
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div className="flex-1 min-w-0">
-                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium inline-block mb-2">
-                              Cleaning
-                            </span>
-                            <h3 className="text-lg font-bold text-black">{promo.label}</h3>
+                    return (
+                      <button
+                        key={pkg.id}
+                        type="button"
+                        onClick={() => handlePackageToggle(pkg.id)}
+                        className={`bg-white rounded-2xl p-6 border-2 transition-all h-full cursor-pointer w-full text-left ${
+                          isSelected
+                            ? 'border-black shadow-md'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
+                        }`}
+                      >
+                        <div className="flex flex-col h-full">
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium inline-block mb-2">
+                                Package
+                              </span>
+                              <h3 className="text-lg font-bold text-black">{pkg.name}</h3>
+                              <p className="text-sm text-gray-600 mt-1">{pkg.description || 'Repair package offer'}</p>
+                            </div>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                              isSelected
+                                ? 'border-black bg-black'
+                                : 'border-gray-300'
+                            }`}>
+                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white" />}
+                            </div>
                           </div>
-                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                            isSelected
-                              ? 'border-black bg-black'
-                              : 'border-gray-300'
-                          }`}>
-                            {isSelected && <span className="block w-2 h-2 rounded-full bg-white" />}
+
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p>Includes {pkg.service_count} service{pkg.service_count !== 1 ? 's' : ''}</p>
+                            <p>Save ₱{Number(pkg.savings_amount || 0).toLocaleString()}</p>
+                          </div>
+
+                          <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between">
+                            <span className="text-2xl font-bold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
+                            <span className="text-xs text-gray-500">Bundle offer</span>
                           </div>
                         </div>
-
-                        <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
-                          {promo.details.map((line, index) => (
-                            <li key={`${promo.value}-desc-${index}`} className="leading-5">
-                              {line}
-                            </li>
-                          ))}
-                        </ul>
-
-                        <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between">
-                          <span className="text-2xl font-bold text-black">{promo.price}</span>
-                          <span className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="12" r="10" />
-                              <polyline points="12 6 12 12 16 14" />
-                            </svg>
-                            {promo.duration}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-white rounded-2xl border border-gray-200 text-gray-600">
+                  No active packages available.
+                </div>
+              )}
             </div>
 
-            {selectedPromoService && (
-              <div className="rounded-3xl border border-gray-200 bg-gray-50/60 p-6 md:p-8 shadow-sm transition-all duration-300">
-                <div className="flex items-center justify-between gap-3 mb-8">
-                  <h2 className="text-3xl font-bold text-black">add on</h2>
-                  <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                    Choose 1
-                  </span>
-                </div>
+            <div className="rounded-3xl border border-gray-200 bg-gray-50/60 p-6 md:p-8 shadow-sm transition-all duration-300">
+              <div className="flex items-center justify-between gap-3 mb-8">
+                <h2 className="text-3xl font-bold text-black">Individual Services</h2>
+                <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
+                  Choose one or more
+                </span>
+              </div>
 
-                {repairServices && repairServices.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {repairServices.map((service) => {
-                      const descriptionLines = getServiceDescriptionLines(service.description);
-                      const isSelected = selectedServices.includes(service.id);
+              {repairServices && repairServices.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {repairServices.map((service) => {
+                    const descriptionLines = getServiceDescriptionLines(service.description);
+                    const isSelected = selectedServices.includes(service.id);
 
-                      return (
-                        <div
-                          key={service.id}
-                          className={`bg-white rounded-2xl p-6 border-2 transition-all h-full ${
-                            isSelected
-                              ? 'border-black shadow-md'
-                              : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
-                          }`}
-                          onClick={() => handleServiceToggle(service.id)}
-                        >
-                          <div className="flex flex-col h-full">
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <h3 className="text-lg font-bold text-black">{service.title}</h3>
-                                  <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
-                                    {service.category}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                                isSelected
-                                  ? 'border-black bg-black'
-                                  : 'border-gray-300'
-                              }`}>
-                                {isSelected && (
-                                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                  </svg>
-                                )}
+                    return (
+                      <div
+                        key={service.id}
+                        className={`bg-white rounded-2xl p-6 border-2 transition-all h-full ${
+                          isSelected
+                            ? 'border-black shadow-md'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
+                        }`}
+                        onClick={() => handleServiceToggle(service.id)}
+                      >
+                        <div className="flex flex-col h-full">
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 className="text-lg font-bold text-black">{service.title}</h3>
+                                <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
+                                  {service.category}
+                                </span>
                               </div>
                             </div>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                              isSelected
+                                ? 'border-black bg-black'
+                                : 'border-gray-300'
+                            }`}>
+                              {isSelected && (
+                                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
 
-                            <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
-                              {descriptionLines.map((line, index) => (
-                                <li key={`${service.id}-desc-${index}`} className="leading-5">
-                                  {line}
-                                </li>
-                              ))}
-                            </ul>
+                          <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
+                            {descriptionLines.map((line, index) => (
+                              <li key={`${service.id}-desc-${index}`} className="leading-5">
+                                {line}
+                              </li>
+                            ))}
+                          </ul>
 
-                            <div className="mt-auto pt-4 border-t border-gray-200">
-                              <div className="flex items-center justify-between">
-                                <div className="text-2xl font-bold text-black">{service.price}</div>
-                                <div className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <polyline points="12 6 12 12 16 14" />
-                                  </svg>
-                                  {service.duration}
-                                </div>
+                          <div className="mt-auto pt-4 border-t border-gray-200">
+                            <div className="flex items-center justify-between">
+                              <div className="text-2xl font-bold text-black">{service.price}</div>
+                              <div className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="10" />
+                                  <polyline points="12 6 12 12 16 14" />
+                                </svg>
+                                {service.duration}
                               </div>
                             </div>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-gray-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                      <polyline points="9 22 9 12 15 12 15 22" />
-                    </svg>
-                    <p className="text-gray-600 text-lg">No repair services available at the moment</p>
-                  </div>
-                )}
-              </div>
-            )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-gray-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                  <p className="text-gray-600 text-lg">No repair services available at the moment</p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Request Service Button */}
           <Link
-            href={`/repair-process${selectedServices.length > 0 ? `?services=${selectedServices.join(',')}&shop=${shop.id}` : ''}`}
+            href={`/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`}
             onClick={handleRequestRepair}
             className="block w-full bg-black text-white py-5 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-xl shadow-xl hover:shadow-2xl text-center mb-16"
           >
-            Request Repair Service {selectedServices.length > 0 && `(${selectedServices.length} service${selectedServices.length !== 1 ? 's' : ''} selected)`}
+            Request Repair Service {selectedPackageId ? '(1 package selected)' : selectedServices.length > 0 ? `(${selectedServices.length} service${selectedServices.length !== 1 ? 's' : ''} selected)` : ''}
           </Link>
 
           {/* Reviews and Comments Section */}

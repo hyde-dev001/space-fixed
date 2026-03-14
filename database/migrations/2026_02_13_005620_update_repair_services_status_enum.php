@@ -12,7 +12,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE `repair_services` MODIFY COLUMN `status` ENUM('Active', 'Inactive', 'Pending', 'Under Review', 'Pending Owner Approval', 'Rejected') DEFAULT 'Active'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE `repair_services` MODIFY COLUMN `status` ENUM('Active', 'Inactive', 'Pending', 'Under Review', 'Pending Owner Approval', 'Rejected') DEFAULT 'Active'");
+        }
     }
 
     /**
@@ -20,6 +22,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("ALTER TABLE `repair_services` MODIFY COLUMN `status` ENUM('Active', 'Inactive', 'Pending', 'Under Review', 'Rejected') DEFAULT 'Active'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE `repair_services` MODIFY COLUMN `status` ENUM('Active', 'Inactive', 'Pending', 'Under Review', 'Rejected') DEFAULT 'Active'");
+        }
     }
 };

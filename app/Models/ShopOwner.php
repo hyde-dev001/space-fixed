@@ -127,6 +127,14 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Get repair packages created under this shop.
+     */
+    public function repairPackages()
+    {
+        return $this->hasMany(RepairPackage::class, 'shop_owner_id');
+    }
+
+    /**
      * Get all reports filed against this shop
      */
     public function shopReports()

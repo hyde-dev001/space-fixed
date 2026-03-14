@@ -12,10 +12,28 @@ interface RepairService {
   duration?: string;
 }
 
+interface RepairPackage {
+  id: number;
+  name: string;
+  description?: string | null;
+  package_price: number;
+  service_count: number;
+  services_total_price: number;
+  savings_amount: number;
+  services: Array<{
+    id: number;
+    name: string;
+    category: string;
+    price: number;
+    duration: string;
+  }>;
+}
+
 interface ShopDetails {
   id: number;
   name: string;
   location: string;
+  address?: string;
 }
 
 interface RepairProcessPageProps {
@@ -163,76 +181,89 @@ const RepairProcess: React.FC = () => {
   // Get URL params for pre-selected services
   const urlParams = new URLSearchParams(window.location.search);
   const preSelectedIds = urlParams.get('services')?.split(',').map(Number).filter(Boolean) || [];
+  const preSelectedPackageId = Number(urlParams.get('package') || 0) || null;
   const shopId = urlParams.get('shop');
 
   // Retrieve stored services from localStorage
   const [repairServices, setRepairServices] = useState<RepairService[]>([]);
+  const [repairPackages, setRepairPackages] = useState<RepairPackage[]>([]);
+  const [isLoadingPackages, setIsLoadingPackages] = useState(true);
   const [shopDetails, setShopDetails] = useState<ShopDetails | null>(null);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
+  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
 
   useEffect(() => {
     const loadServices = async () => {
       setIsLoadingServices(true);
-      
-      // First, try to load from localStorage (from shop page)
-      const storedServices = localStorage.getItem('selectedRepairServices');
+      setIsLoadingPackages(true);
+
       const storedShop = localStorage.getItem('shopDetails');
-      
-      if (storedServices) {
-        console.log('Loading services from localStorage');
-        const services = JSON.parse(storedServices);
-        // Convert price to number and ensure proper format
-        const formattedServices = services.map((s: any) => ({
-          ...s,
-          title: s.title || s.name, // Handle both title and name fields
-          price: typeof s.price === 'string' ? parseFloat(s.price.replace(/[^0-9.]/g, '')) : s.price,
-        }));
-        setRepairServices(formattedServices);
-        console.log('Loaded services from localStorage:', formattedServices);
-      } else {
-        // If no localStorage data, fetch from API
-        // Fetch for specific shop if shopId provided, otherwise fetch all services
-        try {
-          const apiUrl = shopId 
-            ? `/api/repair-services?shop_id=${shopId}` 
-            : '/api/repair-services';
-          
-          console.log('Fetching services from API:', apiUrl);
-          const response = await fetch(apiUrl);
-          const data = await response.json();
-          
-          console.log('API response:', data);
-          
-          if (data.success && data.data && data.data.length > 0) {
-            const formattedServices = data.data.map((service: any) => ({
-              id: service.id,
-              title: service.name,
-              price: parseFloat(service.price),
-              description: service.description || 'Professional repair service',
-              category: service.category,
-              duration: service.duration,
-            }));
-            setRepairServices(formattedServices);
-            console.log('Loaded services from API:', formattedServices);
-          } else {
-            console.log('No services found in API response');
-          }
-        } catch (error) {
-          console.error('Failed to fetch services:', error);
-          Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Failed to load repair services',
-            confirmButtonColor: '#000000',
-          });
-        }
-      }
-      
+
       if (storedShop) {
         setShopDetails(JSON.parse(storedShop));
       }
-      
-      setIsLoadingServices(false);
+
+      // Always fetch from API so data is fresh and consistent.
+      // URL params determine shop scoping; localStorage is only for lightweight context.
+      try {
+        const apiUrl = shopId
+          ? `/api/repair-services?shop_id=${shopId}`
+          : '/api/repair-services';
+
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        if (data.success && Array.isArray(data.data)) {
+          const formattedServices = data.data.map((service: any) => ({
+            id: service.id,
+            title: service.name,
+            price: parseFloat(service.price),
+            description: service.description || '',
+            category: service.category,
+            duration: service.duration,
+          }));
+          setRepairServices(formattedServices);
+
+          if (data.shop) {
+            setShopDetails({
+              id: Number(data.shop.id || shopId || 0),
+              name: data.shop.name || 'Repair Shop',
+              location: data.shop.location || data.shop.address || '',
+              address: data.shop.address || '',
+            });
+          }
+        } else {
+          setRepairServices([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch services:', error);
+        setRepairServices([]);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Failed to load repair services',
+          confirmButtonColor: '#000000',
+        });
+      }
+
+      try {
+        const packageApiUrl = shopId
+          ? `/api/repair-packages/public?shop_id=${shopId}`
+          : '/api/repair-packages/public';
+        const packageResponse = await fetch(packageApiUrl);
+        const packageData = await packageResponse.json();
+        if (packageData.success && Array.isArray(packageData.data)) {
+          setRepairPackages(packageData.data);
+        } else {
+          setRepairPackages([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch repair packages:', error);
+        setRepairPackages([]);
+      } finally {
+        setIsLoadingPackages(false);
+        setIsLoadingServices(false);
+      }
     };
     
     loadServices();
@@ -252,7 +283,8 @@ const RepairProcess: React.FC = () => {
     pickupRegion: '',
     pickupPostalCode: '',
   });
-  const [selectedServices, setSelectedServices] = useState<number[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
+  const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
   const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
   const [isPickupRegionOpen, setIsPickupRegionOpen] = useState(false);
   const [saveInfoForCheckout, setSaveInfoForCheckout] = useState(false);
@@ -262,9 +294,17 @@ const RepairProcess: React.FC = () => {
   // Set selected services once repair services are loaded
   useEffect(() => {
     if (repairServices.length > 0 && preSelectedIds.length > 0) {
-      setSelectedServices([preSelectedIds[0]]);
+      setSelectedServiceIds(preSelectedIds);
     }
   }, [repairServices]);
+
+  useEffect(() => {
+    if (preSelectedPackageId && repairPackages.some((pkg) => pkg.id === preSelectedPackageId)) {
+      setSelectedServiceIds([]);
+      setSelectedAddOnServiceIds([]);
+      setSelectedPackageId(preSelectedPackageId);
+    }
+  }, [preSelectedPackageId, repairPackages]);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -351,16 +391,48 @@ const RepairProcess: React.FC = () => {
   }, [saveInfoForCheckout, formData]);
 
   const servicesTotal = useMemo(() => {
-    return selectedServices.reduce((sum, serviceId) => {
-      const service = repairServices.find(s => s.id === serviceId);
-      const price = typeof service?.price === 'string' 
+    return selectedServiceIds.reduce((sum, serviceId) => {
+      const service = repairServices.find((s) => s.id === serviceId);
+      const price = typeof service?.price === 'string'
         ? parseFloat(service.price.replace(/[^0-9.]/g, '')) || 0
         : service?.price || 0;
       return sum + price;
     }, 0);
-  }, [selectedServices, repairServices]);
+  }, [selectedServiceIds, repairServices]);
 
-  const grandTotal = servicesTotal;
+  const selectedPackage = useMemo(
+    () => repairPackages.find((pkg) => pkg.id === selectedPackageId) || null,
+    [repairPackages, selectedPackageId]
+  );
+
+  const selectedStandaloneServices = useMemo(
+    () => repairServices.filter((service) => selectedServiceIds.includes(service.id)),
+    [repairServices, selectedServiceIds]
+  );
+
+  const includedPackageServiceIds = useMemo(
+    () => new Set((selectedPackage?.services || []).map((service) => service.id)),
+    [selectedPackage]
+  );
+
+  const addOnsTotal = useMemo(() => {
+    return selectedAddOnServiceIds.reduce((sum, serviceId) => {
+      const service = repairServices.find((s) => s.id === serviceId);
+      const price = typeof service?.price === 'string'
+        ? parseFloat(service.price.replace(/[^0-9.]/g, '')) || 0
+        : service?.price || 0;
+      return sum + price;
+    }, 0);
+  }, [selectedAddOnServiceIds, repairServices]);
+
+  const selectedAddOnServices = useMemo(
+    () => repairServices.filter((service) => selectedAddOnServiceIds.includes(service.id)),
+    [repairServices, selectedAddOnServiceIds]
+  );
+
+  const packageTotal = selectedPackage ? Number(selectedPackage.package_price || 0) : 0;
+
+  const grandTotal = selectedPackage ? packageTotal + addOnsTotal : servicesTotal;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -369,7 +441,31 @@ const RepairProcess: React.FC = () => {
   };
 
   const handleServiceToggle = (serviceId: number) => {
-    setSelectedServices([serviceId]);
+    setSelectedPackageId(null);
+    setSelectedAddOnServiceIds([]);
+    setSelectedServiceIds((prev) => (
+      prev.includes(serviceId)
+        ? prev.filter((id) => id !== serviceId)
+        : [...prev, serviceId]
+    ));
+  };
+
+  const handlePackageToggle = (packageId: number) => {
+    setSelectedServiceIds([]);
+    setSelectedAddOnServiceIds([]);
+    setSelectedPackageId((prev) => (prev === packageId ? null : packageId));
+  };
+
+  const handleAddOnToggle = (serviceId: number) => {
+    if (!selectedPackageId) {
+      return;
+    }
+
+    setSelectedAddOnServiceIds((prev) => (
+      prev.includes(serviceId)
+        ? prev.filter((id) => id !== serviceId)
+        : [...prev, serviceId]
+    ));
   };
 
   const readFileAsDataUrl = (file: File): Promise<string> => {
@@ -483,10 +579,10 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
-    if (selectedServices.length === 0) {
+    if (!selectedPackageId && selectedServiceIds.length === 0) {
       Swal.fire({
-        title: 'No Services Selected',
-        text: 'Please select at least one repair service',
+        title: 'No Selection Yet',
+        text: 'Please select a repair package or at least one repair service',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -538,7 +634,9 @@ const RepairProcess: React.FC = () => {
       html: `
         <div style="text-align:left;">
           <p style="margin-bottom:8px;">Please confirm your repair request details:</p>
-          <p><strong>Services:</strong> ${selectedServices.length}</p>
+          <p><strong>Package:</strong> ${selectedPackage ? selectedPackage.name : 'None'}</p>
+          <p><strong>Services:</strong> ${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</p>
+          <p><strong>Add-ons:</strong> ${selectedPackage ? selectedAddOnServiceIds.length : 0}</p>
           <p><strong>Service Type:</strong> ${formData.serviceType === 'pickup' ? 'Pick Up' : 'Walk In'}</p>
           <p><strong>Total:</strong> ₱${grandTotal.toLocaleString()}</p>
         </div>
@@ -570,6 +668,9 @@ const RepairProcess: React.FC = () => {
       submitFormData.append('description', formData.description);
       submitFormData.append('service_type', formData.serviceType);
       submitFormData.append('shop_owner_id', shopId || '');
+      if (selectedPackageId) {
+        submitFormData.append('repair_package_id', selectedPackageId.toString());
+      }
       
       // Only add pickup address fields if service type is pickup
       if (formData.serviceType === 'pickup') {
@@ -581,9 +682,15 @@ const RepairProcess: React.FC = () => {
       }
       
       // Add selected service IDs
-      selectedServices.forEach((serviceId, index) => {
-        submitFormData.append(`services[${index}]`, serviceId.toString());
-      });
+      if (selectedPackageId) {
+        selectedAddOnServiceIds.forEach((serviceId, index) => {
+          submitFormData.append(`add_on_service_ids[${index}]`, serviceId.toString());
+        });
+      } else if (selectedServiceIds.length > 0) {
+        selectedServiceIds.forEach((serviceId, index) => {
+          submitFormData.append(`services[${index}]`, serviceId.toString());
+        });
+      }
       
       // Add images
       imageUploadGroups.forEach((group, index) => {
@@ -649,7 +756,9 @@ const RepairProcess: React.FC = () => {
             pickupPostalCode: '',
           });
         }
-        setSelectedServices([]);
+        setSelectedServiceIds([]);
+        setSelectedPackageId(null);
+        setSelectedAddOnServiceIds([]);
         setImageUploadGroups([{id: '0', file: null, preview: ''}]);
         
         // Redirect to My Repairs page
@@ -861,7 +970,7 @@ const RepairProcess: React.FC = () => {
                             <span className="text-sm font-medium text-black">Walk In</span>
                             <p className="text-xs text-gray-600">
                               {shopDetails
-                                ? `Bring to ${shopDetails.name} - ${shopDetails.location}`
+                                ? `Bring to ${shopDetails.name} - ${shopDetails.address || shopDetails.location}`
                                 : 'I will bring my shoes to the shop'}
                             </p>
                           </div>
@@ -977,7 +1086,67 @@ const RepairProcess: React.FC = () => {
                     )}
 
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">Select Repair Service *</label>
+                      <label className="block text-sm font-medium text-black mb-2">Select Repair Package (Optional)</label>
+                      {isLoadingPackages ? (
+                        <div className="flex items-center justify-center rounded border border-gray-300 py-6 mb-4">
+                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
+                          <span className="ml-3 text-sm text-gray-600">Loading packages...</span>
+                        </div>
+                      ) : repairPackages.length === 0 ? (
+                        <div className="rounded border border-gray-300 bg-gray-50 p-4 text-sm text-gray-600 mb-4">
+                          No active packages available for this shop.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 mb-4">
+                          {repairPackages.map((pkg) => {
+                            const selected = selectedPackageId === pkg.id;
+                            return (
+                              <label
+                                key={pkg.id}
+                                className={`flex items-start justify-between gap-4 p-3 border rounded cursor-pointer transition-colors ${selected ? 'border-black bg-gray-50' : 'border-gray-300 hover:border-gray-400'}`}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  handlePackageToggle(pkg.id);
+                                }}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <input
+                                    type="radio"
+                                    name="selectedRepairPackage"
+                                    checked={selected}
+                                    readOnly
+                                    className="w-4 h-4 mt-1"
+                                  />
+                                  <div>
+                                    <p className="text-sm font-semibold text-black">{pkg.name}</p>
+                                    <p className="text-xs text-gray-600">{pkg.description || 'Package offer'}</p>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      Includes {pkg.service_count} service{pkg.service_count !== 1 ? 's' : ''} • Save ₱{Number(pkg.savings_amount || 0).toLocaleString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-sm font-semibold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
+                              </label>
+                            );
+                          })}
+
+                          {selectedPackageId !== null && (
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handlePackageToggle(selectedPackageId)}
+                                className="text-xs font-semibold text-gray-700 underline hover:text-black"
+                              >
+                                Unselect package
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <label className="block text-sm font-medium text-black mb-2">
+                        {selectedPackageId ? 'Select Optional Add-ons' : 'Select Repair Service(s) *'}
+                      </label>
                       {isLoadingServices ? (
                         <div className="flex items-center justify-center rounded border border-gray-300 py-8">
                           <div className="h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
@@ -990,16 +1159,33 @@ const RepairProcess: React.FC = () => {
                           {repairServices.map((service) => (
                             <label key={service.id} className="flex items-start justify-between gap-4 p-3 border border-gray-300 rounded cursor-pointer">
                               <div className="flex items-start gap-3">
-                                <input
-                                  type="radio"
-                                  name="selectedRepairService"
-                                  checked={selectedServices[0] === service.id}
-                                  onChange={() => handleServiceToggle(service.id)}
-                                  className="w-4 h-4 mt-1"
-                                />
+                                {selectedPackageId ? (
+                                  <input
+                                    type="checkbox"
+                                    name={`repairAddOn-${service.id}`}
+                                    checked={includedPackageServiceIds.has(service.id) || selectedAddOnServiceIds.includes(service.id)}
+                                    onChange={() => handleAddOnToggle(service.id)}
+                                    disabled={includedPackageServiceIds.has(service.id)}
+                                    className="w-4 h-4 mt-1"
+                                  />
+                                ) : (
+                                  <input
+                                    type="checkbox"
+                                    name={`selectedRepairService-${service.id}`}
+                                    checked={selectedServiceIds.includes(service.id)}
+                                    onChange={() => handleServiceToggle(service.id)}
+                                    className="w-4 h-4 mt-1"
+                                  />
+                                )}
                                 <div>
                                   <p className="text-sm font-medium text-black">{service.title}</p>
                                   <p className="text-xs text-gray-600">{service.description}</p>
+                                  {selectedPackageId !== null && includedPackageServiceIds.has(service.id) && (
+                                    <p className="text-xs text-emerald-700 mt-1">Included in the selected package.</p>
+                                  )}
+                                  {selectedPackageId !== null && !includedPackageServiceIds.has(service.id) && (
+                                    <p className="text-xs text-gray-500 mt-1">Optional add-on service.</p>
+                                  )}
                                 </div>
                               </div>
                               <span className="text-sm font-semibold text-black">
@@ -1071,9 +1257,9 @@ const RepairProcess: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || selectedServices.length === 0}
+                  disabled={isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null)}
                   className={`w-full py-3 rounded-md font-semibold text-white mb-3 transition-colors ${
-                    isSubmitting || selectedServices.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                    isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                   }`}
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Request'}
@@ -1090,33 +1276,74 @@ const RepairProcess: React.FC = () => {
                 <div className="border border-gray-300 rounded-lg p-6 bg-white">
                   <h3 className="text-lg font-semibold text-black mb-4">Order Summary</h3>
 
-                  {selectedServices.length === 0 ? (
-                    <div className="text-sm text-gray-600">No services selected yet.</div>
+                  {selectedServiceIds.length === 0 ? (
+                    selectedPackage ? (
+                      <div className="border-b border-gray-200 pb-4 mb-4 space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-black">{selectedPackage.name}</p>
+                            <p className="text-xs text-gray-600">{selectedPackage.description || 'Repair package selected'}</p>
+                          </div>
+                          <p className="text-sm font-semibold text-black whitespace-nowrap">₱{Number(selectedPackage.package_price).toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-1">Included services</p>
+                          <ul className="list-disc pl-4 text-xs text-gray-600 space-y-1">
+                            {selectedPackage.services.map((service) => (
+                              <li key={`pkg-svc-${service.id}`}>{service.name}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        {selectedAddOnServices.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-700 mb-1">Add-ons</p>
+                            <ul className="list-disc pl-4 text-xs text-gray-600 space-y-1">
+                              {selectedAddOnServices.map((service) => (
+                                <li key={`add-on-${service.id}`}>
+                                  {service.title} • ₱{typeof service.price === 'string' ? service.price.replace(/[^0-9.]/g, '') : Number(service.price || 0).toLocaleString()}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-600">No package or services selected yet.</div>
+                    )
                   ) : (
                     <div className="border-b border-gray-200 pb-4 mb-4 space-y-3">
-                      {selectedServices.map((serviceId) => {
-                        const service = repairServices.find((s) => s.id === serviceId);
-                        if (!service) return null;
-                        return (
-                          <div key={service.id} className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-black truncate">{service.title}</p>
-                              <p className="text-xs text-gray-600">{service.description}</p>
-                            </div>
-                            <p className="text-sm font-semibold text-black whitespace-nowrap">
-                              {typeof service.price === 'string' ? service.price : service.price > 0 ? `₱${service.price}` : 'TBD'}
-                            </p>
+                      {selectedStandaloneServices.map((service) => (
+                        <div key={`standalone-${service.id}`} className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-black truncate">{service.title}</p>
+                            <p className="text-xs text-gray-600">{service.description}</p>
                           </div>
-                        );
-                      })}
+                          <p className="text-sm font-semibold text-black whitespace-nowrap">
+                            {typeof service.price === 'string' ? service.price : service.price > 0 ? `₱${service.price}` : 'TBD'}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   )}
 
                   <div className="space-y-3 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Services Subtotal</span>
-                      <span className="text-black font-medium">₱{servicesTotal.toLocaleString()}</span>
-                    </div>
+                    {selectedPackage ? (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Package Price</span>
+                          <span className="text-black font-medium">₱{packageTotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Add-ons</span>
+                          <span className="text-black font-medium">₱{addOnsTotal.toLocaleString()}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Services Subtotal</span>
+                        <span className="text-black font-medium">₱{servicesTotal.toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="border-t border-gray-200 pt-4">

@@ -718,6 +718,24 @@ Route::prefix('api/repair-services')->group(function () {
     });
 });
 
+// Repair Packages API Routes
+Route::prefix('api/repair-packages')->group(function () {
+    // Public listing for customer-side browsing (active packages)
+    Route::get('/public', [\App\Http\Controllers\Api\RepairPackageController::class, 'publicIndex']);
+
+    // Protected routes — accepts both ERP staff (auth:user) and direct shop owners (auth:shop_owner).
+    // The controller's resolveShopOwnerId() already scopes each action to the correct shop.
+    // Using auth:user,shop_owner avoids duplicate route definitions that would silently overwrite each other.
+    Route::middleware('auth:user,shop_owner')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\RepairPackageController::class, 'index']);
+        Route::get('/analytics', [\App\Http\Controllers\Api\RepairPackageController::class, 'analytics']);
+        Route::post('/', [\App\Http\Controllers\Api\RepairPackageController::class, 'store']);
+        Route::get('{id}', [\App\Http\Controllers\Api\RepairPackageController::class, 'show']);
+        Route::put('{id}', [\App\Http\Controllers\Api\RepairPackageController::class, 'update']);
+        Route::delete('{id}', [\App\Http\Controllers\Api\RepairPackageController::class, 'destroy']);
+    });
+});
+
 // Repair Request API Routes
 Route::prefix('api/repair-requests')->group(function () {
     // Submit repair request - Protected (customers must be logged in)
@@ -1444,6 +1462,13 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
         return Inertia::render('ERP/inventory/StockRequest', compact('initialRequests', 'initialInventoryItems'));
     })->name('stock-request');
 
+    Route::get('/request-material-approval', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/inventory/RequestApproval');
+    })->name('request-material-approval');
+
     Route::get('/supplier-order-monitoring', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1657,6 +1682,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         }
         return Inertia::render('ERP/repairer/repairStocksOverview');
     })->name('stocks-overview');
+
+    Route::get('/request-material', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+        return Inertia::render('ERP/repairer/requestMaterials');
+    })->name('request-material');
 
     Route::get('/pricing-and-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

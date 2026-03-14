@@ -13,7 +13,7 @@ import { useSidebar } from "../context/SidebarContext";
 type NavItem = {
   name: string;
   icon: React.ReactNode;
-  route?: string; // Changed from path to route
+  route?: string;
   params?: Record<string, any>;
   extraPaths?: string[];
   subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; pro?: boolean; new?: boolean }[];
@@ -448,6 +448,18 @@ const managerInventoryItems: NavItem[] = [
     name: "Stock Request",
     route: "erp.inventory.stock-request",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 12l2 2 4-4"></path>
+        <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9"></path>
+        <path d="M17 3h4v4"></path>
+        <path d="M21 3l-7 7"></path>
+      </svg>
+    ),
+    name: "Request Material Approval",
+    route: "erp.inventory.request-material-approval",
+  },
 ];
 
 const procurementItems: NavItem[] = [
@@ -488,18 +500,6 @@ const procurementItems: NavItem[] = [
     ),
     name: "Purchase Orders",
     route: "erp.procurement.purchase-orders",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="4" y="3" width="16" height="18" rx="2"></rect>
-    <path d="M8 9h8"></path>
-    <path d="M8 13h5"></path>
-    <path d="M14 15l2 2 3-3"></path>
-      </svg>
-    ),
-    name: "Stock Request Approval",
-    route: "erp.procurement.stock-request-approval",
   },
   {
     icon: (
@@ -627,6 +627,18 @@ const repairItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 6a2 2 0 0 1 2-2h8l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"></path>
+        <path d="M14 4v4h4"></path>
+        <path d="M8 12h8"></path>
+        <path d="M12 9v6"></path>
+      </svg>
+    ),
+    name: "Request Material",
+    route: "erp.staff.request-material",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
       </svg>
     ),
@@ -715,6 +727,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
+    "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
     "erp.time-in": "/erp/time-in",
@@ -753,6 +766,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.inventory.stock-movement": "/erp/inventory/stock-movement",
     "erp.inventory.product-inventory": "/erp/inventory/product-inventory",
     "erp.inventory.stock-request": "/erp/inventory/stock-request",
+    "erp.inventory.request-material-approval": "/erp/inventory/request-material-approval",
     "erp.inventory.supplier-order-monitoring": "/erp/inventory/supplier-order-monitoring",
     "erp.inventory.stock-request-approval": "/erp/inventory/stock-request-approval",
     "erp.inventory.purchase-request": "/erp/inventory/purchase-request",
@@ -784,6 +798,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
+    "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
     "erp.my-payslips": "/erp/my-payslips",
@@ -1120,6 +1135,8 @@ const AppSidebar_ERP: React.FC = () => {
       'access-product-inventory',
       'access-stock-movement',
       'access-upload-inventory',
+      'access-request-material-approval',
+      'access-inventory-request-material-approval',
     ];
     return inventoryPagePermissions.some(p => permissions.includes(p));
   };
@@ -1261,6 +1278,11 @@ const AppSidebar_ERP: React.FC = () => {
 
       // Stocks Overview - check simplified permission
       if (item.route === "erp.staff.stocks-overview") {
+        return permissions.includes('access-repair-stocks');
+      }
+
+      // Request Material - check simplified permission
+      if (item.route === "erp.staff.request-material") {
         return permissions.includes('access-repair-stocks');
       }
       

@@ -38,7 +38,10 @@ return new class extends Migration
             ->update(['role' => 'STAFF']);
         
         // NOW update the enum after all data is migrated
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('MANAGER', 'FINANCE', 'HR', 'CRM', 'REPAIRER', 'INVENTORY', 'STAFF', 'SUPER_ADMIN') NULL");
+        // MODIFY COLUMN is MySQL-only; SQLite tests skip this (column stays as plain string)
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('MANAGER', 'FINANCE', 'HR', 'CRM', 'REPAIRER', 'INVENTORY', 'STAFF', 'SUPER_ADMIN') NULL");
+        }
 
         // Update Spatie roles - remove old department roles and reassign users
         $oldRoles = ['HR', 'CRM', 'Finance Staff', 'Finance Manager'];
@@ -87,7 +90,9 @@ return new class extends Migration
     public function down(): void
     {
         // Restore original roles
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('HR', 'FINANCE_STAFF', 'FINANCE_MANAGER', 'CRM', 'MANAGER', 'STAFF', 'SUPER_ADMIN', 'PAYROLL_MANAGER') NULL");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('HR', 'FINANCE_STAFF', 'FINANCE_MANAGER', 'CRM', 'MANAGER', 'STAFF', 'SUPER_ADMIN', 'PAYROLL_MANAGER') NULL");
+        }
         
         Schema::table('users', function (Blueprint $table) {
             $table->dropColumn('position');

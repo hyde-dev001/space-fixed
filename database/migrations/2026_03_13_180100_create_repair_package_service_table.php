@@ -20,8 +20,8 @@ return new class extends Migration
             $table->foreign('repair_package_id')->references('id')->on('repair_packages')->onDelete('cascade');
             $table->foreign('repair_service_id')->references('id')->on('repair_services')->onDelete('cascade');
 
-            $table->unique(['repair_package_id', 'repair_service_id']);
-            $table->index('repair_service_id');
+            $table->unique(['repair_package_id', 'repair_service_id'], 'rps_pkg_svc_unique');
+            $table->index('repair_service_id', 'rps_service_id_index');
         });
     }
 

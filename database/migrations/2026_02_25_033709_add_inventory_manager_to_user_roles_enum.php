@@ -11,17 +11,20 @@ return new class extends Migration
     public function up(): void
     {
         // Modify the enum to add INVENTORY_MANAGER
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM(
-            'MANAGER',
-            'FINANCE',
-            'HR',
-            'CRM',
-            'REPAIRER',
-            'INVENTORY',
-            'INVENTORY_MANAGER',
-            'STAFF',
-            'SUPER_ADMIN'
-        ) NULL");
+        // MODIFY COLUMN is MySQL-only; SQLite tests skip this
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM(
+                'MANAGER',
+                'FINANCE',
+                'HR',
+                'CRM',
+                'REPAIRER',
+                'INVENTORY',
+                'INVENTORY_MANAGER',
+                'STAFF',
+                'SUPER_ADMIN'
+            ) NULL");
+        }
     }
 
     /**
@@ -30,15 +33,17 @@ return new class extends Migration
     public function down(): void
     {
         // Revert back to original enum
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM(
-            'MANAGER',
-            'FINANCE',
-            'HR',
-            'CRM',
-            'REPAIRER',
-            'INVENTORY',
-            'STAFF',
-            'SUPER_ADMIN'
-        ) NULL");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM(
+                'MANAGER',
+                'FINANCE',
+                'HR',
+                'CRM',
+                'REPAIRER',
+                'INVENTORY',
+                'STAFF',
+                'SUPER_ADMIN'
+            ) NULL");
+        }
     }
 };

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use Illuminate\Http\JsonResponse;
@@ -622,7 +623,7 @@ class LandingPageController extends Controller
 
         // Fetch repair services for this shop owner (including services created by shop owner and their staff)
         $repairServices = RepairService::where('shop_owner_id', $shopOwner->id)
-            ->whereIn('status', ['Active', 'Under Review', 'Pending Owner Approval', 'Pending'])
+            ->where('status', 'Active')
             ->orderBy('category')
             ->orderBy('name')
             ->get()
@@ -634,6 +635,33 @@ class LandingPageController extends Controller
                     'description' => $service->description ?? 'Professional ' . strtolower($service->category) . ' service',
                     'category' => $service->category,
                     'duration' => $service->duration,
+                ];
+            });
+
+        $repairPackages = RepairPackage::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->active()
+            ->with('services:id,name,category,price,duration,status,shop_owner_id')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (RepairPackage $package) {
+                $serviceTotal = $package->services->sum(fn ($service) => (float) $service->price);
+
+                return [
+                    'id' => $package->id,
+                    'name' => $package->name,
+                    'description' => $package->description,
+                    'package_price' => (float) $package->package_price,
+                    'service_count' => $package->services->count(),
+                    'services_total_price' => round($serviceTotal, 2),
+                    'savings_amount' => round(max($serviceTotal - (float) $package->package_price, 0), 2),
+                    'services' => $package->services->map(fn ($service) => [
+                        'id' => $service->id,
+                        'name' => $service->name,
+                        'category' => $service->category,
+                        'price' => (float) $service->price,
+                        'duration' => $service->duration,
+                    ])->values(),
                 ];
             });
 
@@ -665,6 +693,7 @@ class LandingPageController extends Controller
                 'address' => $shopOwner->business_address ?? 'Not specified',
             ],
             'repairServices' => $repairServices,
+            'repairPackages' => $repairPackages,
         ]);
     }
 }

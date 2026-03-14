@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\RepairRequest;
+use App\Models\RepairPackage;
+use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -32,8 +34,11 @@ class RepairRequestController extends Controller
             'brand' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'shop_owner_id' => 'nullable|exists:shop_owners,id',
-            'services' => 'required|array',
+            'repair_package_id' => 'nullable|exists:repair_packages,id',
+            'services' => 'nullable|array|required_without:repair_package_id|min:1',
             'services.*' => 'exists:repair_services,id',
+            'add_on_service_ids' => 'nullable|array',
+            'add_on_service_ids.*' => 'exists:repair_services,id',
             'images' => 'required|array',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
             'total' => 'required|numeric|min:0',
@@ -69,10 +74,148 @@ class RepairRequestController extends Controller
 
             // Get authenticated user if available
             $userId = Auth::guard('user')->id();
+
+            $selectedPackage = null;
+            $includedServiceIds = [];
+            $addOnServiceIds = [];
+            $serviceIds = [];
+            $includedServicesSnapshot = [];
+            $addOnServicesSnapshot = [];
+            $packageTotal = null;
+            $addOnsTotal = 0.0;
+            $requestTotal = 0.0;
+
+            if ($request->filled('repair_package_id')) {
+                $selectedPackage = RepairPackage::query()
+                    ->with('services:id,name,category,price,duration,status,shop_owner_id')
+                    ->find($request->repair_package_id);
+
+                if (!$selectedPackage) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected package was not found.',
+                    ], 422);
+                }
+
+                if ($request->filled('shop_owner_id') && (int) $request->shop_owner_id !== (int) $selectedPackage->shop_owner_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected package does not belong to the selected shop.',
+                    ], 422);
+                }
+
+                if ($selectedPackage->status !== 'active') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected package is not active.',
+                    ], 422);
+                }
+
+                $now = now();
+                if (($selectedPackage->starts_at && $selectedPackage->starts_at->gt($now))
+                    || ($selectedPackage->ends_at && $selectedPackage->ends_at->lt($now))) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected package is outside its availability window.',
+                    ], 422);
+                }
+
+                $includedServiceIds = $selectedPackage->services->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+                if (empty($includedServiceIds)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected package has no included services.',
+                    ], 422);
+                }
+
+                $includedServicesSnapshot = $selectedPackage->services->map(fn ($service) => [
+                    'id' => (int) $service->id,
+                    'name' => $service->name,
+                    'category' => $service->category,
+                    'price' => (float) $service->price,
+                    'duration' => $service->duration,
+                ])->values()->all();
+
+                $packageTotal = (float) $selectedPackage->package_price;
+
+                $requestedAddOnIds = collect((array) $request->add_on_service_ids)
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                if ($requestedAddOnIds->isNotEmpty()) {
+                    $invalidIncludedIds = $requestedAddOnIds->intersect($includedServiceIds)->values()->all();
+                    if (!empty($invalidIncludedIds)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Included package services cannot be submitted as add-ons.',
+                        ], 422);
+                    }
+
+                    $addOnServices = RepairService::query()
+                        ->whereIn('id', $requestedAddOnIds)
+                        ->where('shop_owner_id', $selectedPackage->shop_owner_id)
+                        ->get(['id', 'name', 'category', 'price', 'duration', 'shop_owner_id']);
+
+                    if ($addOnServices->count() !== $requestedAddOnIds->count()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Some add-on services are invalid for the selected package/shop.',
+                        ], 422);
+                    }
+
+                    $addOnServiceIds = $addOnServices->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+                    $addOnsTotal = (float) $addOnServices->sum(fn ($service) => (float) $service->price);
+                    $addOnServicesSnapshot = $addOnServices->map(fn ($service) => [
+                        'id' => (int) $service->id,
+                        'name' => $service->name,
+                        'category' => $service->category,
+                        'price' => (float) $service->price,
+                        'duration' => $service->duration,
+                    ])->values()->all();
+                }
+
+                $requestTotal = $packageTotal + $addOnsTotal;
+                $serviceIds = array_values(array_unique(array_merge($includedServiceIds, $addOnServiceIds)));
+            } else {
+                $serviceIds = collect((array) $request->services)
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $standardServices = RepairService::query()
+                    ->whereIn('id', $serviceIds)
+                    ->get(['id', 'name', 'category', 'price', 'duration', 'shop_owner_id']);
+
+                if ($standardServices->count() !== count($serviceIds)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Some selected services are invalid.',
+                    ], 422);
+                }
+
+                if ($request->filled('shop_owner_id') && $standardServices->contains(fn ($service) => (int) $service->shop_owner_id !== (int) $request->shop_owner_id)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected services must belong to the chosen shop.',
+                    ], 422);
+                }
+
+                $includedServicesSnapshot = $standardServices->map(fn ($service) => [
+                    'id' => (int) $service->id,
+                    'name' => $service->name,
+                    'category' => $service->category,
+                    'price' => (float) $service->price,
+                    'duration' => $service->duration,
+                ])->values()->all();
+
+                $requestTotal = (float) $standardServices->sum(fn ($service) => (float) $service->price);
+            }
             
             // Get shop owner for high value check
             $shopOwner = ShopOwner::find($request->shop_owner_id);
-            $isHighValue = $shopOwner && $request->total >= $shopOwner->high_value_threshold;
+            $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
             $requiresOwnerApproval = $isHighValue && $shopOwner && $shopOwner->require_two_way_approval;
             
             // Build pickup address if service type is pickup
@@ -99,9 +242,27 @@ class RepairRequestController extends Controller
                 'brand' => $request->brand,
                 'description' => $request->description,
                 'shop_owner_id' => $request->shop_owner_id,
+                'repair_package_id' => $selectedPackage?->id,
                 'user_id' => $userId,
                 'images' => json_encode($imagePaths),
-                'total' => $request->total,
+                'total' => $requestTotal,
+                'package_price' => $packageTotal,
+                'add_ons_total' => $addOnsTotal,
+                'final_total' => $requestTotal,
+                'included_services_snapshot' => !empty($includedServicesSnapshot) ? $includedServicesSnapshot : null,
+                'add_on_services_snapshot' => !empty($addOnServicesSnapshot) ? $addOnServicesSnapshot : null,
+                'pricing_breakdown' => [
+                    'mode' => $selectedPackage ? 'package' : 'services',
+                    'package_id' => $selectedPackage?->id,
+                    'package_name' => $selectedPackage?->name,
+                    'included_services_total' => $selectedPackage
+                        ? (float) $selectedPackage->services->sum(fn ($service) => (float) $service->price)
+                        : $requestTotal,
+                    'package_price' => $packageTotal,
+                    'add_ons_total' => $addOnsTotal,
+                    'final_total' => $requestTotal,
+                    'add_on_count' => count($addOnServiceIds),
+                ],
                 'status' => 'new_request',
                 'delivery_method' => $deliveryMethod,
                 'pickup_address' => $pickupAddress,
@@ -112,7 +273,9 @@ class RepairRequestController extends Controller
             ]);
 
             // Attach services
-            $repairRequest->services()->attach($request->services);
+            if (!empty($serviceIds)) {
+                $repairRequest->services()->attach($serviceIds);
+            }
 
             // Get notification service
             $notificationService = app(NotificationService::class);
@@ -124,8 +287,8 @@ class RepairRequestController extends Controller
                     'order_number' => $requestId,
                     'customer_name' => $request->customer_name,
                     'service_type' => $request->service_type,
-                    'total' => $request->total,
-                    'service_count' => count($request->services),
+                    'total' => $requestTotal,
+                    'service_count' => count($serviceIds),
                 ]);
 
                 // If high-value repair requiring owner approval, send additional notification
@@ -134,7 +297,7 @@ class RepairRequestController extends Controller
                         'request_id' => $requestId,
                         'order_number' => $requestId,
                         'customer_name' => $request->customer_name,
-                        'total' => $request->total,
+                        'total' => $requestTotal,
                         'threshold' => $shopOwner->high_value_threshold,
                     ]);
                 }
@@ -147,8 +310,8 @@ class RepairRequestController extends Controller
                     'order_number' => $requestId,
                     'customer_name' => $request->customer_name,
                     'service_type' => $request->service_type,
-                    'total' => $request->total,
-                    'service_count' => count($request->services),
+                    'total' => $requestTotal,
+                    'service_count' => count($serviceIds),
                 ]);
             }
 
@@ -160,9 +323,10 @@ class RepairRequestController extends Controller
                 'message' => 'Repair request submitted successfully',
                 'data' => [
                     'request_id' => $requestId,
-                    'total' => $request->total,
+                    'total' => $requestTotal,
                     'status' => $repairRequest->fresh()->status,
                     'assigned_repairer_id' => $repairRequest->fresh()->assigned_repairer_id,
+                    'repair_package_id' => $repairRequest->fresh()->repair_package_id,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -366,6 +530,13 @@ class RepairRequestController extends Controller
                     'assigned_repairer_id' => $repair->assigned_repairer_id,
                     'repairer_name' => $repair->repairer ? $repair->repairer->name : null,
                     'payment_policy' => $repair->payment_policy ?? 'deposit_50',
+                    'repair_package_id' => $repair->repair_package_id,
+                    'package_price' => $repair->package_price,
+                    'add_ons_total' => $repair->add_ons_total,
+                    'final_total' => $repair->final_total ?? $repair->total,
+                    'included_services_snapshot' => $repair->included_services_snapshot,
+                    'add_on_services_snapshot' => $repair->add_on_services_snapshot,
+                    'pricing_breakdown' => $repair->pricing_breakdown,
                 ];
             })
         ]);
@@ -385,7 +556,7 @@ class RepairRequestController extends Controller
             ], 401);
         }
 
-        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'conversation'])
+        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'conversation', 'repairPackage'])
             ->where('id', $id)
             ->forCustomer($user->id)
             ->first();
@@ -412,6 +583,9 @@ class RepairRequestController extends Controller
                 'brand' => $repair->brand,
                 'description' => $repair->description,
                 'total' => $repair->total,
+                'package_price' => $repair->package_price,
+                'add_ons_total' => $repair->add_ons_total,
+                'final_total' => $repair->final_total ?? $repair->total,
                 'status' => $repair->status,
                 'delivery_method' => $repair->delivery_method,
                 'pickup_address' => $repair->pickup_address,
@@ -433,6 +607,14 @@ class RepairRequestController extends Controller
                         'description' => $service->description,
                     ];
                 }),
+                'repair_package' => $repair->repairPackage ? [
+                    'id' => $repair->repairPackage->id,
+                    'name' => $repair->repairPackage->name,
+                    'description' => $repair->repairPackage->description,
+                ] : null,
+                'included_services_snapshot' => $repair->included_services_snapshot,
+                'add_on_services_snapshot' => $repair->add_on_services_snapshot,
+                'pricing_breakdown' => $repair->pricing_breakdown,
                 'shop' => $repair->shopOwner ? [
                     'id' => $repair->shopOwner->id,
                     'name' => $repair->shopOwner->business_name,

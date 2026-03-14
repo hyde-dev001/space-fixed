@@ -12,7 +12,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE conversation_messages MODIFY COLUMN sender_type ENUM('customer', 'crm', 'repairer', 'shop_owner', 'system')");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE conversation_messages MODIFY COLUMN sender_type ENUM('customer', 'crm', 'repairer', 'shop_owner', 'system')");
+        }
     }
 
     /**
@@ -20,6 +22,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("ALTER TABLE conversation_messages MODIFY COLUMN sender_type ENUM('customer', 'crm', 'repairer')");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE conversation_messages MODIFY COLUMN sender_type ENUM('customer', 'crm', 'repairer')");
+        }
     }
 };

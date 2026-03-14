@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { hasPermission } from "../../../utils/permissions";
+import RepairPackageManager from "./components/RepairPackageManager";
 
 type Service = {
   id: number;
@@ -600,6 +601,8 @@ export default function UploadService() {
             </table>
           </div>
         </div>
+
+        <RepairPackageManager />
       </div>
 
       {/* Add Service Modal */}

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairService;
+use App\Models\ShopOwner;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,12 +19,22 @@ class RepairServiceController extends Controller
     {
         $query = RepairService::query();
 
-        // Filter by shop_owner_id based on authentication
-        if (Auth::guard('shop_owner')->check()) {
-            $query->where('shop_owner_id', Auth::guard('shop_owner')->id());
-        } elseif (Auth::guard('user')->check()) {
-            $user = Auth::guard('user')->user();
-            $query->where('shop_owner_id', $user->shop_owner_id);
+        // Public/customer browsing path: explicit shop filter from query string.
+        // This is used by the repair booking flow (/repair-process?shop=...).
+        if ($request->filled('shop_id')) {
+            $query->where('shop_owner_id', (int) $request->shop_id)
+                ->where('status', 'Active');
+        } else {
+            // Backoffice path: scope by authenticated actor.
+            // Filter by shop_owner_id based on authentication
+            if (Auth::guard('shop_owner')->check()) {
+                $query->where('shop_owner_id', Auth::guard('shop_owner')->id());
+            } elseif (Auth::guard('user')->check()) {
+                $user = Auth::guard('user')->user();
+                if (!empty($user?->shop_owner_id)) {
+                    $query->where('shop_owner_id', $user->shop_owner_id);
+                }
+            }
         }
 
         // Filter by status if provided
@@ -47,9 +58,30 @@ class RepairServiceController extends Controller
 
         $services = $query->orderBy('created_at', 'desc')->get();
 
+        $shopPayload = null;
+        if ($request->filled('shop_id')) {
+            $shopOwner = ShopOwner::query()
+                ->select('id', 'business_name', 'business_address', 'shop_address', 'city_state', 'country')
+                ->find((int) $request->shop_id);
+
+            if ($shopOwner) {
+                $primaryAddress = trim((string) ($shopOwner->business_address ?: $shopOwner->shop_address ?: ''));
+                $locationSuffix = trim((string) (($shopOwner->city_state ?? '') . (($shopOwner->city_state && $shopOwner->country) ? ', ' : '') . ($shopOwner->country ?? '')));
+                $location = $primaryAddress !== '' ? $primaryAddress : ($locationSuffix !== '' ? $locationSuffix : 'Location not specified');
+
+                $shopPayload = [
+                    'id' => $shopOwner->id,
+                    'name' => $shopOwner->business_name,
+                    'address' => $primaryAddress,
+                    'location' => $location,
+                ];
+            }
+        }
+
         return response()->json([
             'success' => true,
             'data' => $services,
+            'shop' => $shopPayload,
         ]);
     }
 

@@ -15,15 +15,20 @@ return new class extends Migration
     public function up(): void
     {
         // Use raw DDL to avoid Doctrine DBAL's change() limitations with nullable timestamps
-        \DB::statement('ALTER TABLE `payrolls` MODIFY `payment_date` DATETIME NULL');
-        \DB::statement('ALTER TABLE `payrolls` MODIFY `generated_at` DATETIME NULL');
-        \DB::statement('ALTER TABLE `payrolls` MODIFY `approved_at`  DATETIME NULL');
+        // MODIFY is MySQL-only; SQLite tests skip this (columns stay as their original type)
+        if (\DB::getDriverName() !== 'sqlite') {
+            \DB::statement('ALTER TABLE `payrolls` MODIFY `payment_date` DATETIME NULL');
+            \DB::statement('ALTER TABLE `payrolls` MODIFY `generated_at` DATETIME NULL');
+            \DB::statement('ALTER TABLE `payrolls` MODIFY `approved_at`  DATETIME NULL');
+        }
     }
 
     public function down(): void
     {
-        \DB::statement('ALTER TABLE `payrolls` MODIFY `payment_date` TIMESTAMP NULL');
-        \DB::statement('ALTER TABLE `payrolls` MODIFY `generated_at` TIMESTAMP NULL');
-        \DB::statement('ALTER TABLE `payrolls` MODIFY `approved_at`  TIMESTAMP NULL');
+        if (\DB::getDriverName() !== 'sqlite') {
+            \DB::statement('ALTER TABLE `payrolls` MODIFY `payment_date` TIMESTAMP NULL');
+            \DB::statement('ALTER TABLE `payrolls` MODIFY `generated_at` TIMESTAMP NULL');
+            \DB::statement('ALTER TABLE `payrolls` MODIFY `approved_at`  TIMESTAMP NULL');
+        }
     }
 };

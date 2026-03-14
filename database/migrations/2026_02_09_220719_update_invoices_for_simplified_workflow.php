@@ -19,7 +19,9 @@ return new class extends Migration
             
             // Update status enum to remove 'posted'
             // Note: This modifies the existing enum
-            DB::statement("ALTER TABLE finance_invoices MODIFY COLUMN status ENUM('draft', 'sent', 'paid', 'overdue', 'cancelled') DEFAULT 'draft'");
+            if (DB::getDriverName() !== 'sqlite') {
+                DB::statement("ALTER TABLE finance_invoices MODIFY COLUMN status ENUM('draft', 'sent', 'paid', 'overdue', 'cancelled') DEFAULT 'draft'");
+            }
             
             // Drop journal_entry_id foreign key and column
             if (Schema::hasColumn('finance_invoices', 'journal_entry_id')) {
@@ -43,7 +45,9 @@ return new class extends Migration
             $table->foreign('journal_entry_id')->references('id')->on('finance_journal_entries')->onDelete('set null');
             
             // Restore 'posted' status
-            DB::statement("ALTER TABLE finance_invoices MODIFY COLUMN status ENUM('draft', 'sent', 'posted', 'paid', 'overdue', 'cancelled') DEFAULT 'draft'");
+            if (DB::getDriverName() !== 'sqlite') {
+                DB::statement("ALTER TABLE finance_invoices MODIFY COLUMN status ENUM('draft', 'sent', 'posted', 'paid', 'overdue', 'cancelled') DEFAULT 'draft'");
+            }
         });
     }
 };

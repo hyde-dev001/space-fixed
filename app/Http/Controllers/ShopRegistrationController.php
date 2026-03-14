@@ -4,13 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Models\ShopOwner;
 use App\Models\ShopDocument;
+use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class ShopRegistrationController extends Controller
 {
+    private function resolvedLatitude(array $validated)
+    {
+        return $validated['shop_latitude'] ?? $validated['shopLatitude'] ?? null;
+    }
+
+    private function resolvedLongitude(array $validated)
+    {
+        return $validated['shop_longitude'] ?? $validated['shopLongitude'] ?? null;
+    }
+
     // <!-- API endpoint to register shop owner from React frontend -->
-    public function store(Request $request)
+    public function store(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         // <!-- Validate incoming request data -->
         $validated = $request->validate([
@@ -23,7 +34,32 @@ class ShopRegistrationController extends Controller
             'businessType' => 'required|string|max:100',
             'registrationType' => 'required|string|max:100',
             'operatingHours' => 'nullable|array',
+            'shop_latitude' => 'nullable|numeric|between:-90,90',
+            'shop_longitude' => 'nullable|numeric|between:-180,180',
+            'shopLatitude' => 'nullable|numeric|between:-90,90',
+            'shopLongitude' => 'nullable|numeric|between:-180,180',
         ]);
+
+        try {
+            $caviteLocationPolicy->assertRegistrationLocation(
+                $validated['shop_latitude'] ?? $validated['shopLatitude'] ?? null,
+                $validated['shop_longitude'] ?? $validated['shopLongitude'] ?? null,
+                $validated['businessAddress'] ?? null,
+                $request,
+                null,
+                [
+                    'email' => $validated['email'] ?? null,
+                    'business_name' => $validated['businessName'] ?? null,
+                    'target_type' => 'shop_owner_registration',
+                ]
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $caviteLocationPolicy->denialMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        }
 
         try {
             // <!-- Create new shop owner record in database with proper field mapping -->
@@ -36,6 +72,9 @@ class ShopRegistrationController extends Controller
                 'business_address' => $validated['businessAddress'],
                 'business_type' => $validated['businessType'],
                 'registration_type' => $validated['registrationType'],
+                'shop_latitude' => $this->resolvedLatitude($validated),
+                'shop_longitude' => $this->resolvedLongitude($validated),
+                'shop_address' => $validated['businessAddress'],
                 'operating_hours' => isset($validated['operatingHours']) ? json_encode($validated['operatingHours']) : null,
                 'status' => 'pending', // <!-- Set initial status to pending for Super Admin approval -->
             ]);
@@ -63,7 +102,7 @@ class ShopRegistrationController extends Controller
      * Register a full shop owner with operating hours
      * <!-- Comprehensive registration endpoint for complete shop details -->
      */
-    public function storeFull(Request $request)
+    public function storeFull(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         // <!-- Validate incoming request data -->
         $validated = $request->validate([
@@ -84,7 +123,32 @@ class ShopRegistrationController extends Controller
             'mayorsPermit' => 'required|file|mimes:jpeg,png|max:5120',
             'birCertificate' => 'required|file|mimes:jpeg,png|max:5120',
             'validId' => 'required|file|mimes:jpeg,png|max:5120',
+            'shop_latitude' => 'nullable|numeric|between:-90,90',
+            'shop_longitude' => 'nullable|numeric|between:-180,180',
+            'shopLatitude' => 'nullable|numeric|between:-90,90',
+            'shopLongitude' => 'nullable|numeric|between:-180,180',
         ]);
+
+        try {
+            $caviteLocationPolicy->assertRegistrationLocation(
+                $validated['shop_latitude'] ?? $validated['shopLatitude'] ?? null,
+                $validated['shop_longitude'] ?? $validated['shopLongitude'] ?? null,
+                $validated['businessAddress'] ?? null,
+                $request,
+                null,
+                [
+                    'email' => $validated['email'] ?? null,
+                    'business_name' => $validated['businessName'] ?? null,
+                    'target_type' => 'shop_owner_registration',
+                ]
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $caviteLocationPolicy->denialMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        }
 
         try {
             // <!-- Validate that user has acknowledged requirements -->
@@ -114,6 +178,9 @@ class ShopRegistrationController extends Controller
                 'business_address' => $validated['businessAddress'],
                 'business_type' => $validated['businessType'],
                 'registration_type' => $validated['registrationType'],
+                'shop_latitude' => $this->resolvedLatitude($validated),
+                'shop_longitude' => $this->resolvedLongitude($validated),
+                'shop_address' => $validated['businessAddress'],
                 'operating_hours' => json_encode($formattedHours),
                 'status' => 'pending', // <!-- Set initial status to pending for Super Admin approval -->
             ]);
@@ -162,7 +229,7 @@ class ShopRegistrationController extends Controller
      * Register a full shop owner with Inertia (server-side form submission)
      * <!-- Handles POST from Inertia form with automatic CSRF token handling -->
      */
-    public function storeFullInertia(Request $request)
+    public function storeFullInertia(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         // <!-- Validate incoming request data -->
         $validated = $request->validate([
@@ -183,9 +250,26 @@ class ShopRegistrationController extends Controller
             'mayorsPermit' => 'required|file|mimes:jpeg,png|max:5120',
             'birCertificate' => 'required|file|mimes:jpeg,png|max:5120',
             'validId' => 'required|file|mimes:jpeg,png|max:5120',
+            'shop_latitude' => 'nullable|numeric|between:-90,90',
+            'shop_longitude' => 'nullable|numeric|between:-180,180',
+            'shopLatitude' => 'nullable|numeric|between:-90,90',
+            'shopLongitude' => 'nullable|numeric|between:-180,180',
         ]);
 
         try {
+            $caviteLocationPolicy->assertRegistrationLocation(
+                $validated['shop_latitude'] ?? $validated['shopLatitude'] ?? null,
+                $validated['shop_longitude'] ?? $validated['shopLongitude'] ?? null,
+                $validated['businessAddress'] ?? null,
+                $request,
+                null,
+                [
+                    'email' => $validated['email'] ?? null,
+                    'business_name' => $validated['businessName'] ?? null,
+                    'target_type' => 'shop_owner_registration',
+                ]
+            );
+
             // <!-- Validate that user has acknowledged requirements -->
             if (!$validated['agreesToRequirements']) {
                 return redirect()->back()->withErrors([
@@ -212,6 +296,9 @@ class ShopRegistrationController extends Controller
                 'business_address' => $validated['businessAddress'],
                 'business_type' => $validated['businessType'],
                 'registration_type' => $validated['registrationType'],
+                'shop_latitude' => $this->resolvedLatitude($validated),
+                'shop_longitude' => $this->resolvedLongitude($validated),
+                'shop_address' => $validated['businessAddress'],
                 'operating_hours' => json_encode($formattedHours),
                 'status' => 'pending',
             ]);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
+use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -54,7 +55,7 @@ class ShopProfileController extends Controller
     /**
      * Update shop profile information
      */
-    public function update(Request $request)
+    public function update(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
@@ -67,6 +68,10 @@ class ShopProfileController extends Controller
             'city_state' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
             'tax_id' => 'nullable|string|max:50',
+            'business_address' => 'sometimes|string|max:500',
+            'shop_address' => 'sometimes|nullable|string|max:500',
+            'shop_latitude' => 'sometimes|nullable|numeric|between:-90,90',
+            'shop_longitude' => 'sometimes|nullable|numeric|between:-180,180',
             // Operating hours
             'monday_open' => 'nullable|date_format:H:i',
             'monday_close' => 'nullable|date_format:H:i',
@@ -97,6 +102,44 @@ class ShopProfileController extends Controller
                     ]);
                 }
             }
+        }
+
+        $touchesLocation = $request->hasAny([
+            'business_address',
+            'shop_address',
+            'shop_latitude',
+            'shop_longitude',
+        ]);
+
+        if ($touchesLocation) {
+            $nextBusinessAddress = trim((string) ($validated['business_address'] ?? $shopOwner->business_address));
+            $nextShopAddress = trim((string) ($validated['shop_address'] ?? $nextBusinessAddress));
+            $nextLatitude = $request->has('shop_latitude') ? ($validated['shop_latitude'] ?? null) : $shopOwner->shop_latitude;
+            $nextLongitude = $request->has('shop_longitude') ? ($validated['shop_longitude'] ?? null) : $shopOwner->shop_longitude;
+
+            $locationPolicy = $caviteLocationPolicy->validateUpdateLocation(
+                $nextLatitude,
+                $nextLongitude,
+                $nextBusinessAddress !== '' ? $nextBusinessAddress : $nextShopAddress,
+                $request,
+                $shopOwner,
+                $shopOwner->id,
+                [
+                    'email' => $shopOwner->email,
+                    'business_name' => $shopOwner->business_name,
+                    'target_type' => 'shop_owner',
+                    'target_id' => $shopOwner->id,
+                ]
+            );
+
+            if (!$locationPolicy['allowed']) {
+                return back()->withErrors($locationPolicy['errors'])->withInput();
+            }
+
+            $validated['business_address'] = $nextBusinessAddress;
+            $validated['shop_address'] = $nextShopAddress;
+            $validated['shop_latitude'] = $nextLatitude;
+            $validated['shop_longitude'] = $nextLongitude;
         }
 
         $shopOwner->update($validated);
