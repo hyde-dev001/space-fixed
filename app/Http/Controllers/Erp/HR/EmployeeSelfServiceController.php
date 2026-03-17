@@ -147,7 +147,11 @@ class EmployeeSelfServiceController extends Controller
                 ], 404);
             }
 
-            $query = Payroll::where('employee_id', $employee->id);
+            $query = Payroll::where('employee_id', $employee->id)
+                ->where(function ($q) {
+                    $q->where('status', 'approved')
+                      ->orWhere('status', 'paid');
+                });
 
             // Filter by year if provided
             if ($request->has('year')) {
@@ -214,6 +218,10 @@ class EmployeeSelfServiceController extends Controller
 
             $payslip = Payroll::where('id', $id)
                 ->where('employee_id', $employee->id)
+                ->where(function ($q) {
+                    $q->where('status', 'approved')
+                      ->orWhere('status', 'paid');
+                })
                 ->with(['employee.department'])
                 ->first();
 
@@ -563,6 +571,10 @@ class EmployeeSelfServiceController extends Controller
                 ->count();
 
             $latestPayslip = Payroll::where('employee_id', $employee->id)
+                ->where(function ($q) {
+                    $q->where('status', 'approved')
+                      ->orWhere('status', 'paid');
+                })
                 ->orderBy('pay_period_start', 'desc')
                 ->first();
 

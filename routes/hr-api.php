@@ -37,6 +37,7 @@ use App\Http\Controllers\ERP\HR\AuditLogController as HRAuditLogController;
 use App\Http\Controllers\ERP\HR\NotificationController;
 use App\Http\Controllers\ERP\HR\HRAnalyticsController;
 use App\Http\Controllers\ERP\HR\SuspensionRequestController;
+use App\Http\Controllers\ERP\HR\SalaryChangeController;
 
 /**
  * ERP Notification Routes (All ERP users)
@@ -60,7 +61,7 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
  */
-Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|access-payslip-generation|access-view-payslip', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|access-payslip-generation|access-view-payslip|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -81,6 +82,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::post('/{userId}/roles/sync', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'syncAdditionalRoles'])->name('hr.employees.roles.sync');
         
         // Invitation Management
+        Route::post('/{id}/reset-password', [InvitationController::class, 'resetEmployeePassword'])->name('hr.employees.reset_password');
         Route::post('/{id}/regenerate-invite', [InvitationController::class, 'regenerate'])->name('hr.employees.regenerate_invite');
         Route::post('/{id}/resend-invite', [InvitationController::class, 'resendInvite'])->name('hr.employees.resend_invite');
         Route::post('/{id}/send-invitation-email', [InvitationController::class, 'sendInvitationEmail'])->name('hr.employees.send_invitation_email');
@@ -93,6 +95,19 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/', [SuspensionRequestController::class, 'index'])->name('hr.suspension_requests.index');
         Route::post('/', [SuspensionRequestController::class, 'store'])->name('hr.suspension_requests.store');
         Route::get('/{id}', [SuspensionRequestController::class, 'show'])->name('hr.suspension_requests.show');
+    });
+
+    // ============================================
+    // SALARY CHANGE WORKFLOW (Phase 7)
+    // ============================================
+    Route::prefix('salary-changes')->group(function () {
+        Route::get('/', [SalaryChangeController::class, 'index'])->name('hr.salary_changes.index');
+        Route::post('/', [SalaryChangeController::class, 'store'])->name('hr.salary_changes.store');
+        Route::get('/{id}', [SalaryChangeController::class, 'show'])->name('hr.salary_changes.show');
+        Route::post('/{id}/approve', [SalaryChangeController::class, 'approve'])->name('hr.salary_changes.approve');
+        Route::post('/{id}/reject', [SalaryChangeController::class, 'reject'])->name('hr.salary_changes.reject');
+        Route::post('/{id}/apply', [SalaryChangeController::class, 'apply'])->name('hr.salary_changes.apply');
+        Route::post('/{id}/cancel', [SalaryChangeController::class, 'cancel'])->name('hr.salary_changes.cancel');
     });
 
     // ============================================
@@ -156,6 +171,8 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/summary', [PayrollController::class, 'summary'])->name('hr.payroll.summary');
         Route::post('/calculate-preview', [PayrollController::class, 'calculatePreview'])->name('hr.payroll.calculate_preview');
         Route::post('/process', [PayrollController::class, 'process'])->name('hr.payroll.process');
+        Route::post('/13th-month/release', [PayrollController::class, 'releaseThirteenthMonth'])->name('hr.payroll.thirteenth.release');
+        Route::get('/13th-month/reconciliation', [PayrollController::class, 'thirteenthMonthReconciliation'])->name('hr.payroll.thirteenth.reconciliation');
         Route::get('/{id}', [PayrollController::class, 'show'])->name('hr.payroll.show');
         Route::put('/{id}', [PayrollController::class, 'update'])->name('hr.payroll.update');
         Route::delete('/{id}', [PayrollController::class, 'destroy'])->name('hr.payroll.destroy');

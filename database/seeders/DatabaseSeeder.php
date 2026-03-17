@@ -21,8 +21,11 @@ class DatabaseSeeder extends Seeder
             RepairServiceSeeder::class,
             RepairPackageSeeder::class,
             EmployeeSeeder::class,
+            PayrollMasterDataSeeder::class,
             CustomerSeeder::class,
+            PremiumPlanSeeder::class,
             TaxRateSeeder::class,
+            PayrollStatutoryTaxRateSeeder::class,
         ]);
 
         // User::factory()->create([

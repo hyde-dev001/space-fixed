@@ -23,6 +23,9 @@ type ShopSettingsPayload = {
 	max_locations: number | null;
 	business_name: string;
 	approval_pages: ApprovalPages;
+	pay_cycle: 'monthly' | 'semi_monthly';
+	pay_day_first: number;
+	pay_day_second: number;
 	required_documents: Array<{
 		key: string;
 		title: string;
@@ -129,6 +132,12 @@ const ShopSetting: React.FC = () => {
 	const [repairPaymentPolicy, setRepairPaymentPolicy] = useState<'deposit_50' | 'full_upfront' | 'pay_after'>(
 		shop_settings.repair_payment_policy ?? 'deposit_50',
 	);
+	const [payCycle, setPayCycle] = useState<'monthly' | 'semi_monthly'>(shop_settings.pay_cycle ?? 'monthly');
+	const [payDayFirst, setPayDayFirst] = useState<number>(shop_settings.pay_day_first ?? 15);
+	const [payDaySecond, setPayDaySecond] = useState<number>(shop_settings.pay_day_second ?? 30);
+	const [savingPayrollCutoff, setSavingPayrollCutoff] = useState(false);
+	const [payrollCutoffSuccess, setPayrollCutoffSuccess] = useState(false);
+	const [payrollCutoffError, setPayrollCutoffError] = useState<string | null>(null);
 
 	// PayMongo key state
 	const [hasPaymongoKey, setHasPaymongoKey] = useState(shop_settings.has_paymongo_key ?? false);
@@ -376,6 +385,80 @@ const ShopSetting: React.FC = () => {
 				},
 				onError: () => {
 					setLimitInputError('Failed to save. Please try again.');
+				},
+			},
+		);
+	};
+
+	const handleSavePayrollCutoff = () => {
+		if (payCycle === 'monthly') {
+			setPayrollCutoffError(null);
+			setSavingPayrollCutoff(true);
+
+			router.put(
+				'/shop-owner/settings',
+				{ pay_cycle: 'monthly' },
+				{
+					preserveScroll: true,
+					onSuccess: () => {
+						setPayrollCutoffSuccess(true);
+						window.setTimeout(() => setPayrollCutoffSuccess(false), 2200);
+					},
+					onError: (pageErrors) => {
+						const errors = pageErrors as Record<string, string | undefined>;
+						setPayrollCutoffError(errors.pay_cycle || 'Failed to save payroll cycle settings. Please try again.');
+					},
+					onFinish: () => {
+						setSavingPayrollCutoff(false);
+					},
+				},
+			);
+
+			return;
+		}
+
+		const firstDay = Math.floor(Number(payDayFirst));
+		const secondDay = Math.floor(Number(payDaySecond));
+
+		if (!Number.isFinite(firstDay) || !Number.isFinite(secondDay) || firstDay < 1 || firstDay > 31 || secondDay < 1 || secondDay > 31) {
+			setPayrollCutoffError('Please enter valid payout days from 1 to 31.');
+			return;
+		}
+
+		if (secondDay <= firstDay) {
+			setPayrollCutoffError('Second payout day must be greater than first payout day.');
+			return;
+		}
+
+		setPayrollCutoffError(null);
+		setSavingPayrollCutoff(true);
+
+		router.put(
+			'/shop-owner/settings',
+			{
+				pay_cycle: payCycle,
+				pay_day_first: firstDay,
+				pay_day_second: secondDay,
+			},
+			{
+				preserveScroll: true,
+				onSuccess: () => {
+					setPayDayFirst(firstDay);
+					setPayDaySecond(secondDay);
+					setPayrollCutoffSuccess(true);
+					window.setTimeout(() => setPayrollCutoffSuccess(false), 2200);
+				},
+				onError: (pageErrors) => {
+					const errors = pageErrors as Record<string, string | undefined>;
+					setPayrollCutoffError(
+						errors.pay_day_second
+							|| errors.pay_day_first
+							|| errors.pay_cycle
+							|| 'Failed to save payroll cutoff settings. Please try again.'
+					);
+				},
+				onFinish: () => {
+					setSavingPayrollCutoff(false);
 				},
 			},
 		);
@@ -743,7 +826,99 @@ const ShopSetting: React.FC = () => {
 					)}
 
 					{/* PayMongo Payment Gateway Key */}
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-4">
+					{!isIndividual && (
+						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-4">
+							<div className="border-b border-gray-200 p-6">
+								<h2 className="text-xl font-semibold text-gray-900">
+									{payCycle === 'monthly' ? 'Payroll Cycle' : 'Payroll Cutoff (Kinsenas)'}
+								</h2>
+								<p className="mt-1 text-sm text-gray-600">
+									Choose monthly payroll or semi-monthly cutoff (kinsenas).
+								</p>
+							</div>
+							<div className={`grid grid-cols-1 gap-4 p-6 ${payCycle === 'semi_monthly' ? 'md:grid-cols-3' : 'md:grid-cols-1'}`}>
+								<div>
+									<label className="mb-1.5 block text-sm font-medium text-gray-700">Pay Cycle</label>
+									<select
+										value={payCycle}
+										onChange={(e) => {
+											setPayCycle(e.target.value as 'monthly' | 'semi_monthly');
+											if (payrollCutoffError) setPayrollCutoffError(null);
+										}}
+										title="Payroll pay cycle"
+										className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+									>
+										<option value="monthly">Monthly</option>
+										<option value="semi_monthly">Semi-monthly (Kinsenas)</option>
+									</select>
+								</div>
+								{payCycle === 'semi_monthly' && (
+									<>
+										<div>
+											<label className="mb-1.5 block text-sm font-medium text-gray-700">First Payout Day</label>
+											<input
+												type="number"
+												min={1}
+												max={31}
+												step={1}
+												value={payDayFirst}
+												title="First payroll payout day"
+												placeholder="15"
+												onChange={(e) => {
+													setPayDayFirst(Number(e.target.value));
+													if (payrollCutoffError) setPayrollCutoffError(null);
+												}}
+												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+											/>
+										</div>
+										<div>
+											<label className="mb-1.5 block text-sm font-medium text-gray-700">Second Payout Day</label>
+											<input
+												type="number"
+												min={1}
+												max={31}
+												step={1}
+												value={payDaySecond}
+												title="Second payroll payout day"
+												placeholder="30"
+												onChange={(e) => {
+													setPayDaySecond(Number(e.target.value));
+													if (payrollCutoffError) setPayrollCutoffError(null);
+												}}
+												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+											/>
+										</div>
+									</>
+								)}
+							</div>
+							<div className="border-t border-gray-200 px-6 py-4">
+								<p className="mb-3 text-xs text-gray-500">
+									{payCycle === 'semi_monthly'
+										? <>
+											Example setup: first payout day <span className="font-semibold">15</span>, second payout day <span className="font-semibold">30</span>.
+										</>
+										: 'Monthly cycle uses one payroll period per month.'}
+								</p>
+								{payrollCutoffError && <p className="mb-2 text-xs text-red-600">{payrollCutoffError}</p>}
+								{payrollCutoffSuccess && (
+									<p className="mb-2 flex items-center gap-1 text-xs font-medium text-green-700">
+										<Check size={13} /> Payroll settings saved.
+									</p>
+								)}
+								<button
+									type="button"
+									onClick={handleSavePayrollCutoff}
+									disabled={savingPayrollCutoff}
+									className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									{savingPayrollCutoff ? 'Saving…' : 'Save Payroll Settings'}
+								</button>
+							</div>
+						</div>
+					)}
+
+					{/* PayMongo Payment Gateway Key */}
+					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-5">
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Payment Gateway (PayMongo)</h2>
 							<p className="mt-1 text-sm text-gray-600">

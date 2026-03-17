@@ -41,9 +41,13 @@ class LandingPageController extends Controller
 
                 $variantImages = collect($product->colorVariants ?? [])
                     ->flatMap(function ($variant) {
-                        return collect($variant->images ?? [])->map(function ($img) {
-                            return $img->image_url;
-                        });
+                        return collect($variant->images ?? [])
+                            ->filter(function ($img) {
+                                return !$this->isShowroomImageType($img->image_type ?? null);
+                            })
+                            ->map(function ($img) {
+                                return $img->image_url;
+                            });
                     })
                     ->filter()
                     ->values();
@@ -103,6 +107,8 @@ class LandingPageController extends Controller
         $query = trim((string) $request->query('query', ''));
         $normalizedQuery = strtolower($query);
         $isShowroomQuery = str_contains($normalizedQuery, 'showroom');
+        $isAllShopsQuery = preg_match('/\bshops?\b/i', $query) === 1
+            || preg_match('/\bshop\s+profiles?\b/i', $query) === 1;
         $showroomQualifier = trim((string) preg_replace('/\bshowroom\b/i', '', $query));
 
         if ($query === '') {
@@ -162,6 +168,8 @@ class LandingPageController extends Controller
                         ->orWhere('city_state', 'like', "%{$showroomQualifier}%");
                 });
             }
+        } elseif ($isAllShopsQuery) {
+            // Keyword "shop" should surface all approved shop profiles.
         } else {
             $shopsQuery->where(function ($q) use ($query) {
                 $q->where('business_name', 'like', "%{$query}%")
@@ -175,7 +183,9 @@ class LandingPageController extends Controller
 
         $shops = $shopsQuery
             ->orderBy('business_name')
-            ->limit($isShowroomQuery ? 24 : 6)
+            ->when(!$isAllShopsQuery, function ($q) use ($isShowroomQuery) {
+                $q->limit($isShowroomQuery ? 24 : 6);
+            })
             ->get()
             ->map(function ($shop) {
                 $profilePhoto = $shop->profile_photo;
@@ -249,6 +259,22 @@ class LandingPageController extends Controller
         // Get all product images with full URLs using accessor
         $images = $product->image_urls;
 
+        $showroom360Frames = collect($product->colorVariants ?? [])
+            ->flatMap(function ($variant) {
+                return collect($variant->images ?? [])
+                    ->filter(function ($img) {
+                        return $this->isShowroomImageType($img->image_type ?? null);
+                    })
+                    ->sortBy('sort_order')
+                    ->map(function ($img) {
+                        return $img->image_url;
+                    });
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         // Ensure at least one image exists
         if (empty($images) && $product->main_image_url) {
             $images = [$product->main_image_url];
@@ -305,18 +331,23 @@ class LandingPageController extends Controller
                         'sku_prefix' => $variant->sku_prefix,
                         'sort_order' => $variant->sort_order,
                         'is_active' => $variant->is_active,
-                        'images' => $variant->images ? $variant->images->map(function ($img) {
-                            return [
-                                'id' => $img->id,
-                                'image_url' => $img->image_url,
-                                'image_path' => $img->image_url,
-                                'is_thumbnail' => $img->is_thumbnail,
-                                'sort_order' => $img->sort_order,
-                                'alt_text' => $img->alt_text,
-                            ];
-                        })->toArray() : [],
+                        'images' => $variant->images ? $variant->images
+                            ->filter(function ($img) {
+                                return !$this->isShowroomImageType($img->image_type ?? null);
+                            })
+                            ->map(function ($img) {
+                                return [
+                                    'id' => $img->id,
+                                    'image_url' => $img->image_url,
+                                    'image_path' => $img->image_url,
+                                    'is_thumbnail' => $img->is_thumbnail,
+                                    'sort_order' => $img->sort_order,
+                                    'alt_text' => $img->alt_text,
+                                ];
+                            })->values()->toArray() : [],
                     ];
                 })->toArray() : [],
+                'showroom_360_frames' => $showroom360Frames,
             ],
         ]);
     }
@@ -378,6 +409,14 @@ class LandingPageController extends Controller
     }
 
     /**
+     * Display the product image spin tutorial page.
+     */
+    public function productImageSpinTutorial(): Response
+    {
+        return Inertia::render('UserSide/Shared/articles');
+    }
+
+    /**
      * Display the contact page.
      */
     // public function contact(): Response
@@ -414,11 +453,13 @@ class LandingPageController extends Controller
      */
     public function shopProfile(string $id): Response
     {
-        [$shop, $products] = $this->buildShopProfileData($id);
+        [$shop, $products, $repairServices, $repairPackages] = $this->buildShopProfileData($id, false);
 
         return Inertia::render('UserSide/Profile/ShopProfile', [
             'shop' => $shop,
             'products' => $products,
+            'repairServices' => $repairServices,
+            'repairPackages' => $repairPackages,
         ]);
     }
 
@@ -427,7 +468,7 @@ class LandingPageController extends Controller
      */
     public function virtualShowroom(string $id): Response
     {
-        [$shop, $products] = $this->buildShopProfileData($id);
+        [$shop, $products] = $this->buildShopProfileData($id, true);
 
         return Inertia::render('UserSide/Profile/VirtualShowroomPage', [
             'shop' => $shop,
@@ -438,7 +479,7 @@ class LandingPageController extends Controller
     /**
      * Shared payload builder for shop profile and virtual showroom pages.
      */
-    private function buildShopProfileData(string $id): array
+    private function buildShopProfileData(string $id, bool $forVirtualShowroom = false): array
     {
         if ($id === 'null' || !is_numeric($id)) {
             abort(404, 'Shop not found');
@@ -447,9 +488,34 @@ class LandingPageController extends Controller
         $shopOwner = ShopOwner::where('id', (int)$id)
             ->where('status', 'approved')
             ->firstOrFail();
+        $normalizedBusinessType = $this->normalizeBusinessType($shopOwner->business_type);
+
+        $activePremiumSubscription = null;
+        $showroomSlotLimit = 60;
+
+        if ($forVirtualShowroom) {
+            $activePremiumSubscription = $shopOwner->premiumSubscriptions()
+                ->where('status', 'active')
+                ->where(function ($query) {
+                    $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+                })
+                ->where(function ($query) {
+                    $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
+                })
+                ->latest('ends_at')
+                ->first();
+
+            $showroomSlotLimit = max((int) ($activePremiumSubscription?->showroom_slot_limit ?? 60), 0);
+        }
 
         $products = Product::where('shop_owner_id', $id)
             ->where('is_active', true)
+            ->when($forVirtualShowroom, function ($query) {
+                $query->where('is_featured', true);
+            })
+            ->when($forVirtualShowroom && $showroomSlotLimit > 0, function ($query) use ($showroomSlotLimit) {
+                $query->take($showroomSlotLimit);
+            })
             ->with([
                 'colorVariants' => function ($query) {
                     $query->active()->orderBy('sort_order');
@@ -458,6 +524,7 @@ class LandingPageController extends Controller
                     $query->orderBy('sort_order');
                 }
             ])
+            ->orderByDesc('is_featured')
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($product) {
@@ -469,9 +536,13 @@ class LandingPageController extends Controller
 
                 $variantImages = collect($product->colorVariants ?? [])
                     ->flatMap(function ($variant) {
-                        return collect($variant->images ?? [])->map(function ($img) {
-                            return $img->image_url;
-                        });
+                        return collect($variant->images ?? [])
+                            ->filter(function ($img) {
+                                return !$this->isShowroomImageType($img->image_type ?? null);
+                            })
+                            ->map(function ($img) {
+                                return $img->image_url;
+                            });
                     })
                     ->filter();
 
@@ -503,6 +574,21 @@ class LandingPageController extends Controller
                     ->filter(fn($url) => $url && $url !== $mainImage)
                     ->values();
 
+                $showroom360Frames = collect($product->colorVariants ?? [])
+                    ->flatMap(function ($variant) {
+                        return collect($variant->images ?? [])
+                            ->filter(function ($img) {
+                                return $this->isShowroomImageType($img->image_type ?? null);
+                            })
+                            ->sortBy('sort_order')
+                            ->map(function ($img) {
+                                return $img->image_url;
+                            });
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values();
+
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
@@ -516,20 +602,23 @@ class LandingPageController extends Controller
                     'gallery_images' => $galleryImages,
                     'hover_image' => $galleryImages->first() ?? null,
                     'description' => $product->description,
+                    'is_featured' => (bool) $product->is_featured,
+                    'showroom_360_frames' => $showroom360Frames,
                 ];
             });
 
         $shop = [
             'id' => $shopOwner->id,
             'name' => $shopOwner->business_name ?? $shopOwner->name,
+            'business_type' => $normalizedBusinessType,
             'description' => $shopOwner->bio ?? 'Premium footwear products and services',
             'address' => $shopOwner->business_address ?? $shopOwner->city_state,
             'phone' => $shopOwner->phone,
             'email' => $shopOwner->email,
             'profile_photo' => $shopOwner->profile_photo && str_starts_with($shopOwner->profile_photo, '/')
-                ? $shopOwner->profile_photo
-                : ($shopOwner->profile_photo ? "/storage/{$shopOwner->profile_photo}" : null),
-            'cover_image' => '/images/shop/shop-cover.jpg',
+                ? asset(ltrim($shopOwner->profile_photo, '/'))
+                : ($shopOwner->profile_photo ? asset('storage/' . ltrim($shopOwner->profile_photo, '/')) : null),
+            'cover_image' => asset('images/shop/p1.jpg'),
             'rating' => 4.8,
             'total_reviews' => 0,
             'established_year' => 2024,
@@ -550,9 +639,61 @@ class LandingPageController extends Controller
             'saturday_close' => $shopOwner->saturday_close,
             'sunday_open' => $shopOwner->sunday_open,
             'sunday_close' => $shopOwner->sunday_close,
+            'showroom_slot_limit' => $forVirtualShowroom ? $showroomSlotLimit : null,
         ];
 
-        return [$shop, $products];
+        $isRepairCapableShop = in_array($normalizedBusinessType, ['repair', 'both'], true);
+
+        $repairServices = $isRepairCapableShop
+            ? RepairService::where('shop_owner_id', $shopOwner->id)
+                ->where('status', 'Active')
+                ->orderBy('category')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($service) {
+                    return [
+                        'id' => $service->id,
+                        'title' => $service->name,
+                        'price' => '₱' . number_format($service->price, 0),
+                        'description' => $service->description ?? 'Professional ' . strtolower($service->category) . ' service',
+                        'category' => $service->category,
+                        'duration' => $service->duration,
+                    ];
+                })
+                ->values()
+            : collect();
+
+        $repairPackages = $isRepairCapableShop
+            ? RepairPackage::query()
+                ->where('shop_owner_id', $shopOwner->id)
+                ->active()
+                ->with('services:id,name,category,price,duration,status,shop_owner_id')
+                ->orderByDesc('created_at')
+                ->get()
+                ->map(function (RepairPackage $package) {
+                    $serviceTotal = $package->services->sum(fn ($service) => (float) $service->price);
+
+                    return [
+                        'id' => $package->id,
+                        'name' => $package->name,
+                        'description' => $package->description,
+                        'package_price' => (float) $package->package_price,
+                        'service_count' => $package->services->count(),
+                        'services_total_price' => round($serviceTotal, 2),
+                        'savings_amount' => round(max($serviceTotal - (float) $package->package_price, 0), 2),
+                        'services' => $package->services->map(fn ($service) => [
+                            'id' => $service->id,
+                            'name' => $service->name,
+                            'category' => $service->category,
+                            'price' => (float) $service->price,
+                            'duration' => $service->duration,
+                        ])->values(),
+                    ];
+                })
+                ->values()
+            : collect();
+
+        return [$shop, $products, $repairServices, $repairPackages];
     }
 
     /**
@@ -562,11 +703,12 @@ class LandingPageController extends Controller
     {
         $shopOwner = ShopOwner::where('id', (int)$id)
             ->where('status', 'approved')
-            ->where(function ($query) {
-                $query->where('business_type', 'repair')
-                    ->orWhere('business_type', 'both');
-            })
             ->firstOrFail();
+
+        $normalizedBusinessType = $this->normalizeBusinessType($shopOwner->business_type);
+        if (!in_array($normalizedBusinessType, ['repair', 'both'], true)) {
+            abort(404, 'Repair services are not available for this shop');
+        }
 
         // Format location
         $location = $shopOwner->business_address ?? 'Location not specified';
@@ -695,5 +837,37 @@ class LandingPageController extends Controller
             'repairServices' => $repairServices,
             'repairPackages' => $repairPackages,
         ]);
+    }
+
+    /**
+     * Normalize raw business_type values into canonical retail|repair|both.
+     */
+    private function normalizeBusinessType(?string $businessType): string
+    {
+        $normalized = strtolower(trim((string) $businessType));
+
+        if ($normalized === '') {
+            return 'retail';
+        }
+
+        $hasRepair = str_contains($normalized, 'repair') || str_contains($normalized, 'service');
+        $hasRetail = str_contains($normalized, 'retail') || str_contains($normalized, 'product') || str_contains($normalized, 'shoe');
+
+        if ($normalized === 'both' || ($hasRepair && $hasRetail)) {
+            return 'both';
+        }
+
+        if ($hasRepair) {
+            return 'repair';
+        }
+
+        return 'retail';
+    }
+
+    private function isShowroomImageType(?string $value): bool
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        return in_array($normalized, ['showroom_360', 'virtual_showroom', 'showroom', '360'], true);
     }
 }

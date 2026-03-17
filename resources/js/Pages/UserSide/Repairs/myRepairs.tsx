@@ -4,7 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 
-type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
+type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
 type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected';
 
 type RepairOrder = {
@@ -32,6 +32,12 @@ type RepairOrder = {
   payment_enabled_at?: string | null;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
+  tracking_number?: string | null;
+  carrier_company?: string | null;
+  carrier_name?: string | null;
+  carrier_phone?: string | null;
+  tracking_link?: string | null;
+  shipped_at?: string | null;
   assigned_repairer_id?: number | null;
   repairer_name?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
@@ -349,6 +355,7 @@ const MyRepairs: React.FC = () => {
       case 'completed':
         return 'completed';
       case 'ready_for_pickup':
+      case 'shipped':
         return 'ready_for_pickup';
       case 'picked_up':
         return 'picked_up';
@@ -362,6 +369,42 @@ const MyRepairs: React.FC = () => {
         return 'new_request';
     }
   };
+
+  const mapTabParamToRepairTab = (rawValue: string | null): RepairTab | null => {
+    if (!rawValue) return null;
+
+    const value = rawValue.toLowerCase();
+
+    if (value === 'accepted') return 'pending';
+    if (value === 'progress') return 'in_progress';
+    if (value === 'pickup' || value === 'ready') return 'ready_for_pickup';
+
+    if (
+      value === 'new_request' ||
+      value === 'pending' ||
+      value === 'received' ||
+      value === 'in_progress' ||
+      value === 'completed' ||
+      value === 'ready_for_pickup' ||
+      value === 'picked_up' ||
+      value === 'cancelled' ||
+      value === 'rejected'
+    ) {
+      return value as RepairTab;
+    }
+
+    return null;
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab') || params.get('status');
+    const mappedTab = mapTabParamToRepairTab(requestedTab);
+
+    if (mappedTab) {
+      setSelectedTab(mappedTab);
+    }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1086,6 +1129,7 @@ const MyRepairs: React.FC = () => {
       case 'received':
       case 'completed':
       case 'ready_for_pickup':
+      case 'shipped':
       case 'picked_up':
       case 'owner_approved':
         return 'text-green-700';
@@ -1130,6 +1174,8 @@ const MyRepairs: React.FC = () => {
         return '✅ Completed - QC Done';
       case 'ready_for_pickup':
         return '📦 Ready for Pickup';
+      case 'shipped':
+        return '🚚 Shipped - Awaiting Delivery';
       case 'picked_up':
         return '✅ Completed & Picked Up';
       case 'pending':
@@ -1722,10 +1768,10 @@ const MyRepairs: React.FC = () => {
                           SWITCH TO CARRIER PICKUP
                         </button>
                       )}
-                      {order.status === 'ready_for_pickup' && (
+                      {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 and pay_after only — full_upfront is already paid */}
-                          {(order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {order.status === 'ready_for_pickup' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -1749,7 +1795,7 @@ const MyRepairs: React.FC = () => {
                             }`}
                             title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
                           >
-                            {order.pickup_enabled ? 'Confirm Received' : 'Received'}
+                            {order.pickup_enabled ? (order.status === 'shipped' ? 'Confirm Delivery' : 'Confirm Received') : 'Received'}
                           </button>
                         </>
                       )}

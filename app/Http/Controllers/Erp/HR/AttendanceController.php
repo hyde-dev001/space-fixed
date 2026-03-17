@@ -5,8 +5,11 @@ namespace App\Http\Controllers\ERP\HR;
 use App\Http\Controllers\Controller;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\OvertimeRequest;
+use App\Models\HR\HolidayCalendar;
+use App\Models\HR\BranchPayrollSetting;
 use App\Models\Employee;
 use App\Models\HR\AuditLog;
+use App\Models\ShopOwner;
 use App\Services\HR\LatenessTrackingService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
@@ -1289,27 +1292,69 @@ class AttendanceController extends Controller
         $totalAbsent = $attendanceRecords->where('status', 'absent')->count();
         $totalLate = $attendanceRecords->where('status', 'late')->count();
         $totalHalfDay = $attendanceRecords->where('status', 'half-day')->count();
+
+        $holidays = HolidayCalendar::where('shop_owner_id', $user->shop_owner_id)
+            ->where('is_active', true)
+            ->whereBetween('holiday_date', [$startDate, $endDate])
+            ->get()
+            ->keyBy(fn ($holiday) => $holiday->holiday_date->toDateString());
+        $shopOwner = ShopOwner::find($user->shop_owner_id);
+
+        $branchSetting = BranchPayrollSetting::where('shop_owner_id', $user->shop_owner_id)
+            ->where('is_active', true)
+            ->first();
+        $ndStart = $branchSetting?->night_differential_start ?? '22:00:00';
+        $ndEnd = $branchSetting?->night_differential_end ?? '06:00:00';
         
         // Calculate hours
         $totalRegularHours = 0;
         $totalOvertimeHours = 0;
         $totalUndertimeHours = 0;
+        $restDayHours = 0;
+        $specialHolidayHours = 0;
+        $regularHolidayHours = 0;
+        $nightDifferentialHours = 0;
 
         foreach ($attendanceRecords as $record) {
-            // Use working_hours field if available (most reliable)
-            if ($record->working_hours !== null && $record->working_hours > 0) {
-                $totalRegularHours += $record->working_hours;
-            } elseif ($record->status === 'present' || $record->status === 'late') {
-                // If no working hours but marked present/late, assume 8 hours
-                $totalRegularHours += 8;
-            } elseif ($record->status === 'half_day') {
-                $totalRegularHours += 4;
+            if (!in_array($record->status, ['present', 'late', 'half-day'], true)) {
+                continue;
             }
-            // Absent days contribute 0 hours (already handled by not adding anything)
-            
-            // Add overtime hours from the overtime_hours field (includes approved overtime sessions)
-            if ($record->overtime_hours !== null) {
-                $totalOvertimeHours += $record->overtime_hours;
+
+            $workedHours = 0;
+            if ($record->working_hours !== null && (float) $record->working_hours > 0) {
+                $workedHours = (float) $record->working_hours;
+            } elseif ($record->status === 'half-day') {
+                $workedHours = 4;
+            } else {
+                $workedHours = 8;
+            }
+
+            $totalOvertimeHours += (float) ($record->overtime_hours ?? 0);
+            $totalUndertimeHours += (float) (($record->minutes_early_departure ?? 0) / 60);
+
+            $dateStr = $record->date->toDateString();
+            $holiday = $holidays->get($dateStr);
+
+            if ($holiday) {
+                if ($holiday->holiday_type === 'regular') {
+                    $regularHolidayHours += $workedHours;
+                } else {
+                    $specialHolidayHours += $workedHours;
+                }
+            } elseif ($this->isRestDay($record->date, $shopOwner)) {
+                $restDayHours += $workedHours;
+            } else {
+                $totalRegularHours += $workedHours;
+            }
+
+            if ($record->check_in_time && $record->check_out_time) {
+                $nightDifferentialHours += $this->computeNightDifferentialHours(
+                    $record->check_in_time,
+                    $record->check_out_time,
+                    $record->date,
+                    $ndStart,
+                    $ndEnd
+                );
             }
         }
 
@@ -1333,6 +1378,10 @@ class AttendanceController extends Controller
                 'total_regular_hours' => round($totalRegularHours, 2),
                 'total_overtime_hours' => round($totalOvertimeHours, 2),
                 'total_undertime_hours' => round($totalUndertimeHours, 2),
+                'rest_day_hours' => round($restDayHours, 2),
+                'special_holiday_hours' => round($specialHolidayHours, 2),
+                'regular_holiday_hours' => round($regularHolidayHours, 2),
+                'night_differential_hours' => round($nightDifferentialHours, 2),
             ],
             'records' => $attendanceRecords->map(function ($record) {
                 return [
@@ -1345,6 +1394,52 @@ class AttendanceController extends Controller
                 ];
             }),
         ]);
+    }
+
+    /**
+     * Calculate overlap between work shift and configured night differential window.
+     */
+    protected function computeNightDifferentialHours(
+        $checkIn,
+        $checkOut,
+        $date,
+        string $ndStart,
+        string $ndEnd
+    ): float {
+        $base = Carbon::parse($date->toDateString());
+        $shiftStart = Carbon::parse($base->toDateString() . ' ' . (is_string($checkIn) ? $checkIn : date('H:i:s', strtotime($checkIn))));
+        $shiftEnd = Carbon::parse($base->toDateString() . ' ' . (is_string($checkOut) ? $checkOut : date('H:i:s', strtotime($checkOut))));
+
+        if ($shiftEnd->lte($shiftStart)) {
+            $shiftEnd->addDay();
+        }
+
+        $ndStartTime = Carbon::parse($base->toDateString() . ' ' . $ndStart);
+        $ndEndTime = Carbon::parse($base->toDateString() . ' ' . $ndEnd);
+
+        if ($ndEndTime->lte($ndStartTime)) {
+            $ndEndTime->addDay();
+        }
+
+        $overlapStart = $shiftStart->max($ndStartTime);
+        $overlapEnd = $shiftEnd->min($ndEndTime);
+
+        if ($overlapEnd->lte($overlapStart)) {
+            return 0.0;
+        }
+
+        return round($overlapStart->diffInMinutes($overlapEnd) / 60, 2);
+    }
+
+    protected function isRestDay(Carbon $date, ?ShopOwner $shopOwner): bool
+    {
+        $dayName = strtolower($date->format('l'));
+
+        if ($shopOwner && $shopOwner->hasScheduleOn($dayName)) {
+            return $shopOwner->isClosedOn($dayName);
+        }
+
+        return $date->isSunday();
     }
 
     /**

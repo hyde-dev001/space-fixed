@@ -150,6 +150,17 @@ const navItems: NavItem[] = [
           </svg>
         ),
       },
+      {
+        name: "Salary Changes",
+        route: "erp.hr",
+        params: { section: "salary-changes" },
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+        ),
+      },
     ],
   },
 ];
@@ -807,65 +818,49 @@ const AppSidebar_ERP: React.FC = () => {
   const isActive = useCallback(
     (routeName: string, params?: Record<string, any>, extraPaths?: string[]) => {
       try {
-        // Get the base URL without query string
-        const urlParts = url.split('?');
-        const baseUrl = urlParts[0];
-        const queryString = urlParts[1] || '';
+        const queryString = url.includes("?") ? url.split("?")[1] : "";
+        const baseUrl = url.split("?")[0];
 
-        // Frontend-only staff routes: compare against mapped static paths
-        if (routeName && routeName.startsWith && routeName.startsWith("erp.staff.")) {
-          const staffPath = staffRouteMap[routeName] || "";
-          if (!staffPath) return false;
-          // Exact match first
-          if (baseUrl === staffPath) return true;
-          // For partial matches, ensure we don't match prefixes (e.g., /job-orders shouldn't match /job-orders-repair)
-          if (baseUrl.startsWith(staffPath + "/")) return true;
-          if (extraPaths && extraPaths.some((path) => baseUrl.startsWith(path))) return true;
-          return false;
+        if (routeName.startsWith("erp.staff.")) {
+          const staffPath = staffRouteMap[routeName];
+          if (staffPath) {
+            if (baseUrl === staffPath) return true;
+            if (baseUrl.startsWith(staffPath + "/")) return true;
+            if (extraPaths && extraPaths.some((path) => baseUrl.startsWith(path))) return true;
+            return false;
+          }
         }
 
-        // Try using allRoutePaths map first
         if (allRoutePaths[routeName]) {
           const mappedPath = allRoutePaths[routeName];
-          // Exact match for base URL
+
           if (baseUrl === mappedPath) {
-            // If item has a section parameter, it must match the query string
             if (params?.section) {
               return queryString.includes(`section=${params.section}`);
             }
-            // If no section parameter, match if there's no query string or any query string on this route
-            // This handles both direct navigation and initial page loads
             return true;
           }
-          
-          // Prefix match only for deep nested routes (e.g., /erp/manager/dashboard)
-          // Don't prefix match for shallow routes like /crm to avoid matching /crm/leads with /crm
-          const isDeepNestedPath = mappedPath.split('/').filter(Boolean).length >= 2;
+
+          const isDeepNestedPath = mappedPath.split("/").filter(Boolean).length >= 2;
           if (isDeepNestedPath && baseUrl.startsWith(mappedPath + "/")) return true;
         }
 
-        // Fallback: compare resolved route URL to current page URL
         try {
           const routeUrl = route(routeName, params || undefined);
-          // Remove query string from both URLs for comparison
-          const routeUrlBase = routeUrl.split('?')[0];
-          
+          const routeUrlBase = routeUrl.split("?")[0];
+
           if (baseUrl === routeUrlBase) {
-            // If route has a query string but we don't, try matching with params
-            if (params?.section && !queryString && routeUrl.includes(`?`)) {
-              const routeQueryPart = routeUrl.split('?')[1] || '';
+            if (params?.section && !queryString && routeUrl.includes("?")) {
+              const routeQueryPart = routeUrl.split("?")[1] || "";
               if (routeQueryPart.includes(`section=${params.section}`)) return true;
             }
             return true;
           }
-          
-          // Only do prefix matching for deep nested routes to avoid false positives
-          const isDeepNestedPath = routeUrlBase.split('/').filter(Boolean).length >= 2;
+
+          const isDeepNestedPath = routeUrlBase.split("/").filter(Boolean).length >= 2;
           if (isDeepNestedPath && baseUrl.startsWith(routeUrlBase + "/")) return true;
-          
-          // Special handling for routes with query parameters
-          if (routeUrl.includes('?')) {
-            // If the route() helper generates a URL with query string, compare them
+
+          if (routeUrl.includes("?")) {
             if (url === routeUrl) return true;
           }
         } catch {
@@ -1058,9 +1053,9 @@ const AppSidebar_ERP: React.FC = () => {
         return permissions.includes('access-refund-approval');
       }
       
-      // Payslip Approvals - check simplified permission
+      // Payslip Approvals - checker and final approver both need access
       if (item.route === "finance.index" && item.params?.section === "payslip-approvals") {
-        return permissions.includes('access-payslip-approval');
+        return permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
       }
       
       // Don't show items without matching permissions
@@ -1097,6 +1092,9 @@ const AppSidebar_ERP: React.FC = () => {
       'access-overtime-approvals',
       'access-payslip-generation',
       'access-view-payslip',
+      'manage-salary-changes',
+      'approve-salary-change',
+      'override-salary-retroactive',
     ];
     return hrSpecificPermissions.some(perm => permissions.includes(perm));
   };
@@ -1197,7 +1195,18 @@ const AppSidebar_ERP: React.FC = () => {
       
       // Payroll - check simplified permissions and filter submenu
       if (item.name === "Payroll") {
-        const hasAnyPayrollPermission = permissions.includes('access-payslip-generation') || permissions.includes('access-view-payslip');
+        const canSeeSalaryChanges =
+          role === "MANAGER" ||
+          role === "Manager" ||
+          roles.includes('Manager') ||
+          permissions.includes('access-employee-directory') ||
+          permissions.includes('manage-salary-changes') ||
+          permissions.includes('approve-salary-change');
+
+        const hasAnyPayrollPermission =
+          permissions.includes('access-payslip-generation') ||
+          permissions.includes('access-view-payslip') ||
+          canSeeSalaryChanges;
         
         if (hasAnyPayrollPermission && item.subItems) {
           // Filter submenu items based on specific permissions
@@ -1207,6 +1216,9 @@ const AppSidebar_ERP: React.FC = () => {
             }
             if (subItem.name === "Generate Slip") {
               return permissions.includes('access-payslip-generation');
+            }
+            if (subItem.name === "Salary Changes") {
+              return canSeeSalaryChanges;
             }
             return false;
           });

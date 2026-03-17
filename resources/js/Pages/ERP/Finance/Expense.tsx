@@ -2,10 +2,9 @@ import React, { useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
-import { usePage } from '@inertiajs/react';
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
-import { useExpenses, useTaxRates, useCreateExpense } from "../../../hooks/useFinanceQueries";
-import { InlineApprovalActions, getApprovalStatusBadge, ApprovalLimitInfo } from "./InlineApprovalUtils";
+import { useExpenses, useTaxRates } from "../../../hooks/useFinanceQueries";
+import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 
 // Loading Spinner Component
 const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading expenses..." }) => (
@@ -24,7 +23,7 @@ type Expense = {
   category: string;
   description: string;
   amount: number | string;
-  vendor: string;
+  vendor?: string | null;
   status: "draft" | "submitted" | "approved" | "posted" | "rejected";
   reference?: string;
   tax_amount?: number | string;
@@ -91,17 +90,6 @@ const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const EditIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-    />
-  </svg>
-);
-
 const SearchIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -111,12 +99,6 @@ const SearchIcon: React.FC<{ className?: string }> = ({ className }) => (
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-  </svg>
-);
-
-const DotsIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zm0 6a.75.75 0 110-1.5.75.75 0 010 1.5zm0 6a.75.75 0 110-1.5.75.75 0 010 1.5z" />
   </svg>
 );
 
@@ -185,8 +167,6 @@ const MetricCard: React.FC<MetricCardProps> = ({
   );
 };
 
-import { canApproveExpenses } from "../../../utils/permissions";
-
 const normalizeExpense = (expense: Expense) => ({
   ...expense,
   amount: Number(expense.amount) || 0,
@@ -194,15 +174,11 @@ const normalizeExpense = (expense: Expense) => ({
 });
 
 const Expense: React.FC = () => {
-  const page = usePage();
-  const user = page.props.auth?.user as any;
-  const auth = page.props.auth as any;
   const api = useFinanceApi();
   
   // React Query hooks - automatically handle loading, caching, refetching
   const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses();
   const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
-  const createExpenseMutation = useCreateExpense();
   
   // Normalize expenses data
   const expenses = useMemo(() => 
@@ -213,21 +189,12 @@ const Expense: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [activeExpense, setActiveExpense] = useState<Expense | null>(null);
-  const [editForm, setEditForm] = useState({
-    date: "",
-    category: "",
-    description: "",
-    vendor: "",
-    amount: 0,
-  });
   const [addForm, setAddForm] = useState({
     date: "",
     category: "",
     description: "",
-    vendor: "",
     amount: 0,
     tax_rate_id: "",
     tax_amount: 0,
@@ -242,8 +209,7 @@ const Expense: React.FC = () => {
       const matchesStatus = statusFilter === "all" ? true : expense.status === statusFilter;
       const matchesSearch =
         (expense.category || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (expense.description || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (expense.vendor || "").toLowerCase().includes(searchTerm.toLowerCase());
+        (expense.description || "").toLowerCase().includes(searchTerm.toLowerCase());
 
       return matchesStatus && matchesSearch;
     });
@@ -277,16 +243,6 @@ const Expense: React.FC = () => {
       avgExpense,
     };
   }, [expenses]);
-
-  // Check if user can approve expenses
-  const canUserApprove = () => {
-    return canApproveExpenses(auth);
-  };
-
-  const canUserPost = () => {
-    // Posting typically requires manager-level permissions
-    return canApproveExpenses(auth);
-  };
 
   const categoryBreakdown = useMemo(() => {
     const grouped: Record<string, number> = {};
@@ -392,25 +348,6 @@ const Expense: React.FC = () => {
     setIsViewOpen(false);
   };
 
-  const openEditModal = (expense: Expense) => {
-    setActiveExpense(expense);
-    setEditForm({
-      date: expense.date,
-      category: expense.category,
-      description: expense.description,
-      vendor: expense.vendor,
-      amount: Number(expense.amount),
-      tax_rate_id: "",
-      tax_amount: Number(expense.tax_amount) || 0,
-    });
-    setIsEditOpen(true);
-  };
-
-  const closeEditModal = () => {
-    setActiveExpense(null);
-    setIsEditOpen(false);
-  };
-
   const calculateTax = (amount: number, taxRateId: string) => {
     if (!amount || !taxRateId) return 0;
     
@@ -430,7 +367,6 @@ const Expense: React.FC = () => {
       date: "",
       category: "",
       description: "",
-      vendor: "",
       amount: 0,
       tax_rate_id: "",
       tax_amount: 0,
@@ -487,7 +423,7 @@ const Expense: React.FC = () => {
 
   const handleSaveAdd = async () => {
     // guard: ensure required fields are filled
-    if (!addForm.date || !addForm.category.trim() || !addForm.vendor.trim() || !(addForm.amount > 0)) {
+    if (!addForm.date || !addForm.category.trim() || !(addForm.amount > 0)) {
       Swal.fire({
         title: "Incomplete",
         text: "Please complete all required fields before adding an expense.",
@@ -501,7 +437,6 @@ const Expense: React.FC = () => {
       formData.append('date', addForm.date);
       formData.append('category', addForm.category);
       formData.append('description', addForm.description);
-      formData.append('vendor', addForm.vendor);
       formData.append('amount', addForm.amount.toString());
       formData.append('tax_amount', addForm.tax_amount.toString());
       formData.append('status', 'submitted');
@@ -526,8 +461,7 @@ const Expense: React.FC = () => {
         throw new Error(errorData.message || 'Failed to add expense');
       }
 
-      const data = await response.json();
-      const exp = normalizeExpense(data?.data ?? data);
+      await response.json();
       // React Query will automatically refetch on next render
       refetchExpenses();
       closeAddModal();
@@ -548,33 +482,8 @@ const Expense: React.FC = () => {
   };
 
   const isAddFormValid = React.useMemo(() => {
-    return Boolean(addForm.date && addForm.category.trim() && addForm.vendor.trim() && addForm.amount > 0);
+    return Boolean(addForm.date && addForm.category.trim() && addForm.amount > 0);
   }, [addForm]);
-
-  const handleSaveEdit = async () => {
-    if (!activeExpense) return;
-    try {
-      const response = await api.patch(`/api/finance/session/expenses/${activeExpense.id}`, editForm);
-      if (!response.ok) throw new Error(response.error || 'Failed to update expense');
-      const updatedExpense = normalizeExpense(response.data?.data ?? response.data);
-      // React Query will automatically refetch
-      refetchExpenses();
-      closeEditModal();
-      Swal.fire({
-        title: "Updated",
-        text: "Expense has been updated successfully",
-        icon: "success",
-        timer: 1200,
-        showConfirmButton: false,
-      });
-    } catch (err) {
-      Swal.fire({
-        title: "Error",
-        text: "Failed to update expense.",
-        icon: "error",
-      });
-    }
-  };
 
   const handleDeleteExpense = (id: string) => {
     Swal.fire({
@@ -613,126 +522,6 @@ const Expense: React.FC = () => {
     });
   };
 
-  const confirmAndUpdateStatus = async (status: Expense["status"]) => {
-    if (!activeExpense) return;
-
-    const action = status === "approved" ? "Approve" : "Reject";
-    const result = await Swal.fire({
-      title: `${action} expense?`,
-      text: `${activeExpense.category} — ${formatCurrency(Number(activeExpense.amount) || 0)}`,
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: action,
-      cancelButtonText: "Cancel",
-      confirmButtonColor: status === "approved" ? "#059669" : "#e11d48",
-      cancelButtonColor: "#6b7280",
-      reverseButtons: true,
-      focusCancel: true,
-      input: status === 'rejected' ? 'textarea' : undefined,
-      inputPlaceholder: status === 'rejected' ? 'Reason for rejection (optional)' : undefined,
-    });
-
-    if (result.isConfirmed) {
-      try {
-        const expenseId = activeExpense.id;
-        const endpoint = status === 'approved' ? 'approve' : 'reject';
-        const url = `/api/finance/session/expenses/${expenseId}/${endpoint}`;
-        
-        const response = await api.post(url, { approval_notes: result.value || null });
-        
-        if (!response.ok) {
-          throw new Error(response.error || `Failed to ${action}`);
-        }
-        
-        const updated = normalizeExpense(response.data?.data ?? response.data);
-        // React Query will automatically refetch
-        refetchExpenses();
-        setActiveExpense((prev) => (prev ? updated : prev));
-        setIsViewOpen(false);
-        setActiveExpense(null);
-
-        await Swal.fire({
-          title: `Expense ${action.toLowerCase()}ed`,
-          icon: "success",
-          timer: 1200,
-          showConfirmButton: false,
-        });
-      } catch (err) {
-        Swal.fire({
-          title: "Error",
-          text: `Failed to ${action.toLowerCase()} expense. Check console for details.`,
-          icon: "error",
-        });
-      }
-    }
-  };
-
-  const handlePostToLedger = async () => {
-    if (!activeExpense) return;
-
-    const result = await Swal.fire({
-      title: "Post to Ledger?",
-      html: `
-        <div class="text-left space-y-2">
-          <p><strong>Expense:</strong> ${activeExpense.category}</p>
-          <p><strong>Amount:</strong> ${formatCurrency(Number(activeExpense.amount) || 0)}</p>
-          <p class="text-sm text-gray-600 mt-4">This will create a journal entry:</p>
-          <ul class="text-sm text-gray-600 list-disc ml-5">
-            <li>Debit: Expense Account (5000)</li>
-            <li>Credit: Accounts Payable (2000)</li>
-          </ul>
-          <p class="text-sm text-red-600 mt-4">⚠️ This action cannot be undone!</p>
-        </div>
-      `,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Post to Ledger",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#2563eb",
-      cancelButtonColor: "#6b7280",
-      reverseButtons: true,
-    });
-
-    if (result.isConfirmed) {
-      try {
-        const expenseId = activeExpense.id;
-        const url = `/api/finance/session/expenses/${expenseId}/post`;
-        
-        const response = await api.post(url);
-        
-        if (!response.ok) {
-          throw new Error(response.error || `Failed to post to ledger`);
-        }
-        
-        const updated = normalizeExpense(response.data?.data ?? response.data);
-        // React Query will automatically refetch
-        refetchExpenses();
-        setActiveExpense(null);
-        setIsViewOpen(false);
-
-        await Swal.fire({
-          title: "Posted to Ledger!",
-          html: `
-            <div class="text-left space-y-2">
-              <p class="text-green-600 font-semibold">✓ Journal Entry Created</p>
-              <p class="text-green-600 font-semibold">✓ Account Balances Updated</p>
-              <p class="text-sm text-gray-600 mt-4">Check the Journal Entries page to view the transaction.</p>
-            </div>
-          `,
-          icon: "success",
-          timer: 3000,
-          showConfirmButton: true,
-        });
-      } catch (err) {
-        Swal.fire({
-          title: "Error",
-          text: err instanceof Error ? err.message : "Failed to post expense to ledger.",
-          icon: "error",
-        });
-      }
-    }
-  };
-
   return (
     <>
       <div className="space-y-6">
@@ -744,7 +533,7 @@ const Expense: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Expense Management</h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-2">
-                  Track, approve, and analyze team spending across the ERP suite.
+                  Add and track team spending across the ERP suite.
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -852,7 +641,7 @@ const Expense: React.FC = () => {
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2">
-            {["all", "submitted", "approved", "posted", "rejected"].map((tab) => (
+            {["all", "submitted", "approved", "rejected"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setStatusFilter(tab as Expense["status"] | "all")}
@@ -876,7 +665,7 @@ const Expense: React.FC = () => {
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400 dark:text-gray-500" />
               <input
                 type="text"
-                placeholder="Search category, vendor, note"
+                placeholder="Search category or note"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
@@ -892,7 +681,6 @@ const Expense: React.FC = () => {
                 <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 dark:text-gray-400">Date</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 dark:text-gray-400">Category</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 dark:text-gray-400">Description</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 dark:text-gray-400">Vendor</th>
                 <th className="text-right py-3 px-6 text-xs font-semibold text-gray-600 dark:text-gray-400">Amount</th>
                 <th className="text-left py-3 px-6 text-xs font-semibold text-gray-600 dark:text-gray-400">Status</th>
                 <th className="text-center py-3 px-4 text-xs font-semibold text-gray-600 dark:text-gray-400">Actions</th>
@@ -904,26 +692,12 @@ const Expense: React.FC = () => {
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.date}</td>
                   <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">{expense.category}</td>
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.description}</td>
-                  <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.vendor}</td>
                   <td className="py-4 px-6 text-right text-sm font-semibold text-gray-900 dark:text-white">{formatCurrency(expense.amount)}</td>
                   <td className="py-4 px-6">
                     {getApprovalStatusBadge(false, expense.status)}
                   </td>
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex items-center justify-center gap-2">
-                      <InlineApprovalActions
-                        transactionId={expense.id}
-                        transactionType="expense"
-                        requiresApproval={false}
-                        status={expense.status}
-                        amount={Number(expense.amount)}
-                        userRole={user?.role}
-                        userApprovalLimit={user?.approval_limit}
-                        onApprovalSuccess={() => {
-                          // Reload expenses after approval
-                          window.location.reload();
-                        }}
-                      />
                       <button
                         className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                         aria-label="View expense"
@@ -932,20 +706,14 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
-                      {expense.status === "approved" && canUserPost() && (
+                      {expense.status !== "approved" && expense.status !== "posted" && (
                         <button
-                          className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
-                          aria-label="Post to ledger"
-                          title="Post approved expense to journal"
-                          onClick={() => {
-                            setActiveExpense(expense);
-                            // Delay to ensure state is updated before calling handler
-                            setTimeout(() => handlePostToLedger(), 0);
-                          }}
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
+                          aria-label="Delete expense"
+                          title="Delete"
+                          onClick={() => handleDeleteExpense(expense.id)}
                         >
-                          <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                          <TrashIcon className="size-5" />
                         </button>
                       )}
                     </div>
@@ -983,10 +751,6 @@ const Expense: React.FC = () => {
                 <span className="font-semibold">{activeExpense.date}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                <span className="text-gray-500 dark:text-gray-400">Vendor</span>
-                <span className="font-semibold">{activeExpense.vendor}</span>
-              </div>
-              <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                 <span className="text-gray-500 dark:text-gray-400">Amount</span>
                 <span className="font-semibold">{formatCurrency(activeExpense.amount)}</span>
               </div>
@@ -1020,14 +784,6 @@ const Expense: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-              {activeExpense.status === "approved" && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
-                  <svg className="size-5 text-blue-600 dark:text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm text-blue-800 dark:text-blue-200">Click "Post to Ledger" to create journal entry</span>
-                </div>
-              )}
               <div className="flex items-center justify-end gap-3">
                 <button
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -1035,126 +791,7 @@ const Expense: React.FC = () => {
               >
                 Close
                 </button>
-                {activeExpense.status === "submitted" && canUserApprove() && (
-                  <>
-                    <button
-                      className="px-4 py-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
-                      onClick={() => {
-                        closeViewModal();
-                        openEditModal(activeExpense);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="px-4 py-2 rounded-lg bg-emerald-600 dark:bg-emerald-500 text-white hover:bg-emerald-700 dark:hover:bg-emerald-600 transition-colors"
-                      onClick={() => confirmAndUpdateStatus("approved")}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="px-4 py-2 rounded-lg bg-rose-600 dark:bg-rose-500 text-white hover:bg-rose-700 dark:hover:bg-rose-600 transition-colors"
-                      onClick={() => confirmAndUpdateStatus("rejected")}
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-                {activeExpense.status === "approved" && canUserPost() && (
-                  <button
-                    className="px-4 py-2 rounded-lg bg-green-600 dark:bg-green-500 text-white hover:bg-green-700 dark:hover:bg-green-600 transition-colors flex items-center gap-2 font-semibold shadow-lg"
-                    onClick={handlePostToLedger}
-                  >
-                    <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Post to Ledger
-                  </button>
-                )}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isEditOpen && activeExpense && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Edit Expense</p>
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{activeExpense.category}</h4>
-              </div>
-              <button
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-                aria-label="Close"
-                onClick={closeEditModal}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="px-6 py-4 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
-                <input
-                  type="date"
-                  value={editForm.date}
-                  onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
-                <input
-                  type="text"
-                  value={editForm.category}
-                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
-                <textarea
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Vendor</label>
-                <input
-                  type="text"
-                  value={editForm.vendor}
-                  onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Amount</label>
-                <input
-                  type="number"
-                  value={editForm.amount}
-                  onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-              <button
-                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                onClick={closeEditModal}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
-                onClick={handleSaveEdit}
-              >
-                Save Changes
-              </button>
             </div>
           </div>
         </div>
@@ -1204,16 +841,6 @@ const Expense: React.FC = () => {
                   onChange={(e) => setAddForm({ ...addForm, description: e.target.value })}
                   placeholder="Enter expense details"
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Vendor</label>
-                <input
-                  type="text"
-                  value={addForm.vendor}
-                  onChange={(e) => setAddForm({ ...addForm, vendor: e.target.value })}
-                  placeholder="e.g., Business Name"
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
               </div>

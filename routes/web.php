@@ -182,12 +182,16 @@ Route::get('/notifications/settings', function () {
 })->middleware('auth:user')->name('notifications.settings');
 
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
-Route::get('/shop-profile/{id}/virtual-showroom', [LandingPageController::class, 'virtualShowroom'])->name('shop-profile.virtual-showroom');
+Route::get('/shop-profile/{id}/virtual-showroom', [LandingPageController::class, 'virtualShowroom'])
+    ->middleware('has.active.retail.premium')
+    ->name('shop-profile.virtual-showroom');
 
 // Phase 10D - Public shop reviews (no auth required)
 Route::get('/api/shop-owners/{id}/reviews', [\App\Http\Controllers\Api\RepairReviewController::class, 'getShopReviews']);
 
 Route::get('/services', [LandingPageController::class, 'services'])->name('services');
+Route::get('/services/product-image-spin-tutorial', [LandingPageController::class, 'productImageSpinTutorial'])
+    ->name('services.product-image-spin-tutorial');
 // Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
 Route::get('/register', [LandingPageController::class, 'register'])->name('register');
 Route::get('/login', function () {
@@ -519,7 +523,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     // ORDERS - Available to ALL
     Route::get('/job-orders-retail', function () {
         return Inertia::render('ShopOwner/Orders/order management/JobOrders');
-    })->name('job-orders-retail');
+    })->middleware('check.business.type:retail,both')->name('job-orders-retail');
 
     // CUSTOMERS - Available to ALL
     Route::get('/customers', function () {
@@ -528,11 +532,11 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     Route::get('/customer-support', function () {
         return Inertia::render('ShopOwner/Customers/customer management/customerSupport');
-    })->name('customer-support');
+    })->middleware('check.business.type:retail,both')->name('customer-support');
 
     Route::get('/repair-support', function () {
         return Inertia::render('ShopOwner/Customers/customer management/repairSupport');
-    })->name('repair-support');
+    })->middleware('check.business.type:repair,both')->name('repair-support');
 
     Route::get('/customer-reviews', function () {
         return Inertia::render('ShopOwner/Customers/customer management/CustomersReviews');
@@ -549,10 +553,86 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::delete('/settings/paymongo-key', [ShopSettingsController::class, 'removePaymongoKey'])->name('settings.paymongo-key.remove');
     Route::post('/settings/geofence', [ShopSettingsController::class, 'updateGeofence'])->name('settings.geofence');
 
-    // PREMIUM BENEFITS - Available to ALL shop owners
+    // PREMIUM BENEFITS - Retail-capable shops only
     Route::get('/premium-benefits', function () {
+        $shopOwner = \Illuminate\Support\Facades\Auth::guard('shop_owner')->user();
+
+        $businessType = strtolower(trim((string) ($shopOwner?->business_type ?? '')));
+        $hasRepairSignal = str_contains($businessType, 'repair') || str_contains($businessType, 'service');
+        $hasRetailSignal = str_contains($businessType, 'retail') || str_contains($businessType, 'shoe') || str_contains($businessType, 'product');
+
+        if ($shopOwner && $hasRepairSignal && !$hasRetailSignal) {
+            return redirect()->route('shop-owner.settings');
+        }
+
         return Inertia::render('ShopOwner/Premium/premuimBenefits');
     })->name('premium-benefits');
+
+    Route::get('/premium/benefits', function () {
+        return redirect()->route('shop-owner.premium-benefits');
+    })->name('premium-benefits-legacy');
+
+    Route::get('/premium/success', function (Request $request) {
+        $subscriptionId = $request->query('subscription_id');
+
+        $shopOwner = \Illuminate\Support\Facades\Auth::guard('shop_owner')->user();
+
+        if ($shopOwner && !empty($subscriptionId)) {
+            $subscription = \App\Models\ShopOwnerSubscription::with('premiumPlan')
+                ->where('id', (int) $subscriptionId)
+                ->where('shop_owner_id', (int) $shopOwner->id)
+                ->first();
+
+            if ($subscription && in_array($subscription->status, ['pending', 'failed'], true) && !empty($subscription->paymongo_session_id)) {
+                try {
+                    $apiKey = config('services.paymongo.secret_key');
+
+                    if (!empty($apiKey)) {
+                        $response = \Illuminate\Support\Facades\Http::withHeaders([
+                            'Content-Type' => 'application/json',
+                            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+                        ])->get('https://api.paymongo.com/v1/checkout_sessions/' . $subscription->paymongo_session_id);
+
+                        if ($response->ok()) {
+                            $attributes = (array) $response->json('data.attributes', []);
+                            $payments = is_array($attributes['payments'] ?? null) ? $attributes['payments'] : [];
+                            $paymentStatus = strtolower((string) ($attributes['payment_status'] ?? ''));
+                            $hasPaidSignal = $paymentStatus === 'paid' || count($payments) > 0;
+
+                            if ($hasPaidSignal) {
+                                $durationDays = (int) ($subscription->premiumPlan?->duration_days ?? 30);
+                                $startsAt = now();
+                                $endsAt = now()->addDays(max($durationDays, 1));
+                                $paymentId = $payments[0]['id'] ?? null;
+
+                                $subscription->update([
+                                    'status' => 'active',
+                                    'paymongo_payment_id' => $paymentId,
+                                    'starts_at' => $startsAt,
+                                    'ends_at' => $endsAt,
+                                ]);
+
+                                return redirect()
+                                    ->route('shop-owner.premium-benefits')
+                                    ->with('success', 'Payment confirmed. Your premium subscription is now active.');
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Premium success verification fallback failed', [
+                        'subscription_id' => $subscription->id,
+                        'session_id' => $subscription->paymongo_session_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        return redirect()
+            ->route('shop-owner.premium-benefits')
+            ->with('success', 'Premium subscription payment was completed successfully. Activation may take a moment while payment is being confirmed.')
+            ->with('premium_subscription_id', $subscriptionId);
+    })->name('premium-success');
 
     // DSS INSIGHTS - Available to all individual accounts (repair, retail, both) AND company accounts
     Route::get('/dss-insights', function () {
@@ -580,6 +660,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::get('/purchase-request-approval', function () {
             return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval');
         })->name('purchase-request-approval');
+
+        Route::get('/expense-approvals', function () {
+            return Inertia::render('ShopOwner/Approvals/ExpenseApproval');
+        })->name('expense-approvals');
     });
 
     // STAFF/EMPLOYEE MANAGEMENT - Business only
@@ -621,17 +705,17 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
     Route::get('dashboard/stats', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getStats']);
     Route::get('dashboard/low-stock', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getLowStockAlerts']);
     Route::get('dashboard/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights']);
-    Route::get('orders', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index']);
-    Route::get('orders/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show']);
-    Route::patch('orders/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus']);
+    Route::get('orders', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index'])->middleware('check.business.type:retail,both');
+    Route::get('orders/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show'])->middleware('check.business.type:retail,both');
+    Route::patch('orders/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus'])->middleware('check.business.type:retail,both');
 
     // Profile
     Route::post('upload-profile-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'uploadPhoto']);
 
     // Price Change Approvals
-    Route::get('price-changes/pending', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerPending']);
-    Route::post('price-changes/{id}/approve', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerApprove']);
-    Route::post('price-changes/{id}/reject', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerReject']);
+    Route::get('price-changes/pending', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerPending'])->middleware('check.business.type:retail,both');
+    Route::post('price-changes/{id}/approve', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerApprove'])->middleware('check.business.type:retail,both');
+    Route::post('price-changes/{id}/reject', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerReject'])->middleware('check.business.type:retail,both');
 });
 
 // Staff Price Change Requests (session-based auth)
@@ -670,6 +754,8 @@ Route::prefix('api/products')->group(function () {
 
     // Shop Owner & Staff routes (authenticated - accepts both auth:user and auth:shop_owner)
     Route::middleware('auth:user,shop_owner')->group(function () {
+        Route::get('meta/showroom-entitlement', [\App\Http\Controllers\Api\ProductController::class, 'showroomEntitlement'])
+            ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::get('my/products', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])
@@ -816,7 +902,7 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
 Route::get('api/customer/shop/{shopOwnerId}/repair-capacity', [\App\Http\Controllers\Api\RepairRequestController::class, 'shopRepairCapacity']);
 
 // Repair Workflow API Routes (Internal - Phase 2)
-Route::middleware('auth:user')->prefix('api/workflow/repairs')->group(function () {
+Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/workflow/repairs')->group(function () {
     // Auto-assign repairer
     Route::post('{id}/assign', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'assignToRepairer']);
 
@@ -828,15 +914,23 @@ Route::middleware('auth:user')->prefix('api/workflow/repairs')->group(function (
 });
 
 // Repairer API Routes (Phase 3 - Chat Integration)
-Route::middleware('auth:user')->prefix('api/repairer')->group(function () {
+Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer')->group(function () {
     // Dashboard statistics
     Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData']);
+
+    // Repair material stock + requests (repairer view)
+    Route::get('/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'repairStocksOverview'])
+        ->middleware('permission:access-repair-stocks');
+    Route::get('/material-requests', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myMaterialRequests'])
+        ->middleware('permission:access-repair-stocks');
+    Route::post('/material-requests', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'createMaterialRequest'])
+        ->middleware('permission:access-repair-stocks');
 });
 
 // Public shop-hours fetch — no auth needed, used by the customer schedule modal
 Route::get('/api/repair/shop-hours', [\App\Http\Controllers\Api\RepairAvailabilityController::class, 'shopHours']);
 
-Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function () {
+Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/repairs')->group(function () {
     // Get assigned repairs
     Route::get('/', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myAssignedRepairs']);
 
@@ -858,7 +952,16 @@ Route::middleware('auth:user')->prefix('api/repairer/repairs')->group(function (
     Route::post('{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork']);
     Route::post('{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted']);
     Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
+    Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
     Route::post('{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup']);
+
+    // Repair material usage tracking
+    Route::get('{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRepairMaterialUsage'])
+        ->middleware('permission:access-repair-stocks');
+    Route::post('{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'logRepairMaterialUsage'])
+        ->middleware('permission:access-repair-stocks');
+    Route::delete('{id}/materials/{usageId}', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'removeRepairMaterialUsage'])
+        ->middleware('permission:access-repair-stocks');
 
     // Activate payment for specific repair request
     Route::post('{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair']);
@@ -884,7 +987,7 @@ Route::middleware(['auth:user', 'role:Manager'])->prefix('api/manager/repairs')-
 });
 
 // Shop Owner API Routes (Phase 6 - High-Value Approval)
-Route::middleware('auth:shop_owner')->prefix('api/shop-owner/repairs')->group(function () {
+Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefix('api/shop-owner/repairs')->group(function () {
     // Get high-value repairs pending owner approval
     Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals']);
 
@@ -904,7 +1007,7 @@ Route::middleware('auth:shop_owner')->prefix('api/reviews')->group(function () {
 });
 
 // Repair Services - Shop Owner Routes
-Route::middleware('auth:shop_owner')->prefix('api/repair-services')->group(function () {
+Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefix('api/repair-services')->group(function () {
     Route::get('owner/pending', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerPending']);
     Route::post('{id}/owner/approve', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerApprove']);
     Route::post('{id}/owner/reject', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerReject']);
@@ -1350,13 +1453,13 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/shoePricing');
-    })->middleware('permission:access-shoe-pricing')->name('shoe-pricing');
+    })->middleware(['permission:access-shoe-pricing', 'check.user.business.type:retail,both'])->name('shoe-pricing');
     Route::get('/products', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/Manager/productUpload');
-    })->name('products');
+    })->middleware('check.user.business.type:retail,both')->name('products');
 
     // Inventory routes - accessible by Inventory Manager (Manager needs explicit permission)
     Route::get('/inventory-overview', function () {
@@ -1420,7 +1523,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/Manager/repairRejectReview');
-    })->name('repair-rejection-review');
+    })->middleware('check.user.business.type:repair,both')->name('repair-rejection-review');
     Route::get('/dss-insights', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1667,7 +1770,7 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
                 ];
             });
         return Inertia::render('ERP/STAFF/JobOrders', compact('initialOrders'));
-    })->middleware('permission:access-staff-job-orders')->name('job-orders');
+    })->middleware(['permission:access-staff-job-orders', 'check.user.business.type:retail,both'])->name('job-orders');
 
     Route::get('/repair-dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1681,7 +1784,7 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             $initialDashboard = null;
         }
         return Inertia::render('ERP/repairer/dashboardRepair', compact('initialDashboard'));
-    })->middleware('permission:access-repairer-dashboard')->name('repair-dashboard');
+    })->middleware(['permission:access-repairer-dashboard', 'check.user.business.type:repair,both'])->name('repair-dashboard');
 
     Route::get('/job-orders-repair', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1692,28 +1795,28 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         return Inertia::render('ERP/repairer/JobOrdersRepair', [
             'repair_workload_limit' => (int) ($shopOwner?->repair_workload_limit ?? 20),
         ]);
-    })->middleware('permission:access-repair-job-orders')->name('job-orders-repair');
+    })->middleware(['permission:access-repair-job-orders', 'check.user.business.type:repair,both'])->name('job-orders-repair');
 
     Route::get('/upload-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/uploadService');
-    })->name('upload-services');
+    })->middleware('check.user.business.type:repair,both')->name('upload-services');
 
     Route::get('/stocks-overview', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/repairStocksOverview');
-    })->name('stocks-overview');
+    })->middleware(['permission:access-repair-stocks', 'check.user.business.type:repair,both'])->name('stocks-overview');
 
     Route::get('/request-material', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/repairer/requestMaterials');
-    })->name('request-material');
+    })->middleware(['permission:access-repair-stocks', 'check.user.business.type:repair,both'])->name('request-material');
 
     Route::get('/pricing-and-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1724,28 +1827,28 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             ->orderBy('created_at', 'desc')
             ->get();
         return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
-    })->middleware('permission:access-pricing-services')->name('pricing-services');
+    })->middleware(['permission:access-pricing-services', 'check.user.business.type:repair,both'])->name('pricing-services');
 
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/shoePricing');
-    })->middleware('permission:access-shoe-pricing')->name('shoe-pricing');
+    })->middleware(['permission:access-shoe-pricing', 'check.user.business.type:retail,both'])->name('shoe-pricing');
 
     Route::get('/repair-status', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/RepairStatus');
-    })->middleware('permission:access-repair-job-orders')->name('repair-status');
+    })->middleware(['permission:access-repair-job-orders', 'check.user.business.type:repair,both'])->name('repair-status');
 
     Route::get('/products', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/STAFF/ProductManagementWithVariants');
-    })->middleware('permission:access-product-upload-staff')->name('products');
+    })->middleware(['permission:access-product-upload-staff', 'check.user.business.type:retail,both'])->name('products');
     Route::get('/payments', function () {
         return redirect()->route('erp.staff.products');
     });
@@ -1782,7 +1885,7 @@ Route::get('/erp/staff/repairer-support', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/repairer/repairerSupport');
-})->middleware(['auth:user', 'permission:access-repairer-support'])->name('erp.repairer.support');
+})->middleware(['auth:user', 'permission:access-repairer-support', 'check.user.business.type:repair,both'])->name('erp.repairer.support');
 
 // Repairer Pricing Route - Accessible to users with repair service management permissions
 Route::get('/erp/repairer/pricing-and-services', function () {
@@ -1794,7 +1897,7 @@ Route::get('/erp/repairer/pricing-and-services', function () {
         ->orderBy('created_at', 'desc')
         ->get();
     return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
-})->middleware(['auth:user', 'permission:access-pricing-services'])->name('erp.repairer.pricing-services');
+})->middleware(['auth:user', 'permission:access-pricing-services', 'check.user.business.type:repair,both'])->name('erp.repairer.pricing-services');
 
 // Common Routes (for testing/development)
 Route::group([], function () {

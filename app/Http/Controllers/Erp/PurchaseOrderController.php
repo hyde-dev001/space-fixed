@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ERP;
 use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
+use App\Models\Finance\Expense;
 use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Http\Requests\UpdatePurchaseOrderStatusRequest;
 use App\Http\Requests\CancelPurchaseOrderRequest;
@@ -244,6 +245,7 @@ class PurchaseOrderController extends Controller
                 case 'delivered':
                     $purchaseOrder->markAsDelivered($userId, $request->actual_delivery_date ?? now()->toDateString());
                     $purchaseOrder->updateInventoryOnDelivery();
+                    $this->createExpenseFromDeliveredPurchaseOrder($purchaseOrder, $userId);
                     break;
                 case 'completed':
                     $purchaseOrder->markAsCompleted($userId);
@@ -340,6 +342,7 @@ class PurchaseOrderController extends Controller
 
             $purchaseOrder->markAsDelivered(Auth::id(), $validatedData['actual_delivery_date']);
             $purchaseOrder->updateInventoryOnDelivery();
+            $this->createExpenseFromDeliveredPurchaseOrder($purchaseOrder, (int) Auth::id());
 
             if (isset($validatedData['notes'])) {
                 $purchaseOrder->notes = $validatedData['notes'];
@@ -413,6 +416,59 @@ class PurchaseOrderController extends Controller
         ];
 
         return response()->json($metrics);
+    }
+
+    /**
+     * Auto-create Finance expense from delivered procurement purchase order.
+     */
+    private function createExpenseFromDeliveredPurchaseOrder(PurchaseOrder $purchaseOrder, int $userId): void
+    {
+        $amount = (float) ($purchaseOrder->total_cost ?? 0);
+        if ($amount <= 0) {
+            return;
+        }
+
+        $template = config('finance_expense_templates.procurement', []);
+
+        $category = (string) ($template['category'] ?? 'Procurement');
+        $status = (string) ($template['status'] ?? 'submitted');
+        $referencePrefix = (string) ($template['reference_prefix'] ?? 'PROC-EXP-');
+        $descriptionTemplate = (string) ($template['description_template'] ?? 'Auto-generated from Purchase Order: :reference');
+        $metaSource = (string) ($template['meta_source'] ?? 'purchase_order');
+
+        $referenceToken = (string) ($purchaseOrder->po_number ?: ('PO-' . $purchaseOrder->id));
+        $reference = $referencePrefix . $referenceToken;
+
+        $description = strtr($descriptionTemplate, [
+            ':reference' => $referenceToken,
+            ':po_number' => (string) ($purchaseOrder->po_number ?? $referenceToken),
+        ]);
+
+        $expenseDate = $purchaseOrder->actual_delivery_date
+            ? \Illuminate\Support\Carbon::parse($purchaseOrder->actual_delivery_date)->toDateString()
+            : now()->toDateString();
+
+        $purchaseOrder->loadMissing('supplier');
+
+        Expense::firstOrCreate(
+            ['reference' => $reference],
+            [
+                'date' => $expenseDate,
+                'category' => $category,
+                'vendor' => $purchaseOrder->supplier?->name,
+                'description' => $description,
+                'amount' => $amount,
+                'tax_amount' => 0,
+                'status' => $status,
+                'shop_id' => $purchaseOrder->shop_owner_id,
+                'meta' => [
+                    'source' => $metaSource,
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'po_number' => $purchaseOrder->po_number,
+                    'created_by' => $userId,
+                ],
+            ]
+        );
     }
 
     /**

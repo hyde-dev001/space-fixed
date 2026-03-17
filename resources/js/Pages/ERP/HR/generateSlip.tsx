@@ -4,7 +4,6 @@ import Swal from "sweetalert2";
 
 // ==================== Type Definitions ====================
 type EmployeeStatus = "active" | "inactive" | "on_leave";
-type PayType = "monthly" | "daily" | "hourly";
 type AttendanceStatus = "finalized" | "pending" | "not_started";
 
 type Employee = {
@@ -15,7 +14,6 @@ type Employee = {
 	department: string;
 	position: string;
 	status: EmployeeStatus;
-	payType: PayType;
 	monthlySalary?: number;
 	dailyRate?: number;
 	hourlyRate?: number;
@@ -43,6 +41,8 @@ type AttendanceRecord = {
 
 type PayrollPeriod = {
 	month: string;
+	periodKey?: string;
+	payCycle?: "monthly" | "semi_monthly";
 	startDate: string;
 	endDate: string;
 	attendanceStatus: AttendanceStatus;
@@ -53,12 +53,20 @@ type PayrollCalculation = {
 	// Hours Breakdown
 	totalRegularHours: number;
 	totalOvertimeHours: number;
+	totalRestDayHours: number;
+	totalSpecialHolidayHours: number;
+	totalRegularHolidayHours: number;
+	totalNightDifferentialHours: number;
 	totalUndertimeHours: number;
 	totalAbsentDays: number;
 	
 	// Earnings
 	basicPay: number;
 	overtimePay: number;
+	restDayPay: number;
+	specialHolidayPay: number;
+	regularHolidayPay: number;
+	nightDifferentialPay: number;
 	salesCommission: number; // Commission from sales
 	performanceBonus: number; // Target-based bonus
 	otherAllowances: number; // Holiday pay, special bonuses
@@ -70,6 +78,7 @@ type PayrollCalculation = {
 	philhealthContribution: number;
 	pagibigContribution: number;
 	absentDeductions: number;
+	undertimeDeductions: number;
 	loanDeductions: number;
 	otherDeductions: number;
 	totalDeductions: number;
@@ -90,6 +99,34 @@ type Payslip = {
 	generatedAt: string;
 	generatedBy: string;
 	status: "generated" | "approved" | "paid";
+};
+
+type ThirteenthMonthReleaseResult = {
+	year: number;
+	release_date: string;
+	processed_count: number;
+	skipped_count: number;
+	items: Array<{
+		employee_id: number;
+		employee_name: string;
+		status: "released" | "skipped";
+		reason?: string | null;
+		payroll_id?: number;
+		accrued: number;
+		released: number;
+		released_now: number;
+		remaining_balance?: number;
+	}>;
+};
+
+type GovernanceReadinessStatus = {
+	totalPayrolls: number;
+	checkerApproved: number;
+	awaitingChecker: number;
+	awaitingFinalApprover: number;
+	paidPayrolls: number;
+	requireChecker: boolean;
+	requireFinalApprover: boolean;
 };
 
 // ==================== Icon Components ====================
@@ -252,15 +289,15 @@ const calculatePayroll = (
 	let dailyRate = 0;
 	let monthlyBase = 0;
 	
-	if (employee.payType === "monthly" && employee.monthlySalary) {
+	if (employee.monthlySalary) {
 		monthlyBase = employee.monthlySalary;
 		dailyRate = monthlyBase / payrollPeriod.workingDays;
 		hourlyRate = dailyRate / 8; // Assuming 8 hours per day
-	} else if (employee.payType === "daily" && employee.dailyRate) {
+	} else if (employee.dailyRate) {
 		dailyRate = employee.dailyRate;
 		hourlyRate = dailyRate / 8;
 		monthlyBase = dailyRate * payrollPeriod.workingDays;
-	} else if (employee.payType === "hourly" && employee.hourlyRate) {
+	} else if (employee.hourlyRate) {
 		hourlyRate = employee.hourlyRate;
 		dailyRate = hourlyRate * 8;
 		monthlyBase = dailyRate * payrollPeriod.workingDays;
@@ -314,10 +351,18 @@ const calculatePayroll = (
 	return {
 		totalRegularHours,
 		totalOvertimeHours,
+		totalRestDayHours: 0,
+		totalSpecialHolidayHours: 0,
+		totalRegularHolidayHours: 0,
+		totalNightDifferentialHours: 0,
 		totalUndertimeHours,
 		totalAbsentDays,
 		basicPay: Math.round(basicPay * 100) / 100,
 		overtimePay: Math.round(overtimePay * 100) / 100,
+		restDayPay: 0,
+		specialHolidayPay: 0,
+		regularHolidayPay: 0,
+		nightDifferentialPay: 0,
 		salesCommission: Math.round(salesCommission * 100) / 100,
 		performanceBonus: Math.round(performanceBonus * 100) / 100,
 		otherAllowances: Math.round(otherAllowances * 100) / 100,
@@ -327,6 +372,7 @@ const calculatePayroll = (
 		philhealthContribution: Math.round(philhealthContribution * 100) / 100,
 		pagibigContribution: Math.round(pagibigContribution * 100) / 100,
 		absentDeductions: Math.round(absentDeductions * 100) / 100,
+		undertimeDeductions: Math.round(undertimeDeductions * 100) / 100,
 		loanDeductions: Math.round(loanDeductions * 100) / 100,
 		otherDeductions: Math.round(otherDeductions * 100) / 100,
 		totalDeductions: Math.round(totalDeductions * 100) / 100,
@@ -358,7 +404,6 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
 		department: apiEmployee.department || 'N/A',
 		position: apiEmployee.position || 'N/A',
 		status: apiEmployee.status as EmployeeStatus,
-		payType: 'monthly' as PayType, // Default to monthly
 		monthlySalary: parseFloat(apiEmployee.salary || apiEmployee.monthly_salary || 0),
 		dailyRate: apiEmployee.daily_rate ? parseFloat(apiEmployee.daily_rate) : undefined,
 		hourlyRate: apiEmployee.hourly_rate ? parseFloat(apiEmployee.hourly_rate) : undefined,
@@ -398,6 +443,10 @@ export default function GenerateSlip() {
 	// Manual hours input state
 	const [totalRegularHours, setTotalRegularHours] = useState<number>(0);
 	const [totalOvertimeHours, setTotalOvertimeHours] = useState<number>(0);
+	const [restDayHours, setRestDayHours] = useState<number>(0);
+	const [specialHolidayHours, setSpecialHolidayHours] = useState<number>(0);
+	const [regularHolidayHours, setRegularHolidayHours] = useState<number>(0);
+	const [nightDifferentialHours, setNightDifferentialHours] = useState<number>(0);
 	const [totalUndertimeHours, setTotalUndertimeHours] = useState<number>(0);
 	const [totalAbsentDays, setTotalAbsentDays] = useState<number>(0);
 	
@@ -409,8 +458,28 @@ export default function GenerateSlip() {
 	const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 	const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
 	const [retryQueue, setRetryQueue] = useState<number[]>([]);
+	const [thirteenthYear, setThirteenthYear] = useState<number>(new Date().getFullYear());
+	const [isProcessingThirteenth, setIsProcessingThirteenth] = useState(false);
+	const [isLoadingGovernanceStatus, setIsLoadingGovernanceStatus] = useState(false);
+	const [governanceStatus, setGovernanceStatus] = useState<GovernanceReadinessStatus>({
+		totalPayrolls: 0,
+		checkerApproved: 0,
+		awaitingChecker: 0,
+		awaitingFinalApprover: 0,
+		paidPayrolls: 0,
+		requireChecker: true,
+		requireFinalApprover: true,
+	});
 
 	const selectedPeriod = payrollPeriods[selectedPeriodIndex];
+	const payrollPeriodKey = useMemo(
+		() => {
+			if (!selectedPeriod) return "";
+			if (selectedPeriod.periodKey) return selectedPeriod.periodKey;
+			return selectedPeriod.startDate ? selectedPeriod.startDate.slice(0, 7) : "";
+		},
+		[selectedPeriod]
+	);
 
 	// Fetch payroll periods from API
 	useEffect(() => {
@@ -431,8 +500,8 @@ export default function GenerateSlip() {
 					const data: PayrollPeriod[] = await response.json();
 					if (Array.isArray(data) && data.length > 0) {
 						setPayrollPeriods(data);
-						// Default to the most recent period (index 0)
-						setSelectedPeriodIndex(0);
+						const latestStartedIndex = data.findIndex((period) => period.attendanceStatus !== 'not_started');
+						setSelectedPeriodIndex(latestStartedIndex >= 0 ? latestStartedIndex : 0);
 					}
 				}
 			} catch (error) {
@@ -491,6 +560,101 @@ export default function GenerateSlip() {
 
 		fetchEmployees();
 	}, []);
+
+	useEffect(() => {
+		const fetchGovernanceReadiness = async () => {
+			if (!payrollPeriodKey) {
+				setGovernanceStatus((prev) => ({
+					...prev,
+					totalPayrolls: 0,
+					checkerApproved: 0,
+					awaitingChecker: 0,
+					awaitingFinalApprover: 0,
+					paidPayrolls: 0,
+				}));
+				return;
+			}
+
+			setIsLoadingGovernanceStatus(true);
+			try {
+				const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+				const params = new URLSearchParams();
+				params.append('period', payrollPeriodKey);
+				params.append('per_page', '500');
+
+				const response = await fetch(`/api/hr/payroll?${params.toString()}`, {
+					method: 'GET',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-TOKEN': csrfToken || '',
+						'Accept': 'application/json',
+					},
+					credentials: 'include',
+				});
+
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
+
+				const payload = await response.json();
+				const payrollRows = Array.isArray(payload?.data)
+					? payload.data
+					: Array.isArray(payload)
+						? payload
+						: [];
+
+				const summary = payrollRows.reduce(
+					(acc: GovernanceReadinessStatus, row: any) => {
+						const status = String(row?.status || '').toLowerCase();
+						const hasCheckerApproval = Boolean(row?.approved_by);
+						const hasFinalApproval = Boolean(row?.final_approved_by) || status === 'paid';
+
+						acc.totalPayrolls += 1;
+						if (hasCheckerApproval) {
+							acc.checkerApproved += 1;
+						} else {
+							acc.awaitingChecker += 1;
+						}
+
+						if (hasCheckerApproval && !hasFinalApproval) {
+							acc.awaitingFinalApprover += 1;
+						}
+
+						if (status === 'paid') {
+							acc.paidPayrolls += 1;
+						}
+
+						return acc;
+					},
+					{
+						totalPayrolls: 0,
+						checkerApproved: 0,
+						awaitingChecker: 0,
+						awaitingFinalApprover: 0,
+						paidPayrolls: 0,
+						requireChecker: true,
+						requireFinalApprover: true,
+					}
+				);
+
+				setGovernanceStatus(summary);
+			} catch (error) {
+				console.error('Error fetching governance readiness:', error);
+				setGovernanceStatus((prev) => ({
+					...prev,
+					totalPayrolls: 0,
+					checkerApproved: 0,
+					awaitingChecker: 0,
+					awaitingFinalApprover: 0,
+					paidPayrolls: 0,
+				}));
+			} finally {
+				setIsLoadingGovernanceStatus(false);
+			}
+		};
+
+		fetchGovernanceReadiness();
+	}, [payrollPeriodKey]);
 
 	const departments = useMemo(
 		() => Array.from(new Set(employeeData.map((e) => e.department))),
@@ -569,6 +733,10 @@ export default function GenerateSlip() {
 		// Reset hours input fields and fetch attendance data
 		setTotalRegularHours(0);
 		setTotalOvertimeHours(0);
+		setRestDayHours(0);
+		setSpecialHolidayHours(0);
+		setRegularHolidayHours(0);
+		setNightDifferentialHours(0);
 		setTotalUndertimeHours(0);
 		setTotalAbsentDays(0);
 		
@@ -612,6 +780,10 @@ export default function GenerateSlip() {
 			if (data.summary) {
 				setTotalRegularHours(data.summary.total_regular_hours || 0);
 				setTotalOvertimeHours(data.summary.total_overtime_hours || 0);
+				setRestDayHours(data.summary.rest_day_hours || 0);
+				setSpecialHolidayHours(data.summary.special_holiday_hours || 0);
+				setRegularHolidayHours(data.summary.regular_holiday_hours || 0);
+				setNightDifferentialHours(data.summary.night_differential_hours || 0);
 				setTotalUndertimeHours(data.summary.total_undertime_hours || 0);
 				setTotalAbsentDays(data.summary.total_absent || 0);
 				
@@ -633,6 +805,10 @@ export default function GenerateSlip() {
 		setCalculation(null);
 		setTotalRegularHours(0);
 		setTotalOvertimeHours(0);
+		setRestDayHours(0);
+		setSpecialHolidayHours(0);
+		setRegularHolidayHours(0);
+		setNightDifferentialHours(0);
 		setTotalUndertimeHours(0);
 		setTotalAbsentDays(0);
 	};
@@ -665,7 +841,7 @@ export default function GenerateSlip() {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					payrollPeriod: selectedPeriod.month,
+					payrollPeriod: payrollPeriodKey || selectedPeriod.month,
 					employeeIds: pendingEmployees.map(e => e.id),
 				}),
 			});
@@ -808,7 +984,7 @@ export default function GenerateSlip() {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					payrollPeriod: selectedPeriod.month,
+					payrollPeriod: payrollPeriodKey || selectedPeriod.month,
 					employeeIds: previewData.previews.map((p: any) => p.employee_id),
 					paymentMethod: 'bank_transfer',
 					sendNotifications: result.value.sendNotifications,
@@ -929,7 +1105,7 @@ export default function GenerateSlip() {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					payrollPeriod: selectedPeriod.month,
+					payrollPeriod: payrollPeriodKey || selectedPeriod.month,
 					format: 'csv',
 				}),
 			});
@@ -986,7 +1162,7 @@ export default function GenerateSlip() {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					payrollPeriod: selectedPeriod.month,
+					payrollPeriod: payrollPeriodKey || selectedPeriod.month,
 					employeeIds: retryQueue,
 					paymentMethod: 'bank_transfer',
 				}),
@@ -1025,27 +1201,89 @@ export default function GenerateSlip() {
 		}
 	};
 	
-	// Auto-calculate when hours change
-	const handleCalculate = () => {
-		if (!selectedEmployee) return;
-		
-		// Create attendance records from manual input
-		const attendanceRecords: AttendanceRecord[] = [];
-		const daysPresent = selectedPeriod.workingDays - totalAbsentDays;
-		
-		// Generate records based on manual input
-		for (let i = 0; i < selectedPeriod.workingDays; i++) {
-			attendanceRecords.push({
-				date: `${selectedPeriod.startDate.substring(0, 8)}${String(i + 1).padStart(2, '0')}`,
-				status: i < totalAbsentDays ? "absent" : "present",
-				regularHours: i < totalAbsentDays ? 0 : totalRegularHours / daysPresent,
-				overtimeHours: i < totalAbsentDays ? 0 : totalOvertimeHours / daysPresent,
-				undertimeHours: i < totalAbsentDays ? 0 : totalUndertimeHours / daysPresent,
+	// Auto-calculate when hours change (backend-driven for Phase 1-4 parity)
+	const handleCalculate = async () => {
+		if (!selectedEmployee || !selectedPeriod) return;
+
+		setIsCalculating(true);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+			const response = await fetch('/api/hr/payroll/calculate-preview', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-TOKEN': csrfToken || '',
+					'Accept': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					employee_id: selectedEmployee.id,
+					start_date: selectedPeriod.startDate,
+					end_date: selectedPeriod.endDate,
+					regular_hours: totalRegularHours,
+					overtime_hours: totalOvertimeHours,
+					rest_day_hours: restDayHours,
+					special_holiday_hours: specialHolidayHours,
+					regular_holiday_hours: regularHolidayHours,
+					night_differential_hours: nightDifferentialHours,
+					undertime_hours: totalUndertimeHours,
+					absent_days: totalAbsentDays,
+					sales_commission: selectedEmployee.monthlySalary ? (selectedEmployee.monthlySalary * (selectedEmployee.salesCommissionRate ?? 0)) : 0,
+					performance_bonus: selectedEmployee.monthlySalary ? (selectedEmployee.monthlySalary * (selectedEmployee.performanceBonusRate ?? 0)) : 0,
+					other_allowances: selectedEmployee.otherAllowances ?? 0,
+				}),
 			});
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({ error: 'Failed to calculate preview' }));
+				throw new Error(errorData.error || errorData.message || 'Failed to calculate preview');
+			}
+
+			const previewData = await response.json();
+			const calc = previewData?.calculation;
+
+			if (!calc) {
+				throw new Error('Invalid preview response');
+			}
+
+			setCalculation({
+				totalRegularHours: Number(calc.hours?.regular_hours ?? totalRegularHours),
+				totalOvertimeHours: Number(calc.hours?.overtime_hours ?? totalOvertimeHours),
+				totalRestDayHours: Number(calc.hours?.rest_day_hours ?? restDayHours),
+				totalSpecialHolidayHours: Number(calc.hours?.special_holiday_hours ?? specialHolidayHours),
+				totalRegularHolidayHours: Number(calc.hours?.regular_holiday_hours ?? regularHolidayHours),
+				totalNightDifferentialHours: Number(calc.hours?.night_differential_hours ?? nightDifferentialHours),
+				totalUndertimeHours: Number(calc.hours?.undertime_hours ?? totalUndertimeHours),
+				totalAbsentDays: Number(calc.hours?.absent_days ?? totalAbsentDays),
+				basicPay: Number(calc.earnings?.basic_pay ?? 0),
+				overtimePay: Number(calc.earnings?.overtime_pay ?? 0),
+				restDayPay: Number(calc.earnings?.rest_day_pay ?? 0),
+				specialHolidayPay: Number(calc.earnings?.special_holiday_pay ?? 0),
+				regularHolidayPay: Number(calc.earnings?.regular_holiday_pay ?? 0),
+				nightDifferentialPay: Number(calc.earnings?.night_differential_pay ?? 0),
+				salesCommission: Number(calc.earnings?.sales_commission ?? 0),
+				performanceBonus: Number(calc.earnings?.performance_bonus ?? 0),
+				otherAllowances: Number(calc.earnings?.other_allowances ?? 0),
+				totalEarnings: Number(calc.earnings?.total_earnings ?? 0),
+				withholdingTax: Number(calc.deductions?.withholding_tax ?? 0),
+				sssContribution: Number(calc.deductions?.sss_contribution ?? 0),
+				philhealthContribution: Number(calc.deductions?.philhealth_contribution ?? 0),
+				pagibigContribution: Number(calc.deductions?.pagibig_contribution ?? 0),
+				absentDeductions: Number(calc.deductions?.absent_deductions ?? 0),
+				undertimeDeductions: Number(calc.deductions?.undertime_deductions ?? 0),
+				loanDeductions: 0,
+				otherDeductions: Number(calc.deductions?.other_deductions ?? 0),
+				totalDeductions: Number(calc.deductions?.total_deductions ?? 0),
+				grossPay: Number(calc.gross_pay ?? 0),
+				netPay: Number(calc.net_pay ?? 0),
+			});
+		} catch (error) {
+			console.error('Error calculating payroll preview:', error);
+			setCalculation(null);
+		} finally {
+			setIsCalculating(false);
 		}
-		
-		const calc = calculatePayroll(selectedEmployee, attendanceRecords, selectedPeriod);
-		setCalculation(calc);
 	};
 
 	const handleGenerateSlip = async () => {
@@ -1063,7 +1301,7 @@ export default function GenerateSlip() {
 						<li><strong>Period:</strong> ${selectedPeriod.month}</li>
 						<li><strong>Net Pay:</strong> ${formatPHP(calculation.netPay)}</li>
 					</ul>
-					<p class="text-sm text-gray-600">This action will lock the payslip data and cannot be undone without proper authorization.</p>
+					<p class="text-sm text-gray-600">This saves a payroll record for tracking. Actual payout and physical payslip handout are handled offline by the shop owner.</p>
 				</div>
 			`,
 			showCancelButton: true,
@@ -1094,18 +1332,23 @@ export default function GenerateSlip() {
 
 			const payrollData = {
 				employee_id:      selectedEmployee.id,
-				payrollPeriod:    selectedPeriod.month,
+				payrollPeriod:    payrollPeriodKey || selectedPeriod.month,
 				paymentMethod:    'bank_transfer',
 				// Attendance inputs — drive the service's day-worked calculation
 				attendance_days:  daysPresent,
 				leave_days:       leaveDays,
 				absent_days:      absentDays,
 				overtime_hours:   totalOvertimeHours,
+				rest_day_hours:   restDayHours,
+				special_holiday_hours: specialHolidayHours,
+				regular_holiday_hours: regularHolidayHours,
+				night_differential_hours: nightDifferentialHours,
+				undertime_hours:  totalUndertimeHours,
 				// Extra earnings — appended as custom components by the service
 				salesCommission:  calculation.salesCommission,
 				performanceBonus: calculation.performanceBonus,
 				otherAllowances:  calculation.otherAllowances,
-				notes: `Generated payslip for period ${selectedPeriod.month}. Regular hours: ${totalRegularHours}, Overtime: ${totalOvertimeHours}hrs, Absent: ${absentDays} days`,
+				notes: `Generated payslip for period ${selectedPeriod.month}. Regular: ${totalRegularHours}h, OT: ${totalOvertimeHours}h, Rest Day: ${restDayHours}h, Special Holiday: ${specialHolidayHours}h, Regular Holiday: ${regularHolidayHours}h, Night Diff: ${nightDifferentialHours}h, Undertime: ${totalUndertimeHours}h, Absent: ${absentDays} day(s)`,
 			};
 
 			const response = await fetch('/api/hr/payroll', {
@@ -1184,12 +1427,158 @@ export default function GenerateSlip() {
 	const completedSlips = employeeData.filter(e => e.hasSlipForPeriod).length;
 	const pendingSlips = employeeData.filter(e => e.status === "active" && !e.hasSlipForPeriod).length;
 	const failedSlips = 0;
+	const currentYear = new Date().getFullYear();
+	const thirteenthYearOptions = [currentYear - 1, currentYear, currentYear + 1];
+
+	const handleReleaseThirteenthMonth = async () => {
+		const result = await Swal.fire({
+			icon: "question",
+			title: "Run 13th-Month Release?",
+			html: `
+				<div class="text-left">
+					<p class="mb-2">This will execute controlled 13th-month release for:</p>
+					<ul class="list-disc list-inside mb-3">
+						<li><strong>Year:</strong> ${thirteenthYear}</li>
+						<li><strong>Window:</strong> December-only (unless backend override is allowed)</li>
+					</ul>
+					<p class="text-xs text-gray-600">Only employees with accrued unreleased balance and valid December payroll will be processed.</p>
+				</div>
+			`,
+			showCancelButton: true,
+			confirmButtonText: "Run Release",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#16a34a",
+			cancelButtonColor: "#6b7280",
+		});
+
+		if (!result.isConfirmed) return;
+
+		setIsProcessingThirteenth(true);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await fetch('/api/hr/payroll/13th-month/release', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-TOKEN': csrfToken || '',
+					'Accept': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					year: thirteenthYear,
+				}),
+			});
+
+			const payload = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				throw new Error(payload.error || payload.message || '13th-month release failed');
+			}
+
+			const releaseData: ThirteenthMonthReleaseResult = payload.result;
+
+			await Swal.fire({
+				icon: releaseData.processed_count > 0 ? 'success' : 'info',
+				title: '13th-Month Release Completed',
+				html: `
+					<div class="text-left space-y-2">
+						<p>Year: <strong>${releaseData.year}</strong></p>
+						<p>Release Date: <strong>${releaseData.release_date}</strong></p>
+						<p class="text-green-700">✅ Processed: <strong>${releaseData.processed_count}</strong></p>
+						<p class="text-amber-700">⏭️ Skipped: <strong>${releaseData.skipped_count}</strong></p>
+					</div>
+				`,
+				confirmButtonColor: '#3b82f6',
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: 'error',
+				title: 'Release Failed',
+				text: error?.message || 'Failed to execute 13th-month release',
+				confirmButtonColor: '#dc2626',
+			});
+		} finally {
+			setIsProcessingThirteenth(false);
+		}
+	};
 
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-col gap-2">
 				<h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Generate Payslip</h1>
-				<p className="text-gray-600 dark:text-gray-400">Calculate and generate employee payslips with automatic deductions.</p>
+				<p className="text-gray-600 dark:text-gray-400">Generate payroll records for SME tracking; payslips are released physically by the shop owner.</p>
+			</div>
+
+			{/* Phase 5: 13th-Month Controls */}
+			<div className="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-900/20 p-4">
+				<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+					<div>
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">13th-Month Controls</h3>
+						<p className="text-sm text-indigo-900 dark:text-indigo-200 mt-1">
+							Run controlled December release for Phase 5.
+						</p>
+					</div>
+					<div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+						<select
+							value={thirteenthYear}
+							onChange={(e) => setThirteenthYear(Number(e.target.value))}
+							aria-label="Select 13th-month year"
+							className="rounded-lg border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+						>
+							{thirteenthYearOptions.map((year) => (
+								<option key={year} value={year}>{year}</option>
+							))}
+						</select>
+						<button
+							onClick={handleReleaseThirteenthMonth}
+							disabled={isProcessingThirteenth}
+							className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
+						</button>
+					</div>
+				</div>
+			</div>
+
+			{/* Phase 1: Governance Status */}
+			<div className="rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-900/20 p-4">
+				<div className="flex flex-col gap-3">
+					<div>
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Phase 1 Governance Status</h3>
+						<p className="text-sm text-emerald-900 dark:text-emerald-200 mt-1">
+							{selectedPeriod ? `${selectedPeriod.month} readiness for release controls` : 'Select a payroll period to view release readiness'}
+						</p>
+					</div>
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+						<div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white/80 dark:bg-gray-900/60 px-3 py-2">
+							<p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Checker Approved</p>
+							<p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
+								{isLoadingGovernanceStatus
+									? 'Loading…'
+									: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
+							</p>
+							<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+								{governanceStatus.requireChecker
+									? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
+									: 'Checker step is not required'}
+							</p>
+						</div>
+						<div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white/80 dark:bg-gray-900/60 px-3 py-2">
+							<p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Final Approver Required</p>
+							<p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
+								{isLoadingGovernanceStatus
+									? 'Loading…'
+									: governanceStatus.requireFinalApprover
+										? `${governanceStatus.awaitingFinalApprover} awaiting final release`
+										: 'Not required'}
+							</p>
+							<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+								{isLoadingGovernanceStatus
+									? 'Fetching governance checks...'
+									: `${governanceStatus.paidPayrolls} already paid`}
+							</p>
+						</div>
+					</div>
+				</div>
 			</div>
 
 			{/* Filters */}
@@ -1254,6 +1643,11 @@ export default function GenerateSlip() {
 									))
 								)}
 							</select>
+							{selectedPeriod?.payCycle && (
+								<span className="ml-2 inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-900/20 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300">
+									Cycle: {selectedPeriod.payCycle === "semi_monthly" ? "Semi-monthly" : "Monthly"}
+								</span>
+							)}
 						</div>
 					</div>
 				</div>
@@ -1263,7 +1657,6 @@ export default function GenerateSlip() {
 							<tr>
 								<th className="px-6 py-3 text-left">Employee</th>
 								<th className="px-6 py-3 text-left">Position</th>
-								<th className="px-6 py-3 text-left">Pay Type</th>
 								<th className="px-6 py-3 text-left">Base Salary</th>
 								<th className="px-6 py-3 text-left">Status</th>
 								<th className="px-6 py-3 text-center">Action</th>
@@ -1272,7 +1665,7 @@ export default function GenerateSlip() {
 						<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
 							{isLoadingEmployees ? (
 								<tr>
-									<td colSpan={6} className="px-6 py-12 text-center">
+									<td colSpan={5} className="px-6 py-12 text-center">
 										<div className="flex flex-col items-center justify-center space-y-3">
 											<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
 											<p className="text-sm text-gray-500 dark:text-gray-400">Loading employees...</p>
@@ -1281,7 +1674,7 @@ export default function GenerateSlip() {
 								</tr>
 							) : paginated.length === 0 ? (
 								<tr>
-									<td className="px-6 py-6 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
+									<td className="px-6 py-6 text-center text-gray-500 dark:text-gray-400" colSpan={5}>
 										No active employees found.
 									</td>
 								</tr>
@@ -1300,11 +1693,6 @@ export default function GenerateSlip() {
 										</div>
 									</td>
 									<td className="px-6 py-4 text-gray-700 dark:text-gray-300">{employee.position}</td>
-									<td className="px-6 py-4">
-										<span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-xs font-medium capitalize">
-											{employee.payType}
-										</span>
-									</td>
 									<td className="px-6 py-4 text-gray-900 dark:text-white font-semibold">
 										{employee.monthlySalary ? formatPHP(employee.monthlySalary) : 
 										 employee.dailyRate ? formatPHP(employee.dailyRate) + "/day" :
@@ -1436,10 +1824,6 @@ export default function GenerateSlip() {
 										<span className="text-gray-600 dark:text-gray-400">Department:</span>
 										<span className="font-medium">{selectedEmployee.department}</span>
 									</div>
-									<div className="flex justify-between py-1">
-										<span className="text-gray-600 dark:text-gray-400">Pay Type:</span>
-										<span className="font-medium capitalize">{selectedEmployee.payType}</span>
-									</div>
 								</div>
 							</div>
 
@@ -1491,7 +1875,10 @@ export default function GenerateSlip() {
 										Hours Breakdown
 									</h4>
 									<p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-										✓ Auto-calculated from attendance records ({selectedPeriod.startDate} to {selectedPeriod.endDate})
+										✓ Regular, overtime, undertime, and absent days are auto-calculated from attendance ({selectedPeriod.startDate} to {selectedPeriod.endDate})
+									</p>
+									<p className="text-xs text-blue-500 dark:text-blue-300 mt-1">
+										Rest day, holiday, and night differential hours are auto-filled from attendance/holiday data and can still be edited.
 									</p>
 								</div>
 								<button
@@ -1578,6 +1965,70 @@ export default function GenerateSlip() {
 									</div>
 									<p className="text-xs text-red-500 dark:text-red-400 mt-1">Max: {selectedPeriod.workingDays}</p>
 								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										Rest Day Hours
+									</label>
+									<input
+										type="number"
+										min="0"
+										step="0.5"
+										value={restDayHours}
+										onChange={(e) => setRestDayHours(Number(e.target.value) || 0)}
+										className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+										placeholder="0"
+									/>
+										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled, editable override</p>
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										Special Holiday Hours
+									</label>
+									<input
+										type="number"
+										min="0"
+										step="0.5"
+										value={specialHolidayHours}
+										onChange={(e) => setSpecialHolidayHours(Number(e.target.value) || 0)}
+										className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+										placeholder="0"
+									/>
+										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled from holiday calendar, editable override</p>
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										Regular Holiday Hours
+									</label>
+									<input
+										type="number"
+										min="0"
+										step="0.5"
+										value={regularHolidayHours}
+										onChange={(e) => setRegularHolidayHours(Number(e.target.value) || 0)}
+										className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+										placeholder="0"
+									/>
+										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled from holiday calendar, editable override</p>
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										Night Differential Hours
+									</label>
+									<input
+										type="number"
+										min="0"
+										step="0.5"
+										value={nightDifferentialHours}
+										onChange={(e) => setNightDifferentialHours(Number(e.target.value) || 0)}
+										className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+										placeholder="0"
+									/>
+										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled, editable override</p>
+								</div>
 							</div>
 						</div>
 
@@ -1610,6 +2061,22 @@ export default function GenerateSlip() {
 											<span className="text-lg font-bold text-green-600 dark:text-green-400">{Math.round(calculation.totalOvertimeHours * 100) / 100}h</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Rest Day Hours</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalRestDayHours * 100) / 100}h</span>
+										</div>
+										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Special Holiday Hours</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalSpecialHolidayHours * 100) / 100}h</span>
+										</div>
+										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Holiday Hours</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalRegularHolidayHours * 100) / 100}h</span>
+										</div>
+										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Night Diff Hours</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalNightDifferentialHours * 100) / 100}h</span>
+										</div>
+										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Undertime</span>
 											<span className="text-lg font-bold text-amber-600 dark:text-amber-400">{Math.round(calculation.totalUndertimeHours * 100) / 100}h</span>
 										</div>
@@ -1632,6 +2099,30 @@ export default function GenerateSlip() {
 											<span className="text-gray-600 dark:text-gray-400">Overtime Pay</span>
 											<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.overtimePay)}</span>
 										</div>
+										{calculation.restDayPay > 0 && (
+											<div className="flex items-center justify-between">
+												<span className="text-gray-600 dark:text-gray-400">Rest Day Pay</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.restDayPay)}</span>
+											</div>
+										)}
+										{calculation.specialHolidayPay > 0 && (
+											<div className="flex items-center justify-between">
+												<span className="text-gray-600 dark:text-gray-400">Special Holiday Pay</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.specialHolidayPay)}</span>
+											</div>
+										)}
+										{calculation.regularHolidayPay > 0 && (
+											<div className="flex items-center justify-between">
+												<span className="text-gray-600 dark:text-gray-400">Regular Holiday Pay</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.regularHolidayPay)}</span>
+											</div>
+										)}
+										{calculation.nightDifferentialPay > 0 && (
+											<div className="flex items-center justify-between">
+												<span className="text-gray-600 dark:text-gray-400">Night Differential Pay</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.nightDifferentialPay)}</span>
+											</div>
+										)}
 										{calculation.salesCommission > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Sales Commission</span>
@@ -1683,6 +2174,12 @@ export default function GenerateSlip() {
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Absent Deductions</span>
 												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.absentDeductions)}</span>
+											</div>
+										)}
+										{calculation.undertimeDeductions > 0 && (
+											<div className="flex items-center justify-between">
+												<span className="text-gray-600 dark:text-gray-400">Undertime Deductions</span>
+												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.undertimeDeductions)}</span>
 											</div>
 										)}
 										{calculation.loanDeductions > 0 && (
@@ -1746,68 +2243,9 @@ export default function GenerateSlip() {
 							</div>
 						)}
 
-						{/* Action Buttons */}
-						<div className="mt-6 flex justify-end gap-3">
-							<button
-								onClick={closeEmployee}
-								disabled={isGenerating}
-								className="px-5 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-							>
-								Cancel
-							</button>
-							<button
-								onClick={handleGenerateSlip}
-								disabled={isGenerating || isCalculating || !calculation}
-								className={`px-5 py-2.5 rounded-lg text-white text-sm font-medium transition-all flex items-center gap-2 ${
-									isGenerating || isCalculating || !calculation
-										? "bg-blue-400 cursor-not-allowed"
-										: "bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30"
-								}`}
-							>
-								{isGenerating ? (
-									<>
-										<svg className="animate-spin size-4" fill="none" viewBox="0 0 24 24">
-											<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-											<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-										</svg>
-										Generating Payslip...
-									</>
-								) : (
-									<>
-										<CheckIcon className="size-4" />
-										Generate & Lock Payslip
-									</>
-								)}
-							</button>
-						</div>
-					</div>
-				</div>,
-				document.body
-			)}
-
-			{/* Preview Modal for Batch Generation */}
-			{showPreviewModal && previewData && createPortal(
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-8">
-						<div className="flex items-start justify-between mb-6">
-							<div>
-								<h3 className="text-2xl font-bold text-gray-900 dark:text-white">Preview Batch Payroll</h3>
-								<p className="text-gray-500 dark:text-gray-400 text-sm">{selectedPeriod.month} - {previewData.previews.length} Employees</p>
-							</div>
-							<button
-								onClick={() => setShowPreviewModal(false)}
-								className="text-2xl text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-							>
-								×
-							</button>
-						</div>
-
-						{/* Summary Cards */}
-						<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-							<div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-								<p className="text-sm text-blue-600 dark:text-blue-400 mb-1">Total Employees</p>
-								<p className="text-2xl font-bold text-blue-900 dark:text-blue-300">{previewData.summary.preview_count}</p>
-							</div>
+						{showPreviewModal && previewData && (
+							<>
+								<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
 							<div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
 								<p className="text-sm text-green-600 dark:text-green-400 mb-1">Total Gross</p>
 								<p className="text-2xl font-bold text-green-900 dark:text-green-300">{formatPHP(previewData.summary.total_gross)}</p>
@@ -1893,6 +2331,8 @@ export default function GenerateSlip() {
 								Confirm & Generate All
 							</button>
 						</div>
+							</>
+						)}
 					</div>
 				</div>,
 				document.body
@@ -1929,6 +2369,7 @@ export default function GenerateSlip() {
 				</div>,
 				document.body
 			)}
+
 		</div>
 	);
 }

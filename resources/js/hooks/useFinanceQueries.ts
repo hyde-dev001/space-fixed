@@ -46,10 +46,10 @@ export interface Expense {
   id: string;
   reference: string;
   date: string;
-  vendor: string;
+  vendor?: string | null;
   category: string;
   amount: number;
-  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'posted';
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'posted';
   description?: string;
   receipt_url?: string;
   account_id?: string;

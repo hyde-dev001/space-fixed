@@ -110,6 +110,57 @@ class InvitationController extends Controller
     }
     
     /**
+     * Force-reset an employee password and issue a fresh invitation link.
+     */
+    public function resetEmployeePassword(Request $request, $employeeId)
+    {
+        $authUser = Auth::guard('user')->user();
+
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $employee = Employee::query()
+            ->where('id', $employeeId)
+            ->where('shop_owner_id', $authUser->shop_owner_id)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['error' => 'Employee not found'], 404);
+        }
+
+        $user = User::query()
+            ->where('email', $employee->email)
+            ->where('shop_owner_id', $authUser->shop_owner_id)
+            ->first();
+
+        if (!$user) {
+            return response()->json(['error' => 'Linked user account not found'], 404);
+        }
+
+        $newToken = Str::random(64);
+        $newExpiry = Carbon::now()->addDays(7);
+
+        $user->update([
+            'password' => null,
+            'force_password_change' => true,
+            'invite_token' => $newToken,
+            'invite_expires_at' => $newExpiry,
+            'invited_at' => now(),
+            'invited_by' => $authUser->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password reset initiated. Share the new setup link with the employee.',
+            'invite_url' => url("/accept-invitation/{$newToken}"),
+            'invite_expires_at' => $newExpiry->toIso8601String(),
+            'work_email' => $user->email,
+            'employee_name' => $user->name,
+        ]);
+    }
+
+    /**
      * Regenerate invitation link (for HR/Shop Owner)
      */
     public function regenerate(Request $request, $employeeId)

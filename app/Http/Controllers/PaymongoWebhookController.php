@@ -5,7 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\Finance\Invoice;
+use App\Models\ShopOwner;
+use App\Models\ShopOwnerSubscription;
+use App\Services\NotificationService;
+use App\Enums\NotificationType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymongoWebhookController extends Controller
@@ -39,6 +44,16 @@ class PaymongoWebhookController extends Controller
             // Handle payment link payment failed
             if ($eventType === 'link.payment.failed') {
                 return $this->handlePaymentFailed($eventData);
+            }
+
+            // Handle checkout session paid (used for premium subscriptions)
+            if ($eventType === 'checkout_session.payment.paid') {
+                return $this->handleCheckoutSessionPaid($eventData);
+            }
+
+            // Handle checkout session payment failed
+            if ($eventType === 'checkout_session.payment.failed') {
+                return $this->handleCheckoutSessionFailed($eventData);
             }
 
             return response()->json(['message' => 'Event received'], 200);
@@ -253,5 +268,225 @@ class PaymongoWebhookController extends Controller
         if (!hash_equals($computedSignature, $signature)) {
             throw new \Exception('Invalid webhook signature');
         }
+    }
+
+    /**
+     * Handle checkout_session.payment.paid — activates a premium subscription.
+     *
+     * Lookup order:
+     *   1. By paymongo_session_id stored at checkout creation.
+     *   2. Fallback: by subscription_id embedded in session metadata.
+     *
+     * Idempotency: the row is locked inside a DB transaction; only rows in
+     * 'pending' status are transitioned — all other statuses are skipped.
+     */
+    private function handleCheckoutSessionPaid($eventData)
+    {
+        $sessionId  = $eventData['id'] ?? null;
+        $attributes = $eventData['attributes'] ?? [];
+        $metadata   = $attributes['metadata'] ?? [];
+        $payments   = $attributes['payments'] ?? [];
+        $paymentId  = $payments[0]['id'] ?? null;
+
+        // Resolve the subscription record (outside the transaction is fine for the lookup)
+        $subscription = $this->resolveSubscription($sessionId, $metadata);
+
+        if (!$subscription) {
+            Log::warning('Premium subscription not found for checkout_session.payment.paid', [
+                'session_id' => $sessionId,
+                'metadata'   => $metadata,
+            ]);
+            return response()->json(['message' => 'Subscription not found'], 404);
+        }
+
+        $activated = DB::transaction(function () use ($subscription, $sessionId, $paymentId) {
+            // Lock the specific row; prevents duplicate activation under concurrent webhooks
+            $locked = ShopOwnerSubscription::where('id', $subscription->id)
+                ->lockForUpdate()
+                ->first();
+
+            // Idempotency: already active — nothing to do
+            if ($locked->status === 'active') {
+                Log::info('Premium subscription already active — duplicate webhook ignored', [
+                    'subscription_id' => $locked->id,
+                    'session_id'      => $sessionId,
+                ]);
+                return false;
+            }
+
+            // Guard: only activate subscriptions that are in the expected pre-payment states.
+            // 'expired', 'cancelled' must never be reactivated through a payment webhook.
+            if (!in_array($locked->status, ['pending', 'failed'])) {
+                Log::warning('Premium subscription in non-activatable state — skipping', [
+                    'subscription_id' => $locked->id,
+                    'current_status'  => $locked->status,
+                    'session_id'      => $sessionId,
+                ]);
+                return false;
+            }
+
+            $plan         = $locked->premiumPlan
+                ?? \App\Models\PremiumPlan::where('plan_code', $locked->plan_code)->first();
+            $durationDays = $plan?->duration_days ?? 30;
+            $startsAt     = now();
+            $endsAt       = now()->addDays($durationDays);
+
+            $locked->update([
+                'status'                => 'active',
+                'paymongo_payment_id'   => $paymentId,
+                'starts_at'             => $startsAt,
+                'ends_at'               => $endsAt,
+            ]);
+
+            activity()
+                ->performedOn($locked)
+                ->withProperties([
+                    'subscription_id' => $locked->id,
+                    'shop_owner_id'   => $locked->shop_owner_id,
+                    'plan_code'       => $locked->plan_code,
+                    'starts_at'       => $startsAt->toDateTimeString(),
+                    'ends_at'         => $endsAt->toDateTimeString(),
+                    'payment_id'      => $paymentId,
+                    'session_id'      => $sessionId,
+                    'payment_method'  => 'PayMongo',
+                ])
+                ->log('Premium subscription activated: ' . $locked->plan_code);
+
+            Log::info('Premium subscription activated', [
+                'subscription_id' => $locked->id,
+                'shop_owner_id'   => $locked->shop_owner_id,
+                'plan_code'       => $locked->plan_code,
+                'ends_at'         => $endsAt->toDateTimeString(),
+                'payment_id'      => $paymentId,
+                'session_id'      => $sessionId,
+            ]);
+
+            return $locked->fresh();
+        });
+
+        // Send in-app + email notification to the shop owner (outside the transaction,
+        // so a notification failure never rolls back the subscription activation)
+        if ($activated) {
+            try {
+                $appUrl    = rtrim(config('app.url'), '/');
+                $planLabel = ucfirst($activated->plan_code);
+                $endsAt    = $activated->ends_at?->format('F j, Y');
+
+                app(NotificationService::class)->sendToShopOwner(
+                    $activated->shop_owner_id,
+                    NotificationType::PAYMENT_RECEIVED,
+                    'Premium Subscription Activated',
+                    "Your SoleSpace {$planLabel} subscription is now active until {$endsAt}.",
+                    [
+                        'subscription_id' => $activated->id,
+                        'plan_code'       => $activated->plan_code,
+                        'ends_at'         => $activated->ends_at?->toISOString(),
+                    ],
+                    $appUrl . '/shop-owner/premium/benefits',
+                    'high'
+                );
+            } catch (\Exception $e) {
+                // Never let a notification error surface as a webhook failure
+                Log::error('Failed to send premium activation notification', [
+                    'subscription_id' => $activated->id,
+                    'error'           => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return response()->json(['message' => $activated ? 'Subscription activated' : 'Already processed'], 200);
+    }
+
+    /**
+     * Handle checkout_session.payment.failed — marks the pending subscription as failed.
+     *
+     * Idempotent: only updates rows that are currently 'pending'.
+     */
+    private function handleCheckoutSessionFailed($eventData)
+    {
+        $sessionId = $eventData['id'] ?? null;
+        $metadata  = $eventData['attributes']['metadata'] ?? [];
+
+        $subscription = $this->resolveSubscription($sessionId, $metadata);
+
+        if (!$subscription) {
+            // Nothing to update — return 200 to stop PayMongo retrying
+            return response()->json(['message' => 'Subscription not found — no action'], 200);
+        }
+
+        DB::transaction(function () use ($subscription, $sessionId) {
+            $locked = ShopOwnerSubscription::where('id', $subscription->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($locked->status !== 'pending') {
+                // Already resolved (active, failed, cancelled, expired) — skip
+                return;
+            }
+
+            $locked->update(['status' => 'failed']);
+
+            activity()
+                ->performedOn($locked)
+                ->withProperties([
+                    'subscription_id' => $locked->id,
+                    'shop_owner_id'   => $locked->shop_owner_id,
+                    'plan_code'       => $locked->plan_code,
+                    'session_id'      => $sessionId,
+                ])
+                ->log('Premium subscription payment failed: ' . $locked->plan_code);
+
+            Log::info('Premium subscription marked failed via webhook', [
+                'subscription_id' => $locked->id,
+                'shop_owner_id'   => $locked->shop_owner_id,
+                'session_id'      => $sessionId,
+            ]);
+        });
+
+        // Notify the shop owner so they know to retry
+        try {
+            $appUrl    = rtrim(config('app.url'), '/');
+            $planLabel = ucfirst($subscription->plan_code);
+
+            app(NotificationService::class)->sendToShopOwner(
+                $subscription->shop_owner_id,
+                NotificationType::PAYMENT_FAILED,
+                'Premium Subscription Payment Failed',
+                "Your payment for the SoleSpace {$planLabel} plan was not completed. Please try again.",
+                ['subscription_id' => $subscription->id, 'plan_code' => $subscription->plan_code],
+                $appUrl . '/shop-owner/premium/benefits',
+                'high'
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to send premium payment-failed notification', [
+                'subscription_id' => $subscription->id,
+                'error'           => $e->getMessage(),
+            ]);
+        }
+
+        return response()->json(['message' => 'Failure recorded'], 200);
+    }
+
+    /**
+     * Resolve a ShopOwnerSubscription from a PayMongo checkout session event.
+     *
+     * Priority:
+     *   1. paymongo_session_id column (most reliable — set at checkout creation)
+     *   2. subscription_id in session metadata (fallback)
+     */
+    private function resolveSubscription(?string $sessionId, array $metadata): ?ShopOwnerSubscription
+    {
+        if ($sessionId) {
+            $sub = ShopOwnerSubscription::where('paymongo_session_id', $sessionId)->first();
+            if ($sub) {
+                return $sub;
+            }
+        }
+
+        if (isset($metadata['subscription_id'])) {
+            return ShopOwnerSubscription::find((int) $metadata['subscription_id']);
+        }
+
+        return null;
     }
 }

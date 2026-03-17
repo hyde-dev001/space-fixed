@@ -171,8 +171,7 @@ export default function FinancePage() {
           return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} requests={purchaseRequests || []} />;
 
         case "payslip-approvals":
-          // Check payslip approval permissions
-          if (!hasAnyPermission(auth, ['access-payslip-approval'])) {
+          if (!hasAnyPermission(auth, ['access-payslip-approval', 'access-approval-workflow'])) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">

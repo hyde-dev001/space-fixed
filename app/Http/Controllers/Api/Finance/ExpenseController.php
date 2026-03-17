@@ -76,7 +76,6 @@ class ExpenseController extends Controller
             'description' => 'nullable|string',
             'amount' => 'required|numeric|min:0.01',
             'tax_amount' => 'nullable|numeric|min:0',
-            'status' => 'nullable|in:draft,submitted,approved,posted,rejected',
             'expense_account_id' => 'nullable|integer',
             'payment_account_id' => 'nullable|integer',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:10240', // 10MB max
@@ -95,7 +94,7 @@ class ExpenseController extends Controller
                 'description' => $data['description'] ?? null,
                 'amount' => $data['amount'],
                 'tax_amount' => $data['tax_amount'] ?? 0,
-                'status' => $data['status'] ?? 'submitted',
+                'status' => 'submitted',
                 'expense_account_id' => $data['expense_account_id'] ?? null,
                 'payment_account_id' => $data['payment_account_id'] ?? null,
                 'shop_id' => $shopId,
@@ -174,10 +173,20 @@ class ExpenseController extends Controller
 
     public function approve(Request $request, $id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
 
-        if (!in_array($expense->status, ['submitted', 'draft'])) {
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
+
+        if ($expense->status !== 'submitted') {
             return response()->json(['message' => 'Only submitted expenses can be approved'], 422);
+        }
+
+        $creatorId = (int) data_get($expense->meta, 'created_by', 0);
+        if ($creatorId !== 0 && $creatorId === (int) Auth::id()) {
+            return response()->json(['message' => 'Expense creator cannot approve their own expense'], 422);
         }
 
         // Check approval limit
@@ -226,10 +235,20 @@ class ExpenseController extends Controller
 
     public function reject(Request $request, $id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
 
-        if (!in_array($expense->status, ['submitted', 'draft'])) {
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
+
+        if ($expense->status !== 'submitted') {
             return response()->json(['message' => 'Only submitted expenses can be rejected'], 422);
+        }
+
+        $creatorId = (int) data_get($expense->meta, 'created_by', 0);
+        if ($creatorId !== 0 && $creatorId === (int) Auth::id()) {
+            return response()->json(['message' => 'Expense creator cannot reject their own expense'], 422);
         }
 
         // Check approval limit (same authority required to reject as to approve)

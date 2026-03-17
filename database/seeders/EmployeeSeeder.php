@@ -31,7 +31,8 @@ class EmployeeSeeder extends Seeder
     {
         $businessType = $shopOwner->business_type;
         $isRetailOnly = $businessType === 'retail';
-        
+        $basePayTable = config('payroll_governance.base_pay_table', []);
+
         // Common employees for all business types
         $commonEmployees = [
             // Manager - Full access
@@ -118,6 +119,14 @@ class EmployeeSeeder extends Seeder
                 'phone' => '+639177770001',
             ];
         }
+
+        foreach ($commonEmployees as &$employeeData) {
+            $position = $employeeData['position'] ?? '';
+            if ($position !== '' && array_key_exists($position, $basePayTable)) {
+                $employeeData['salary'] = (float) $basePayTable[$position];
+            }
+        }
+        unset($employeeData);
 
         // Create each employee
         foreach ($commonEmployees as $index => $employeeData) {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import { useCart } from '../../../contexts/CartContext';
 
 type Product = {
   id: number;
@@ -56,6 +57,11 @@ const formatDistance = (km: number): string => {
 };
 
 const Products: React.FC<Props> = () => {
+  const page = usePage();
+  const { cartCount, isLoading: cartLoading } = useCart();
+  const isAuthenticated = Boolean((page.props as any)?.auth?.user);
+  const cartBadgeCount = Number((page.props as any)?.cartIconCount ?? (cartLoading ? 0 : cartCount) ?? 0);
+  const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
   const urlParams = new URLSearchParams(window.location.search);
   const searchParam = urlParams.get('search') || '';
   const rawCategoryParam = (urlParams.get('category') || '').toLowerCase();
@@ -71,6 +77,7 @@ const Products: React.FC<Props> = () => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [activeCategory, setActiveCategory] = useState(categoryParam);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState(searchParam);
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -78,7 +85,9 @@ const Products: React.FC<Props> = () => {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
+  const [mobileAccountOpen, setMobileAccountOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const mobileAccountRef = useRef<HTMLDivElement | null>(null);
   const hoverTimersRef = useRef<Record<number, number>>({});
 
   useEffect(() => {
@@ -133,11 +142,22 @@ const Products: React.FC<Props> = () => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
         setIsSortOpen(false);
       }
+      if (mobileAccountRef.current && !mobileAccountRef.current.contains(event.target as Node)) {
+        setMobileAccountOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleLogout = () => {
+    setMobileAccountOpen(false);
+    router.post('/user/logout', {}, {
+      preserveState: false,
+      preserveScroll: false,
+    });
+  };
 
   useEffect(() => {
     return () => {
@@ -326,78 +346,199 @@ const Products: React.FC<Props> = () => {
   };
 
   const isShowroomSearch = searchQuery.trim().toLowerCase().includes('showroom');
+  const displayProducts = useMemo(() => {
+    const query = mobileSearchQuery.trim().toLowerCase();
+    if (!query) return sortedProducts;
+
+    return sortedProducts.filter((product) => {
+      const name = (product.name || '').toLowerCase();
+      const brand = (product.brand || '').toLowerCase();
+      const shopName = (product.shop_owner?.business_name || product.shop_owner?.name || '').toLowerCase();
+      return name.includes(query) || brand.includes(query) || shopName.includes(query);
+    });
+  }, [sortedProducts, mobileSearchQuery]);
   const buttonBaseClass =
     'group inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
   const buttonDarkClass =
     'border border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/50';
   const buttonLightClass =
     'border border-gray-300 bg-white text-gray-900 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 focus-visible:ring-gray-300';
+  const currentPath = window.location.pathname;
+  const activeMobileTab =
+    currentPath === '/'
+      ? 'home'
+      : currentPath.startsWith('/products')
+        ? 'products'
+        : currentPath.startsWith('/customer-profile')
+          ? 'me'
+          : currentPath.startsWith('/messages')
+            ? 'inbox'
+            : currentPath.startsWith('/repair')
+              ? 'repair'
+              : '';
+  const mobileNavItemClasses = (isActive: boolean) =>
+    `group relative flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-0.5 transition-all duration-300 ${
+      isActive ? 'text-[#16233b]' : 'text-gray-600 hover:text-[#16233b]'
+    }`;
+  const mobileNavIconClasses = (isActive: boolean) =>
+    `h-5 w-5 transition-all duration-300 ${isActive ? 'scale-110' : 'scale-100'}`;
+  const mobileNavLabelClasses = (isActive: boolean) =>
+    `transition-all duration-300 ${isActive ? 'font-semibold' : 'font-normal'}`;
 
   return (
     <>
       <Head title="Products" />
       <div className="min-h-screen bg-white font-outfit antialiased">
-        <Navigation />
+        <div className="hidden xl:block">
+          <Navigation />
+        </div>
 
-        <div className="max-w-[1920px] mx-auto px-6 lg:px-12 pt-28 pb-10 lg:pt-32 lg:pb-20">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
-            <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Shoes</div>
-            <div className="flex items-center gap-3">
+        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white px-4 pb-3 pt-3 shadow-sm xl:hidden">
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <svg className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={mobileSearchQuery}
+                onChange={(e) => setMobileSearchQuery(e.target.value)}
+                placeholder="Search products"
+                className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-11 pr-3 text-base text-gray-900 shadow-sm outline-none ring-0 placeholder:text-gray-500"
+                aria-label="Search products"
+              />
+            </div>
+            <Link href="/checkout" className="relative inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black" aria-label="Cart">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
+                <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
+                <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
+              </svg>
+              {cartBadgeCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+                  {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
+                </span>
+              )}
+            </Link>
+            <div className="relative" ref={mobileAccountRef}>
+              <button
+                type="button"
+                onClick={() => setMobileAccountOpen((prev) => !prev)}
+                className="inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black"
+                aria-label="Account menu"
+              >
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </button>
+
+              {mobileAccountOpen && (
+                <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]">
+                  {isAuthenticated ? (
+                    <>
+                      <Link href="/my-orders" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        <span>Orders</span>
+                      </Link>
+                      <Link href="/my-repairs" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span>Repair</span>
+                      </Link>
+                      <Link href="/customer-profile" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        <span>Edit Profile</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        <span>Log Out</span>
+                      </button>
+                    </>
+                  ) : (
+                    <Link href="/user/login" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Login</span>
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-5 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">
+          <div className="mb-8 w-full md:max-w-none">
+            <div className="text-[11px] xl:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Shoes</div>
+            <div className="mt-2 flex justify-end">
               <div className="relative" ref={sortMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsSortOpen((prev) => !prev)}
-                  className="flex items-center gap-2 text-sm text-black/80"
-                >
-                  <span>
-                    <span className="font-semibold">Sort by:</span>{' '}
-                    <span>{sortLabelMap[sortBy]}</span>
-                  </span>
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
-                    <svg
-                      className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
-                    >
-                      <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                </button>
+              <button
+                type="button"
+                onClick={() => setIsSortOpen((prev) => !prev)}
+                className="flex items-center gap-2 text-sm text-black/80"
+              >
+                <span>
+                  <span className="font-semibold">Sort by:</span>{' '}
+                  <span>{sortLabelMap[sortBy]}</span>
+                </span>
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+                  <svg
+                    className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </button>
 
-                {isSortOpen && (
-                  <div className="absolute right-0 mt-3 w-56 rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] z-20" role="menu">
-                    {sortOptions.map((option) => {
-                      const isActive = sortBy === option.value;
+              {isSortOpen && (
+                <div className="absolute right-0 left-auto z-20 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                  {sortOptions.map((option) => {
+                    const isActive = sortBy === option.value;
 
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            if (option.value === 'near_me') {
-                              setSortBy('near_me');
-                              setCurrentPage(1);
-                              setIsSortOpen(false);
-                              if (!userCoords) requestLocation();
-                            } else {
-                              setSortBy(option.value);
-                              setIsSortOpen(false);
-                            }
-                          }}
-                          className="group w-full px-5 py-2.5 text-left text-sm"
-                        >
-                          <span className={`relative inline-block ${isActive ? 'text-black font-semibold' : 'text-black/75'}`}>
-                            {option.label}
-                            <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          if (option.value === 'near_me') {
+                            setSortBy('near_me');
+                            setCurrentPage(1);
+                            setIsSortOpen(false);
+                            if (!userCoords) requestLocation();
+                          } else {
+                            setSortBy(option.value);
+                            setIsSortOpen(false);
+                          }
+                        }}
+                        className="group w-full px-5 py-2.5 text-left text-sm"
+                      >
+                        <span className={`relative inline-block ${isActive ? 'text-black font-semibold' : 'text-black/75'}`}>
+                          {option.label}
+                          <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               </div>
             </div>
           </div>
@@ -408,10 +549,10 @@ const Products: React.FC<Props> = () => {
             </div>
           )}
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-black mb-4 tracking-tight uppercase">
+          <h1 className="mb-3 hidden text-4xl font-bold tracking-tight text-black uppercase xl:block xl:text-5xl 2xl:text-6xl">
             {searchQuery ? `Search Results for "${searchQuery}"` : 'ALL SHOES'}
           </h1>
-          <p className="text-base text-black/65 mb-10 max-w-3xl leading-relaxed font-light">
+          <p className="mb-8 hidden max-w-3xl text-base font-light leading-relaxed text-black/65 xl:block xl:mb-10">
             {searchQuery 
               ? `Showing results matching "${searchQuery}"`
               : 'Browse our curated collection of shoes. Click a product to view details and select sizes.'}
@@ -431,7 +572,7 @@ const Products: React.FC<Props> = () => {
                     : 'No matching shop profiles found.'}
                 </p>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
                   {shopResults.map((shop) => (
                     <div key={shop.id} className="rounded-2xl border border-gray-300 bg-white p-4 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)]">
                       <Link href={shop.url} className="flex items-center gap-3">
@@ -481,8 +622,8 @@ const Products: React.FC<Props> = () => {
               </p>
             </div>
           ) : (
-            <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {sortedProducts.map((p) => {
+            <div className="grid auto-rows-fr grid-cols-2 gap-3 xl:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
+              {displayProducts.map((p) => {
                 const productImages = getProductImages(p);
                 const activeImageIndex = activeImageIndexes[p.id] ?? 0;
                 const activeImage = productImages[activeImageIndex] ?? p.main_image;
@@ -495,11 +636,11 @@ const Products: React.FC<Props> = () => {
                 <Link
                   key={p.id}
                   href={productHref}
-                  className="group block h-full rounded-3xl border border-gray-300 bg-white shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-400 hover:shadow-[0_28px_48px_-24px_rgba(15,23,42,0.55)]"
+                  className="group block h-full rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
                   onMouseEnter={() => startImageCycle(p)}
                   onMouseLeave={() => stopImageCycle(p.id)}
                 >
-                  <div className="bg-white rounded-3xl overflow-hidden relative flex flex-col h-full">
+                  <div className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white xl:rounded-3xl">
                     {p.compare_at_price && p.compare_at_price > p.price && (
                       <div className="absolute left-4 top-4 bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-full font-semibold uppercase tracking-[0.14em] z-10 shadow-sm">
                         SALE
@@ -511,7 +652,7 @@ const Products: React.FC<Props> = () => {
                       </div>
                     )}
 
-                    <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden relative">
+                    <div className="relative aspect-3/4 overflow-hidden bg-gray-50 xl:aspect-square">
                       {activeImage ? (
                         <>
                           {productImages.map((image, imageIndex) => {
@@ -542,16 +683,16 @@ const Products: React.FC<Props> = () => {
                       )}
                     </div>
 
-                    <div className="border-t border-gray-200 p-3.5 flex flex-col h-[194px]">
-                      <h3 className="text-sm font-bold text-black mb-1.5 uppercase tracking-[0.06em] line-clamp-2 min-h-[2.5rem]">{p.name}</h3>
+                    <div className="flex min-h-36 flex-col border-t border-gray-200 p-2.5 xl:min-h-48.5 xl:p-3.5">
+                      <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
                       
-                      <div className="min-h-[1.1rem] mb-1.5">
+                      <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
                         {p.brand && (
-                          <p className="text-xs text-black/55 uppercase tracking-[0.12em]">{p.brand}</p>
+                          <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{p.brand}</p>
                         )}
                       </div>
                       
-                      <div className="min-h-[1.1rem] mb-1.5">
+                      <div className="mb-1 hidden min-h-[1.1rem] xl:mb-1.5 xl:block">
                         {p.shop_owner && (
                           <p className="text-xs text-black/60">
                             Sold by{' '}
@@ -569,20 +710,20 @@ const Products: React.FC<Props> = () => {
                         )}
                       </div>
 
-                      <div className="min-h-[1.1rem] mb-1.5">
+                      <div className="mb-1 hidden min-h-[1.1rem] xl:mb-1.5 xl:block">
                         {shopDist !== null && (
                           <p className="text-xs text-black/50">📍 {formatDistance(shopDist)}</p>
                         )}
                       </div>
                       
-                      <div className="flex items-baseline justify-between mt-auto pt-3 border-t border-gray-200">
+                      <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
                         <div className="flex flex-col gap-0.5">
-                          <div className="text-lg font-bold text-black">₱{p.price.toLocaleString()}</div>
+                          <div className="text-base font-bold text-black xl:text-lg">₱{p.price.toLocaleString()}</div>
                           {p.compare_at_price && p.compare_at_price > p.price && (
                             <div className="text-xs text-black/40 line-through">₱{p.compare_at_price.toLocaleString()}</div>
                           )}
                         </div>
-                        <div className="text-xs text-black/55 uppercase tracking-[0.08em]">
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-black/55 xl:text-xs">
                           {p.stock_quantity > 0 ? `${p.stock_quantity} left` : 'Out of stock'}
                         </div>
                       </div>
@@ -654,12 +795,47 @@ const Products: React.FC<Props> = () => {
 
           {/* Results info */}
           {!loading && products.length > 0 && (
-            <div className="mt-5 text-center text-xs uppercase tracking-[0.14em] text-black/50">
+            <div className="mt-5 hidden text-center text-xs uppercase tracking-[0.14em] text-black/50 xl:block">
               {sortBy === 'near_me'
-                ? `Showing ${sortedProducts.length} products sorted by distance`
+                ? `Showing ${displayProducts.length} products sorted by distance`
                 : `Showing ${products.length} of ${total} products (Page ${currentPage} of ${lastPage})`}
             </div>
           )}
+        </div>
+
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white xl:hidden">
+          <div className="mx-auto grid w-full max-w-[430px] grid-cols-5 px-2 py-2 text-[11px] text-gray-600 md:max-w-none md:px-4">
+            <Link href="/" className={mobileNavItemClasses(activeMobileTab === 'home')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'home' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'home')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10.5l9-7 9 7V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1v-9.5z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'home')}>Home</span>
+            </Link>
+            <Link href="/products" className={mobileNavItemClasses(activeMobileTab === 'products')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'products' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'products')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h4l2.2-3.2a1 1 0 01.82-.43H14l3.2 2.4a2 2 0 001.2.4H21v3H3v-2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 15h.01M17 15h.01" />
+              </svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'products')}>Products</span>
+            </Link>
+            <Link href={meHref} className={mobileNavItemClasses(activeMobileTab === 'me')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
+            </Link>
+            <Link href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
+            </Link>
+            <Link href="/repair-services" className={mobileNavItemClasses(activeMobileTab === 'repair')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'repair' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'repair')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4l-5.2 5.2a1 1 0 000 1.4l1.3 1.3a1 1 0 001.4 0l5.2-5.2a4 4 0 005.4-5.4l-2.1 2.1-2.3-.5-.5-2.3 2.2-2.1z" />
+              </svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'repair')}>Repair</span>
+            </Link>
+          </div>
         </div>
       </div>
     </>

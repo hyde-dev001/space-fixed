@@ -57,6 +57,16 @@ interface Props {
 const ShopProfile: React.FC<Props> = ({ shop, products }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
+  const defaultCoverImage = '/images/shop/p1.jpg';
+  const shopInitials = shop.name
+    .split(' ')
+    .map((part) => part.trim()[0] || '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'SS';
+  const defaultProfileImage = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><rect width="240" height="240" rx="24" fill="#e5e7eb" /><text x="120" y="128" text-anchor="middle" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#111827">${shopInitials}</text></svg>`,
+  )}`;
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -151,6 +161,13 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
             src={shop.cover_image}
             alt="Shop Cover"
             className="w-full h-full object-cover"
+            onError={(event) => {
+              if (event.currentTarget.src.endsWith(defaultCoverImage)) {
+                return;
+              }
+
+              event.currentTarget.src = defaultCoverImage;
+            }}
           />
           <div className="absolute inset-0 bg-black bg-opacity-10"></div>
 
@@ -219,9 +236,16 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
               <div className="flex-shrink-0">
                 <div className="w-40 h-40 rounded-lg border-4 border-white shadow-lg bg-gray-100 overflow-hidden -mt-24 relative z-10">
                   <img
-                    src={shop.profile_photo || '/images/shop/shop-icon.png'}
+                    src={shop.profile_photo || defaultProfileImage}
                     alt={shop.name}
                     className="w-full h-full object-cover"
+                    onError={(event) => {
+                      if (event.currentTarget.src.startsWith('data:image/svg+xml')) {
+                        return;
+                      }
+
+                      event.currentTarget.src = defaultProfileImage;
+                    }}
                   />
                 </div>
               </div>

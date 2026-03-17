@@ -4,6 +4,7 @@ namespace App\Models\HR;
 
 use App\Models\Employee;
 use App\Models\ShopOwner;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -49,8 +50,17 @@ class Payroll extends Model
         'generated_at',
         'approved_by',
         'approved_at',
+        'final_approved_by',
+        'final_approved_at',
         'approval_status',
         'approval_notes',
+        'final_approval_notes',
+        'payout_reference',
+        'payout_proof_type',
+        'payout_proof_reference',
+        'payout_proof_notes',
+        'disbursed_by',
+        'disbursed_at',
     ];
 
     protected $casts = [
@@ -71,6 +81,8 @@ class Payroll extends Model
         'payment_date' => 'datetime',
         'generated_at' => 'datetime',
         'approved_at' => 'datetime',
+        'final_approved_at' => 'datetime',
+        'disbursed_at' => 'datetime',
         'attendance_days' => 'integer',
         'leave_days' => 'integer',
         'absent_days' => 'integer',
@@ -83,6 +95,7 @@ class Payroll extends Model
     public const STATUSES = [
         'pending' => 'Pending',
         'processed' => 'Processed',
+        'approved' => 'Approved',
         'paid' => 'Paid',
     ];
 
@@ -109,6 +122,21 @@ class Payroll extends Model
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class);
+    }
+
+    public function checker(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function finalApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'final_approved_by');
+    }
+
+    public function disburser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'disbursed_by');
     }
     
     /**
@@ -287,13 +315,52 @@ class Payroll extends Model
         return $this->save();
     }
 
+    public function markAsFinalApproved(int $userId, ?string $notes = null): bool
+    {
+        $this->status = 'approved';
+        $this->final_approved_by = $userId;
+        $this->final_approved_at = now();
+        $this->final_approval_notes = $notes;
+
+        return $this->save();
+    }
+
     /**
      * Mark as paid
      */
-    public function markAsPaid(): bool
+    public function markAsPaid(?string $paymentDate = null, array $details = []): bool
     {
         $this->status = 'paid';
-        $this->payment_date = now();
+        $this->payment_date = $paymentDate
+            ? \Carbon\Carbon::parse($paymentDate)
+            : now();
+
+        if (array_key_exists('payment_method', $details)) {
+            $this->payment_method = $details['payment_method'];
+        }
+
+        if (array_key_exists('payout_reference', $details)) {
+            $this->payout_reference = $details['payout_reference'];
+        }
+
+        if (array_key_exists('payout_proof_type', $details)) {
+            $this->payout_proof_type = $details['payout_proof_type'];
+        }
+
+        if (array_key_exists('payout_proof_reference', $details)) {
+            $this->payout_proof_reference = $details['payout_proof_reference'];
+        }
+
+        if (array_key_exists('payout_proof_notes', $details)) {
+            $this->payout_proof_notes = $details['payout_proof_notes'];
+        }
+
+        if (array_key_exists('disbursed_by', $details)) {
+            $this->disbursed_by = $details['disbursed_by'];
+        }
+
+        $this->disbursed_at = now();
+
         return $this->save();
     }
 
@@ -310,7 +377,41 @@ class Payroll extends Model
      */
     public function canBePaid(): bool
     {
-        return $this->status === 'processed';
+        return $this->status === 'approved' && ! empty($this->final_approved_by);
+    }
+
+    public function getWorkflowStatusAttribute(): string
+    {
+        if ($this->status === 'paid') {
+            return 'paid';
+        }
+
+        if ($this->approval_status === 'rejected') {
+            return 'rejected';
+        }
+
+        if ($this->status === 'approved' && ! empty($this->final_approved_by)) {
+            return 'ready_for_disbursement';
+        }
+
+        if ($this->approval_status === 'approved') {
+            return 'awaiting_final_approval';
+        }
+
+        return 'awaiting_checker';
+    }
+
+    public function getDisbursementStatusAttribute(): string
+    {
+        if ($this->status === 'paid') {
+            return 'paid';
+        }
+
+        if ($this->status === 'approved' && ! empty($this->final_approved_by)) {
+            return 'ready';
+        }
+
+        return 'pending';
     }
 
     /**
@@ -318,7 +419,30 @@ class Payroll extends Model
      */
     public function getFormattedPeriodAttribute(): string
     {
-        return \Carbon\Carbon::createFromFormat('Y-m', $this->payroll_period)->format('F Y');
+        $period = trim((string) $this->payroll_period);
+
+        if ($period === '') {
+            return '';
+        }
+
+        if (str_contains($period, ' to ')) {
+            [$startDate, $endDate] = array_map('trim', explode(' to ', $period, 2));
+
+            try {
+                $start = \Carbon\Carbon::parse($startDate);
+                $end = \Carbon\Carbon::parse($endDate);
+
+                return $start->format('M d') . ' - ' . $end->format('M d, Y');
+            } catch (\Throwable $e) {
+                return $period;
+            }
+        }
+
+        try {
+            return \Carbon\Carbon::createFromFormat('Y-m', $period)->format('F Y');
+        } catch (\Throwable $e) {
+            return $period;
+        }
     }
 
     /**
@@ -327,7 +451,19 @@ class Payroll extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['payroll_period', 'net_salary', 'gross_salary', 'status', 'payment_date', 'approval_status', 'approved_by'])
+            ->logOnly([
+                'payroll_period',
+                'net_salary',
+                'gross_salary',
+                'status',
+                'payment_date',
+                'approval_status',
+                'approved_by',
+                'final_approved_by',
+                'disbursed_by',
+                'payout_reference',
+                'payout_proof_reference',
+            ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn(string $eventName) => "Payroll {$eventName}");

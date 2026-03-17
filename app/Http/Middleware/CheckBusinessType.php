@@ -30,21 +30,50 @@ class CheckBusinessType
                 ->with('error', 'Please login to access this feature.');
         }
         
-        // Normalize business type (handle 'both (retail & repair)' format)
-        $businessType = $shopOwner->business_type;
-        if ($businessType === 'both (retail & repair)') {
-            $businessType = 'both';
-        }
+        // Normalize business type (supports: "both", "both (retail & repair)", mixed case)
+        $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
+        $normalizedAllowedTypes = array_values(array_unique(array_filter(array_map(
+            fn (string $type) => $this->normalizeBusinessType($type),
+            $allowedTypes
+        ))));
         
         // Check if shop owner's business type is in allowed types
-        if (!in_array($businessType, $allowedTypes)) {
-            $featureName = $this->getFeatureName($allowedTypes);
-            
+        if (!in_array($businessType, $normalizedAllowedTypes, true)) {
+            $featureName = $this->getFeatureName($normalizedAllowedTypes);
+            $message = "This feature is not available for your business type. {$featureName} features require a " . implode(' or ', $normalizedAllowedTypes) . " business type.";
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => $message,
+                    'business_type' => $businessType,
+                    'allowed_types' => $normalizedAllowedTypes,
+                ], 403);
+            }
+
             return redirect()->route('shop-owner.dashboard')
-                ->with('error', "This feature is not available for your business type. {$featureName} features require a " . implode(' or ', $allowedTypes) . " business type.");
+                ->with('error', $message);
         }
         
         return $next($request);
+    }
+
+    private function normalizeBusinessType(?string $value): string
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        if (str_contains($normalized, 'both')) {
+            return 'both';
+        }
+
+        if ($normalized === 'retail') {
+            return 'retail';
+        }
+
+        if ($normalized === 'repair') {
+            return 'repair';
+        }
+
+        return '';
     }
     
     /**

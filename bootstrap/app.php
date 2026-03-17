@@ -26,10 +26,6 @@ return Application::configure(basePath: dirname(__DIR__))
             
             Route::middleware('api')
                 ->prefix('api')
-                ->group(base_path('routes/shop-owner-api.php'));
-            
-            Route::middleware('api')
-                ->prefix('api')
                 ->group(base_path('routes/permission-audit-api.php'));
             
             Route::middleware('api')
@@ -64,7 +60,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.suspension' => \App\Http\Middleware\CheckEmployeeSuspension::class,
             // Shop Owner Access Control
             'check.business.type' => \App\Http\Middleware\CheckBusinessType::class,
+            'check.user.business.type' => \App\Http\Middleware\CheckUserBusinessType::class,
             'check.registration.type' => \App\Http\Middleware\CheckRegistrationType::class,
+            'has.active.retail.premium' => \App\Http\Middleware\HasActiveRetailPremium::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

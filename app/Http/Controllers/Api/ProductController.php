@@ -8,7 +8,12 @@ use App\Models\ProductVariant;
 use App\Models\ProductColorVariant;
 use App\Models\ProductColorVariantImage;
 use App\Models\PriceChangeRequest;
+use App\Models\InventoryItem;
+use App\Models\ShopOwner;
+use App\Models\ShopOwnerSubscription;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -20,21 +25,144 @@ class ProductController extends Controller
 {
     /**
      * Get the shop owner ID for the authenticated user
-     * Returns shop_owner's ID directly, or staff member's shop_owner_id
+     * Returns shop_owner's ID directly, or staff member's shop_owner_id.
+     * Shop-owner-only routes must never be resolved from a stale staff session.
      */
     private function getAuthenticatedShopOwnerId()
     {
-        if (Auth::guard('shop_owner')->check()) {
-            return Auth::guard('shop_owner')->id();
+        $request = request();
+        $routeName = $request instanceof Request ? (string) optional($request->route())->getName() : '';
+        $requestPath = $request instanceof Request ? strtolower(trim((string) $request->path(), '/')) : '';
+        $isShopOwnerRoute = str_starts_with($routeName, 'shop_owner.')
+            || str_contains($requestPath, 'api/shop-owner/');
+
+        // Shop-owner-only endpoints must stay bound to the authenticated shop owner,
+        // even when the same browser also has an unrelated staff/user session.
+        if ($isShopOwnerRoute) {
+            if (Auth::guard('shop_owner')->check()) {
+                return (int) Auth::guard('shop_owner')->id();
+            }
+
+            throw new \Exception('Shop owner authentication is required for this route.');
         }
 
         $user = Auth::guard('user')->user();
-        if ($user && $user->shop_owner_id) {
-            return $user->shop_owner_id;
+        if ($user && !empty($user->shop_owner_id)) {
+            return (int) $user->shop_owner_id;
+        }
+
+        if (Auth::guard('shop_owner')->check()) {
+            return (int) Auth::guard('shop_owner')->id();
         }
 
         // If no shop_owner_id found, throw an error instead of returning null
         throw new \Exception('User is not authorized to create products. Only shop owners and staff can create products.');
+    }
+
+    private function getActivePremiumSubscription(int $shopOwnerId): ?ShopOwnerSubscription
+    {
+        return ShopOwnerSubscription::where('shop_owner_id', $shopOwnerId)
+            ->where('status', 'active')
+            ->where(function ($q) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+            })
+            ->where(function ($q) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>=', now());
+            })
+            ->latest('ends_at')
+            ->first();
+    }
+
+    private function normalizeBusinessType(?string $value): string
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        if (str_contains($normalized, 'both')) {
+            return 'both';
+        }
+
+        if ($normalized === 'retail') {
+            return 'retail';
+        }
+
+        if ($normalized === 'repair') {
+            return 'repair';
+        }
+
+        return '';
+    }
+
+    /**
+     * Validate premium entitlement and optional slot availability for showroom actions.
+     */
+    private function enforceShowroomEntitlement(
+        int $shopOwnerId,
+        bool $requireFreeSlot = false,
+        ?int $exceptProductId = null
+    ): ?JsonResponse {
+        $shopOwner = ShopOwner::find($shopOwnerId);
+
+        if (!$shopOwner) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shop owner not found.',
+            ], 404);
+        }
+
+        $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
+        if (!in_array($businessType, ['retail', 'both'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Virtual showroom is only available for retail-capable shops.',
+                'business_type' => $businessType,
+            ], 403);
+        }
+
+        $subscription = $this->getActivePremiumSubscription($shopOwnerId);
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Active premium subscription required for virtual showroom actions.',
+            ], 403);
+        }
+
+        if (!$requireFreeSlot) {
+            return null;
+        }
+
+        $slotLimit = max((int) $subscription->showroom_slot_limit, 0);
+
+        $usedSlots = Product::where('shop_owner_id', $shopOwnerId)
+            ->where('is_active', true)
+            ->where('is_featured', true)
+            ->when($exceptProductId, function ($q) use ($exceptProductId) {
+                $q->where('id', '!=', $exceptProductId);
+            })
+            ->count();
+
+        if ($usedSlots >= $slotLimit) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Showroom slot limit reached for your active premium plan.',
+                'slot_limit' => $slotLimit,
+                'used_slots' => $usedSlots,
+            ], 409);
+        }
+
+        return null;
+    }
+
+    private function isShowroomImageType(?string $imageType): bool
+    {
+        $normalized = strtolower(trim((string) $imageType));
+
+        return in_array($normalized, [
+            'showroom',
+            'virtual_showroom',
+            'showroom_360',
+            '360',
+        ], true);
     }
 
     /**
@@ -69,6 +197,7 @@ class ProductController extends Controller
                         $query->active()->orderBy('sort_order');
                     },
                     'colorVariants.images' => function ($query) {
+                        $query->whereRaw("LOWER(COALESCE(image_type, '')) NOT IN ('showroom', 'virtual_showroom', 'showroom_360', '360')");
                         $query->orderBy('sort_order');
                     }
                 ]);
@@ -160,6 +289,7 @@ class ProductController extends Controller
                         $query->active()->orderBy('sort_order');
                     },
                     'colorVariants.images' => function ($query) {
+                        $query->whereRaw("LOWER(COALESCE(image_type, '')) NOT IN ('showroom', 'virtual_showroom', 'showroom_360', '360')");
                         $query->orderBy('sort_order');
                     }
                 ])
@@ -231,6 +361,93 @@ class ProductController extends Controller
     }
 
     /**
+     * Get showroom entitlement and slot availability for the authenticated shop context.
+     */
+    public function showroomEntitlement(Request $request)
+    {
+        try {
+            $shopOwnerId = $this->getAuthenticatedShopOwnerId();
+
+            $shopOwner = ShopOwner::find($shopOwnerId);
+            if (!$shopOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop owner not found.',
+                ], 404);
+            }
+
+            $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
+            $isEligible = in_array($businessType, ['retail', 'both'], true);
+
+            $subscription = $isEligible
+                ? $this->getActivePremiumSubscription((int) $shopOwnerId)
+                : null;
+
+            $hasActiveSubscription = (bool) $subscription;
+            $slotLimit = $subscription ? max((int) $subscription->showroom_slot_limit, 0) : 0;
+
+            $usedSlots = Product::where('shop_owner_id', $shopOwnerId)
+                ->where('is_active', true)
+                ->where('is_featured', true)
+                ->count();
+
+            $contextProductId = $request->integer('product_id');
+            $contextProductFeatured = false;
+
+            if (!empty($contextProductId)) {
+                $contextProduct = Product::where('id', $contextProductId)
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->first();
+
+                if (!$contextProduct) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Product context not found for this shop.',
+                    ], 404);
+                }
+
+                $contextProductFeatured = (bool) $contextProduct->is_featured;
+            }
+
+            $effectiveUsedSlots = max($usedSlots - ($contextProductFeatured ? 1 : 0), 0);
+            $remainingSlots = max($slotLimit - $effectiveUsedSlots, 0);
+
+            $canUseShowroom = $isEligible
+                && $hasActiveSubscription
+                && ($remainingSlots > 0 || $contextProductFeatured);
+
+            $status = !$isEligible
+                ? 'not_eligible'
+                : ($hasActiveSubscription ? 'active' : 'inactive');
+
+            return response()->json([
+                'success' => true,
+                'entitlement' => [
+                    'business_type' => $businessType,
+                    'is_eligible' => $isEligible,
+                    'status' => $status,
+                    'has_active_subscription' => $hasActiveSubscription,
+                    'plan_name' => $subscription?->plan_name,
+                    'showroom_slot_limit' => $slotLimit,
+                    'used_slots' => $effectiveUsedSlots,
+                    'remaining_slots' => $remainingSlots,
+                    'context_product_featured' => $contextProductFeatured,
+                    'can_upload_360' => $canUseShowroom,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching showroom entitlement', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch showroom entitlement.',
+            ], 500);
+        }
+    }
+
+    /**
      * Create new product (shop owner or staff)
      */
     public function store(Request $request)
@@ -250,6 +467,8 @@ class ProductController extends Controller
                 'brand' => 'nullable|string|max:100',
                 'category' => 'nullable|string|max:50',
                 'stock_quantity' => 'required|integer|min:0',
+                'inventory_item_id' => 'nullable|integer|exists:inventory_items,id',
+                'is_featured' => 'sometimes|boolean',
                 'sizes_available' => 'nullable|array',
                 'colors_available' => 'nullable|array',
                 'sku' => 'nullable|string|max:100',
@@ -275,9 +494,45 @@ class ProductController extends Controller
             }
             $validated['is_active'] = true;
 
+            if (!empty($validated['is_featured'])) {
+                $entitlementError = $this->enforceShowroomEntitlement((int) $validated['shop_owner_id'], true);
+                if ($entitlementError) {
+                    return $entitlementError;
+                }
+            }
+
+            $linkedInventoryItem = null;
+            if (!empty($validated['inventory_item_id'])) {
+                $linkedInventoryItem = InventoryItem::where('id', (int) $validated['inventory_item_id'])
+                    ->where('shop_owner_id', (int) $validated['shop_owner_id'])
+                    ->first();
+
+                if (!$linkedInventoryItem) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected inventory item is invalid for this shop.',
+                    ], 422);
+                }
+
+                if (!empty($linkedInventoryItem->product_id)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This inventory item is already linked to a product.',
+                    ], 422);
+                }
+            }
+
+            unset($validated['inventory_item_id']);
+
             DB::beginTransaction();
             try {
                 $product = Product::create($validated);
+
+                if ($linkedInventoryItem) {
+                    $linkedInventoryItem->update([
+                        'product_id' => $product->id,
+                    ]);
+                }
 
                 // Create variants if provided
                 if (isset($validated['variants']) && is_array($validated['variants'])) {
@@ -298,7 +553,7 @@ class ProductController extends Controller
 
                 Log::info('Product created with variants', [
                     'product_id' => $product->id,
-                    'shop_owner_id' => $user->id,
+                    'shop_owner_id' => $validated['shop_owner_id'],
                     'name' => $product->name,
                     'variants_count' => count($validated['variants'] ?? []),
                 ]);
@@ -407,6 +662,7 @@ class ProductController extends Controller
     {
         try {
             $user = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+            $activityCauser = $user instanceof Model ? $user : null;
 
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
@@ -478,6 +734,13 @@ class ProductController extends Controller
             // Staff from individual shops can change prices directly
             // Staff from company shops must use approval workflow
 
+            if (array_key_exists('is_featured', $validated) && (bool) $validated['is_featured'] === true && !$product->is_featured) {
+                $entitlementError = $this->enforceShowroomEntitlement((int) $shopOwnerId, true, (int) $product->id);
+                if ($entitlementError) {
+                    return $entitlementError;
+                }
+            }
+
             DB::beginTransaction();
             try {
                 // Track changes for logging
@@ -496,7 +759,7 @@ class ProductController extends Controller
                     ];
 
                     activity()
-                        ->causedBy($user)
+                        ->causedBy($activityCauser)
                         ->performedOn($product)
                         ->withProperties([
                             'product_name' => $product->name,
@@ -517,7 +780,7 @@ class ProductController extends Controller
                     ];
 
                     activity()
-                        ->causedBy($user)
+                        ->causedBy($activityCauser)
                         ->performedOn($product)
                         ->withProperties([
                             'product_name' => $product->name,
@@ -583,26 +846,37 @@ class ProductController extends Controller
     public function destroy($id)
     {
         try {
-            $user = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+            // Prefer staff user guard first (same policy as getAuthenticatedShopOwnerId)
+            $user = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
 
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
-            // Determine shop_owner_id: if user is shop_owner, use their ID; if staff, use their shop_owner_id
-            $shopOwnerId = Auth::guard('shop_owner')->check()
-                ? Auth::guard('shop_owner')->id()
-                : $user->shop_owner_id;
+            // Use centralized shop owner resolution to avoid cross-guard mismatch issues
+            $shopOwnerId = $this->getAuthenticatedShopOwnerId();
 
             $product = Product::where('id', $id)
                 ->where('shop_owner_id', $shopOwnerId)
-                ->firstOrFail();
+                ->first();
+
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product not found for this shop.',
+                ], 404);
+            }
+
+            // Unlink any inventory item currently linked to this product
+            InventoryItem::where('shop_owner_id', $shopOwnerId)
+                ->where('product_id', $product->id)
+                ->update(['product_id' => null]);
 
             $product->delete();
 
             Log::info('Product deleted', [
                 'product_id' => $product->id,
-                'shop_owner_id' => $user->id,
+                'shop_owner_id' => $shopOwnerId,
             ]);
 
             return response()->json([
@@ -818,6 +1092,7 @@ class ProductController extends Controller
                 'sku_prefix' => 'nullable|string|max:50',
                 'is_active' => 'sometimes|boolean',
                 'sort_order' => 'sometimes|integer',
+                'assign_to_showroom' => 'sometimes|boolean',
                 'images' => 'nullable|array|max:10', // Max 10 images per color
                 'images.*.path' => 'required|string',
                 'images.*.alt_text' => 'nullable|string',
@@ -826,8 +1101,30 @@ class ProductController extends Controller
                 'images.*.image_type' => 'nullable|string',
             ]);
 
+            $hasShowroomImage = collect($validated['images'] ?? [])->contains(function ($imageData) {
+                return $this->isShowroomImageType($imageData['image_type'] ?? null);
+            });
+
+            $assignToShowroom = $request->boolean('assign_to_showroom', false) || $product->is_featured || $hasShowroomImage;
+
+            if ($assignToShowroom) {
+                $entitlementError = $this->enforceShowroomEntitlement(
+                    (int) $shopOwnerId,
+                    !$product->is_featured,
+                    (int) $product->id
+                );
+
+                if ($entitlementError) {
+                    return $entitlementError;
+                }
+            }
+
             DB::beginTransaction();
             try {
+                if ($assignToShowroom && !$product->is_featured) {
+                    $product->update(['is_featured' => true]);
+                }
+
                 // Check if this is the first color variant (for auto-setting main_image)
                 $isFirstColorVariant = $product->colorVariants()->count() === 0;
 
@@ -1016,29 +1313,72 @@ class ProductController extends Controller
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
+            $shopOwnerId = $this->getAuthenticatedShopOwnerId();
+
             $product = Product::where('id', $productId)
-                ->where('shop_owner_id', $user->id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->firstOrFail();
 
             $colorVariant = ProductColorVariant::where('id', $colorVariantId)
                 ->where('product_id', $product->id)
                 ->firstOrFail();
 
-            // Check image count limit (max 10)
-            $existingImagesCount = $colorVariant->images()->count();
-            if ($existingImagesCount >= 10) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Maximum 10 images allowed per color variant',
-                ], 400);
-            }
-
             $request->validate([
                 'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:10240', // 10MB max
                 'alt_text' => 'nullable|string|max:255',
                 'is_thumbnail' => 'sometimes|boolean',
                 'image_type' => 'nullable|string|max:50',
+                'assign_to_showroom' => 'sometimes|boolean',
             ]);
+
+            $imageType = $request->input('image_type', 'product');
+            $isShowroomImage = $this->isShowroomImageType($imageType);
+            $maxRegularImagesPerColorVariant = 10;
+            $maxShowroomFramesPerColorVariant = 120;
+
+            $existingImagesCount = $colorVariant->images()->count();
+
+            $existingShowroomImagesCount = $colorVariant->images()
+                ->whereRaw("LOWER(COALESCE(image_type, '')) IN ('showroom', 'virtual_showroom', 'showroom_360', '360')")
+                ->count();
+
+            $existingRegularImagesCount = $colorVariant->images()
+                ->whereRaw("LOWER(COALESCE(image_type, '')) NOT IN ('showroom', 'virtual_showroom', 'showroom_360', '360')")
+                ->count();
+
+            if ($isShowroomImage && $existingShowroomImagesCount >= $maxShowroomFramesPerColorVariant) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Maximum {$maxShowroomFramesPerColorVariant} showroom 360 frames allowed per color variant",
+                ], 400);
+            }
+
+            if (!$isShowroomImage && $existingRegularImagesCount >= $maxRegularImagesPerColorVariant) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Maximum {$maxRegularImagesPerColorVariant} product images allowed per color variant",
+                ], 400);
+            }
+
+            $assignToShowroom = $request->boolean('assign_to_showroom', false)
+                || $product->is_featured
+                || $isShowroomImage;
+
+            if ($assignToShowroom) {
+                $entitlementError = $this->enforceShowroomEntitlement(
+                    (int) $shopOwnerId,
+                    !$product->is_featured,
+                    (int) $product->id
+                );
+
+                if ($entitlementError) {
+                    return $entitlementError;
+                }
+
+                if (!$product->is_featured) {
+                    $product->update(['is_featured' => true]);
+                }
+            }
 
             if ($request->hasFile('image')) {
                 $image = $request->file('image');
@@ -1052,7 +1392,7 @@ class ProductController extends Controller
                     'alt_text' => $request->input('alt_text'),
                     'is_thumbnail' => $request->input('is_thumbnail', $existingImagesCount === 0), // First image is thumbnail
                     'sort_order' => $existingImagesCount,
-                    'image_type' => $request->input('image_type', 'product'),
+                    'image_type' => $imageType,
                 ]);
 
                 Log::info('Color variant image uploaded', [

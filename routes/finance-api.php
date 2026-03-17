@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
+use App\Http\Controllers\ERP\HR\PayrollController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 
@@ -53,12 +54,6 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
         
-        // Approval actions (requires approve-expenses permission)
-        Route::middleware('permission:approve-expenses')->group(function () {
-            Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.expenses.approve');
-            Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
-            Route::post('/{id}/post', [ExpenseController::class, 'post'])->name('finance.expenses.post');
-        });
     });
 
 
@@ -111,11 +106,13 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Separated from the HR module intentionally: Finance approves, HR generates.
  * Permission required: approve-payroll
  */
-Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'permission:approve-payroll|access-payslip-approval', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'permission:approve-payroll|access-payslip-approval|access-approval-workflow', 'shop.isolation'])->group(function () {
     Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
     Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->name('finance.payslip_approval.show');
     Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->name('finance.payslip_approval.approve');
     Route::post('/{id}/reject', [FinancePayslipApprovalController::class, 'rejectPayslip'])->name('finance.payslip_approval.reject');
+    Route::post('/{id}/final-approve', [FinancePayslipApprovalController::class, 'finalApprovePayslip'])->name('finance.payslip_approval.final_approve');
+    Route::post('/disburse', [PayrollController::class, 'process'])->name('finance.payslip_approval.disburse');
     Route::post('/batch/preview', [FinancePayslipApprovalController::class, 'batchApprovalPreview'])->name('finance.payslip_approval.batch_preview');
     Route::post('/batch/approve', [FinancePayslipApprovalController::class, 'batchApprove'])->name('finance.payslip_approval.batch_approve');
 });
@@ -138,12 +135,6 @@ Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permissio
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.session.expenses.destroy');
         Route::get('/{id}/receipt/download', [ExpenseController::class, 'downloadReceipt'])->name('finance.session.expenses.download');
         
-        // Approval actions (requires access-finance-expenses permission)
-        Route::middleware('permission:access-finance-expenses')->group(function () {
-            Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.session.expenses.approve');
-            Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.session.expenses.reject');
-            Route::post('/{id}/post', [ExpenseController::class, 'post'])->name('finance.session.expenses.post');
-        });
     });
 
     // ============================================

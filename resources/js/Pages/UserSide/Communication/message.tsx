@@ -102,6 +102,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [replyingToMessage, setReplyingToMessage] = useState<ConversationMessage | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<number, string>>({});
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   
   const quickReactionList = ['❤️', '😂', '😍', '😮', '😢', '😡', '👍', '🎉'];
   
@@ -525,6 +526,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const handleConversationClick = (conversation: Conversation) => {
     setSelectedConversation(conversation);
     fetchMessages(conversation.id);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsMobileChatOpen(true);
+    }
   };
 
   const handleReply = (message: ConversationMessage) => {
@@ -764,9 +768,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       <Head title="Messages - Solespace" />
       <Navigation />
 
-      <main className="mt-20 h-[calc(100vh-5rem)] flex flex-col w-full min-h-0 overflow-hidden">
+      <main className="mt-16 sm:mt-20 h-[calc(100vh-4rem)] sm:h-[calc(100vh-5rem)] pb-16 lg:pb-0 flex flex-col w-full min-h-0 overflow-hidden">
         <div className="flex flex-1 min-h-0 w-full gap-0 h-full overflow-hidden">
-          <div className="w-96 h-full bg-white flex flex-col overflow-hidden border-r border-gray-200">
+          <div className={`${isMobileChatOpen ? 'hidden' : 'flex'} lg:flex w-full lg:w-96 h-full bg-white flex-col overflow-hidden lg:border-r lg:border-gray-200`}>
             <div className="border-b border-gray-200 px-6 py-4">
               <h1 className="text-2xl font-bold text-black mb-4">Shop Messages</h1>
               <div className="relative mb-4">
@@ -897,10 +901,19 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
             </div>
           </div>
 
-          <div className="flex-1 h-full min-h-0 flex flex-col bg-white overflow-hidden">
+          <div className={`${isMobileChatOpen ? 'flex' : 'hidden'} lg:flex flex-1 w-full h-full min-h-0 flex-col bg-white overflow-hidden`}>
             <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
               {selectedConversation ? (
                 <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setIsMobileChatOpen(false)}
+                    className="lg:hidden w-9 h-9 rounded-full border border-gray-200 text-gray-700 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                    title="Back to messages"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
                   <div className="relative">
                     {selectedConversation.shopOwner?.profile_photo ? (
                       <img
@@ -1615,6 +1628,66 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           </div>
         </div>
       </main>
+
+      <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur">
+        <div className="grid grid-cols-5 h-16">
+          <button
+            type="button"
+            onClick={() => router.visit('/')}
+            className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10.5L12 3l9 7.5M5 9v11h14V9" />
+            </svg>
+            <span>Home</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.visit('/products')}
+            className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M6 7l2 10h8l2-10M10 17a2 2 0 100 4 2 2 0 000-4zm4 0a2 2 0 100 4 2 2 0 000-4z" />
+            </svg>
+            <span>Products</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.visit('/customer-profile')}
+            className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z" />
+            </svg>
+            <span>Me</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.visit('/messages')}
+            className="relative flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-900"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" />
+            </svg>
+            <span className="font-medium">Inbox</span>
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-gray-900" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.visit('/repair-services')}
+            className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-3 3-2-2 2-2 3-3z" />
+            </svg>
+            <span>Repair</span>
+          </button>
+        </div>
+      </div>
 
       {fullscreenImage && (
         <div

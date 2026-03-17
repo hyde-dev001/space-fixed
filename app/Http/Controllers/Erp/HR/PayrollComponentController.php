@@ -246,14 +246,31 @@ class PayrollComponentController extends Controller
 
         $grossPay     = $earnings + $benefits;
         $taxableAmount = $components->where('is_taxable', true)->sum('calculated_amount');
-        $taxAmount    = $this->payrollService->calculateTax($payroll->shop_owner_id, $taxableAmount);
-        $netPay       = $grossPay - $deductions - $taxAmount;
+
+        $statutory = $this->payrollService->calculateStatutoryDeductions(
+            (int) $payroll->shop_owner_id,
+            (float) $taxableAmount,
+            $payroll->pay_period_end
+        );
+
+        $taxAmount = (float) ($statutory['withholding_tax'] ?? 0);
+        $sss = (float) ($statutory['sss_contribution'] ?? 0);
+        $philhealth = (float) ($statutory['philhealth_contribution'] ?? 0);
+        $pagibig = (float) ($statutory['pagibig_contribution'] ?? 0);
+
+        $netPay = $grossPay - $deductions - $taxAmount - $sss - $philhealth - $pagibig;
+        $legacyDeductions = $deductions + $taxAmount + $sss + $philhealth + $pagibig;
 
         $payroll->update([
             'gross_salary'    => $grossPay,
+            'deductions'      => round($legacyDeductions, 2),
             'total_deductions' => $deductions,
             'tax_amount'      => $taxAmount,
-            'net_salary'      => $netPay,
+            'tax_deductions'  => $taxAmount,
+            'sss_contributions' => round($sss, 2),
+            'philhealth'      => round($philhealth, 2),
+            'pag_ibig'        => round($pagibig, 2),
+            'net_salary'      => round($netPay, 2),
         ]);
 
         // Keep the Income Tax component in sync

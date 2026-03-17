@@ -6,6 +6,7 @@ export { LeaveManagement as LeaveApprovals } from './LeaveApprovals';
 export { default as OvertimeApprovals } from './OvertimeApprovals';
 export { default as GenerateSlip } from './generateSlip';
 export { default as ViewSlip } from './viewSlip';
+export { default as SalaryChanges } from './SalaryChanges';
 
 // Named exports for direct import
 export { LeaveRequests } from './LeaveApprovals';

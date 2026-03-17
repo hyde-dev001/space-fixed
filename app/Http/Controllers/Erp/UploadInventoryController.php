@@ -20,23 +20,38 @@ use Illuminate\Support\Str;
 
 class UploadInventoryController extends Controller
 {
+    private const CATEGORY_SHOES = 'shoes';
+    private const CATEGORY_REPAIR_MATERIALS = 'repair_materials';
+
     /**
      * List uploaded inventory items
      */
     public function index(Request $request)
     {
         $shopOwnerId = $request->user()->shop_owner_id;
+        $allowedCategories = $this->allowedCategoriesForBusinessType(
+            $this->resolveBusinessType($request)
+        );
         
         $items = InventoryItem::with(['sizes', 'colorVariants.images', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
+            ->whereIn('category', $allowedCategories)
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('sku', 'like', "%{$search}%");
                 });
             })
-            ->when($request->category, function ($query, $category) {
-                $query->where('category', $category);
+            ->when($request->category, function ($query, $category) use ($allowedCategories) {
+                if (in_array($category, $allowedCategories, true)) {
+                    $query->where('category', $category);
+                    return;
+                }
+
+                $query->whereRaw('1 = 0');
+            })
+            ->when($request->boolean('available_for_product'), function ($query) {
+                $query->whereNull('product_id');
             })
             ->orderBy('created_at', 'desc')
             ->paginate($request->per_page ?? 20)
@@ -53,12 +68,12 @@ class UploadInventoryController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'sku' => 'nullable|string|max:100|unique:inventory_items,sku',
-            'category' => 'required|in:shoes,accessories,care_products,cleaning_materials,packaging,repair_materials',
+            'category' => 'required|in:shoes,repair_materials',
             'brand' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             'notes' => 'nullable|string',
             'unit' => 'nullable|string|max:50',
-            'available_quantity' => 'required|integer|min:0',
+            'available_quantity' => 'required|integer|min:1',
             'reorder_level' => 'nullable|integer|min:0',
             'reorder_quantity' => 'nullable|integer|min:0',
             'price' => 'nullable|numeric|min:0',
@@ -66,16 +81,34 @@ class UploadInventoryController extends Controller
             'weight' => 'nullable|numeric|min:0',
             'sizes' => 'nullable|array',
             'sizes.*.size' => 'required|string',
-            'sizes.*.quantity' => 'required|integer|min:0',
+            'sizes.*.quantity' => 'required|integer|min:1',
             'color_variants' => 'nullable|array',
             'color_variants.*.color_name' => 'required|string',
             'color_variants.*.color_code' => 'nullable|string',
-            'color_variants.*.quantity' => 'required|integer|min:0',
+            'color_variants.*.quantity' => 'required|integer|min:1',
             'color_variants.*.images' => 'nullable|array',
             'color_variants.*.images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'images' => 'nullable|array',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
         ]);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $validated['category'])) {
+            return $authorizationError;
+        }
+
+        if ($validated['category'] === 'shoes') {
+            if (empty($validated['sizes']) || count($validated['sizes']) === 0) {
+                return response()->json([
+                    'message' => 'At least one size with stock is required for shoes.'
+                ], 422);
+            }
+
+            if (empty($validated['color_variants']) || count($validated['color_variants']) === 0) {
+                return response()->json([
+                    'message' => 'At least one color variant is required for shoes.'
+                ], 422);
+            }
+        }
         
         $shopOwnerId = $request->user()->shop_owner_id;
         
@@ -178,7 +211,7 @@ class UploadInventoryController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'category' => 'required|in:shoes,accessories,care_products,cleaning_materials,packaging,repair_materials',
+            'category' => 'required|in:shoes,repair_materials',
             'brand' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             'notes' => 'nullable|string',
@@ -191,11 +224,19 @@ class UploadInventoryController extends Controller
             'weight' => 'nullable|numeric|min:0',
             'is_active' => 'nullable|boolean'
         ]);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $validated['category'])) {
+            return $authorizationError;
+        }
         
         $shopOwnerId = $request->user()->shop_owner_id;
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
         
         DB::transaction(function () use ($item, $validated, $request) {
             $quantityBefore = $item->available_quantity;
@@ -240,6 +281,10 @@ class UploadInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType(request(), $item->category)) {
+            return $authorizationError;
+        }
         
         $item->delete();
         
@@ -264,6 +309,10 @@ class UploadInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($request->inventory_item_id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
         
         $uploadedImages = $this->uploadItemImages(
             $item,
@@ -280,7 +329,7 @@ class UploadInventoryController extends Controller
     /**
      * Delete specific image
      */
-    public function deleteImage($imageId)
+    public function deleteImage(Request $request, $imageId)
     {
         $shopOwnerId = request()->user()->shop_owner_id;
         
@@ -288,6 +337,10 @@ class UploadInventoryController extends Controller
                 $query->where('shop_owner_id', $shopOwnerId);
             })
             ->findOrFail($imageId);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $image->inventoryItem->category)) {
+            return $authorizationError;
+        }
         
         // Delete file from storage
         if (Storage::disk('public')->exists($image->image_path)) {
@@ -312,6 +365,10 @@ class UploadInventoryController extends Controller
                 $query->where('shop_owner_id', $shopOwnerId);
             })
             ->findOrFail($imageId);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $image->inventoryItem->category)) {
+            return $authorizationError;
+        }
         
         DB::transaction(function () use ($image) {
             // Remove thumbnail flag from other images
@@ -355,6 +412,16 @@ class UploadInventoryController extends Controller
 
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
+
+        if ($item->category !== self::CATEGORY_SHOES) {
+            return response()->json([
+                'message' => 'Color variants can only be added for shoes inventory items.'
+            ], 422);
+        }
 
         DB::beginTransaction();
         try {
@@ -480,6 +547,254 @@ class UploadInventoryController extends Controller
                 'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Add size quantity to an existing color variant.
+     * Keeps inventory item, color variant, and linked product stock in sync.
+     */
+    public function addSizeToColor(Request $request, $id, $colorId): JsonResponse
+    {
+        $validated = $request->validate([
+            'size' => 'required|string|max:20',
+            'quantity' => 'required|integer|min:1',
+        ]);
+
+        $shopOwnerId = $request->user()->shop_owner_id;
+
+        $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
+
+        if ($item->category !== self::CATEGORY_SHOES) {
+            return response()->json([
+                'message' => 'Sizes can only be managed for shoes inventory items.'
+            ], 422);
+        }
+
+        $colorVariant = InventoryColorVariant::where('inventory_item_id', $item->id)
+            ->where('id', $colorId)
+            ->firstOrFail();
+
+        DB::beginTransaction();
+        try {
+            $quantityToAdd = (int) $validated['quantity'];
+            $sizeValue = trim((string) $validated['size']);
+
+            // Update/create item-level size stock
+            $sizeRow = InventorySize::where('inventory_item_id', $item->id)
+                ->where('size', $sizeValue)
+                ->first();
+
+            if ($sizeRow) {
+                $sizeRow->increment('quantity', $quantityToAdd);
+            } else {
+                InventorySize::create([
+                    'inventory_item_id' => $item->id,
+                    'size' => $sizeValue,
+                    'quantity' => $quantityToAdd,
+                ]);
+            }
+
+            // Update color variant quantity
+            $colorVariant->increment('quantity', $quantityToAdd);
+
+            // Recalculate total available quantity from color variants
+            $quantityBefore = (int) $item->available_quantity;
+            $newTotalQty = (int) $item->colorVariants()->sum('quantity');
+            $item->update(['available_quantity' => $newTotalQty]);
+
+            StockMovement::create([
+                'inventory_item_id' => $item->id,
+                'movement_type' => 'adjustment',
+                'quantity_change' => $quantityToAdd,
+                'quantity_before' => $quantityBefore,
+                'quantity_after' => $newTotalQty,
+                'reference_type' => 'size_added',
+                'notes' => "Added size {$sizeValue} (+{$quantityToAdd}) to {$colorVariant->color_name}",
+                'performed_by' => $request->user()->id,
+                'performed_at' => now(),
+            ]);
+
+            // Sync linked product variant if this inventory item is linked to product
+            if ($item->product_id) {
+                $existingVariant = ProductVariant::where('product_id', $item->product_id)
+                    ->where('size', $sizeValue)
+                    ->where('color', $colorVariant->color_name)
+                    ->first();
+
+                if ($existingVariant) {
+                    $existingVariant->increment('quantity', $quantityToAdd);
+                    $existingVariant->is_active = true;
+                    $existingVariant->save();
+                } else {
+                    ProductVariant::create([
+                        'product_id' => $item->product_id,
+                        'size' => $sizeValue,
+                        'color' => $colorVariant->color_name,
+                        'quantity' => $quantityToAdd,
+                        'is_active' => true,
+                    ]);
+                }
+
+                $product = Product::find($item->product_id);
+                if ($product) {
+                    $product->update([
+                        'stock_quantity' => ProductVariant::where('product_id', $item->product_id)->sum('quantity'),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Size added successfully',
+                'color_variant_id' => (int) $colorVariant->id,
+                'size' => $sizeValue,
+                'quantity_added' => $quantityToAdd,
+                'item_quantity' => $newTotalQty,
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error adding size to color variant',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Correct the quantity of an existing size (typo fix).
+     *
+     * PUT /erp/inventory/items/{id}/sizes/{sizeId}
+     */
+    public function updateSizeQuantity(Request $request, $id, $sizeId): JsonResponse
+    {
+        $validated = $request->validate([
+            'quantity' => 'required|integer|min:0',
+        ]);
+
+        $shopOwnerId = $request->user()->shop_owner_id;
+
+        $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
+
+        if ($item->category !== self::CATEGORY_SHOES) {
+            return response()->json([
+                'message' => 'Sizes can only be managed for shoes inventory items.'
+            ], 422);
+        }
+
+        $size = InventorySize::where('inventory_item_id', $item->id)
+            ->findOrFail($sizeId);
+
+        DB::beginTransaction();
+        try {
+            $oldQty = (int) $size->quantity;
+            $newQty = (int) $validated['quantity'];
+
+            $size->quantity = $newQty;
+            $size->save();
+
+            // Recompute item total from all sizes
+            $newTotal = InventorySize::where('inventory_item_id', $item->id)->sum('quantity');
+            $item->available_quantity = $newTotal;
+            $item->save();
+
+            // Record correction movement
+            StockMovement::create([
+                'inventory_item_id' => $item->id,
+                'movement_type'     => 'adjustment',
+                'quantity_change'   => $newQty - $oldQty,
+                'quantity_before'   => $oldQty,
+                'quantity_after'    => $newQty,
+                'reference_type'    => 'size_correction',
+                'notes'             => "Size {$size->size} corrected: {$oldQty} → {$newQty}",
+                'performed_by'      => $request->user()->id,
+                'performed_at'      => now(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message'       => 'Size quantity updated',
+                'size_id'       => (int) $size->id,
+                'size'          => $size->size,
+                'quantity'      => $newQty,
+                'item_quantity' => $newTotal,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error updating size quantity',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    protected function resolveBusinessType(Request $request): string
+    {
+        return $this->normalizeBusinessType($request->user()?->shopOwner?->business_type);
+    }
+
+    protected function normalizeBusinessType(?string $businessType): string
+    {
+        $normalized = strtolower(trim((string) $businessType));
+
+        if ($normalized === 'retail') {
+            return 'retail';
+        }
+
+        if ($normalized === 'repair') {
+            return 'repair';
+        }
+
+        if (str_contains($normalized, 'both')) {
+            return 'both';
+        }
+
+        return 'both';
+    }
+
+    protected function allowedCategoriesForBusinessType(string $businessType): array
+    {
+        return match ($businessType) {
+            'retail' => [self::CATEGORY_SHOES],
+            'repair' => [self::CATEGORY_REPAIR_MATERIALS],
+            default => [self::CATEGORY_SHOES, self::CATEGORY_REPAIR_MATERIALS],
+        };
+    }
+
+    protected function authorizeCategoryForBusinessType(Request $request, string $category): ?JsonResponse
+    {
+        if (!in_array($category, [self::CATEGORY_SHOES, self::CATEGORY_REPAIR_MATERIALS], true)) {
+            return response()->json([
+                'message' => 'Only shoes and repair materials can be managed in upload inventory.'
+            ], 422);
+        }
+
+        $businessType = $this->resolveBusinessType($request);
+        $allowedCategories = $this->allowedCategoriesForBusinessType($businessType);
+
+        if (in_array($category, $allowedCategories, true)) {
+            return null;
+        }
+
+        $allowedLabel = $businessType === 'retail'
+            ? 'shoes'
+            : ($businessType === 'repair' ? 'repair materials' : 'shoes and repair materials');
+
+        return response()->json([
+            'message' => "This business type can upload {$allowedLabel} only."
+        ], 403);
     }
 
     /**

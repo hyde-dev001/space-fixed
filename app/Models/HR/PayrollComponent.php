@@ -69,6 +69,8 @@ class PayrollComponent extends Model
     public const CODE_PENSION = 'PENSION';
     public const CODE_LOAN = 'LOAN';
     public const CODE_ADVANCE = 'ADVANCE';
+    public const CODE_13TH_ACCRUAL = 'THIRTEENTH_ACCRUAL';
+    public const CODE_13TH_RELEASE = 'THIRTEENTH_RELEASE';
 
     // Calculation method constants (CALC_* for legacy; METHOD_* used by PayrollService)
     public const CALC_FIXED = 'fixed';

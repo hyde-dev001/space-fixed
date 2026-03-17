@@ -86,9 +86,17 @@ class StockRequestApprovalController extends Controller
             'priority'          => 'required|in:high,medium,low',
             'requested_size'    => 'nullable|string|max:20',
             'notes'             => 'nullable|string|max:1000',
+            'request_source'    => 'nullable|in:manual,repair',
+            'repair_request_id' => 'nullable|exists:repair_requests,id',
         ]);
 
         $inventoryItem = InventoryItem::findOrFail($validated['inventory_item_id']);
+
+        if (($validated['request_source'] ?? 'manual') === 'repair' && (string) $inventoryItem->category !== 'repair_materials') {
+            return response()->json([
+                'message' => 'Only repair materials can be requested when request source is repair.',
+            ], 422);
+        }
 
         // Generate request number SR-YYYY-NNN
         $year = now()->year;
@@ -104,11 +112,13 @@ class StockRequestApprovalController extends Controller
             'request_number'    => $requestNumber,
             'shop_owner_id'     => $user->shop_owner_id,
             'inventory_item_id' => $validated['inventory_item_id'],
+            'repair_request_id' => $validated['repair_request_id'] ?? null,
             'product_name'      => $inventoryItem->name,
             'sku_code'          => $inventoryItem->sku ?? '',
             'quantity_needed'   => $validated['quantity_needed'],
             'requested_size'    => $validated['requested_size'] ?? null,
             'priority'          => $validated['priority'],
+            'request_source'    => $validated['request_source'] ?? 'manual',
             'status'            => 'pending',
             'requested_by'      => $user->id,
             'requested_date'    => now(),

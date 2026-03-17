@@ -90,6 +90,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-color-variant-manager',
             'access-staff-customers',
             
+            // ===== HR SALARY CHANGE WORKFLOW =====
+            'manage-salary-changes',
+            'approve-salary-change',
+            'override-salary-retroactive',
+
             // ===== COMMON/GLOBAL =====
             'access-global-search',
             'access-notification-center',
@@ -119,6 +124,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-product-upload-manager',
             'access-repair-reject-review',
             'access-suspend-account',
+            // Salary Change Governance
+            'manage-salary-changes',
+            'approve-salary-change',
+            'override-salary-retroactive',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -157,6 +166,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-payslip-generation',
             'access-view-payslip',
             'access-audit-logs',
+            // Salary Change Workflow
+            'manage-salary-changes',
             // Global Access
             'access-global-search',
             'access-notification-center',

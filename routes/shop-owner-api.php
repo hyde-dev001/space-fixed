@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
 use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchaseRequestController;
+use App\Http\Controllers\ShopOwner\ExpenseController as ShopOwnerExpenseController;
+use App\Http\Controllers\ShopOwner\PremiumCheckoutController;
 
 /**
  * Shop Owner Routes
@@ -45,6 +47,15 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     });
 
     // ============================================
+    // EXPENSE APPROVALS (Shop Owner Final Approval)
+    // ============================================
+    Route::prefix('expenses')->group(function () {
+        Route::get('/', [ShopOwnerExpenseController::class, 'index'])->name('shop_owner.expenses.index');
+        Route::post('/{id}/approve', [ShopOwnerExpenseController::class, 'approve'])->name('shop_owner.expenses.approve');
+        Route::post('/{id}/reject', [ShopOwnerExpenseController::class, 'reject'])->name('shop_owner.expenses.reject');
+    });
+
+    // ============================================
     // AUDIT LOGS (Shop Owner View)
     // ============================================
     Route::prefix('audit-logs')->group(function () {
@@ -56,7 +67,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // PRICE CHANGE APPROVALS (Shop Owner Final Approval)
     // ============================================
-    Route::prefix('price-changes')->group(function () {
+    Route::prefix('price-changes')->middleware('check.business.type:retail,both')->group(function () {
         Route::get('/pending', [PriceChangeRequestController::class, 'ownerPending'])->name('shop_owner.price-changes.pending');
         Route::get('/all', [PriceChangeRequestController::class, 'ownerAll'])->name('shop_owner.price-changes.all');
         Route::post('/{id}/approve', [PriceChangeRequestController::class, 'ownerApprove'])->name('shop_owner.price-changes.approve');
@@ -66,7 +77,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // REPAIR SERVICE PRICE APPROVALS (Shop Owner Final Approval)
     // ============================================
-    Route::prefix('repair-price-changes')->group(function () {
+    Route::prefix('repair-price-changes')->middleware('check.business.type:repair,both')->group(function () {
         Route::get('/pending', [RepairServiceController::class, 'ownerPending'])->name('shop_owner.repair-price-changes.pending');
         Route::get('/all', [RepairServiceController::class, 'ownerAll'])->name('shop_owner.repair-price-changes.all');
         Route::post('/{id}/approve', [RepairServiceController::class, 'ownerApprove'])->name('shop_owner.repair-price-changes.approve');
@@ -104,7 +115,8 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // PRODUCT MANAGEMENT (Shop Owner)
     // ============================================
-    Route::prefix('products')->group(function () {
+    Route::prefix('products')->middleware('check.business.type:retail,both')->group(function () {
+        Route::get('/meta/showroom-entitlement', [\App\Http\Controllers\Api\ProductController::class, 'showroomEntitlement'])->name('shop_owner.products.showroom-entitlement');
         Route::get('/', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])->name('shop_owner.products.index');
         Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])->name('shop_owner.products.store');
         Route::get('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'show'])->name('shop_owner.products.show');
@@ -128,7 +140,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // ORDER MANAGEMENT (Shop Owner)
     // ============================================
-    Route::prefix('orders')->group(function () {
+    Route::prefix('orders')->middleware('check.business.type:retail,both')->group(function () {
         Route::get('/', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index'])->name('shop_owner.orders.index');
         Route::get('/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show'])->name('shop_owner.orders.show');
         Route::patch('/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus'])->name('shop_owner.orders.update-status');
@@ -138,7 +150,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // REPAIR MANAGEMENT (Shop Owner)
     // ============================================
-    Route::prefix('repairs')->group(function () {
+    Route::prefix('repairs')->middleware('check.business.type:repair,both')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myAssignedRepairs'])->name('shop_owner.repairs.index');
         Route::post('/{id}/accept', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'acceptRepair'])->name('shop_owner.repairs.accept');
         Route::post('/{id}/reject', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectRepair'])->name('shop_owner.repairs.reject');
@@ -153,12 +165,13 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals'])->name('shop_owner.repairs.high-value-pending');
         Route::post('/{id}/approve-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveHighValueRepair'])->name('shop_owner.repairs.approve-high-value');
         Route::post('/{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair'])->name('shop_owner.repairs.reject-high-value');
+        Route::post('/{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair'])->name('shop_owner.repairs.ship');
     });
 
     // ============================================
     // REPAIR SERVICES (Shop Owner)
     // ============================================
-    Route::prefix('repair-services')->group(function () {
+    Route::prefix('repair-services')->middleware('check.business.type:repair,both')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RepairServiceController::class, 'index'])->name('shop_owner.repair-services.index');
         Route::post('/', [\App\Http\Controllers\Api\RepairServiceController::class, 'store'])->name('shop_owner.repair-services.store');
         Route::get('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'show'])->name('shop_owner.repair-services.show');
@@ -193,5 +206,17 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     Route::prefix('employees')->group(function () {
         Route::post('/{userId}/regenerate-invite', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'regenerateInvite'])->name('shop_owner.employees.regenerate_invite');
         Route::post('/{userId}/send-invitation-email', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'sendInvitationEmail'])->name('shop_owner.employees.send_invitation_email');
+    });
+
+    // ============================================
+    // PREMIUM SUBSCRIPTION (retail + both shops only)
+    // ============================================
+    Route::prefix('premium')->middleware('check.business.type:retail,both')->group(function () {
+        // List available plans from DB
+        Route::get('/plans', [PremiumCheckoutController::class, 'plans'])->name('shop_owner.premium.plans');
+        // Current shop's subscription status
+        Route::get('/subscription', [PremiumCheckoutController::class, 'currentSubscription'])->name('shop_owner.premium.subscription');
+        // Initiate PayMongo checkout for a premium plan
+        Route::post('/checkout', [PremiumCheckoutController::class, 'checkout'])->name('shop_owner.premium.checkout');
     });
 });

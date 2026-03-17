@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AuditLog;
 use App\Mail\EmployeeInvitation;
+use App\Models\ShopOwner;
+use App\Services\BusinessAccessControlService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -97,6 +99,55 @@ class EmployeeController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        $rawRole = trim((string) ($request->input('role') ?? $request->input('department') ?? 'Staff'));
+        $normalizedRole = strtoupper(str_replace(' ', '_', $rawRole));
+
+        $canonicalRoleMap = [
+            'MANAGER' => 'Manager',
+            'FINANCE' => 'Finance',
+            'HR' => 'HR',
+            'CRM' => 'CRM',
+            'REPAIRER' => 'Repairer',
+            'INVENTORY' => 'Inventory Manager',
+            'INVENTORY_MANAGER' => 'Inventory Manager',
+            'PROCUREMENT' => 'Procurement Manager',
+            'PROCUREMENT_MANAGER' => 'Procurement Manager',
+            'STAFF' => 'Staff',
+        ];
+
+        if (!isset($canonicalRoleMap[$normalizedRole])) {
+            return response()->json([
+                'errors' => [
+                    'role' => ['Invalid role selected.'],
+                ],
+            ], 422);
+        }
+
+        $shopOwner = $user->shopOwner;
+        if (!$shopOwner && $user->shop_owner_id) {
+            $shopOwner = ShopOwner::find($user->shop_owner_id);
+        }
+
+        /** @var BusinessAccessControlService $accessControl */
+        $accessControl = app(BusinessAccessControlService::class);
+
+        $roleToValidate = match ($normalizedRole) {
+            'REPAIRER' => 'REPAIRER',
+            'STAFF', 'INVENTORY', 'INVENTORY_MANAGER' => 'STAFF',
+            default => 'MANAGER',
+        };
+
+        $roleValidation = $accessControl->validateRoleCreation($roleToValidate, $shopOwner);
+        if (!$roleValidation['allowed']) {
+            return response()->json([
+                'errors' => [
+                    'role' => [$roleValidation['reason']],
+                ],
+            ], 422);
+        }
+
+        $spatieRole = $canonicalRoleMap[$normalizedRole];
+
         // Generate invitation token instead of temporary password
         $inviteToken = Str::random(64);
         $inviteExpiresAt = Carbon::now()->addDays(7);
@@ -107,7 +158,7 @@ class EmployeeController extends Controller
         $fullName = trim($firstName . ' ' . $lastName);
         
         // Create both Employee and User atomically
-        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt) {
+        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt, $spatieRole) {
             $data = [
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
@@ -145,7 +196,7 @@ class EmployeeController extends Controller
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
                 'shop_owner_id' => $user->shop_owner_id,
-                'role' => $request->role ?? $request->department, // Use role field or department as fallback
+                'role' => $spatieRole,
                 'position' => $request->position ?? null,
                 'password' => null, // No password until invitation is accepted
                 'invite_token' => $inviteToken,
@@ -154,19 +205,6 @@ class EmployeeController extends Controller
                 'invited_by' => $user->id,
             ]);
 
-            // Assign Spatie role based on department or role field
-            $roleMap = [
-                'Manager' => 'Manager',
-                'Finance' => 'Finance',
-                'HR' => 'HR',
-                'CRM' => 'CRM',
-                'Staff' => 'Staff',
-                'Repairer' => 'Repairer',
-            ];
-            
-            // Use role field if provided, otherwise use department
-            $roleValue = $request->role ?? $request->department;
-            $spatieRole = $roleMap[$roleValue] ?? 'Staff';
             $newUser->assignRole($spatieRole);
 
             // Generate invitation URL
@@ -272,7 +310,6 @@ class EmployeeController extends Controller
             'position' => 'sometimes|required|string|max:100',
             'department' => 'sometimes|required|string|max:100',
             'hireDate' => 'sometimes|required|date',
-            'salary' => 'sometimes|required|numeric|min:0',
             'status' => 'sometimes|required|in:active,inactive,on-leave,suspended',
             'address' => 'sometimes|required|string',
             'city' => 'sometimes|required|string|max:100',
@@ -283,6 +320,14 @@ class EmployeeController extends Controller
             'suspensionReason' => 'nullable|string',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ]);
+
+        // Salary changes must go through the dedicated workflow (Phase 7).
+        if ($request->has('salary')) {
+            return response()->json([
+                'error' => 'Direct salary edits are disabled. Use POST /api/hr/salary-changes to submit a salary change request.',
+                'code'  => 'USE_SALARY_CHANGE_WORKFLOW',
+            ], 422);
+        }
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
@@ -313,6 +358,8 @@ class EmployeeController extends Controller
         if ($request->has('emergencyContact')) $data['emergency_contact'] = $request->emergencyContact;
         if ($request->has('emergencyPhone')) $data['emergency_phone'] = $request->emergencyPhone;
 
+        $oldValues = $employee->only(array_keys($data));
+
         // Handle profile image upload
         if ($request->hasFile('profileImage')) {
             // Delete old image
@@ -330,8 +377,9 @@ class EmployeeController extends Controller
         $this->auditUpdated(
             AuditLog::MODULE_EMPLOYEE,
             $employee,
-            ['employee_management'],
-            "Employee updated: {$employee->first_name} {$employee->last_name}"
+            $oldValues,
+            "Employee updated: {$employee->first_name} {$employee->last_name}",
+            ['employee_management']
         );
 
         return response()->json([

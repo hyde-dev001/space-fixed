@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from '../../../../../node_modules/three/build/three.module.js';
+import * as THREE from 'three';
 
 interface Product {
 	id: number;
@@ -10,27 +10,14 @@ interface Product {
 	main_image: string;
 	hover_image?: string | null;
 	gallery_images?: string[];
+	showroom_360_frames?: string[];
 }
 
 interface VirtualShowroomProps {
 	products: Product[];
 	isStandalonePage?: boolean;
+	onFocusModeChange?: (isFocusMode: boolean) => void;
 }
-
-const SEQUENCE_SOURCES = [
-	{
-		name: 'Golf Shoe 360',
-		brand: 'SoleSpace',
-		frameCount: 48,
-		buildFrameUrl: (index: number) => `/images/360/golf-shoe-360-product-photography-1500w-${String(index).padStart(3, '0')}.jpg`,
-	},
-	{
-		name: 'Tennis Shoe 360',
-		brand: 'SoleSpace',
-		frameCount: 72,
-		buildFrameUrl: (index: number) => `/images/tennis%20360/360-product-photography-tennis-shoe-${String(index).padStart(3, '0')}.jpg`,
-	},
-] as const;
 
 interface ShoeViewSet {
 	id: number;
@@ -41,7 +28,28 @@ interface ShoeViewSet {
 	frames: string[];
 }
 
-const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalonePage = false }) => {
+const getUniqueFrames = (frames: Array<string | null | undefined>): string[] => {
+	return Array.from(
+		new Set(
+			frames.filter((frame): frame is string => Boolean(frame && frame.trim())),
+		),
+	);
+};
+
+const buildProductFrames = (product: Product): string[] => {
+	const showroomFrames = getUniqueFrames(product.showroom_360_frames ?? []);
+	if (showroomFrames.length > 0) {
+		return showroomFrames;
+	}
+
+	return getUniqueFrames([
+		product.main_image,
+		product.hover_image,
+		...(product.gallery_images ?? []),
+	]);
+};
+
+const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalonePage = false, onFocusModeChange }) => {
 	const mountRef = useRef<HTMLDivElement | null>(null);
 	const currentIndexRef = useRef(0);
 	const dragStartXRef = useRef(0);
@@ -81,22 +89,16 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const lightsOn = isNightMode;
 
 	const shoes = useMemo<ShoeViewSet[]>(() => {
-		const totalShoes = Math.max(products.length, SEQUENCE_SOURCES.length);
-
-		return Array.from({ length: totalShoes }, (_, index) => {
-			const product = products[index];
-			const source = SEQUENCE_SOURCES[index % SEQUENCE_SOURCES.length];
-			const frameCount = source.frameCount;
-
-			return {
-				id: product?.id ?? index + 1,
-				name: product?.name || source.name,
-				slug: product?.slug,
-				brand: product?.brand || source.brand,
-				stock: product?.stock_quantity ?? 20,
-				frames: Array.from({ length: frameCount }, (_, frameIndex) => source.buildFrameUrl(frameIndex + 1)),
-			};
-		});
+		return products
+			.map((product) => ({
+				id: product.id,
+				name: product.name,
+				slug: product.slug,
+				brand: product.brand,
+				stock: product.stock_quantity,
+				frames: buildProductFrames(product),
+			}))
+			.filter((shoe) => shoe.frames.length > 0);
 	}, [products]);
 
 	useEffect(() => {
@@ -117,6 +119,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	useEffect(() => {
 		focusedShoeIndexRef.current = focusedShoeIndex;
 	}, [focusedShoeIndex]);
+
+	useEffect(() => {
+		onFocusModeChange?.(focusedShoeIndex !== null);
+	}, [focusedShoeIndex, onFocusModeChange]);
 
 	useEffect(() => {
 		if (focusedShoeIndex === null) {
@@ -842,42 +848,23 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			speed: number;
 			lastFrameIdx: number;
 		}> = [];
+		const slotDefinitions: Array<{
+			position: THREE.Vector3;
+			rotationY: number;
+			cardWidth: number;
+			cardHeight: number;
+			frameOffsetSeed: number;
+		}> = [];
+
 		for (const side of [-1, 1]) {
 			for (let level = 0; level < 3; level += 1) {
 				for (let i = 0; i < 6; i += 1) {
-					const shoeIdx = (i + level * 2 + (side === -1 ? 0 : 1)) % shoes.length;
-					const frameIdx = 0;
-
-					const material = new THREE.MeshBasicMaterial({
-						map: getTexture(shoes[shoeIdx].frames[frameIdx]),
-						transparent: true,
-						alphaTest: 0.02,
-						depthWrite: false,
-						side: THREE.DoubleSide,
-					});
-
-					const card = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.25), material);
-					const cardY = 1.95 + level * 1.85;
-					const cardZ = sideShelfStartZ + i * sideShelfGapZ;
-					card.position.set(side * 9.05, cardY, cardZ);
-					card.rotation.y = side === -1 ? Math.PI / 2 : -Math.PI / 2;
-					createShoeCase(card.position.clone(), card.rotation.y, 2.0, 1.25);
-					const insetOffset = 0.08;
-					card.position.x -= Math.sin(card.rotation.y) * insetOffset;
-					card.position.z -= Math.cos(card.rotation.y) * insetOffset;
-					card.userData.baseY = cardY;
-					card.userData.shoeIdx = shoeIdx;
-					card.castShadow = false;
-					scene.add(card);
-
-					shelfCardMaterials.push(material);
-					shelfCards.push(card);
-					animatedShelfCards.push({
-						material,
-						shoeIdx,
-						frameOffset: (i * 5 + level * 9 + (side === -1 ? 0 : 13)) % shoes[shoeIdx].frames.length,
-						speed: 20,
-						lastFrameIdx: frameIdx,
+					slotDefinitions.push({
+						position: new THREE.Vector3(side * 9.05, 1.95 + level * 1.85, sideShelfStartZ + i * sideShelfGapZ),
+						rotationY: side === -1 ? Math.PI / 2 : -Math.PI / 2,
+						cardWidth: 2.0,
+						cardHeight: 1.25,
+						frameOffsetSeed: i * 5 + level * 9 + (side === -1 ? 0 : 13),
 					});
 				}
 			}
@@ -886,40 +873,55 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		for (const depthSide of [-1, 1]) {
 			for (let level = 0; level < 3; level += 1) {
 				for (let i = 0; i < 4; i += 1) {
-					const shoeIdx = (i + level * 2 + (depthSide === -1 ? 0 : 1)) % shoes.length;
-					const material = new THREE.MeshBasicMaterial({
-						map: getTexture(shoes[shoeIdx].frames[0]),
-						transparent: true,
-						alphaTest: 0.02,
-						depthWrite: false,
-						side: THREE.DoubleSide,
-					});
-
-					const card = new THREE.Mesh(new THREE.PlaneGeometry(1.85, 1.12), material);
-					const cardY = 1.95 + level * 1.85;
-					card.position.set(-6 + i * 4, cardY, depthSide === -1 ? -15.85 : 9.85);
-					card.rotation.y = depthSide === -1 ? 0 : Math.PI;
-					createShoeCase(card.position.clone(), card.rotation.y, 1.85, 1.12);
-					const insetOffset = 0.08;
-					card.position.x -= Math.sin(card.rotation.y) * insetOffset;
-					card.position.z -= Math.cos(card.rotation.y) * insetOffset;
-					card.userData.baseY = cardY;
-					card.userData.shoeIdx = shoeIdx;
-					card.castShadow = false;
-					scene.add(card);
-
-					shelfCardMaterials.push(material);
-					shelfCards.push(card);
-					animatedShelfCards.push({
-						material,
-						shoeIdx,
-						frameOffset: (i * 7 + level * 11 + (depthSide === -1 ? 0 : 17)) % shoes[shoeIdx].frames.length,
-						speed: 20,
-						lastFrameIdx: 0,
+					slotDefinitions.push({
+						position: new THREE.Vector3(-6 + i * 4, 1.95 + level * 1.85, depthSide === -1 ? -15.85 : 9.85),
+						rotationY: depthSide === -1 ? 0 : Math.PI,
+						cardWidth: 1.85,
+						cardHeight: 1.12,
+						frameOffsetSeed: i * 7 + level * 11 + (depthSide === -1 ? 0 : 17),
 					});
 				}
 			}
 		}
+
+		slotDefinitions.slice(0, shoes.length).forEach((slot, shoeIdx) => {
+			const frameIdx = 0;
+			const frames = shoes[shoeIdx]?.frames ?? [];
+			if (frames.length === 0) {
+				return;
+			}
+
+			const material = new THREE.MeshBasicMaterial({
+				map: getTexture(frames[frameIdx]),
+				transparent: true,
+				alphaTest: 0.02,
+				depthWrite: false,
+				side: THREE.DoubleSide,
+			});
+
+			const card = new THREE.Mesh(new THREE.PlaneGeometry(slot.cardWidth, slot.cardHeight), material);
+			const basePosition = slot.position.clone();
+			card.position.copy(basePosition);
+			card.rotation.y = slot.rotationY;
+			createShoeCase(basePosition.clone(), slot.rotationY, slot.cardWidth, slot.cardHeight);
+			const insetOffset = 0.08;
+			card.position.x -= Math.sin(card.rotation.y) * insetOffset;
+			card.position.z -= Math.cos(card.rotation.y) * insetOffset;
+			card.userData.baseY = basePosition.y;
+			card.userData.shoeIdx = shoeIdx;
+			card.castShadow = false;
+			scene.add(card);
+
+			shelfCardMaterials.push(material);
+			shelfCards.push(card);
+			animatedShelfCards.push({
+				material,
+				shoeIdx,
+				frameOffset: slot.frameOffsetSeed % frames.length,
+				speed: 20,
+				lastFrameIdx: frameIdx,
+			});
+		});
 		shelfCardPickablesRef.current = shelfCards;
 
 		const focusBackdropGeometry = new THREE.PlaneGeometry(6.8, 4.2);
@@ -1363,7 +1365,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 					<div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/85 px-3 py-2 text-xs text-gray-700 shadow-sm">
 						<p className="font-semibold text-gray-900">{activeShoe.name}</p>
 						<p>{activeShoe.brand || 'SoleSpace'} • {activeShoe.stock > 0 ? `${activeShoe.stock} in stock` : 'Out of stock'}</p>
-						<p className="text-[10px] text-gray-500">Using 360 image sequence frames from your folder.</p>
+						<p className="text-[10px] text-gray-500">Using this shop&apos;s uploaded showroom and product images.</p>
 					</div>
 				)}
 			</div>

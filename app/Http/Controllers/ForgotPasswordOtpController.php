@@ -151,6 +151,13 @@ class ForgotPasswordOtpController extends Controller
         }
 
         $account->password = Hash::make($validated['password']);
+
+        if ($account instanceof User) {
+            $account->invite_token = null;
+            $account->invite_expires_at = null;
+            $account->force_password_change = false;
+        }
+
         $account->save();
 
         Cache::forget($this->cacheKey($email));
@@ -167,7 +174,7 @@ class ForgotPasswordOtpController extends Controller
     {
         $user = User::where('email', $email)->first();
 
-        if ($user && !empty($user->password)) {
+        if ($user && (!empty($user->password) || !empty($user->invite_token))) {
             return $user;
         }
 

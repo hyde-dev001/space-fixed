@@ -27,6 +27,7 @@ const Virtual3DShowroom: React.FC<{
   const currentFrameRef = useRef(0);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const zoomRef = useRef(1);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     currentFrameRef.current = currentFrame;
@@ -155,6 +156,18 @@ const Virtual3DShowroom: React.FC<{
     imageRef.current.style.transformOrigin = 'center center';
   };
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const preventScroll = (e: TouchEvent) => {
+      e.preventDefault();
+    };
+    container.addEventListener('touchmove', preventScroll, { passive: false });
+    return () => {
+      container.removeEventListener('touchmove', preventScroll);
+    };
+  }, []);
+
   return (
     <div
       className={embedded ? 'w-full' : 'fixed inset-0 z-50 bg-black/80 flex items-center justify-center'}
@@ -165,7 +178,7 @@ const Virtual3DShowroom: React.FC<{
         }
       }}
     >
-      <div className={embedded ? 'bg-white w-full h-[calc(100vh-72px)] flex flex-col' : 'bg-white rounded-lg shadow-2xl w-[90%] h-[90vh] max-w-5xl flex flex-col'}>
+      <div className={embedded ? 'bg-white w-full h-[calc(100vh-72px)] flex flex-col' : 'bg-white w-full h-full xl:rounded-lg xl:shadow-2xl xl:w-[90%] xl:h-[90vh] xl:max-w-5xl flex flex-col'}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-2xl font-bold text-black">{productName}</h2>
@@ -185,6 +198,7 @@ const Virtual3DShowroom: React.FC<{
         </div>
 
         <div
+          ref={containerRef}
           className={`flex-1 flex items-center justify-center overflow-hidden bg-white relative ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           onWheel={(event) => {
             event.preventDefault();

@@ -240,10 +240,82 @@ class EmployeeController extends Controller
                 'position' => 'sometimes|string|max:100',
                 'department' => 'sometimes|string|max:100',
                 'salary' => 'sometimes|numeric|min:0',
+                'salary_effective_date' => 'required_with:salary|date',
+                'salary_change_reason' => 'required_with:salary|string|max:500',
+                'salary_approved_by' => 'nullable|integer|exists:users,id',
                 'status' => 'sometimes|in:active,inactive,on_leave',
             ]);
 
-            $employee->update($validated);
+            $salaryAuditData = null;
+
+            if (array_key_exists('salary', $validated)) {
+                $approverId = (int) ($validated['salary_approved_by'] ?? ($request->user()->id ?? 0));
+
+                if ($approverId <= 0) {
+                    return response()->json([
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'salary_approved_by' => ['Salary approver is required.'],
+                        ],
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $approver = User::where('shop_owner_id', $request->user_shop_id)->find($approverId);
+
+                if (!$approver) {
+                    return response()->json([
+                        'message' => 'Validation failed',
+                        'errors' => [
+                            'salary_approved_by' => ['Salary approver must belong to the same shop.'],
+                        ],
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $previousSalary = (float) ($employee->salary ?? 0);
+                $newSalary = (float) $validated['salary'];
+                $changePercent = $previousSalary > 0
+                    ? round((abs($newSalary - $previousSalary) / $previousSalary) * 100, 2)
+                    : 0.0;
+
+                $salaryAuditData = [
+                    'previous_salary' => $previousSalary,
+                    'new_salary' => $newSalary,
+                    'effective_date' => $validated['salary_effective_date'],
+                    'reason' => $validated['salary_change_reason'],
+                    'approved_by' => $approver->id,
+                    'approved_by_name' => $approver->name,
+                    'change_percent' => $changePercent,
+                    'minor_threshold_percent' => (float) config('payroll_governance.salary_change.minor_threshold_percent', 5),
+                ];
+            }
+
+            $employeeUpdateData = $validated;
+            unset(
+                $employeeUpdateData['salary_effective_date'],
+                $employeeUpdateData['salary_change_reason'],
+                $employeeUpdateData['salary_approved_by']
+            );
+
+            $employee->update($employeeUpdateData);
+
+            if ($salaryAuditData) {
+                AuditLog::create([
+                    'shop_owner_id' => $request->user_shop_id,
+                    'actor_user_id' => $request->user()->id ?? null,
+                    'action' => 'employee_salary_updated',
+                    'target_type' => 'employee',
+                    'target_id' => $employee->id,
+                    'metadata' => [
+                        'previous_salary' => $salaryAuditData['previous_salary'],
+                        'new_salary' => $salaryAuditData['new_salary'],
+                        'salary_effective_date' => $salaryAuditData['effective_date'],
+                        'salary_change_reason' => $salaryAuditData['reason'],
+                        'salary_approved_by' => $salaryAuditData['approved_by'],
+                        'salary_approved_by_name' => $salaryAuditData['approved_by_name'],
+                        'salary_change_percent' => $salaryAuditData['change_percent'],
+                    ],
+                ]);
+            }
 
             return response()->json([
                 'message' => 'Employee updated successfully',

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Head, Link, usePage, router } from '@inertiajs/react';
+import { route } from 'ziggy-js';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import Navigation from '../Shared/Navigation';
 import AddToCartButton from '../../../Components/CartActions';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../../types/cart-events';
+import { useCart } from '../../../contexts/CartContext';
 
 type ColorVariantImage = {
   id: number;
@@ -22,12 +24,20 @@ type ColorVariant = {
 };
 
 const ProductShow: React.FC = () => {
-  const { product, auth } = usePage().props as any;
+  const { product, auth, cartIconCount: cartCountProp } = usePage().props as any;
+  const { cartCount, isLoading: cartLoading } = useCart();
+  const cartBadgeCount = Number(cartCountProp ?? (cartLoading ? 0 : cartCount) ?? 0);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState('');
+  const [mobileUserDropdownOpen, setMobileUserDropdownOpen] = useState(false);
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
   // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
   const user = auth?.user;
   const isAuthenticated = Boolean(user && !user?.shop_owner_id);
+
+  const handleLogout = () => {
+    router.post('/user/logout', {}, { preserveState: false, preserveScroll: false });
+  };
   
   // Check if product has color variants (new Adidas-style system)
   const hasColorVariants = product.colorVariants && Array.isArray(product.colorVariants) && product.colorVariants.length > 0;
@@ -421,10 +431,156 @@ const ProductShow: React.FC = () => {
     <>
       <Head title={product.name} />
       <div className="min-h-screen bg-white font-outfit antialiased">
-        <Navigation />
+        {/* Desktop Navigation */}
+        <div className="hidden xl:block">
+          <Navigation />
+        </div>
 
-        <div className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-28 pb-12 lg:pt-32 lg:pb-20">
-          <div className="flex gap-8">
+        {/* Mobile / Tablet Top Bar */}
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-2 bg-white px-2 py-2 shadow-sm xl:hidden">
+          {/* X / Back button */}
+          <button
+            type="button"
+            onClick={() => router.visit(route('products'))}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+            aria-label="Back to products"
+            title="Back to products"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Search field */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (mobileSearchQuery.trim()) router.visit(route('products', { search: mobileSearchQuery.trim() }));
+            }}
+            className="flex-1"
+          >
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={mobileSearchQuery}
+                onChange={(e) => setMobileSearchQuery(e.target.value)}
+                placeholder={product.name}
+                className="w-full rounded-full border border-gray-300 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
+                aria-label="Search products"
+              />
+            </div>
+          </form>
+
+          {/* Cart icon with badge */}
+          <Link
+            href="/checkout"
+            className="relative flex h-9 w-9 shrink-0 items-center justify-center text-gray-700 hover:text-[#16233b] transition-colors"
+            aria-label="Shopping cart"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
+              <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
+              <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
+            </svg>
+            {cartBadgeCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+                {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
+              </span>
+            )}
+          </Link>
+
+          {/* User / Account icon with dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMobileUserDropdownOpen((o) => !o)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+              aria-label="Account"
+              title="Account"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </button>
+
+            {mobileUserDropdownOpen && (
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setMobileUserDropdownOpen(false)}
+                />
+                {/* Dropdown */}
+                <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]">
+                  {isAuthenticated ? (
+                    <>
+                      <Link
+                        href="/my-orders"
+                        onClick={() => setMobileUserDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        Orders
+                      </Link>
+                      <Link
+                        href="/my-repairs"
+                        onClick={() => setMobileUserDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Repair
+                      </Link>
+                      <Link
+                        href="/customer-profile"
+                        onClick={() => setMobileUserDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit Profile
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => { setMobileUserDropdownOpen(false); handleLogout(); }}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        Log Out
+                      </button>
+                    </>
+                  ) : (
+                    <Link
+                      href="/user/login"
+                      onClick={() => setMobileUserDropdownOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                    >
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                      </svg>
+                      Login
+                    </Link>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="max-w-[1200px] mx-auto px-0 xl:px-12 pt-14 xl:pt-28 pb-28 xl:pb-20">
+          <div className="flex flex-col xl:flex-row gap-0 xl:gap-8">
             <div className="flex-1">
               {/* Main Image Display - Adidas Style */}
               <div className="bg-white rounded-lg overflow-hidden">
@@ -468,7 +624,7 @@ const ProductShow: React.FC = () => {
                   )}
                   
                   {/* 3D & 360 Virtual Showroom Buttons */}
-                  <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-4 right-4 flex flex-col gap-2 transition-opacity xl:opacity-0 xl:group-hover:opacity-100">
                     {/* 360 Viewer Button */}
                     <button
                       onClick={() => setShow3DShowroom(true)}
@@ -496,7 +652,7 @@ const ProductShow: React.FC = () => {
                           }
                         }}
                         disabled={images.indexOf(selectedImage) === 0 || isSlideRunning}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 disabled:opacity-30 disabled:cursor-not-allowed transition-all opacity-0 group-hover:opacity-100"
+                        className="absolute left-4 top-1/2 -translate-y-1/2 disabled:opacity-30 disabled:cursor-not-allowed transition-all xl:opacity-0 xl:group-hover:opacity-100"
                         aria-label="Previous image"
                       >
                         <svg className="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -513,7 +669,7 @@ const ProductShow: React.FC = () => {
                           }
                         }}
                         disabled={images.indexOf(selectedImage) === images.length - 1 || isSlideRunning}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 disabled:opacity-30 disabled:cursor-not-allowed transition-all opacity-0 group-hover:opacity-100"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 disabled:opacity-30 disabled:cursor-not-allowed transition-all xl:opacity-0 xl:group-hover:opacity-100"
                         aria-label="Next image"
                       >
                         <svg className="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -527,11 +683,6 @@ const ProductShow: React.FC = () => {
                 {/* Thumbnail Navigation Strip + Counter */}
                 {images.length > 1 && (
                   <div className="mt-4 px-2">
-                    {/* Image Counter */}
-                    <div className="text-xs text-gray-500 mb-3 text-center">
-                      Image {images.indexOf(selectedImage) + 1} of {images.length}
-                    </div>
-
                     {/* Thumbnail Navigation Strip - Horizontal Scroll (Adidas Style) */}
                     <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pb-2">
                       {images.map((img: string, idx: number) => {
@@ -564,8 +715,8 @@ const ProductShow: React.FC = () => {
               </div>
             </div>
 
-            <div className="w-[420px]">
-              <h1 className="text-2xl font-bold mt-0 mb-2 text-black">{product.name}</h1>
+            <div className="w-full xl:w-[420px] px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0">
+              <h1 className="text-lg sm:text-xl xl:text-2xl font-bold mt-0 mb-2 text-black">{product.name}</h1>
               
               {product.brand && (
                 <div className="text-sm text-gray-600 mb-2">Brand: {product.brand}</div>
@@ -576,7 +727,7 @@ const ProductShow: React.FC = () => {
                   {product.compare_at_price && (
                     <div className="text-sm text-gray-400 line-through">{product.compare_at_price}</div>
                   )}
-                  <div className="text-xl font-semibold text-black">{product.price}</div>
+                  <div className="text-2xl xl:text-xl font-bold text-black">{product.price}</div>
                 </div>
                 <div className="text-sm text-gray-600">
                   {product.views_count || 0} views · {product.sales_count || 0} sold
@@ -855,7 +1006,8 @@ const ProductShow: React.FC = () => {
                 )}
               </div>
 
-              <div className="mt-6 flex gap-3">
+              {/* Desktop CTA buttons */}
+              <div className="mt-6 hidden xl:flex gap-3">
                 <AddToCartButton
                   productId={product.id}
                   product={{ 
@@ -883,6 +1035,65 @@ const ProductShow: React.FC = () => {
                   buyNow={true}
                   disabled={!selectedSize || !selectedColor || mainPageVariantQuantity === 0}
                 />
+              </div>
+
+              {/* Mobile/Tablet sticky bottom CTA bar - Shopee style */}
+              <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] xl:hidden">
+                {/* Shop icon */}
+                <Link
+                  href={product.shop?.id ? `/shop-profile/${product.shop.id}` : route('products')}
+                  className="flex w-[3.75rem] shrink-0 flex-col items-center justify-center gap-0.5 py-2.5 text-gray-600 hover:text-[#16233b] transition-colors"
+                  aria-label="Visit shop"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 22V12h6v10" />
+                  </svg>
+                  <span className="text-[10px] font-medium">Shop</span>
+                </Link>
+
+                {/* Chat icon */}
+                <Link
+                  href={isAuthenticated ? '/messages' : '/user/login'}
+                  className="flex w-[3.75rem] shrink-0 flex-col items-center justify-center gap-0.5 border-l border-gray-200 py-2.5 text-gray-600 hover:text-[#16233b] transition-colors"
+                  aria-label="Chat"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" />
+                  </svg>
+                  <span className="text-[10px] font-medium">Chat</span>
+                </Link>
+
+                {/* Add to Cart + Buy Now */}
+                <div className="flex flex-1 items-stretch border-l border-gray-200">
+                  <AddToCartButton
+                    productId={product.id}
+                    product={{ 
+                      ...product, 
+                      size: selectedSize, 
+                      color: selectedColor,
+                      qty: qty,
+                      selectedImage: selectedImage
+                    }}
+                    className="flex-1 rounded-none border-0 border-r border-gray-200 py-3.5 text-[11px] font-bold uppercase tracking-wider text-[#16233b] bg-white hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    label="Add to Cart"
+                    disabled={!selectedSize || !selectedColor || mainPageVariantQuantity === 0}
+                  />
+                  <AddToCartButton
+                    productId={product.id}
+                    product={{ 
+                      ...product, 
+                      size: selectedSize, 
+                      color: selectedColor,
+                      qty: qty,
+                      selectedImage: selectedImage
+                    }}
+                    className="flex-1 rounded-none border-0 py-3.5 text-[11px] font-bold uppercase tracking-wider text-white bg-[#16233b] hover:bg-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    label="Buy Now"
+                    buyNow={true}
+                    disabled={!selectedSize || !selectedColor || mainPageVariantQuantity === 0}
+                  />
+                </div>
               </div>
 
               {/* Add to Cart Modal - Shopee Style */}
@@ -1154,199 +1365,192 @@ const ProductShow: React.FC = () => {
             </div>
           </div>
 
-          {/* Reviews and Ratings Section - Verified Buyer System */}
-          <div className="mt-16" id="reviews">
-            <div className="border-t pt-12">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-black mb-2">Customer Reviews</h2>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-3xl font-bold text-black">{reviewStats.average_rating.toFixed(1)}</span>
-                      <span className="text-yellow-400">⭐</span>
-                    </div>
-                    <span className="text-gray-600">({reviewStats.total_reviews} {reviewStats.total_reviews === 1 ? 'review' : 'reviews'})</span>
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  {renderStars(reviewStats.average_rating)}
-                </div>
-              </div>
+          {/* Reviews and Ratings Section */}
+          <div className="mt-8 xl:mt-16 px-4 sm:px-6 xl:px-0" id="reviews">
+            <div className="border-t pt-6 xl:pt-12">
 
-              {/* Write a Review Section - Verified Buyer Only */}
-              <div className="bg-gray-50 rounded-xl p-6 mb-8">
-                {!isAuthenticated ? (
-                  <div className="text-center py-8">
-                    <svg className="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    <p className="text-gray-700 font-medium mb-2">Please log in to write a review</p>
-                    <p className="text-sm text-gray-500">Only verified buyers can review this product</p>
-                  </div>
-                ) : userExistingReview ? (
-                  <div className="text-center py-8">
-                    <svg className="mx-auto h-12 w-12 text-green-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-gray-700 font-medium mb-2">You have already reviewed this product</p>
-                    <button
-                      onClick={() => setShowMyReview(!showMyReview)}
-                      className="text-sm text-black underline hover:text-gray-700 mt-2"
-                    >
-                      {showMyReview ? 'Hide My Review' : 'View My Review'}
-                    </button>
-                    {showMyReview && userExistingReview && (
-                      <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 text-left">
-                        <div className="flex items-center gap-2 mb-2">
-                          {renderStars(userExistingReview.rating)}
-                          <span className="text-sm text-gray-500">{new Date(userExistingReview.created_at).toLocaleDateString()}</span>
+              {/* ── Write a Review card ── */}
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div className="border-b border-gray-100 bg-gray-50 px-4 py-3">
+                  <h2 className="text-sm font-bold uppercase tracking-widest text-black">Customer Reviews</h2>
+                </div>
+
+                <div className="p-4">
+                  {!isAuthenticated ? (
+                    <div className="flex flex-col items-center py-6 text-center">
+                      <svg className="mb-3 h-10 w-10 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm font-semibold text-gray-800">Only verified buyers can review this product.</p>
+                      <p className="mt-1 text-xs text-gray-500">Purchase and receive your order to leave a review.</p>
+                    </div>
+                  ) : userExistingReview ? (
+                    <div className="flex flex-col items-center py-6 text-center">
+                      <svg className="mb-3 h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm font-semibold text-gray-800">You've already reviewed this product.</p>
+                      <button
+                        onClick={() => setShowMyReview(!showMyReview)}
+                        className="mt-3 rounded-full border border-[#16233b] px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#16233b] transition-colors hover:bg-[#16233b] hover:text-white"
+                        type="button"
+                      >
+                        {showMyReview ? 'Hide My Review' : 'View My Review'}
+                      </button>
+                      {showMyReview && (
+                        <div className="mt-4 w-full rounded-xl border border-gray-200 p-4 text-left">
+                          <div className="mb-2 flex items-center gap-2">
+                            {renderStars(userExistingReview.rating)}
+                            <span className="text-xs text-gray-500">{new Date(userExistingReview.created_at).toLocaleDateString()}</span>
+                          </div>
+                          <p className="text-sm text-gray-700">{userExistingReview.comment}</p>
                         </div>
-                        <p className="text-gray-700">{userExistingReview.comment}</p>
+                      )}
+                    </div>
+                  ) : !canReview ? (
+                    <div className="flex flex-col items-center py-6 text-center">
+                      <svg className="mb-3 h-10 w-10 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm font-semibold text-gray-800">{reviewEligibility?.message}</p>
+                      {reviewEligibility?.reason === 'pending_delivery' && (
+                        <p className="mt-1 text-xs text-gray-500">Order status: <span className="font-medium capitalize">{reviewEligibility.order_status}</span></p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Verified badge */}
+                      <div className="mb-4 flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700">
+                          <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          Verified Purchase
+                        </span>
+                        <span className="text-sm font-semibold text-black">Write a Review</span>
                       </div>
-                    )}
-                  </div>
-                ) : !canReview ? (
-                  <div className="text-center py-8">
-                    <svg className="mx-auto h-12 w-12 text-yellow-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-gray-700 font-medium mb-1">{reviewEligibility?.message}</p>
-                    {reviewEligibility?.reason === 'pending_delivery' && (
-                      <p className="text-sm text-gray-500">Order status: <span className="font-medium capitalize">{reviewEligibility.order_status}</span></p>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 mb-4">
-                      <h3 className="text-lg font-semibold text-black">Write a Review</h3>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        Verified Purchase
-                      </span>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-black mb-2">Your Rating</label>
-                      {renderStars(userRating, true, setUserRating)}
-                    </div>
 
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-black mb-2">Your Review</label>
-                      <textarea
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        placeholder="Share your experience with this product..."
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-black resize-none"
-                        rows={4}
-                        minLength={10}
-                        maxLength={2000}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">{newComment.length}/2000 characters (minimum 10)</p>
-                    </div>
+                      {/* Star picker */}
+                      <div className="mb-4">
+                        <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">Your Rating</p>
+                        {renderStars(userRating, true, setUserRating)}
+                      </div>
 
-                    <div className="mb-6">
-                      <label className="block text-sm font-medium text-black mb-2">Photos (Optional, max 5)</label>
-                      <div className="grid grid-cols-4 gap-4">
-                        {imageUploadGroups.map((group) => (
-                          <div key={group.id} className="relative group">
-                            {group.preview ? (
-                              <div className="relative">
-                                <img
-                                  src={group.preview}
-                                  alt="Review photo"
-                                  className="w-full h-32 object-cover rounded-lg border border-gray-200"
-                                />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                                  {imageUploadGroups.length < 5 && (
-                                    <button
-                                      onClick={addImageUploadBox}
-                                      className="w-10 h-10 bg-black hover:bg-gray-800 rounded-full flex items-center justify-center text-white transition-colors"
-                                      type="button"
-                                      title="Add more photos"
-                                    >
-                                      <span className="text-xl">+</span>
-                                    </button>
-                                  )}
+                      {/* Comment textarea */}
+                      <div className="mb-4">
+                        <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">Your Review</p>
+                        <textarea
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          placeholder="Share your experience with this product..."
+                          className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
+                          rows={3}
+                          minLength={10}
+                          maxLength={2000}
+                        />
+                        <p className="mt-1 text-right text-[11px] text-gray-400">{newComment.length}/2000</p>
+                      </div>
+
+                      {/* Photo upload */}
+                      <div className="mb-5">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">Photos <span className="normal-case font-normal">(optional, max 5)</span></p>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {imageUploadGroups.map((group) => (
+                            <div key={group.id} className="relative shrink-0">
+                              {group.preview ? (
+                                <div className="relative h-20 w-20">
+                                  <img src={group.preview} alt="Review photo" className="h-20 w-20 rounded-xl object-cover border border-gray-200" />
                                   <button
                                     onClick={() => removeImageBox(group.id)}
-                                    className="w-10 h-10 bg-red-600 hover:bg-red-700 rounded-full flex items-center justify-center text-white transition-colors"
+                                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow"
                                     type="button"
                                     title="Remove photo"
                                   >
-                                    <span className="text-xl">×</span>
+                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                   </button>
                                 </div>
-                              </div>
-                            ) : (
-                              <label className="w-full h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50/50">
-                                <input
-                                  type="file"
-                                  accept="image/jpeg,image/jpg,image/png"
-                                  onChange={(e) => handleImageUpload(group.id, e)}
-                                  className="hidden"
-                                  aria-label="Upload review photo"
-                                />
-                                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-gray-400 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                  <polyline points="17 8 12 3 7 8" />
-                                  <line x1="12" y1="3" x2="12" y2="15" />
-                                </svg>
-                                <span className="text-xs text-gray-500 mt-1">Click to upload</span>
-                              </label>
-                            )}
-                          </div>
-                        ))}
+                              ) : (
+                                <label className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 transition-colors hover:border-[#16233b]">
+                                  <input type="file" accept="image/jpeg,image/jpg,image/png" onChange={(e) => handleImageUpload(group.id, e)} className="hidden" aria-label="Upload review photo" />
+                                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                  <span className="mt-1 text-[10px] text-gray-400">Add</span>
+                                </label>
+                              )}
+                            </div>
+                          ))}
+                          {imageUploadGroups.length < 5 && imageUploadGroups.some(g => g.preview) && (
+                            <button
+                              onClick={addImageUploadBox}
+                              className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 text-gray-400 transition-colors hover:border-[#16233b] hover:text-[#16233b]"
+                              type="button"
+                              title="Add more photos"
+                            >
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    <button
-                      onClick={handleSubmitReview}
-                      disabled={isSubmittingReview || !newComment.trim() || newComment.length < 10 || userRating === 0}
-                      className="bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      type="button"
-                    >
-                      {isSubmittingReview ? 'Submitting...' : 'Submit Review'}
-                    </button>
-                  </>
-                )}
+                      <button
+                        onClick={handleSubmitReview}
+                        disabled={isSubmittingReview || !newComment.trim() || newComment.length < 10 || userRating === 0}
+                        className="w-full rounded-full bg-[#16233b] py-3 text-sm font-bold uppercase tracking-widest text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+                        type="button"
+                      >
+                        {isSubmittingReview ? 'Submitting…' : 'Submit Review'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
-              {/* Reviews List */}
-              <div className="space-y-6">
+              {/* ── Reviews List ── */}
+              <div className="space-y-3 xl:space-y-4">
                 {reviews.length > 0 ? (
                   reviews.map((review: any) => (
-                    <div key={review.id} className="bg-white border border-gray-200 rounded-xl p-6">
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-gray-700 to-gray-900 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                    <div key={review.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                      <div className="flex items-start gap-3 p-4">
+                        {/* Avatar */}
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16233b] text-sm font-bold text-white">
                           {review.user_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h4 className="font-semibold text-black">{review.user_name}</h4>
+
+                        {/* Content */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="text-sm font-semibold text-black">{review.user_name}</span>
                             {review.is_verified_purchase && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">
-                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                                <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20">
                                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                                 </svg>
-                                Verified Purchase
+                                Verified
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mb-3">
+
+                          <div className="mt-1 flex items-center gap-2">
                             {renderStars(review.rating)}
-                            <span className="text-sm text-gray-500">{review.formatted_date}</span>
+                            <span className="text-[11px] text-gray-400">{review.formatted_date}</span>
                           </div>
-                          <p className="text-gray-700 leading-relaxed mb-3">{review.comment}</p>
+
+                          <p className="mt-2 text-sm leading-relaxed text-gray-700">{review.comment}</p>
+
+                          {/* Review photos — horizontal scroll on mobile */}
                           {review.images && review.images.length > 0 && (
-                            <div className="flex gap-2 flex-wrap">
+                            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                               {review.images.map((img: string, idx: number) => (
                                 <img
                                   key={idx}
                                   src={img}
                                   alt={`Review photo ${idx + 1}`}
-                                  className="w-24 h-24 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                                  className="h-20 w-20 shrink-0 cursor-pointer rounded-xl border border-gray-200 object-cover transition-opacity hover:opacity-80"
                                   onClick={() => setEnlargedImage(img)}
                                 />
                               ))}
@@ -1357,15 +1561,16 @@ const ProductShow: React.FC = () => {
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-16 bg-gray-50 rounded-xl">
-                    <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="flex flex-col items-center rounded-2xl bg-gray-50 py-14 text-center">
+                    <svg className="mb-3 h-14 w-14 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                     </svg>
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">No Reviews Yet</h3>
-                    <p className="text-gray-500 text-sm">Be the first verified buyer to review this product!</p>
+                    <p className="text-sm font-semibold text-gray-600">No Reviews Yet</p>
+                    <p className="mt-1 text-xs text-gray-400">Be the first verified buyer to review this product!</p>
                   </div>
                 )}
               </div>
+
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 class InventoryItem extends Model
 {
-    use SoftDeletes;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'product_id',
@@ -118,6 +119,11 @@ class InventoryItem extends Model
     public function alerts(): HasMany
     {
         return $this->hasMany(InventoryAlert::class);
+    }
+
+    public function repairMaterialUsages(): HasMany
+    {
+        return $this->hasMany(RepairMaterialUsage::class);
     }
 
     /**

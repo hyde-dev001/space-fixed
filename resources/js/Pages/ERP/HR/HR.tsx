@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import { Dashboard, EmployeeDirectory, LeaveApprovals, OvertimeApprovals, AttendanceRecords, GenerateSlip, ViewSlip } from "./index";
+import { Dashboard, EmployeeDirectory, LeaveApprovals, OvertimeApprovals, AttendanceRecords, GenerateSlip, ViewSlip, SalaryChanges } from "./index";
 import ErrorModal from "../../../components/common/ErrorModal";
 
-type Section = "dashboard" | "employees" | "attendance" | "leaves" | "overtime" | "payroll-generate" | "payroll-view";
+type Section = "dashboard" | "employees" | "attendance" | "leaves" | "overtime" | "payroll-generate" | "payroll-view" | "salary-changes";
 
 const Placeholder: React.FC<{ title: string; description?: string }> = ({ title, description }) => (
   <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-8 shadow-sm">
@@ -28,7 +28,10 @@ export default function HRPage() {
       'access-leave-approvals',
       'access-overtime-approvals',
       'access-payslip-generation',
-      'access-view-payslip'
+      'access-view-payslip',
+      'manage-salary-changes',
+      'approve-salary-change',
+      'override-salary-retroactive',
     ];
     const hasAccess = userRole === 'Manager' || hrPermissions.some(perm => permissions.includes(perm));
     
@@ -48,7 +51,7 @@ export default function HRPage() {
     const fullUrl = typeof window !== 'undefined' ? window.location.href : url || "";
     const urlObj = new URL(fullUrl, 'http://localhost');
     const value = urlObj.searchParams.get("section") || "dashboard";
-    if (["dashboard", "employees", "attendance", "leaves", "overtime", "payroll-generate", "payroll-view"].includes(value)) {
+    if (["dashboard", "employees", "attendance", "leaves", "overtime", "payroll-generate", "payroll-view", "salary-changes"].includes(value)) {
       return value as Section;
     }
     return "dashboard";
@@ -61,6 +64,7 @@ export default function HRPage() {
     if (section === "overtime") return "Overtime Approvals - Solespace ERP";
     if (section === "payroll-generate") return "Generate Payslip - Solespace ERP";
     if (section === "payroll-view") return "View Payslips - Solespace ERP";
+    if (section === "salary-changes") return "Salary Changes - Solespace ERP";
     return "HR Dashboard - Solespace ERP";
   }, [section]);
 
@@ -79,6 +83,8 @@ export default function HRPage() {
           return <GenerateSlip />;
         case "payroll-view":
           return <ViewSlip />;
+        case "salary-changes":
+          return <SalaryChanges />;
         default:
           return <Dashboard />;
       }

@@ -9,6 +9,8 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\OpeningHours\OpeningHours;
 use App\Enums\ShopOwnerStatus;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * ShopOwner Model
@@ -132,6 +134,18 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     public function repairPackages()
     {
         return $this->hasMany(RepairPackage::class, 'shop_owner_id');
+    }
+
+    public function premiumSubscriptions(): HasMany
+    {
+        return $this->hasMany(ShopOwnerSubscription::class, 'shop_owner_id');
+    }
+
+    public function activePremiumSubscription(): HasOne
+    {
+        return $this->hasOne(ShopOwnerSubscription::class, 'shop_owner_id')
+            ->where('status', 'active')
+            ->latestOfMany('ends_at');
     }
 
     /**
@@ -306,6 +320,58 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->opening_hours_instance->forDay($day);
     }
 
+    protected function resolveOperatingDaySchedule(string $day): ?array
+    {
+        $normalizedDay = strtolower(trim($day));
+        $openColumn = $normalizedDay . '_open';
+        $closeColumn = $normalizedDay . '_close';
+
+        if (array_key_exists($openColumn, $this->attributes) || array_key_exists($closeColumn, $this->attributes)) {
+            $open = $this->{$openColumn};
+            $close = $this->{$closeColumn};
+
+            if (! empty($open) || ! empty($close)) {
+                return [
+                    'configured' => true,
+                    'open' => ! empty($open) && ! empty($close),
+                ];
+            }
+        }
+
+        $operatingHours = $this->operating_hours;
+
+        if (is_string($operatingHours)) {
+            $decoded = json_decode($operatingHours, true);
+            $operatingHours = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($operatingHours) || ! array_key_exists($normalizedDay, $operatingHours)) {
+            return null;
+        }
+
+        $dayConfig = $operatingHours[$normalizedDay];
+        if (! is_array($dayConfig)) {
+            return [
+                'configured' => true,
+                'open' => false,
+            ];
+        }
+
+        $isClosed = filter_var($dayConfig['is_closed'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $open = $dayConfig['open'] ?? null;
+        $close = $dayConfig['close'] ?? null;
+
+        return [
+            'configured' => true,
+            'open' => ! $isClosed && ! empty($open) && ! empty($close),
+        ];
+    }
+
+    public function hasScheduleOn(string $day): bool
+    {
+        return $this->resolveOperatingDaySchedule($day) !== null;
+    }
+
     /**
      * Check if the shop is open on a specific day
      * 
@@ -314,10 +380,16 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
      */
     public function isOpenOn(string $day): bool
     {
-        $open = $this->{strtolower($day) . '_open'};
-        $close = $this->{strtolower($day) . '_close'};
-        
-        return !empty($open) && !empty($close);
+        $schedule = $this->resolveOperatingDaySchedule($day);
+
+        return (bool) ($schedule['open'] ?? false);
+    }
+
+    public function isClosedOn(string $day): bool
+    {
+        $schedule = $this->resolveOperatingDaySchedule($day);
+
+        return $schedule !== null && ! $schedule['open'];
     }
 
     /**

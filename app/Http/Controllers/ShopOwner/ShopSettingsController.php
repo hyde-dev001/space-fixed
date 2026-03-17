@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
+use App\Models\HR\BranchPayrollSetting;
 use App\Models\ProcurementSettings;
+use App\Models\ShopOwnerSubscription;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -22,8 +25,23 @@ class ShopSettingsController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
         $shopOwner->load('documents');
+        $latestPremiumSubscription = ShopOwnerSubscription::with('premiumPlan')
+            ->where('shop_owner_id', $shopOwner->id)
+            ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'expired' THEN 2 WHEN 'cancelled' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END")
+            ->latest('updated_at')
+            ->first();
         $procurementSettings = ProcurementSettings::getForShopOwner($shopOwner->id);
         $approvalPages = $this->normalizeApprovalPages($procurementSettings->settings_json['approval_pages'] ?? []);
+        $branchPayrollSetting = null;
+        if (Schema::hasTable('hr_branch_payroll_settings')) {
+            $branchPayrollSetting = BranchPayrollSetting::query()
+                ->forShopOwner((int) $shopOwner->id)
+                ->active()
+                ->orderBy('id')
+                ->first();
+        }
+        $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
+        $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
 
         $requiredDocumentTypes = [
             'dti_registration' => [
@@ -59,7 +77,7 @@ class ShopSettingsController extends Controller
                 'status' => $document?->status ?? 'missing',
                 'is_uploaded' => (bool) $document,
                 'is_image' => $isImage,
-                'file_url' => $filePath ? Storage::disk('public')->url($filePath) : null,
+                'file_url' => $filePath ? asset('storage/' . ltrim($filePath, '/')) : null,
             ];
         }
 
@@ -75,14 +93,48 @@ class ShopSettingsController extends Controller
                 'repair_payment_policy'  => $shopOwner->repair_payment_policy ?? 'deposit_50',
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
                 'has_paymongo_key'       => !empty($shopOwner->paymongo_secret_key),
+                'pay_cycle'              => $branchPayrollSetting?->pay_cycle ?? 'monthly',
+                'pay_day_first'          => (int) ($branchPayrollSetting?->pay_day_first ?? 15),
+                'pay_day_second'         => (int) ($branchPayrollSetting?->pay_day_second ?? 30),
                 // Geofence
                 'attendance_geofence_enabled' => (bool) $shopOwner->attendance_geofence_enabled,
                 'shop_latitude'          => $shopOwner->shop_latitude,
                 'shop_longitude'         => $shopOwner->shop_longitude,
                 'shop_address'           => $shopOwner->shop_address ?? $shopOwner->business_address,
                 'shop_geofence_radius'   => $shopOwner->shop_geofence_radius ?? 100,
+                'premium' => [
+                    'eligible' => $isRetailCapable,
+                    'status' => $latestPremiumSubscription?->status,
+                    'has_active' => $latestPremiumSubscription?->status === 'active'
+                        && (!$latestPremiumSubscription?->starts_at || $latestPremiumSubscription->starts_at->lte(now()))
+                        && (!$latestPremiumSubscription?->ends_at || $latestPremiumSubscription->ends_at->gte(now())),
+                    'plan_name' => $latestPremiumSubscription?->premiumPlan?->name,
+                    'plan_code' => $latestPremiumSubscription?->plan_code,
+                    'showroom_slot_limit' => $latestPremiumSubscription?->showroom_slot_limit,
+                    'starts_at' => $latestPremiumSubscription?->starts_at?->toIso8601String(),
+                    'ends_at' => $latestPremiumSubscription?->ends_at?->toIso8601String(),
+                ],
             ],
         ]);
+    }
+
+    private function normalizeBusinessType(?string $value): string
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        if (str_contains($normalized, 'both')) {
+            return 'both';
+        }
+
+        if ($normalized === 'retail') {
+            return 'retail';
+        }
+
+        if ($normalized === 'repair') {
+            return 'repair';
+        }
+
+        return '';
     }
 
     /**
@@ -94,27 +146,32 @@ class ShopSettingsController extends Controller
         $procurementSettings = ProcurementSettings::getForShopOwner($shopOwner->id);
 
         $validated = $request->validate([
-            'approval_pages' => ['required', 'array'],
-            'approval_pages.refund_approval.enabled' => ['required', 'boolean'],
+            'approval_pages' => ['sometimes', 'array'],
+            'approval_pages.refund_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.refund_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
-            'approval_pages.price_approval.enabled' => ['required', 'boolean'],
+            'approval_pages.price_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.price_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
-            'approval_pages.purchase_request_approval.enabled' => ['required', 'boolean'],
+            'approval_pages.purchase_request_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
-            'approval_pages.repair_reject_approval.enabled' => ['required', 'boolean'],
+            'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront,pay_after'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
+            'pay_cycle' => ['sometimes', 'string', 'in:monthly,semi_monthly'],
+            'pay_day_first' => ['sometimes', 'integer', 'min:1', 'max:31'],
+            'pay_day_second' => ['sometimes', 'integer', 'min:1', 'max:31', 'gt:pay_day_first'],
         ]);
 
-        $normalizedApprovalPages = $this->normalizeApprovalPages($validated['approval_pages']);
+        if (array_key_exists('approval_pages', $validated)) {
+            $normalizedApprovalPages = $this->normalizeApprovalPages($validated['approval_pages']);
 
-        $settingsJson = $procurementSettings->settings_json ?? [];
-        $settingsJson['approval_pages'] = $normalizedApprovalPages;
+            $settingsJson = $procurementSettings->settings_json ?? [];
+            $settingsJson['approval_pages'] = $normalizedApprovalPages;
 
-        $procurementSettings->update([
-            'settings_json' => $settingsJson,
-        ]);
+            $procurementSettings->update([
+                'settings_json' => $settingsJson,
+            ]);
+        }
 
         // Save payment policy and workload limit directly on the shop owner record
         $shopOwnerUpdates = [];
@@ -126,6 +183,40 @@ class ShopSettingsController extends Controller
         }
         if (!empty($shopOwnerUpdates)) {
             $shopOwner->update($shopOwnerUpdates);
+        }
+
+        $shouldUpdatePayrollSetting =
+            array_key_exists('pay_cycle', $validated)
+            || array_key_exists('pay_day_first', $validated)
+            || array_key_exists('pay_day_second', $validated);
+
+        if ($shouldUpdatePayrollSetting && Schema::hasTable('hr_branch_payroll_settings')) {
+            $branchPayrollSetting = BranchPayrollSetting::query()
+                ->forShopOwner((int) $shopOwner->id)
+                ->active()
+                ->orderBy('id')
+                ->first();
+
+            $payCycle = (string) ($validated['pay_cycle'] ?? ($branchPayrollSetting?->pay_cycle ?? 'monthly'));
+            $payDayFirst = (int) ($validated['pay_day_first'] ?? ($branchPayrollSetting?->pay_day_first ?? 15));
+            $payDaySecond = (int) ($validated['pay_day_second'] ?? ($branchPayrollSetting?->pay_day_second ?? 30));
+
+            if ($branchPayrollSetting) {
+                $branchPayrollSetting->update([
+                    'pay_cycle' => $payCycle,
+                    'pay_day_first' => $payDayFirst,
+                    'pay_day_second' => $payDaySecond,
+                ]);
+            } else {
+                BranchPayrollSetting::create([
+                    'shop_owner_id' => (int) $shopOwner->id,
+                    'branch_name' => $shopOwner->business_name ?: 'Main Branch',
+                    'pay_cycle' => $payCycle,
+                    'pay_day_first' => $payDayFirst,
+                    'pay_day_second' => $payDaySecond,
+                    'is_active' => true,
+                ]);
+            }
         }
 
         return back()->with('success', 'Shop settings updated successfully.');

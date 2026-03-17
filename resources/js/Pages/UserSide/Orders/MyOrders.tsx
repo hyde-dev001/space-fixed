@@ -40,10 +40,12 @@ interface MyOrdersProps {
   orders: Order[];
 }
 
+type OrderTab = 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled';
+
 const MyOrders: React.FC = () => {
   const { orders: initialOrders } = usePage<MyOrdersProps>().props;
   const [orders, setOrders] = useState<Order[]>(initialOrders || []);
-  const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled'>('all');
+  const [selectedTab, setSelectedTab] = useState<OrderTab>('all');
   const [highlightOrderId, setHighlightOrderId] = useState<number | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
@@ -60,7 +62,7 @@ const MyOrders: React.FC = () => {
   const [refundMethod, setRefundMethod] = useState<string>('');
   const [refundNote, setRefundNote] = useState<string>('');
 
-  const mapStatusToTab = (status: string): 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled' => {
+  const mapStatusToTab = (status: string): OrderTab => {
     switch (status) {
       case 'pending':
         return 'pending';
@@ -78,6 +80,33 @@ const MyOrders: React.FC = () => {
         return 'all';
     }
   };
+
+  const mapTabParamToOrderTab = (rawValue: string | null): OrderTab | null => {
+    if (!rawValue) return null;
+
+    const value = rawValue.toLowerCase();
+
+    if (value === 'to_pay' || value === 'pay') return 'pending';
+    if (value === 'to_ship' || value === 'ship') return 'shipped';
+    if (value === 'to_receive' || value === 'receive') return 'shipped';
+    if (value === 'to_rate' || value === 'rate') return 'completed';
+
+    if (value === 'all' || value === 'pending' || value === 'processing' || value === 'shipped' || value === 'completed' || value === 'cancelled') {
+      return value;
+    }
+
+    return null;
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab') || params.get('status');
+    const mappedTab = mapTabParamToOrderTab(requestedTab);
+
+    if (mappedTab) {
+      setSelectedTab(mappedTab);
+    }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

@@ -16,11 +16,13 @@ class StockRequestApproval extends Model
         'request_number',
         'shop_owner_id',
         'inventory_item_id',
+        'repair_request_id',
         'product_name',
         'sku_code',
         'quantity_needed',
         'requested_size',
         'priority',
+        'request_source',
         'status',
         'requested_by',
         'requested_date',
@@ -35,6 +37,7 @@ class StockRequestApproval extends Model
         'requested_date' => 'datetime',
         'approved_date' => 'datetime',
         'quantity_needed' => 'integer',
+        'repair_request_id' => 'integer',
     ];
 
     protected $appends = [
@@ -53,6 +56,11 @@ class StockRequestApproval extends Model
     public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
+    }
+
+    public function repairRequest(): BelongsTo
+    {
+        return $this->belongsTo(RepairRequest::class);
     }
 
     public function requester(): BelongsTo

@@ -74,6 +74,9 @@ class RepairRequest extends Model
         'completed_at',
         'picked_up_at',
         'received_at',
+        'awaiting_parts_notes',
+        'awaiting_parts_since',
+        'pickup_instructions',
         'tracking_number',
         'carrier_company',
         'carrier_name',
@@ -87,6 +90,7 @@ class RepairRequest extends Model
         'completed_at' => 'datetime',
         'picked_up_at' => 'datetime',
         'received_at' => 'datetime',
+        'awaiting_parts_since' => 'datetime',
         'shipped_at' => 'datetime',
         'assigned_at' => 'datetime',
         'last_reassigned_at' => 'datetime',
@@ -184,6 +188,11 @@ class RepairRequest extends Model
     public function shopOwner()
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    public function materialUsages()
+    {
+        return $this->hasMany(RepairMaterialUsage::class);
     }
 
     /**

@@ -527,6 +527,12 @@ class RepairRequestController extends Controller
                     'payment_enabled_at' => $repair->payment_enabled_at ? $repair->payment_enabled_at->toISOString() : null,
                     'pickup_enabled' => $repair->pickup_enabled ?? false,
                     'pickup_enabled_at' => $repair->pickup_enabled_at ? $repair->pickup_enabled_at->toISOString() : null,
+                    'tracking_number' => $repair->tracking_number,
+                    'carrier_company' => $repair->carrier_company,
+                    'carrier_name' => $repair->carrier_name,
+                    'carrier_phone' => $repair->carrier_phone,
+                    'tracking_link' => $repair->tracking_link,
+                    'shipped_at' => $repair->shipped_at ? $repair->shipped_at->toISOString() : null,
                     'assigned_repairer_id' => $repair->assigned_repairer_id,
                     'repairer_name' => $repair->repairer ? $repair->repairer->name : null,
                     'payment_policy' => $repair->payment_policy ?? 'deposit_50',
@@ -595,6 +601,12 @@ class RepairRequestController extends Controller
                 'started_at' => $repair->started_at,
                 'completed_at' => $repair->completed_at,
                 'picked_up_at' => $repair->picked_up_at,
+                'tracking_number' => $repair->tracking_number,
+                'carrier_company' => $repair->carrier_company,
+                'carrier_name' => $repair->carrier_name,
+                'carrier_phone' => $repair->carrier_phone,
+                'tracking_link' => $repair->tracking_link,
+                'shipped_at' => $repair->shipped_at,
                 'created_at' => $repair->created_at,
                 'images' => array_map(function($path) {
                     return Storage::url($path);
@@ -866,13 +878,13 @@ class RepairRequestController extends Controller
 
         $repair = RepairRequest::where('id', $id)
             ->forCustomer($user->id)
-            ->whereIn('status', ['ready-for-pickup', 'ready_for_pickup'])
+            ->whereIn('status', ['ready-for-pickup', 'ready_for_pickup', 'shipped'])
             ->first();
 
         if (!$repair) {
             return response()->json([
                 'success' => false,
-                'message' => 'Repair request not found or not ready for pickup'
+                'message' => 'Repair request not found or not ready for confirmation'
             ], 404);
         }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
-import Swal from '@/Pages/UserSide/Shared/UserModal';
+import Swal from './UserModal';
 import { route } from 'ziggy-js';
 import { useCart } from '../../../contexts/CartContext';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
@@ -160,6 +160,7 @@ const Navigation: React.FC = () => {
     '/products': 'products',
     '/repair-services': 'repair',
     '/services': 'services',
+    '/services/product-image-spin-tutorial': 'services',
     '/register': 'login', // Register page should highlight ACCOUNT
     '/login': 'login', // Login page should highlight ACCOUNT
     '/user/login': 'login', // User login page should highlight ACCOUNT
@@ -362,26 +363,84 @@ const Navigation: React.FC = () => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1536) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <nav
       className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 ${
         isTransparentNav
           ? 'bg-transparent'
-          : 'bg-white/95 backdrop-blur'
+          : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
       }`}
     >
-      <div className="max-w-[1920px] mx-auto px-6 lg:px-12 h-20">
-        <div className="flex items-center justify-center h-20 relative">
+      <div className="mx-auto h-16 w-full max-w-[1920px] px-4 sm:h-20 sm:px-6 lg:px-10 2xl:px-12">
+        <div className="relative flex h-16 items-center justify-center pr-20 sm:h-20 sm:pr-24 2xl:pr-0">
           <Link
             href={route("landing")}
-            className={`text-2xl font-bold tracking-tight hover:opacity-70 transition-opacity absolute left-0 ${
+            className={`absolute left-0 text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
               isTransparentNav ? 'text-white' : 'text-gray-900'
             }`}
           >
             SoleSpace
           </Link>
+
+          <div className="absolute right-0 flex items-center gap-1.5 2xl:hidden">
+            <Link
+              href="/checkout"
+              className={headerIconButtonClasses}
+              aria-label="Shopping cart"
+            >
+              <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
+                <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
+                <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
+              </svg>
+              {effectiveCartCount > 0 && (
+                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
+                  {effectiveCartCount}
+                </span>
+              )}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className={headerIconButtonClasses}
+              aria-label="Toggle menu"
+              aria-controls="mobile-nav-menu"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {mobileMenuOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
           <div
-            className="hidden md:flex items-center space-x-10 relative mt-2"
+            className="relative mt-2 hidden items-center space-x-8 2xl:flex"
             ref={navRef}
             onMouseLeave={handleNavAreaMouseLeave}
           >
@@ -413,7 +472,6 @@ const Navigation: React.FC = () => {
                           ? megaMenuVisibleClasses
                           : megaMenuHiddenClasses
                       }`}
-                      aria-hidden={openDropdownKey !== item.dropdownKey}
                     >
                       {item.dropdownKey === 'shoes' && (
                         <div className="grid grid-cols-3 gap-x-10">
@@ -619,20 +677,9 @@ const Navigation: React.FC = () => {
                 </Link>
               );
             })}
-            {/* Animated underline indicator that follows hover */}
-            <div
-              className={`absolute -bottom-0 h-0.5 transition-all duration-300 ease-in-out pointer-events-none ${
-                isTransparentNav ? 'bg-white' : 'bg-gray-900'
-              }`}
-              style={{
-                transform: `translateX(${underlineTranslateX}px)`,
-                width: `${underlineWidth}px`,
-                opacity: (isHovering && hoveredIndex !== null) ? 1 : 0,
-              }}
-            />
           </div>
-          <div className="hidden md:flex items-center gap-4 absolute right-0">
-            <div className="relative w-64" ref={searchContainerRef}>
+          <div className="absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4">
+            <div className="relative w-[17rem]" ref={searchContainerRef}>
             <form onSubmit={handleSearch} className="relative w-full">
               <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -650,7 +697,7 @@ const Navigation: React.FC = () => {
               />
             </form>
             {shouldShowSearchDropdown && (
-              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,44rem)] overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-b from-white to-gray-50 shadow-2xl">
+              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,40rem)] overflow-hidden rounded-2xl border border-gray-200 bg-linear-to-b from-white to-gray-50 shadow-2xl">
                 {isSearchingSuggestions ? (
                   <div className="px-5 py-4 text-sm text-gray-500">Searching suggestions...</div>
                 ) : (
@@ -810,7 +857,7 @@ const Navigation: React.FC = () => {
               {/* Dropdown Menu */}
               {userDropdownOpen && (
                 <div
-                  className="absolute right-0 top-full mt-0 w-48 bg-white border border-black shadow-lg rounded z-50"
+                  className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]"
                   onMouseEnter={() => {
                     if (hoverCloseTimeoutRef.current) {
                       window.clearTimeout(hoverCloseTimeoutRef.current);
@@ -829,45 +876,61 @@ const Navigation: React.FC = () => {
                     <>
                       <Link
                         href="/my-orders"
-                        className="flex items-center justify-between px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                        className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        <span>Orders</span>
-                        {orderStatusCount > 0 && (
-                          <span className="ml-2 text-xs font-semibold leading-none">{orderStatusCount}</span>
-                        )}
+                        <span className="inline-flex items-center gap-3">
+                          <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          <span>Orders</span>
+                        </span>
+                        {orderStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{orderStatusCount}</span>}
                       </Link>
                       <Link
                         href="/my-repairs"
-                        className="flex items-center justify-between px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                        className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        <span>Repair</span>
-                        {repairStatusCount > 0 && (
-                          <span className="ml-2 text-xs font-semibold leading-none">{repairStatusCount}</span>
-                        )}
+                        <span className="inline-flex items-center gap-3">
+                          <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          <span>Repair</span>
+                        </span>
+                        {repairStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{repairStatusCount}</span>}
                       </Link>
                       <Link
                         href="/customer-profile"
-                        className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                         onClick={() => setUserDropdownOpen(false)}
                       >
-                        Edit Profile
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        <span>Edit Profile</span>
                       </Link>
                       <button
-                        className="block w-full text-left px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                         onClick={() => { setUserDropdownOpen(false); handleLogout(); }}
                       >
-                        Log out
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        <span>Log out</span>
                       </button>
                     </>
                   ) : (
                     <Link
                       href="/user/login"
-                      className="block px-4 py-3 text-black text-sm font-medium uppercase tracking-wider hover:bg-gray-100 transition-colors border-b border-gray-200"
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                       onClick={() => setUserDropdownOpen(false)}
                     >
-                      Customer Login
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Customer Login</span>
                     </Link>
                   )}
                 </div>
@@ -908,147 +971,143 @@ const Navigation: React.FC = () => {
               )}
             </Link>
 
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden text-black p-2"
-              aria-label="Toggle menu"
-              aria-expanded={mobileMenuOpen ? "true" : "false"}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
             </div>
           </div>
         </div>
         {mobileMenuOpen && (
-          <div className="md:hidden py-6 space-y-4 border-t border-gray-200">
-            <form onSubmit={handleSearch} className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setIsSearchFocused(true)}
-                placeholder="Search products or shops..."
-                className={mobileSearchInputClasses}
-                aria-label="Search products or shops"
-              />
-            </form>
-            <Link
-              href={route("landing")}
-              aria-current={activeIndex === 0 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 0 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Home
-            </Link>
-            <Link
-              href={route("products")}
-              aria-current={activeIndex === 1 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 1 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Shoes
-            </Link>
-            <Link
-              href={route("products", { category: 'men' })}
-              aria-current={activeIndex === 2 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 2 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Men
-            </Link>
-            <Link
-              href={route("products", { category: 'women' })}
-              aria-current={activeIndex === 3 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 3 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Women
-            </Link>
-            <Link
-              href={route("products", { category: 'kids' })}
-              aria-current={activeIndex === 4 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 4 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Kids
-            </Link>
-            <Link
-              href={route("products", { category: 'sports' })}
-              aria-current={activeIndex === 5 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 5 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Sports
-            </Link>
-            <Link
-              href={route("repair")}
-              aria-current={activeIndex === 6 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 6 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Repair
-            </Link>
-            <Link
-              href={route("services")}
-              aria-current={activeIndex === 7 ? "page" : undefined}
-              className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                activeIndex === 7 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Services
-            </Link>
-            {/* Contact removed from navbar */}
-            {isAuthenticated ? (
-              <button
-                onClick={() => handleLogout()}
-                className="block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out text-gray-500 hover:text-gray-700"
-              >
-                Log out
-              </button>
-            ) : (
-              <>
+          <div id="mobile-nav-menu" className="mx-auto mt-3 w-full max-w-[430px] rounded-[28px] border border-gray-200 bg-white px-4 py-4 text-center shadow-[0_24px_45px_-28px_rgba(15,23,42,0.45)] 2xl:hidden">
+              <form onSubmit={handleSearch} className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  placeholder="Search products or shops..."
+                  className={mobileSearchInputClasses}
+                  aria-label="Search products or shops"
+                />
+              </form>
+              <div className="mt-4 space-y-3.5 pb-1">
                 <Link
-                  href={route("login")}
-                  className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                    (activeIndex === 8 || url === '/login') ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  href={route("landing")}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 0 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 0 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  Login
+                  Home
                 </Link>
                 <Link
-                  href={route("register")}
-                  aria-current={activeIndex === 8 ? "page" : undefined}
-                  className={`block text-sm font-medium uppercase tracking-wider transition-all duration-300 ease-in-out ${
-                    activeIndex === 8 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  href={route("products")}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 1 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 1 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  Register
+                  Products
                 </Link>
-              </>
-            )}
+                <Link
+                  href={route("products", { category: 'men' })}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 2 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 2 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Men
+                </Link>
+                <Link
+                  href={route("products", { category: 'women' })}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 3 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 3 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Women
+                </Link>
+                <Link
+                  href={route("products", { category: 'kids' })}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 4 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 4 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Kids
+                </Link>
+                <Link
+                  href={route("products", { category: 'sports' })}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 5 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 5 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Sports
+                </Link>
+                <Link
+                  href={route("repair")}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 6 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 6 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Repair
+                </Link>
+                <Link
+                  href={route("services")}
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-current={activeIndex === 7 ? "page" : undefined}
+                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                    activeIndex === 7 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Services
+                </Link>
+                {isAuthenticated ? (
+                  <button
+                    onClick={() => handleLogout()}
+                    className="block w-full text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700"
+                  >
+                    Log out
+                  </button>
+                ) : (
+                  <>
+                    <Link
+                      href={route("login")}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                        (activeIndex === 8 || url === '/login') ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Login
+                    </Link>
+                    <Link
+                      href={route("register")}
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-current={activeIndex === 8 ? "page" : undefined}
+                      className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+                        activeIndex === 8 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Register
+                    </Link>
+                  </>
+                )}
+              </div>
           </div>
         )}
       </div>
     </nav>
   );
 };
-
 export default Navigation;

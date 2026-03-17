@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\RepairRequest;
+use App\Models\RepairMaterialUsage;
+use App\Models\InventoryItem;
+use App\Models\StockRequestApproval;
 use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Conversation;
@@ -214,7 +217,7 @@ class RepairWorkflowController extends Controller
                 // Shop owner sees all repairs for their shop
                 $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
                     ->where('shop_owner_id', $shopOwner->id)
-                    ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'picked_up', 'rejected', 'cancelled', 'received', 'under-review'])
+                    ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'rejected', 'cancelled', 'received', 'under-review'])
                     ->orderBy('created_at', 'desc')
                     ->get();
                 
@@ -237,7 +240,7 @@ class RepairWorkflowController extends Controller
             // Get repairs assigned to this repairer
             $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
                 ->forRepairer($user->id)
-                ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'picked_up', 'rejected', 'cancelled', 'received'])
+                ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'rejected', 'cancelled', 'received'])
                 ->orderBy('created_at', 'desc')
                 ->get();
             
@@ -1088,7 +1091,7 @@ class RepairWorkflowController extends Controller
             
             $repairRequest->update([
                 'status' => 'in_progress',
-                'work_started_at' => now(),
+                'started_at' => now(),
             ]);
             
             DB::commit();
@@ -1311,7 +1314,6 @@ class RepairWorkflowController extends Controller
                 
                 $repairRequest->update([
                     'status' => 'ready_for_pickup',
-                    'ready_for_pickup_at' => now(),
                     'completed_at' => $repairRequest->completed_at ?? now(),
                     'pickup_instructions' => $request->pickup_instructions,
                 ]);
@@ -1346,7 +1348,6 @@ class RepairWorkflowController extends Controller
             
             $repairRequest->update([
                 'status' => 'ready_for_pickup',
-                'ready_for_pickup_at' => now(),
                 'completed_at' => $repairRequest->completed_at ?? now(),
                 'pickup_instructions' => $request->pickup_instructions,
             ]);
@@ -2015,9 +2016,19 @@ class RepairWorkflowController extends Controller
                 ], 422);
             }
 
+            if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
+                ], 422);
+            }
+
             $repairRequest->update(array_merge($validated, [
                 'status'    => 'shipped',
                 'shipped_at' => now(),
+                'pickup_enabled' => true,
+                'pickup_enabled_at' => $repairRequest->pickup_enabled_at ?? now(),
+                'pickup_enabled_by' => $shopOwner?->id ?? $user?->id,
             ]));
 
             return response()->json([
@@ -2078,5 +2089,459 @@ class RepairWorkflowController extends Controller
                 'message' => 'Failed to update delivery method: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Get repair materials stock overview for repairer pages.
+     */
+    public function repairStocksOverview(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $categoryFilter = $request->filled('category') ? (string) $request->category : null;
+
+            $query = InventoryItem::query()
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('is_active', true);
+
+            if ($request->filled('search')) {
+                $search = trim((string) $request->search);
+                $query->where(function ($innerQuery) use ($search) {
+                    $innerQuery->where('name', 'like', "%{$search}%")
+                        ->orWhere('sku', 'like', "%{$search}%")
+                        ->orWhere('category', 'like', "%{$search}%");
+                });
+            }
+
+            if ($categoryFilter) {
+                $query->where('category', $categoryFilter);
+            }
+
+            if ($request->filled('status')) {
+                $status = (string) $request->status;
+                if ($status === 'In Stock') {
+                    $query->whereRaw('available_quantity > reorder_level');
+                } elseif ($status === 'Low Stock') {
+                    $query->whereRaw('available_quantity > 0 AND available_quantity <= reorder_level');
+                } elseif ($status === 'Out of Stock') {
+                    $query->where('available_quantity', '<=', 0);
+                }
+            }
+
+            $items = $query
+                ->with(['images' => function ($imageQuery) {
+                    $imageQuery->select('id', 'inventory_item_id', 'image_path', 'is_thumbnail');
+                }])
+                ->orderBy('name')
+                ->get();
+
+            $baseQuery = InventoryItem::query()
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('is_active', true);
+
+            if ($categoryFilter) {
+                $baseQuery->where('category', $categoryFilter);
+            }
+
+            $metrics = [
+                'total_items' => (clone $baseQuery)->sum('available_quantity'),
+                'low_stock_count' => (clone $baseQuery)->whereRaw('available_quantity > 0 AND available_quantity <= reorder_level')->count(),
+                'out_of_stock_count' => (clone $baseQuery)->where('available_quantity', '<=', 0)->count(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $items,
+                'metrics' => $metrics,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch repair stocks overview: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * List material requests created by authenticated repairer.
+     */
+    public function myMaterialRequests(Request $request)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $query = StockRequestApproval::query()
+                ->with(['inventoryItem', 'repairRequest'])
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('requested_by', $user->id)
+                ->where('request_source', 'repair')
+                ->orderBy('requested_date', 'desc');
+
+            if ($request->filled('repair_request_id')) {
+                $query->where('repair_request_id', (int) $request->repair_request_id);
+            }
+
+            if ($request->filled('status')) {
+                $query->where('status', (string) $request->status);
+            }
+
+            $requests = $query->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $requests,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch material requests: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Create material request for procurement review.
+     */
+    public function createMaterialRequest(Request $request)
+    {
+        $validated = $request->validate([
+            'inventory_item_id' => 'required|exists:inventory_items,id',
+            'quantity_needed' => 'required|integer|min:1',
+            'priority' => 'required|in:high,medium,low',
+            'requested_size' => 'nullable|string|max:20',
+            'notes' => 'nullable|string|max:1000',
+            'repair_request_id' => 'nullable|exists:repair_requests,id',
+        ]);
+
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $inventoryItem = InventoryItem::query()
+                ->where('id', $validated['inventory_item_id'])
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->first();
+
+            if (!$inventoryItem) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected inventory item is invalid for your shop.',
+                ], 422);
+            }
+
+            if ((string) $inventoryItem->category !== 'repair_materials') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only repair materials can be requested from this endpoint.',
+                ], 422);
+            }
+
+            $repairRequestId = $validated['repair_request_id'] ?? null;
+            if ($repairRequestId) {
+                $repairExists = RepairRequest::query()
+                    ->where('id', $repairRequestId)
+                    ->where('shop_owner_id', $user->shop_owner_id)
+                    ->exists();
+
+                if (!$repairExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected repair request is invalid for your shop.',
+                    ], 422);
+                }
+            }
+
+            $stockRequest = StockRequestApproval::create([
+                'request_number' => $this->generateStockRequestNumber(),
+                'shop_owner_id' => $user->shop_owner_id,
+                'inventory_item_id' => $inventoryItem->id,
+                'repair_request_id' => $repairRequestId,
+                'product_name' => $inventoryItem->name,
+                'sku_code' => $inventoryItem->sku ?? '',
+                'quantity_needed' => $validated['quantity_needed'],
+                'requested_size' => $validated['requested_size'] ?? null,
+                'priority' => $validated['priority'],
+                'request_source' => 'repair',
+                'status' => 'pending',
+                'requested_by' => $user->id,
+                'requested_date' => now(),
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Material request submitted successfully.',
+                'data' => $stockRequest->load(['inventoryItem', 'repairRequest', 'requester']),
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create material request: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get material usage history for a repair request and stock options.
+     */
+    public function getRepairMaterialUsage($id)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $repairRequest = RepairRequest::query()
+                ->where('id', $id)
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->with([
+                    'materialUsages' => function ($usageQuery) {
+                        $usageQuery->with(['inventoryItem', 'user'])
+                            ->orderBy('used_at', 'desc');
+                    }
+                ])
+                ->firstOrFail();
+
+            if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id && !$user->hasRole('Manager')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair is not assigned to you.'
+                ], 403);
+            }
+
+            $materials = InventoryItem::query()
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('is_active', true)
+                ->where('category', 'repair_materials')
+                ->orderBy('name')
+                ->get(['id', 'name', 'sku', 'category', 'available_quantity', 'unit', 'reorder_level', 'price']);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'repair_id' => $repairRequest->id,
+                    'repair_status' => $repairRequest->status,
+                    'usages' => $repairRequest->materialUsages,
+                    'materials' => $materials,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch repair material usage: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Log material usage for a repair request and deduct stock.
+     */
+    public function logRepairMaterialUsage(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'inventory_item_id' => 'required|exists:inventory_items,id',
+            'quantity_used' => 'required|integer|min:1',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $repairRequest = RepairRequest::query()
+                ->where('id', $id)
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->firstOrFail();
+
+            if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair is not assigned to you.'
+                ], 403);
+            }
+
+            if (!in_array((string) $repairRequest->status, ['in_progress', 'awaiting_parts'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Material usage can only be logged while repair is in progress or awaiting parts.',
+                ], 422);
+            }
+
+            $inventoryItem = InventoryItem::query()
+                ->where('id', $validated['inventory_item_id'])
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$inventoryItem) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected material is invalid for your shop.',
+                ], 422);
+            }
+
+            if ((string) $inventoryItem->category !== 'repair_materials') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only repair materials can be logged for repair usage.',
+                ], 422);
+            }
+
+            $quantityUsed = (int) $validated['quantity_used'];
+
+            if ((int) $inventoryItem->available_quantity < $quantityUsed) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient stock for selected material.',
+                    'available_quantity' => (int) $inventoryItem->available_quantity,
+                ], 422);
+            }
+
+            $usage = null;
+
+            DB::transaction(function () use (&$usage, $inventoryItem, $quantityUsed, $validated, $repairRequest, $user) {
+                $movement = $inventoryItem->decrementStock(
+                    $quantityUsed,
+                    'repair_usage',
+                    $validated['notes'] ?? "Material used for repair {$repairRequest->request_id}",
+                    $user->id
+                );
+
+                $movement->update([
+                    'reference_type' => 'repair_request',
+                    'reference_id' => $repairRequest->id,
+                ]);
+
+                $usage = RepairMaterialUsage::create([
+                    'repair_request_id' => $repairRequest->id,
+                    'inventory_item_id' => $inventoryItem->id,
+                    'quantity_used' => $quantityUsed,
+                    'notes' => $validated['notes'] ?? null,
+                    'used_by' => $user->id,
+                    'used_at' => now(),
+                    'stock_movement_id' => $movement->id,
+                ]);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Material usage logged successfully.',
+                'data' => $usage->load(['inventoryItem', 'user']),
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to log material usage: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove a logged material usage and restore stock.
+     */
+    public function removeRepairMaterialUsage($id, $usageId)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $repairRequest = RepairRequest::query()
+                ->where('id', $id)
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->firstOrFail();
+
+            if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id && !$user->hasRole('Manager')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not allowed to remove material usage for this repair.'
+                ], 403);
+            }
+
+            $usage = RepairMaterialUsage::query()
+                ->with('inventoryItem')
+                ->where('id', $usageId)
+                ->where('repair_request_id', $repairRequest->id)
+                ->firstOrFail();
+
+            DB::transaction(function () use ($usage, $repairRequest, $user) {
+                if ($usage->inventoryItem) {
+                    $restoreMovement = $usage->inventoryItem->incrementStock(
+                        (int) $usage->quantity_used,
+                        'return',
+                        "Material usage reversal for repair {$repairRequest->request_id}",
+                        $user->id
+                    );
+
+                    $restoreMovement->update([
+                        'reference_type' => 'repair_request',
+                        'reference_id' => $repairRequest->id,
+                    ]);
+                }
+
+                $usage->delete();
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Material usage removed and stock restored.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove material usage: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function generateStockRequestNumber(): string
+    {
+        $year = now()->year;
+
+        $last = StockRequestApproval::query()
+            ->where('request_number', 'LIKE', "SR-{$year}-%")
+            ->orderBy('request_number', 'desc')
+            ->first();
+
+        $nextNum = $last ? intval(substr((string) $last->request_number, -3)) + 1 : 1;
+
+        return "SR-{$year}-" . str_pad((string) $nextNum, 3, '0', STR_PAD_LEFT);
     }
 }

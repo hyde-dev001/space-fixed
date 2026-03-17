@@ -59,6 +59,10 @@ Route::middleware([
     Route::delete('/items/{id}', [UploadInventoryController::class, 'destroy'])->name('inventory.items.destroy');
     // Add a new colour variant to an existing item (auto-syncs to linked product)
     Route::post('/items/{id}/colors', [UploadInventoryController::class, 'addColor'])->name('inventory.items.colors.store');
+    // Add size stock to an existing colour variant
+    Route::post('/items/{id}/colors/{colorId}/sizes', [UploadInventoryController::class, 'addSizeToColor'])->name('inventory.items.colors.sizes.store');
+    // Correct / update an existing size quantity (typo fix)
+    Route::put('/items/{id}/sizes/{sizeId}', [UploadInventoryController::class, 'updateSizeQuantity'])->name('inventory.items.sizes.update');
     
     // Image Management
     Route::post('/items/images', [UploadInventoryController::class, 'uploadImages'])->name('inventory.items.images.upload');

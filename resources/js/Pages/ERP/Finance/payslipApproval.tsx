@@ -1,13 +1,19 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useMemo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
+import { hasAnyPermission } from "../../../utils/permissions";
 
 interface PayslipLineItem {
 	label: string;
 	amount: number;
 	type: string;
 }
+
+type FinanceApprovalStatus = "pending" | "approved" | "rejected";
+type WorkflowStatus = "awaiting_checker" | "awaiting_final_approval" | "ready_for_disbursement" | "paid" | "rejected";
+type FinalApprovalStatus = "pending" | "approved";
+type DisbursementStatus = "pending" | "ready" | "paid";
 
 interface PayslipApprovalRequest {
 	id: number;
@@ -21,15 +27,64 @@ interface PayslipApprovalRequest {
 	gross_pay: number;
 	deductions: number;
 	net_pay: number;
-	status: "pending" | "approved" | "rejected";
+	tax_amount?: number;
+	status: FinanceApprovalStatus;
+	workflow_status: WorkflowStatus;
+	final_approval_status: FinalApprovalStatus;
+	disbursement_status: DisbursementStatus;
 	notes: string;
 	approval_notes?: string;
+	final_approval_notes?: string;
+	checker_name?: string | null;
+	checker_approved_at?: string | null;
+	final_approver_name?: string | null;
+	final_approved_at?: string | null;
+	payment_method?: string | null;
+	payment_date?: string | null;
+	payout_reference?: string | null;
+	payout_proof_type?: string | null;
+	payout_proof_reference?: string | null;
+	payout_proof_notes?: string | null;
+	disbursed_by_name?: string | null;
+	disbursed_at?: string | null;
 	line_items: PayslipLineItem[];
 }
 
-const statusLabels: Record<string, string> = {
+interface PaginationMeta {
+	current_page: number;
+	last_page: number;
+	per_page: number;
+	total: number;
+}
+
+interface ApprovalSummary {
+	total: number;
+	pending: number;
+	approved: number;
+	rejected: number;
+	awaiting_finance: number;
+	awaiting_final_approval: number;
+	ready_for_disbursement: number;
+	paid: number;
+}
+
+interface PayslipApprovalListResponse {
+	data: PayslipApprovalRequest[];
+	meta: PaginationMeta;
+	summary: ApprovalSummary;
+}
+
+const statusLabels: Record<FinanceApprovalStatus, string> = {
 	pending: "Pending",
 	approved: "Approved",
+	rejected: "Rejected",
+};
+
+const workflowStatusLabels: Record<WorkflowStatus, string> = {
+	awaiting_checker: "Awaiting Finance",
+	awaiting_final_approval: "Awaiting Owner",
+	ready_for_disbursement: "Ready For Disbursement",
+	paid: "Paid",
 	rejected: "Rejected",
 };
 
@@ -141,9 +196,17 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 	);
 };
 
-const statusPillClasses: Record<string, string> = {
+const statusPillClasses: Record<FinanceApprovalStatus, string> = {
 	pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
 	approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+	rejected: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
+};
+
+const workflowPillClasses: Record<WorkflowStatus, string> = {
+	awaiting_checker: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+	awaiting_final_approval: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
+	ready_for_disbursement: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+	paid: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
 	rejected: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
 };
 
@@ -151,15 +214,38 @@ const formatCurrency = (amount: number) => {
 	return `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const PAGE_SIZE = 6;
+
 export default function PayslipApproval() {
+	const { auth } = usePage().props as any;
+	const canCheckerApprove = hasAnyPermission(auth, ["access-payslip-approval", "approve-payroll"]);
+	const canFinalApprove = hasAnyPermission(auth, ["access-approval-workflow"]);
+	const canDisburse = canFinalApprove || canCheckerApprove;
+
 	const [requests, setRequests] = useState<PayslipApprovalRequest[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [statusFilter, setStatusFilter] = useState<"All" | "pending" | "approved" | "rejected">("pending");
+	const [statusFilter, setStatusFilter] = useState<"All" | WorkflowStatus>("All");
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<PayslipApprovalRequest | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [isApproving, setIsApproving] = useState(false);
+	const [paginationMeta, setPaginationMeta] = useState<PaginationMeta>({
+		current_page: 1,
+		last_page: 1,
+		per_page: PAGE_SIZE,
+		total: 0,
+	});
+	const [summary, setSummary] = useState<ApprovalSummary>({
+		total: 0,
+		pending: 0,
+		approved: 0,
+		rejected: 0,
+		awaiting_finance: 0,
+		awaiting_final_approval: 0,
+		ready_for_disbursement: 0,
+		paid: 0,
+	});
 
 	// Batch approval states
 	const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -171,12 +257,25 @@ export default function PayslipApproval() {
 	// Load payslips from API
 	useEffect(() => {
 		loadPayslips();
-	}, []);
+	}, [currentPage, searchQuery, statusFilter]);
 
 	const loadPayslips = async () => {
 		setLoading(true);
 		try {
-const response = await fetch('/api/finance/payslip-approvals', {
+			const params = new URLSearchParams({
+				page: String(currentPage),
+				per_page: String(PAGE_SIZE),
+			});
+
+			if (searchQuery.trim()) {
+				params.set('search', searchQuery.trim());
+			}
+
+			if (statusFilter !== "All") {
+				params.set('workflow_status', statusFilter);
+			}
+
+			const response = await fetch(`/api/finance/payslip-approvals?${params.toString()}`, {
 				headers: {
 					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
 					'Accept': 'application/json',
@@ -191,35 +290,60 @@ const response = await fetch('/api/finance/payslip-approvals', {
 				throw new Error('Failed to load payslips');
 			}
 
-			const data = await response.json();
-			setRequests(data.data || []);
+			const data: PayslipApprovalListResponse = await response.json();
+			setRequests(Array.isArray(data.data) ? data.data : []);
+			setPaginationMeta(data.meta || {
+				current_page: 1,
+				last_page: 1,
+				per_page: PAGE_SIZE,
+				total: 0,
+			});
+			setSummary(data.summary || {
+				total: 0,
+				pending: 0,
+				approved: 0,
+				rejected: 0,
+				awaiting_finance: 0,
+				awaiting_final_approval: 0,
+				ready_for_disbursement: 0,
+				paid: 0,
+			});
+
+			if (data.meta && data.meta.current_page !== currentPage) {
+				setCurrentPage(data.meta.current_page);
+			}
 		} catch (error) {
 			console.error('Error loading payslips:', error);
+			setRequests([]);
+			setPaginationMeta({
+				current_page: 1,
+				last_page: 1,
+				per_page: PAGE_SIZE,
+				total: 0,
+			});
+			setSummary({
+				total: 0,
+				pending: 0,
+				approved: 0,
+				rejected: 0,
+				awaiting_finance: 0,
+				awaiting_final_approval: 0,
+				ready_for_disbursement: 0,
+				paid: 0,
+			});
 			await Swal.fire('Error', 'Failed to load payslips', 'error');
 		} finally {
 			setLoading(false);
 		}
 	};
 
-	const filteredData = useMemo(() => {
-		return requests.filter((item) => {
-			const matchesSearch =
-				item.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				item.employee_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				item.department.toLowerCase().includes(searchQuery.toLowerCase());
-			const matchesStatus = statusFilter === "All" || item.status === statusFilter;
-			return matchesSearch && matchesStatus;
-		});
-	}, [requests, searchQuery, statusFilter]);
-
-	const itemsPerPage = 6;
-	const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
-	const startIndex = (currentPage - 1) * itemsPerPage;
-	const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
-
-	const pendingCount = requests.filter((r) => r.status === "pending").length;
-	const approvedCount = requests.filter((r) => r.status === "approved").length;
-	const rejectedCount = requests.filter((r) => r.status === "rejected").length;
+	const totalPages = Math.max(1, paginationMeta.last_page || 1);
+	const startIndex = requests.length === 0 ? 0 : ((paginationMeta.current_page - 1) * paginationMeta.per_page) + 1;
+	const endIndex = requests.length === 0 ? 0 : startIndex + requests.length - 1;
+	const pendingCount = summary.awaiting_finance;
+	const awaitingFinalApprovalCount = summary.awaiting_final_approval;
+	const readyForDisbursementCount = summary.ready_for_disbursement;
+	const paidCount = summary.paid;
 
 	const handleView = async (request: PayslipApprovalRequest) => {
 		// Fetch full payslip details
@@ -283,8 +407,8 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 				if (!response.ok) throw new Error('Failed to approve payslip');
 
 				await Swal.fire({
-					title: "Approved",
-					text: "Payslip approved and ready for HR release.",
+					title: "Finance Approved",
+					text: "Payslip approved by Finance. Forwarded to Shop Owner for final approval.",
 					icon: "success",
 					confirmButtonColor: "#111827",
 				});
@@ -360,11 +484,177 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		}
 	};
 
+	const handleFinalApprove = async (request: PayslipApprovalRequest) => {
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+
+		const { value: notes } = await Swal.fire({
+			title: "Final Approval",
+			html: `
+				<div style="text-align: left; margin-top: 1rem;">
+					<p style="margin-bottom: 0.5rem;"><strong>Employee:</strong> ${request.employee_name}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Period:</strong> ${request.pay_period}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Net Pay:</strong> ${formatCurrency(request.net_pay)}</p>
+					<p style="margin-bottom: 0.5rem; color: #6b7280;">Finance Checker: ${request.checker_name ?? 'N/A'}</p>
+				</div>
+			`,
+			input: "textarea",
+			inputLabel: "Approval Notes (Optional)",
+			inputPlaceholder: "Add notes for the record...",
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#7c3aed",
+			cancelButtonColor: "#6b7280",
+			confirmButtonText: "Final Approve",
+			cancelButtonText: "Cancel",
+		});
+
+		if (notes !== undefined) {
+			setIsApproving(true);
+			try {
+				const response = await fetch(`/api/finance/payslip-approvals/${request.id}/final-approve`, {
+					method: 'POST',
+					headers: {
+						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+						'Accept': 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({ notes: notes || '' }),
+				});
+
+				const data = await response.json();
+				if (!response.ok) throw new Error(data.message || 'Failed to final-approve payslip');
+
+				await Swal.fire({
+					title: "Final Approval Granted",
+					text: "Payslip is now ready for disbursement.",
+					icon: "success",
+					confirmButtonColor: "#111827",
+				});
+
+				loadPayslips();
+			} catch (error: any) {
+				await Swal.fire('Error', error.message || 'Failed to final-approve payslip', 'error');
+			} finally {
+				setIsApproving(false);
+			}
+		}
+	};
+
+	const handleDisburse = async (request: PayslipApprovalRequest) => {
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+
+		const { value: formValues } = await Swal.fire({
+			title: "Disburse Payslip",
+			html: `
+				<div style="text-align: left; margin-top: 0.5rem;">
+					<p style="margin-bottom: 0.75rem;"><strong>${request.employee_name}</strong> · ${request.pay_period} · ${formatCurrency(request.net_pay)}</p>
+					<div style="margin-bottom: 0.75rem;">
+						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Payment Method *</label>
+						<select id="swal-paymentMethod" class="swal2-input" style="margin:0; width:100%;">
+							<option value="">-- Select --</option>
+							<option value="bank_transfer">Bank Transfer</option>
+							<option value="cash">Cash</option>
+							<option value="check">Check</option>
+							<option value="gcash">GCash</option>
+						</select>
+					</div>
+					<div style="margin-bottom: 0.75rem;">
+						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Payment Date *</label>
+						<input id="swal-paymentDate" type="date" class="swal2-input" style="margin:0; width:100%;" value="${new Date().toISOString().slice(0, 10)}" />
+					</div>
+					<div style="margin-bottom: 0.75rem;">
+						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Payout Reference *</label>
+						<input id="swal-payoutReference" type="text" class="swal2-input" style="margin:0; width:100%;" placeholder="Transaction/reference number" />
+					</div>
+					<div style="margin-bottom: 0.75rem;">
+						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Proof Type *</label>
+						<select id="swal-proofType" class="swal2-input" style="margin:0; width:100%;">
+							<option value="">-- Select --</option>
+							<option value="bank_reference">Bank Reference</option>
+							<option value="receipt_number">Receipt Number</option>
+							<option value="check_number">Check Number</option>
+							<option value="other">Other</option>
+						</select>
+					</div>
+					<div style="margin-bottom: 0.75rem;">
+						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Proof Reference *</label>
+						<input id="swal-proofReference" type="text" class="swal2-input" style="margin:0; width:100%;" placeholder="Receipt/check/reference number" />
+					</div>
+					<div>
+						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Notes</label>
+						<textarea id="swal-proofNotes" class="swal2-textarea" style="margin:0; width:100%;" placeholder="Optional disbursement notes"></textarea>
+					</div>
+				</div>
+			`,
+			focusConfirm: false,
+			showCancelButton: true,
+			confirmButtonColor: "#7c3aed",
+			cancelButtonColor: "#6b7280",
+			confirmButtonText: "Mark as Paid",
+			cancelButtonText: "Cancel",
+			preConfirm: () => {
+				const paymentMethod = (document.getElementById('swal-paymentMethod') as HTMLSelectElement)?.value;
+				const paymentDate = (document.getElementById('swal-paymentDate') as HTMLInputElement)?.value;
+				const payoutReference = (document.getElementById('swal-payoutReference') as HTMLInputElement)?.value;
+				const proofType = (document.getElementById('swal-proofType') as HTMLSelectElement)?.value;
+				const proofReference = (document.getElementById('swal-proofReference') as HTMLInputElement)?.value;
+				const proofNotes = (document.getElementById('swal-proofNotes') as HTMLTextAreaElement)?.value;
+
+				if (!paymentMethod || !paymentDate || !payoutReference || !proofType || !proofReference) {
+					Swal.showValidationMessage('All required fields must be filled in.');
+					return false;
+				}
+				return { paymentMethod, paymentDate, payoutReference, proofType, proofReference, proofNotes };
+			},
+		});
+
+		if (formValues) {
+			setIsApproving(true);
+			try {
+				const response = await fetch('/api/finance/payslip-approvals/disburse', {
+					method: 'POST',
+					headers: {
+						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+						'Accept': 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({
+						payrollIds: [request.id],
+						paymentDate: formValues.paymentDate,
+						paymentMethod: formValues.paymentMethod,
+						payoutReference: formValues.payoutReference,
+						payoutProofType: formValues.proofType,
+						payoutProofReference: formValues.proofReference,
+						payoutProofNotes: formValues.proofNotes,
+					}),
+				});
+
+				const data = await response.json();
+				if (!response.ok) throw new Error(data.message || 'Disbursement failed');
+
+				await Swal.fire({
+					title: "Disbursed!",
+					text: "Payslip marked as paid successfully.",
+					icon: "success",
+					confirmButtonColor: "#111827",
+				});
+
+				loadPayslips();
+			} catch (error: any) {
+				await Swal.fire('Error', error.message || 'Disbursement failed', 'error');
+			} finally {
+				setIsApproving(false);
+			}
+		}
+	};
+
 	// Batch approval functions
 	const handleApproveAll = async () => {
-		const pendingRequests = requests.filter(r => r.status === 'pending');
-		
-		if (pendingRequests.length === 0) {
+		if (pendingCount === 0) {
 			await Swal.fire({
 				icon: "info",
 				title: "No Pending Payslips",
@@ -555,7 +845,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 						<p className="text-gray-600 dark:text-gray-400">Review HR-generated payslips before employee release.</p>
 					</div>
 					<div className="flex flex-wrap items-center justify-end gap-3">
-						{pendingCount > 0 && (
+						{pendingCount > 0 && canCheckerApprove && (
 							<button
 								onClick={handleApproveAll}
 								disabled={isBatchApproving}
@@ -574,33 +864,42 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 					</div>
 				</div>
 
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-					<MetricCard
-						title="Pending Review"
-						value={pendingCount}
-						change={0}
-						changeType="increase"
-						icon={DocumentIcon}
-						color="warning"
-						description="Awaiting finance approval"
-					/>
-					<MetricCard
-						title="Approved"
-						value={approvedCount}
-						change={0}
-						changeType="increase"
-						icon={CheckIcon}
-						color="success"
-						description="Ready for HR release"
-					/>
-					<MetricCard
-						title="Rejected"
-						value={rejectedCount}
-						change={0}
-						changeType="decrease"
-						icon={XIcon}
-						color="info"
-						description="Sent back for correction"
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+				<MetricCard
+					title="Awaiting Finance"
+					value={pendingCount}
+					change={0}
+					changeType="increase"
+					icon={DocumentIcon}
+					color="warning"
+					description="Needs checker approval"
+				/>
+				<MetricCard
+					title="Awaiting Owner"
+					value={awaitingFinalApprovalCount}
+					change={0}
+					changeType="increase"
+					icon={UserIcon}
+					color="info"
+					description="Needs final approval"
+				/>
+				<MetricCard
+					title="Ready to Disburse"
+					value={readyForDisbursementCount}
+					change={0}
+					changeType="increase"
+					icon={CheckIcon}
+					color="success"
+					description="Owner-approved, pending payment"
+				/>
+				<MetricCard
+					title="Paid"
+					value={paidCount}
+					change={0}
+					changeType="increase"
+					icon={CalendarIcon}
+					color="info"
+					description="Disbursement complete"
 					/>
 				</div>
 
@@ -630,6 +929,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 									setStatusFilter(event.target.value as any);
 									setCurrentPage(1);
 								}}
+								aria-label="Filter payslips by status"
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							>
 								<option value="All">All Status</option>
@@ -653,8 +953,8 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-								{paginatedRequests.length > 0 ? (
-									paginatedRequests.map((request) => (
+								{requests.length > 0 ? (
+									requests.map((request) => (
 										<tr key={request.id} className="text-gray-700 dark:text-gray-200">
 											<td className="py-4">
 												<div className="flex items-center gap-3">
@@ -676,8 +976,8 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 											<td className="py-4 font-semibold text-gray-900 dark:text-white">{formatCurrency(request.net_pay)}</td>
 											<td className="py-4 text-gray-600 dark:text-gray-300">{request.generated_date}</td>
 											<td className="py-4">
-												<span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusPillClasses[request.status]}`}>
-													{statusLabels[request.status]}
+												<span className={`px-3 py-1 rounded-full text-xs font-semibold ${workflowPillClasses[request.workflow_status]}`}>
+													{workflowStatusLabels[request.workflow_status]}
 												</span>
 											</td>
 											<td className="py-4 text-right">
@@ -690,6 +990,46 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 													>
 														<EyeIcon className="size-5 text-blue-600 dark:text-blue-400" />
 													</button>
+													{canCheckerApprove && request.workflow_status === 'awaiting_checker' && (
+														<>
+															<button
+																onClick={() => handleApprove(request)}
+																title="Finance Approve"
+																aria-label="Approve"
+																className="inline-flex items-center justify-center p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+															>
+																<CheckIcon className="size-5 text-emerald-600 dark:text-emerald-400" />
+															</button>
+															<button
+																onClick={() => handleReject(request)}
+																title="Reject"
+																aria-label="Reject"
+																className="inline-flex items-center justify-center p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+															>
+																<XIcon className="size-5 text-rose-600 dark:text-rose-400" />
+															</button>
+														</>
+													)}
+													{canFinalApprove && request.workflow_status === 'awaiting_final_approval' && (
+														<button
+															onClick={() => handleFinalApprove(request)}
+															title="Final Approve"
+															aria-label="Final Approve"
+															className="inline-flex items-center justify-center p-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors"
+														>
+															<CheckIcon className="size-5 text-violet-600 dark:text-violet-400" />
+														</button>
+													)}
+													{canDisburse && request.workflow_status === 'ready_for_disbursement' && (
+														<button
+															onClick={() => handleDisburse(request)}
+															title="Disburse (Mark Paid)"
+															aria-label="Disburse"
+															className="inline-flex items-center justify-center p-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors"
+														>
+															<CalendarIcon className="size-5 text-violet-600 dark:text-violet-400" />
+														</button>
+													)}
 												</div>
 											</td>
 										</tr>
@@ -707,7 +1047,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 
 					<div className="mt-6 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
 						<p>
-							Showing {paginatedRequests.length} of {filteredData.length} approvals
+							Showing {startIndex} to {endIndex} of {paginationMeta.total} approvals
 						</p>
 						<div className="flex items-center gap-2">
 							<button
@@ -727,7 +1067,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 										<button
 											key={p}
 											onClick={() => setCurrentPage(p)}
-											className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
+											className={`min-w-10 h-10 px-3 rounded-lg font-medium transition-colors ${
 												currentPage === p
 													? "bg-blue-600 text-white"
 													: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -797,13 +1137,10 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 								<p className="text-sm font-semibold text-gray-900 dark:text-white">Net: {formatCurrency(selectedRequest.net_pay)}</p>
 							</div>
 							<div className="space-y-2">
-								<p className="text-xs uppercase text-gray-400">Status</p>
-								<span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${statusPillClasses[selectedRequest.status]}`}>
-									{statusLabels[selectedRequest.status]}
+								<p className="text-xs uppercase text-gray-400">Workflow Status</p>
+								<span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${workflowPillClasses[selectedRequest.workflow_status]}`}>
+									{workflowStatusLabels[selectedRequest.workflow_status]}
 								</span>
-								{selectedRequest.approval_notes && (
-									<p className="text-sm text-gray-500">Notes: {selectedRequest.approval_notes}</p>
-								)}
 							</div>
 						</div>
 
@@ -828,6 +1165,55 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 							</div>
 						</div>
 
+						{selectedRequest.checker_name && (
+							<div className="px-6 pb-4">
+								<div className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/10 p-4">
+									<p className="font-semibold text-amber-900 dark:text-amber-200 mb-2 text-sm">Finance Checker Approval</p>
+									<p className="text-sm text-amber-800 dark:text-amber-300">Approved by: <strong>{selectedRequest.checker_name}</strong></p>
+									{selectedRequest.checker_approved_at && (
+										<p className="text-xs text-amber-700 dark:text-amber-400 mt-1">on {selectedRequest.checker_approved_at}</p>
+									)}
+									{selectedRequest.approval_notes && (
+										<p className="text-xs text-amber-700 dark:text-amber-400 mt-1">Notes: {selectedRequest.approval_notes}</p>
+									)}
+								</div>
+							</div>
+						)}
+
+						{selectedRequest.final_approver_name && (
+							<div className="px-6 pb-4">
+								<div className="rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50 dark:bg-violet-900/10 p-4">
+									<p className="font-semibold text-violet-900 dark:text-violet-200 mb-2 text-sm">Final Approval (Owner)</p>
+									<p className="text-sm text-violet-800 dark:text-violet-300">Approved by: <strong>{selectedRequest.final_approver_name}</strong></p>
+									{selectedRequest.final_approved_at && (
+										<p className="text-xs text-violet-700 dark:text-violet-400 mt-1">on {selectedRequest.final_approved_at}</p>
+									)}
+									{selectedRequest.final_approval_notes && (
+										<p className="text-xs text-violet-700 dark:text-violet-400 mt-1">Notes: {selectedRequest.final_approval_notes}</p>
+									)}
+								</div>
+							</div>
+						)}
+
+						{selectedRequest.workflow_status === 'paid' && selectedRequest.disbursed_by_name && (
+							<div className="px-6 pb-4">
+								<div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-900/10 p-4">
+									<p className="font-semibold text-emerald-900 dark:text-emerald-200 mb-2 text-sm">Disbursement Record</p>
+									<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-emerald-800 dark:text-emerald-300">
+										{selectedRequest.payment_method && <p>Method: <strong>{selectedRequest.payment_method.replace(/_/g, ' ')}</strong></p>}
+										{selectedRequest.payment_date && <p>Date: <strong>{selectedRequest.payment_date}</strong></p>}
+										{selectedRequest.payout_reference && <p>Reference: <strong>{selectedRequest.payout_reference}</strong></p>}
+										{selectedRequest.payout_proof_type && <p>Proof Type: <strong>{selectedRequest.payout_proof_type.replace(/_/g, ' ')}</strong></p>}
+										{selectedRequest.payout_proof_reference && <p>Proof Ref: <strong>{selectedRequest.payout_proof_reference}</strong></p>}
+										{selectedRequest.disbursed_by_name && <p>Disbursed by: <strong>{selectedRequest.disbursed_by_name}</strong></p>}
+									</div>
+									{selectedRequest.payout_proof_notes && (
+										<p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">Notes: {selectedRequest.payout_proof_notes}</p>
+									)}
+								</div>
+							</div>
+						)}
+
 						<div className="flex items-center justify-end gap-3 border-t border-gray-200 dark:border-gray-800 px-6 py-4">
 							<button
 								onClick={() => setViewModalOpen(false)}
@@ -835,7 +1221,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 							>
 								Close
 							</button>
-							{selectedRequest.status === "pending" && (
+							{canCheckerApprove && selectedRequest.workflow_status === 'awaiting_checker' && (
 								<>
 									<button
 										onClick={() => handleReject(selectedRequest)}
@@ -849,9 +1235,27 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 										disabled={isApproving}
 										className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
 									>
-										Approve
+										Finance Approve
 									</button>
 								</>
+							)}
+							{canFinalApprove && selectedRequest.workflow_status === 'awaiting_final_approval' && (
+								<button
+									onClick={() => handleFinalApprove(selectedRequest)}
+									disabled={isApproving}
+									className="px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+								>
+									Final Approve
+								</button>
+							)}
+							{canDisburse && selectedRequest.workflow_status === 'ready_for_disbursement' && (
+								<button
+									onClick={() => handleDisburse(selectedRequest)}
+									disabled={isApproving}
+									className="px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+								>
+									Mark as Paid
+								</button>
 							)}
 						</div>
 					</div>

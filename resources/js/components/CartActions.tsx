@@ -51,6 +51,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
       try {
         dispatchCartGuestAddAttemptEvent({ productId });
       } catch (err) {}
+      isProcessingRef.current = false;
       setIsLoading(false);
       return;
     }
@@ -178,7 +179,15 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
         cursor: isLoading ? 'not-allowed' : 'pointer'
       }}
     >
-      {isLoading ? '⏳ Adding...' : label}
+      {isLoading ? (
+        <span className="inline-flex items-center gap-2" aria-live="polite">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+            <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+          </svg>
+          <span>Adding...</span>
+        </span>
+      ) : label}
     </button>
   );
 };

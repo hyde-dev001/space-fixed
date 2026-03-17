@@ -30,7 +30,7 @@ interface Payslip {
 	overtime_pay: string;
 	bonus: string;
 	net_salary: string;
-	status: 'pending' | 'processed' | 'paid';
+	status: 'pending' | 'processed' | 'approved' | 'paid';
 	approval_status: 'pending' | 'approved' | 'rejected';
 	payment_date?: string;
 	payment_method?: string;
@@ -67,6 +67,34 @@ const periodLabel = (slip: Payslip): string => {
 	if (slip.payroll_period) return slip.payroll_period;
 	const start = new Date(slip.pay_period_start);
 	return start.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
+};
+
+const getPayslipDisplayState = (slip: Payslip): 'paid' | 'approved' | 'pending' => {
+	if (slip.status === 'paid') return 'paid';
+	if (slip.status === 'approved' || slip.approval_status === 'approved') return 'approved';
+	return 'pending';
+};
+
+const getPayslipBadgeClasses = (slip: Payslip): string => {
+	const state = getPayslipDisplayState(slip);
+
+	if (state === 'paid') {
+		return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+	}
+
+	if (state === 'approved') {
+		return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+	}
+
+	return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+};
+
+const getPayslipBadgeLabel = (slip: Payslip): string => {
+	const state = getPayslipDisplayState(slip);
+
+	if (state === 'paid') return 'Paid';
+	if (state === 'approved') return 'Approved';
+	return 'Pending';
 };
 
 // ─────────────────────────────────────────────────────────
@@ -127,6 +155,9 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 		const content = printRef.current?.innerHTML ?? '';
 		const win = window.open('', '_blank', 'width=800,height=600');
 		if (!win) return;
+		const badgeState = getPayslipDisplayState(slip);
+		const badgeBackground = badgeState === 'paid' ? '#d1fae5' : badgeState === 'approved' ? '#dbeafe' : '#fef3c7';
+		const badgeColor = badgeState === 'paid' ? '#065f46' : badgeState === 'approved' ? '#1e40af' : '#92400e';
 		win.document.write(`
 			<html><head><title>Payslip — ${periodLabel(slip)}</title>
 			<style>
@@ -140,7 +171,7 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 				h2 { font-size: 15px; margin: 16px 0 4px; color: #374151; }
 				.header { display: flex; justify-content: space-between; margin-bottom: 16px; }
 				.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
-					background: ${slip.status === 'paid' ? '#d1fae5' : '#dbeafe'}; color: ${slip.status === 'paid' ? '#065f46' : '#1e40af'}; }
+					background: ${badgeBackground}; color: ${badgeColor}; }
 			</style></head><body>${content}</body></html>
 		`);
 		win.document.close();
@@ -185,14 +216,8 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 						<h2 className="text-xl font-bold text-gray-900 dark:text-white">{shopName}</h2>
 						<p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Official Payslip</p>
 					</div>
-					<span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-						slip.status === 'paid'
-							? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-						: slip.approval_status === 'approved'
-							? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-							: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-				}`}>
-					{slip.status === 'paid' ? 'PAID' : slip.approval_status === 'approved' ? 'APPROVED' : 'PENDING APPROVAL'}
+					<span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getPayslipBadgeClasses(slip)}`}>
+						{getPayslipBadgeLabel(slip).toUpperCase()}
 					</span>
 				</div>
 
@@ -457,14 +482,8 @@ export default function MyPayslips() {
 													{formatPHP(slip.net_salary)}
 												</p>
 											</div>
-											<span className={`hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-												slip.status === 'paid'
-													? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-												: slip.approval_status === 'approved'
-													? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-													: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-										}`}>
-											{slip.status === 'paid' ? 'Paid' : slip.approval_status === 'approved' ? 'Approved' : 'Pending'}
+											<span className={`hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getPayslipBadgeClasses(slip)}`}>
+												{getPayslipBadgeLabel(slip)}
 											</span>
 											<span className="text-gray-400 dark:text-gray-500">
 												{expandedId === slip.id ? <ChevronUpIcon /> : <ChevronDownIcon />}

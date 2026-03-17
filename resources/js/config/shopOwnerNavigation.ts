@@ -90,6 +90,15 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             badge: 'Business Only',
         },
 
+        // Expense Approvals - Business only
+        {
+            label: 'Expense Approvals',
+            path: '/shop-owner/expense-approvals',
+            icon: '🧾',
+            visible: canAccessPriceApprovals(access),
+            badge: 'Business Only',
+        },
+
         // Refunds - Always visible
         {
             label: 'Refunds',

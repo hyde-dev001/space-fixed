@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
-type SlipStatus = "processed" | "pending" | "paid";
+type SlipStatus = "processed" | "pending" | "approved" | "paid";
 
 type Deduction = {
     name: string;
@@ -99,9 +99,17 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
 
 const pageSize = 7;
 
+const statusLabels: Record<SlipStatus, string> = {
+    processed: "Processed",
+    pending: "Pending",
+    approved: "Approved",
+    paid: "Paid",
+};
+
 const statusStyles: Record<SlipStatus, string> = {
     processed: "bg-green-100 text-green-700 border border-green-200",
     pending: "bg-yellow-100 text-yellow-700 border border-yellow-200",
+    approved: "bg-indigo-100 text-indigo-700 border border-indigo-200",
     paid: "bg-blue-100 text-blue-700 border border-blue-200",
 };
 
@@ -269,7 +277,7 @@ export default function ViewSlip() {
                 <p className="text-gray-600 dark:text-gray-400">Review and download employee payslips by period.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">
                     <label className="text-sm text-gray-600 dark:text-gray-300">Search</label>
                     <input
@@ -278,6 +286,20 @@ export default function ViewSlip() {
                         placeholder="Search by name, ID, or department"
                         className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
                     />
+                </div>
+                <div>
+                    <label className="text-sm text-gray-600 dark:text-gray-300">Status</label>
+                    <select
+                        value={status}
+                        onChange={(e) => handleStatus(e.target.value)}
+                        aria-label="Filter by status"
+                        className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                    >
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="paid">Paid</option>
+                    </select>
                 </div>
                 <div>
                     <label className="text-sm text-gray-600 dark:text-gray-300">Month</label>
@@ -351,7 +373,7 @@ export default function ViewSlip() {
                                     <td className="px-6 py-4 text-gray-900 dark:text-white font-semibold">{formatPHP(slip.netPay)}</td>
                                     <td className="px-6 py-4">
                                         <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${statusStyles[slip.status]}`}>
-                                            {slip.status.charAt(0).toUpperCase() + slip.status.slice(1)}
+                                            {statusLabels[slip.status]}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-center">
@@ -393,7 +415,7 @@ export default function ViewSlip() {
                                         <button
                                             key={p}
                                             onClick={() => setPage(p)}
-                                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
+                                            className={`min-w-10 h-10 px-3 rounded-lg font-medium transition-colors ${
                                                 page === p
                                                     ? "bg-blue-600 text-white"
                                                     : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -428,7 +450,7 @@ export default function ViewSlip() {
             </div>
 
             {selectedSlip && createPortal(
-                <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+                <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
                     <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-8">
                         <div className="flex items-start justify-between mb-4">
                             <div>
@@ -459,7 +481,7 @@ export default function ViewSlip() {
                             <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800">
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Generated On</p>
                                 <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedSlip.generatedOn}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Status: {selectedSlip.status}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Status: {statusLabels[selectedSlip.status]}</p>
                             </div>
                         </div>
 
@@ -499,7 +521,7 @@ export default function ViewSlip() {
                             
                             {/* Deductions Breakdown Section */}
                             <div className="border-t border-dashed border-gray-200 dark:border-gray-700 pt-4">
-                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide text-gray-700 dark:text-gray-300">Deductions</h4>
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Deductions</h4>
                                 <div className="space-y-2.5">
                                     {/* Withholding Tax */}
                                     <div className="flex items-center justify-between text-sm">

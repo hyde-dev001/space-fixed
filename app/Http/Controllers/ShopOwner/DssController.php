@@ -107,6 +107,7 @@ class DssController extends Controller
         if ($hasRepair) {
             $response['workload']      = $this->workloadMetrics($shopOwnerId, $workloadLimit, $period);
             $response['services']      = $this->serviceMetrics($shopOwnerId, $period);
+            $response['packages']      = $this->packageMetrics($shopOwnerId, $period);
             $response['monthly_trend'] = $this->monthlyTrend($shopOwnerId);
         }
 
@@ -267,7 +268,7 @@ class DssController extends Controller
                 'rs.name',
                 DB::raw('COALESCE(rs.price, 0) as list_price'),
                 DB::raw('COUNT(DISTINCT rr.id) as request_count'),
-                DB::raw('SUM(rr.total) as total_revenue')
+                DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as total_revenue')
             )
             ->groupBy('rs.id', 'rs.name', 'rs.price')
             ->orderByDesc('total_revenue')
@@ -330,7 +331,7 @@ class DssController extends Controller
                 Carbon::now()->startOfMonth(),
                 Carbon::now()->endOfMonth(),
             ])
-            ->sum('total');
+            ->sum(DB::raw('COALESCE(final_total, total)'));
 
         $lastMonthRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', self::COMPLETED_STATUSES)
@@ -339,7 +340,7 @@ class DssController extends Controller
                 Carbon::now()->subMonth()->startOfMonth(),
                 Carbon::now()->subMonth()->endOfMonth(),
             ])
-            ->sum('total');
+            ->sum(DB::raw('COALESCE(final_total, total)'));
 
         $revMomChange = $lastMonthRevenue > 0
             ? round((($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100, 1)
@@ -352,6 +353,82 @@ class DssController extends Controller
             'rev_mom_change'       => $revMomChange,
             'total_services'       => count($services),
             'services'             => $services,
+        ];
+    }
+
+    private function packageMetrics(int $shopOwnerId, int $period): array
+    {
+        $since = Carbon::now()->subDays($period);
+
+        $rows = DB::table('repair_requests as rr')
+            ->leftJoin('repair_packages as rp', 'rr.repair_package_id', '=', 'rp.id')
+            ->where('rr.shop_owner_id', $shopOwnerId)
+            ->whereNotNull('rr.repair_package_id')
+            ->whereIn('rr.status', self::COMPLETED_STATUSES)
+            ->where('rr.payment_status', 'completed')
+            ->where('rr.completed_at', '>=', $since)
+            ->select(
+                'rr.repair_package_id',
+                DB::raw("COALESCE(rp.name, CONCAT('Package #', rr.repair_package_id)) as package_name"),
+                DB::raw('COUNT(rr.id) as bookings'),
+                DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as revenue')
+            )
+            ->groupBy('rr.repair_package_id', 'rp.name')
+            ->orderByDesc('revenue')
+            ->get();
+
+        $packageRevenue = (float) $rows->sum('revenue');
+        $packageBookings = (int) $rows->sum('bookings');
+
+        $allRepairRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereIn('status', self::COMPLETED_STATUSES)
+            ->where('payment_status', 'completed')
+            ->where('completed_at', '>=', $since)
+            ->sum(DB::raw('COALESCE(final_total, total)'));
+
+        $allRepairBookings = (int) RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereIn('status', self::COMPLETED_STATUSES)
+            ->where('payment_status', 'completed')
+            ->where('completed_at', '>=', $since)
+            ->count();
+
+        $thisMonthRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereNotNull('repair_package_id')
+            ->whereIn('status', self::COMPLETED_STATUSES)
+            ->where('payment_status', 'completed')
+            ->whereBetween('completed_at', [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth()])
+            ->sum(DB::raw('COALESCE(final_total, total)'));
+
+        $lastMonthRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
+            ->whereNotNull('repair_package_id')
+            ->whereIn('status', self::COMPLETED_STATUSES)
+            ->where('payment_status', 'completed')
+            ->whereBetween('completed_at', [Carbon::now()->subMonth()->startOfMonth(), Carbon::now()->subMonth()->endOfMonth()])
+            ->sum(DB::raw('COALESCE(final_total, total)'));
+
+        $revMomChange = $lastMonthRevenue > 0
+            ? round((($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100, 1)
+            : null;
+
+        $topPackages = $rows->map(function ($row) {
+            return [
+                'id' => (int) $row->repair_package_id,
+                'name' => (string) $row->package_name,
+                'bookings' => (int) $row->bookings,
+                'revenue' => (float) $row->revenue,
+            ];
+        })->values()->toArray();
+
+        return [
+            'period_revenue' => $packageRevenue,
+            'this_month_revenue' => $thisMonthRevenue,
+            'last_month_revenue' => $lastMonthRevenue,
+            'rev_mom_change' => $revMomChange,
+            'bookings' => $packageBookings,
+            'total_packages' => count($topPackages),
+            'revenue_share_pct' => $allRepairRevenue > 0 ? round(($packageRevenue / $allRepairRevenue) * 100, 1) : 0,
+            'bookings_share_pct' => $allRepairBookings > 0 ? round(($packageBookings / $allRepairBookings) * 100, 1) : 0,
+            'top_packages' => $topPackages,
         ];
     }
 
@@ -379,7 +456,7 @@ class DssController extends Controller
                 ->whereIn('status', self::COMPLETED_STATUSES)
                 ->where('payment_status', 'completed')
                 ->whereBetween('completed_at', [$start, $end])
-                ->sum('total');
+                ->sum(DB::raw('COALESCE(final_total, total)'));
 
             $months[] = [
                 'month'     => $month->format('M Y'),
@@ -749,7 +826,7 @@ class DssController extends Controller
                 'rs.name',
                 DB::raw('COALESCE(rs.price, 0) as list_price'),
                 DB::raw('COUNT(DISTINCT rr.id) as cnt'),
-                DB::raw('SUM(rr.total) as rev')
+                DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as rev')
             )
             ->groupBy('rs.id', 'rs.name', 'rs.price')
             ->having('cnt', '>=', 3) // Only flag services with enough data

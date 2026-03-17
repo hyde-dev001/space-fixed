@@ -5,6 +5,8 @@ namespace App\Http\Controllers\ERP\HR;
 use App\Http\Controllers\Controller;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
+use App\Models\HR\BranchPayrollSetting;
+use App\Models\Finance\Expense;
 use App\Models\Employee;
 use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
@@ -14,6 +16,7 @@ use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -57,6 +60,18 @@ class PayrollController extends Controller
         }
 
         return $user;
+    }
+
+    private function canDisbursePayroll($user): bool
+    {
+        return $user
+            && (
+                $user->hasRole('Manager')
+                || $user->hasRole('Shop Owner')
+                || $user->can('access-payslip-generation')
+                || $user->can('access-payslip-approval')
+                || $user->can('access-approval-workflow')
+            );
     }
 
     // ============================================================
@@ -150,6 +165,11 @@ class PayrollController extends Controller
             'leave_days'       => 'nullable|integer|min:0|max:31',
             'absent_days'      => 'nullable|integer|min:0|max:31',
             'overtime_hours'   => 'nullable|numeric|min:0|max:744',
+            'rest_day_hours'   => 'nullable|numeric|min:0|max:744',
+            'special_holiday_hours' => 'nullable|numeric|min:0|max:744',
+            'regular_holiday_hours' => 'nullable|numeric|min:0|max:744',
+            'night_differential_hours' => 'nullable|numeric|min:0|max:744',
+            'undertime_hours'  => 'nullable|numeric|min:0|max:744',
             'salesCommission'  => 'nullable|numeric|min:0',
             'performanceBonus' => 'nullable|numeric|min:0',
             'otherAllowances'  => 'nullable|numeric|min:0',
@@ -220,6 +240,11 @@ class PayrollController extends Controller
         if ($request->filled('leave_days'))      $overrides['leave_days']      = (int)   $request->leave_days;
         if ($request->filled('absent_days'))     $overrides['absent_days']     = (int)   $request->absent_days;
         if ($request->filled('overtime_hours'))  $overrides['overtime_hours']  = (float) $request->overtime_hours;
+        if ($request->filled('rest_day_hours')) $overrides['rest_day_hours'] = (float) $request->rest_day_hours;
+        if ($request->filled('special_holiday_hours')) $overrides['special_holiday_hours'] = (float) $request->special_holiday_hours;
+        if ($request->filled('regular_holiday_hours')) $overrides['regular_holiday_hours'] = (float) $request->regular_holiday_hours;
+        if ($request->filled('night_differential_hours')) $overrides['night_differential_hours'] = (float) $request->night_differential_hours;
+        if ($request->filled('undertime_hours')) $overrides['undertime_hours'] = (float) $request->undertime_hours;
 
         try {
             $payroll = $this->payrollService->generatePayroll(
@@ -229,9 +254,24 @@ class PayrollController extends Controller
                 $overrides
             );
 
-            // The service always sets status = 'processed'.
-            // Reset to 'pending' so this entry goes through the approval workflow.
-            $payroll->update(['status' => 'pending']);
+            // The service always sets status = 'processed'. Reset it to the
+            // workflow entry state so Finance and Owner approvals are explicit.
+            $payroll->update([
+                'status' => 'pending',
+                'approval_status' => 'pending',
+                'approved_by' => null,
+                'approved_at' => null,
+                'approval_notes' => null,
+                'final_approved_by' => null,
+                'final_approved_at' => null,
+                'final_approval_notes' => null,
+                'payout_reference' => null,
+                'payout_proof_type' => null,
+                'payout_proof_reference' => null,
+                'payout_proof_notes' => null,
+                'disbursed_by' => null,
+                'disbursed_at' => null,
+            ]);
 
             $this->auditCustom(
                 AuditLog::MODULE_PAYROLL,
@@ -351,87 +391,15 @@ class PayrollController extends Controller
     // ============================================================
 
     /**
-     * Approve a payroll (HR-level approval, dual-control: prevents self-approval).
-     *
-     * Security: Approver cannot be the same user who generated the payroll.
+     * Deprecated HR approval endpoint kept for backward compatibility.
+     * Finance checker approval and owner final approval now live in the
+     * Finance approval workflow.
      */
     public function approve(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-
-        if (
-            ! $user->hasRole('Manager')
-            && ! $user->can('access-employee-directory')
-            && ! $user->can('access-attendance-records')
-            && ! $user->can('access-payslip-generation') && !$user->can('access-view-payslip')
-        ) {
-            \Log::warning('Unauthorized payroll approval attempt', [
-                'user_id'    => $user->id,
-                'user_role'  => $user->getRoleNames()->first(),
-                'payroll_id' => $id,
-            ]);
-            return response()->json([
-                'error' => 'Unauthorized. Only Managers or users with HR permissions can approve payroll.',
-            ], 403);
-        }
-
-        $payroll = Payroll::forShopOwner($user->shop_owner_id)
-            ->with('employee')
-            ->findOrFail($id);
-
-        // Dual-control: prevent self-approval
-        if ($payroll->generated_by == $user->id) {
-            \Log::warning('Attempted self-approval of payroll', [
-                'user_id'    => $user->id,
-                'payroll_id' => $id,
-            ]);
-            return response()->json([
-                'error' => 'You cannot approve payroll that you generated. Requires independent approval.',
-            ], 403);
-        }
-
-        if ($payroll->status !== 'pending') {
-            return response()->json(['error' => 'Payroll is not pending approval'], 422);
-        }
-
-        $payroll->update([
-            'status'      => 'approved',
-            'approved_by' => $user->id,
-            'approved_at' => now(),
-        ]);
-
-        \Log::info('Payroll approved', [
-            'approver_id'   => $user->id,
-            'approver_role' => $user->getRoleNames()->first(),
-            'payroll_id'    => $id,
-            'employee_id'   => $payroll->employee_id,
-            'amount'        => $payroll->net_salary,
-        ]);
-
-        try {
-            if ($payroll->employee && $payroll->employee->user) {
-                // Live DB notification
-                if ($payroll->employee->user_id) {
-                    $this->notificationService->notifyPayslipReady($payroll->employee->user_id, $user->shop_owner_id, [
-                        'payroll_id' => $payroll->id,
-                        'period'     => $payroll->period ?? ($payroll->pay_period_start . ' – ' . $payroll->pay_period_end),
-                        'net_salary' => number_format($payroll->net_salary, 2),
-                    ]);
-                }
-                // Laravel notification (email)
-                $payroll->employee->user->notify(new PayslipGenerated($payroll));
-            }
-        } catch (\Exception $e) {
-            \Log::error('Failed to send payslip notification', [
-                'payroll_id' => $payroll->id,
-                'error'      => $e->getMessage(),
-            ]);
-        }
-
         return response()->json([
-            'message' => 'Payroll approved successfully',
-            'payroll' => $payroll,
-        ]);
+            'error' => 'Payroll approval moved to the Finance approval workflow. HR can prepare payroll, but Finance and the final approver must approve it there.',
+        ], 410);
     }
 
     // ============================================================
@@ -439,19 +407,30 @@ class PayrollController extends Controller
     // ============================================================
 
     /**
-     * Mark one or more approved payrolls as paid.
+     * Mark one or more final-approved payrolls as paid and capture payout proof.
      */
     public function process(Request $request): JsonResponse
     {
-        $user = $this->authorizeUser();
+        $user = Auth::guard('user')->user();
         if (! $user) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        if (! $this->canDisbursePayroll($user)) {
+            return response()->json([
+                'error' => 'Unauthorized. Payroll disbursement requires payroll or approval workflow access.',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
-            'payrollIds'    => 'required|array',
-            'payrollIds.*'  => 'exists:payrolls,id',
-            'paymentDate'   => 'required|date',
+            'payrollIds' => 'required|array',
+            'payrollIds.*' => 'exists:payrolls,id',
+            'paymentDate' => 'required|date',
+            'paymentMethod' => 'required|in:bank_transfer,check,cash',
+            'payoutReference' => 'required|string|max:255',
+            'payoutProofType' => 'required|in:bank_reference,receipt_number,check_number,other',
+            'payoutProofReference' => 'required|string|max:255',
+            'payoutProofNotes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -459,30 +438,116 @@ class PayrollController extends Controller
         }
 
         $processedCount = 0;
-        $errors         = [];
+        $errors = [];
 
         foreach ($request->payrollIds as $payrollId) {
             try {
-                $payroll = Payroll::forShopOwner($user->shop_owner_id)->findOrFail($payrollId);
+                $payroll = Payroll::forShopOwner($user->shop_owner_id)
+                    ->with('employee')
+                    ->findOrFail($payrollId);
 
                 if ($payroll->status === 'paid') {
                     $errors[] = "Payroll for {$payroll->employee->fullName} is already paid";
                     continue;
                 }
 
-                $payroll->markAsPaid($request->paymentDate);
-                $processedCount++;
+                if ($payroll->approval_status !== 'approved' || empty($payroll->approved_by)) {
+                    $errors[] = "Payroll ID {$payrollId} requires Finance checker approval before disbursement";
+                    continue;
+                }
 
+                if ($payroll->status !== 'approved' || empty($payroll->final_approved_by)) {
+                    $errors[] = "Payroll ID {$payrollId} requires final owner approval before disbursement";
+                    continue;
+                }
+
+                if ((int) $payroll->approved_by === (int) $payroll->final_approved_by) {
+                    $errors[] = "Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.";
+                    continue;
+                }
+
+                $payroll->markAsPaid((string) $request->paymentDate, [
+                    'payment_method' => (string) $request->paymentMethod,
+                    'payout_reference' => (string) $request->payoutReference,
+                    'payout_proof_type' => (string) $request->payoutProofType,
+                    'payout_proof_reference' => (string) $request->payoutProofReference,
+                    'payout_proof_notes' => $request->input('payoutProofNotes'),
+                    'disbursed_by' => (int) $user->id,
+                ]);
+
+                $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, (string) $request->paymentDate);
+                $processedCount++;
             } catch (\Exception $e) {
                 $errors[] = "Error processing payroll ID {$payrollId}: " . $e->getMessage();
             }
         }
 
         return response()->json([
-            'message'   => 'Payroll processing completed',
+            'message' => 'Payroll disbursement completed',
             'processed' => $processedCount,
-            'errors'    => $errors,
+            'errors' => $errors,
         ]);
+    }
+
+    /**
+     * Auto-create Finance expense from paid payroll disbursement.
+     */
+    private function createExpenseFromPaidPayroll(Payroll $payroll, int $userId, string $paymentDate): void
+    {
+        $amount = (float) ($payroll->net_salary ?? 0);
+        if ($amount <= 0) {
+            return;
+        }
+
+        $template = config('finance_expense_templates.payroll', []);
+
+        $category = (string) ($template['category'] ?? 'Payroll');
+        $status = (string) ($template['status'] ?? 'submitted');
+        $referencePrefix = (string) ($template['reference_prefix'] ?? 'PAY-EXP-');
+        $descriptionTemplate = (string) ($template['description_template'] ?? 'Auto-generated from Payroll: :employee_name (:payroll_period)');
+        $metaSource = (string) ($template['meta_source'] ?? 'payroll');
+
+        $referenceToken = (string) $payroll->id;
+        $reference = $referencePrefix . $referenceToken;
+
+        $payroll->loadMissing('employee');
+        $employeeName = trim((string) ($payroll->employee?->first_name ?? '') . ' ' . (string) ($payroll->employee?->last_name ?? ''));
+        if ($employeeName === '') {
+            $employeeName = 'Employee #' . $payroll->employee_id;
+        }
+
+        $description = strtr($descriptionTemplate, [
+            ':reference' => $referenceToken,
+            ':employee_name' => $employeeName,
+            ':payroll_period' => (string) ($payroll->payroll_period ?? 'N/A'),
+        ]);
+
+        $expenseDate = \Illuminate\Support\Carbon::parse($paymentDate)->toDateString();
+
+        Expense::firstOrCreate(
+            ['reference' => $reference],
+            [
+                'date' => $expenseDate,
+                'category' => $category,
+                'vendor' => $employeeName,
+                'description' => $description,
+                'amount' => $amount,
+                'tax_amount' => 0,
+                'status' => $status,
+                'shop_id' => $payroll->shop_owner_id,
+                'meta' => [
+                    'source' => $metaSource,
+                    'payroll_id' => $payroll->id,
+                    'employee_id' => $payroll->employee_id,
+                    'payroll_period' => $payroll->payroll_period,
+                    'created_by' => $userId,
+                    'payment_method' => $payroll->payment_method,
+                    'payout_reference' => $payroll->payout_reference,
+                    'payout_proof_type' => $payroll->payout_proof_type,
+                    'payout_proof_reference' => $payroll->payout_proof_reference,
+                ],
+            ]
+        );
     }
 
     // ============================================================
@@ -506,22 +571,23 @@ class PayrollController extends Controller
             $query->forPeriod($period);
         }
 
-        $totalPayrolls     = (clone $query)->count();
-        $pendingPayrolls   = (clone $query)->pending()->count();
-        $processedPayrolls = (clone $query)->processed()->count();
-        $paidPayrolls      = (clone $query)->withStatus('paid')->count();
-        $totalAmount       = (clone $query)->sum('net_salary');
-        $pendingAmount     = (clone $query)->pending()->sum('net_salary');
-        $paidAmount        = (clone $query)->withStatus('paid')->sum('net_salary');
+        $totalPayrolls = (clone $query)->count();
+        $pendingPayrolls = (clone $query)->pending()->count();
+        $approvedPayrolls = (clone $query)->withStatus('approved')->count();
+        $paidPayrolls = (clone $query)->withStatus('paid')->count();
+        $totalAmount = (clone $query)->sum('net_salary');
+        $pendingAmount = (clone $query)->pending()->sum('net_salary');
+        $paidAmount = (clone $query)->withStatus('paid')->sum('net_salary');
 
         return response()->json([
-            'totalPayrolls'     => $totalPayrolls,
-            'pendingPayrolls'   => $pendingPayrolls,
-            'processedPayrolls' => $processedPayrolls,
-            'paidPayrolls'      => $paidPayrolls,
-            'totalAmount'       => $totalAmount,
-            'pendingAmount'     => $pendingAmount,
-            'paidAmount'        => $paidAmount,
+            'totalPayrolls' => $totalPayrolls,
+            'pendingPayrolls' => $pendingPayrolls,
+            'processedPayrolls' => $approvedPayrolls,
+            'approvedPayrolls' => $approvedPayrolls,
+            'paidPayrolls' => $paidPayrolls,
+            'totalAmount' => $totalAmount,
+            'pendingAmount' => $pendingAmount,
+            'paidAmount' => $paidAmount,
         ]);
     }
 
@@ -650,6 +716,117 @@ class PayrollController extends Controller
     }
 
     /**
+     * Controlled 13th-month release process.
+     *
+     * December-only by default; can be overridden with allow_non_december=true
+     * for authorized users.
+     */
+    public function releaseThirteenthMonth(Request $request): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $hasReleasePermission =
+            $user->hasRole('Shop Owner')
+            || $user->hasRole('Manager')
+            || $user->can('access-approval-workflow')
+            || $user->can('access-payslip-approval');
+
+        if (! $hasReleasePermission) {
+            return response()->json([
+                'error' => 'Unauthorized. 13th-month release requires final approval permissions.',
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'year' => 'required|integer|min:2000|max:2100',
+            'employee_ids' => 'sometimes|array',
+            'employee_ids.*' => 'exists:employees,id',
+            'release_date' => 'sometimes|date',
+            'allow_non_december' => 'sometimes|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $result = $this->payrollService->releaseThirteenthMonth(
+                (int) $user->shop_owner_id,
+                (int) $request->year,
+                (int) $user->id,
+                $request->input('employee_ids', []),
+                [
+                    'release_date' => $request->input('release_date'),
+                    'allow_non_december' => (bool) $request->boolean('allow_non_december', false),
+                ]
+            );
+
+            $this->auditCustom(
+                AuditLog::MODULE_PAYROLL,
+                'thirteenth_month_release',
+                '13th-month controlled release executed for year ' . (int) $request->year,
+                [
+                    'severity' => AuditLog::SEVERITY_WARNING,
+                    'tags' => ['payroll', '13th-month', 'release', 'controlled'],
+                    'year' => (int) $request->year,
+                    'processed_count' => (int) ($result['processed_count'] ?? 0),
+                    'skipped_count' => (int) ($result['skipped_count'] ?? 0),
+                ]
+            );
+
+            return response()->json([
+                'message' => '13th-month release process completed',
+                'result' => $result,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => '13th-month release failed: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * 13th-month accrual vs release reconciliation report.
+     */
+    public function thirteenthMonthReconciliation(Request $request): JsonResponse
+    {
+        $user = $this->authorizeUser();
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'year' => 'required|integer|min:2000|max:2100',
+            'employee_ids' => 'sometimes|array',
+            'employee_ids.*' => 'exists:employees,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $report = $this->payrollService->getThirteenthMonthReconciliationReport(
+                (int) $user->shop_owner_id,
+                (int) $request->year,
+                [
+                    'employee_ids' => $request->input('employee_ids', []),
+                ]
+            );
+
+            return response()->json($report);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Reconciliation report generation failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Calculate payroll preview for a single employee from request inputs.
      * Returns computed figures without saving to database.
      *
@@ -668,36 +845,92 @@ class PayrollController extends Controller
             'end_date'       => 'required|date|after_or_equal:start_date',
             'regular_hours'  => 'required|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
+            'rest_day_hours' => 'nullable|numeric|min:0',
+            'special_holiday_hours' => 'nullable|numeric|min:0',
+            'regular_holiday_hours' => 'nullable|numeric|min:0',
+            'night_differential_hours' => 'nullable|numeric|min:0',
+            'undertime_hours' => 'nullable|numeric|min:0',
             'absent_days'    => 'nullable|integer|min:0',
+            'sales_commission' => 'nullable|numeric|min:0',
+            'performance_bonus' => 'nullable|numeric|min:0',
+            'other_allowances' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $employee       = Employee::forShopOwner($user->shop_owner_id)->findOrFail($request->employee_id);
-        $regularHours   = $request->regular_hours;
-        $overtimeHours  = $request->overtime_hours ?? 0;
-        $absentDays     = $request->absent_days ?? 0;
+        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($request->employee_id);
 
-        $monthlySalary = $employee->salary ?? 0;
-        $workingDays   = Carbon::parse($request->start_date)->diffInDays(Carbon::parse($request->end_date)) + 1;
-        $dailyRate     = $workingDays > 0 ? $monthlySalary / $workingDays : 0;
-        $hourlyRate    = $dailyRate / 8;
+        $regularHours = (float) $request->regular_hours;
+        $attendanceDays = (int) floor($regularHours / 8);
+        $overtimeHours = (float) ($request->overtime_hours ?? 0);
+        $restDayHours = (float) ($request->rest_day_hours ?? 0);
+        $specialHolidayHours = (float) ($request->special_holiday_hours ?? 0);
+        $regularHolidayHours = (float) ($request->regular_holiday_hours ?? 0);
+        $nightDifferentialHours = (float) ($request->night_differential_hours ?? 0);
+        $undertimeHours = (float) ($request->undertime_hours ?? 0);
+        $absentDays = (int) ($request->absent_days ?? 0);
 
-        $basicPay      = $regularHours * $hourlyRate;
-        $overtimePay   = $overtimeHours * ($hourlyRate * 1.25);
-        $grossPay      = $basicPay + $overtimePay;
-        $totalEarnings = $grossPay; // TODO: add commissions / bonuses when data is available
+        $salesCommission = (float) ($request->sales_commission ?? 0);
+        $performanceBonus = (float) ($request->performance_bonus ?? 0);
+        $otherAllowances = (float) ($request->other_allowances ?? 0);
 
-        $sss        = $this->calculateSSSContribution($monthlySalary);
-        $philhealth = $this->calculatePhilHealthContribution($monthlySalary);
-        $pagibig    = $this->calculatePagIbigContribution($monthlySalary);
-        $tax        = $this->calculateMonthlyTax($grossPay, $sss + $philhealth + $pagibig);
+        $ruleEngine = $this->payrollService->computeRuleEngineAmounts($employee, [
+            'attendance_days' => $attendanceDays,
+            'overtime_hours' => $overtimeHours,
+            'rest_day_hours' => $restDayHours,
+            'special_holiday_hours' => $specialHolidayHours,
+            'regular_holiday_hours' => $regularHolidayHours,
+            'night_differential_hours' => $nightDifferentialHours,
+            'undertime_hours' => $undertimeHours,
+            'absent_days' => $absentDays,
+        ]);
 
-        $absentDeductions = $absentDays * $dailyRate;
-        $totalDeductions  = $tax + $sss + $philhealth + $pagibig + $absentDeductions;
-        $netPay           = $totalEarnings - $totalDeductions;
+        $basicPay = (float) ($employee->salary ?? 0);
+        $monthlySalary = $basicPay;
+        $overtimePay = (float) ($ruleEngine['overtime_pay'] ?? 0);
+        $restDayPay = (float) ($ruleEngine['rest_day_pay'] ?? 0);
+        $specialHolidayPay = (float) ($ruleEngine['special_holiday_pay'] ?? 0);
+        $regularHolidayPay = (float) ($ruleEngine['regular_holiday_pay'] ?? 0);
+        $nightDifferentialPay = (float) ($ruleEngine['night_differential_pay'] ?? 0);
+
+        $grossPay = $basicPay
+            + $overtimePay
+            + $restDayPay
+            + $specialHolidayPay
+            + $regularHolidayPay
+            + $nightDifferentialPay
+            + $salesCommission
+            + $performanceBonus
+            + $otherAllowances;
+
+        $taxableIncome = $basicPay
+            + $overtimePay
+            + $restDayPay
+            + $specialHolidayPay
+            + $regularHolidayPay
+            + $nightDifferentialPay
+            + $salesCommission
+            + $performanceBonus;
+
+        $runDate = Carbon::parse($request->end_date)->startOfDay();
+        $statutory = $this->payrollService->calculateStatutoryDeductions(
+            (int) $user->shop_owner_id,
+            (float) $taxableIncome,
+            $runDate
+        );
+
+        $tax = (float) ($statutory['withholding_tax'] ?? 0);
+        $sss = (float) ($statutory['sss_contribution'] ?? 0);
+        $philhealth = (float) ($statutory['philhealth_contribution'] ?? 0);
+        $pagibig = (float) ($statutory['pagibig_contribution'] ?? 0);
+        $absentDeductions = (float) ($ruleEngine['absent_deduction'] ?? 0);
+        $undertimeDeductions = (float) ($ruleEngine['undertime_deduction'] ?? 0);
+
+        $totalDeductions = $tax + $sss + $philhealth + $pagibig + $absentDeductions + $undertimeDeductions;
+        $totalEarnings = $grossPay;
+        $netPay = $totalEarnings - $totalDeductions;
 
         return response()->json([
             'calculation' => [
@@ -709,14 +942,23 @@ class PayrollController extends Controller
                 'hours' => [
                     'regular_hours'  => round($regularHours, 2),
                     'overtime_hours' => round($overtimeHours, 2),
+                    'rest_day_hours' => round($restDayHours, 2),
+                    'special_holiday_hours' => round($specialHolidayHours, 2),
+                    'regular_holiday_hours' => round($regularHolidayHours, 2),
+                    'night_differential_hours' => round($nightDifferentialHours, 2),
+                    'undertime_hours' => round($undertimeHours, 2),
                     'absent_days'    => $absentDays,
                 ],
                 'earnings' => [
                     'basic_pay'          => round($basicPay, 2),
                     'overtime_pay'       => round($overtimePay, 2),
-                    'sales_commission'   => 0,
-                    'performance_bonus'  => 0,
-                    'other_allowances'   => 0,
+                    'rest_day_pay'       => round($restDayPay, 2),
+                    'special_holiday_pay' => round($specialHolidayPay, 2),
+                    'regular_holiday_pay' => round($regularHolidayPay, 2),
+                    'night_differential_pay' => round($nightDifferentialPay, 2),
+                    'sales_commission'   => round($salesCommission, 2),
+                    'performance_bonus'  => round($performanceBonus, 2),
+                    'other_allowances'   => round($otherAllowances, 2),
                     'total_earnings'     => round($totalEarnings, 2),
                 ],
                 'deductions' => [
@@ -725,6 +967,7 @@ class PayrollController extends Controller
                     'philhealth_contribution' => round($philhealth, 2),
                     'pagibig_contribution'    => round($pagibig, 2),
                     'absent_deductions'       => round($absentDeductions, 2),
+                    'undertime_deductions'    => round($undertimeDeductions, 2),
                     'total_deductions'        => round($totalDeductions, 2),
                 ],
                 'net_pay'   => round($netPay, 2),
@@ -806,33 +1049,108 @@ class PayrollController extends Controller
         $today   = Carbon::today();
         $periods = [];
 
-        // Generate from 11 months ago → current month (12 entries total), newest first
+        $payCycle = 'monthly';
+        $payDayFirst = 15;
+
+        if (Schema::hasTable('hr_branch_payroll_settings')) {
+            $setting = BranchPayrollSetting::query()
+                ->forShopOwner((int) $user->shop_owner_id)
+                ->active()
+                ->orderBy('id')
+                ->first();
+
+            if ($setting) {
+                $payCycle = $setting->pay_cycle ?: 'monthly';
+                $payDayFirst = (int) ($setting->pay_day_first ?: 15);
+            }
+        }
+
+        // Generate from 11 months ago → current month, newest first after sorting.
         for ($offset = 0; $offset <= 11; $offset++) {
             $month = $today->copy()->startOfMonth()->subMonths($offset);
-            $start = $month->copy()->startOfMonth();
-            $end   = $month->copy()->endOfMonth();
+            $monthStart = $month->copy()->startOfMonth();
+            $monthEnd = $month->copy()->endOfMonth();
 
-            // Count Mon–Fri working days in the month
+            if ($payCycle === 'semi_monthly') {
+                $firstCutoffDay = max(1, min($payDayFirst, $monthEnd->day));
+                $firstStart = $monthStart->copy();
+                $firstEnd = $monthStart->copy()->day($firstCutoffDay);
+
+                $secondStart = $firstEnd->copy()->addDay();
+                $secondEnd = $monthEnd->copy();
+
+                $segments = [
+                    [
+                        'start' => $firstStart,
+                        'end' => $firstEnd,
+                        'label' => sprintf('%s (%d-%d)', $month->format('F Y'), $firstStart->day, $firstEnd->day),
+                    ],
+                ];
+
+                if ($secondStart->lte($secondEnd)) {
+                    $segments[] = [
+                        'start' => $secondStart,
+                        'end' => $secondEnd,
+                        'label' => sprintf('%s (%d-%d)', $month->format('F Y'), $secondStart->day, $secondEnd->day),
+                    ];
+                }
+
+                foreach ($segments as $segment) {
+                    $workingDays = 0;
+                    $cursor = $segment['start']->copy();
+                    while ($cursor->lte($segment['end'])) {
+                        if ($cursor->isWeekday()) {
+                            $workingDays++;
+                        }
+                        $cursor->addDay();
+                    }
+
+                    if ($segment['start']->gt($today)) {
+                        $attendanceStatus = 'not_started';
+                    } else {
+                        $attendanceStatus = $segment['end']->lt($today) ? 'finalized' : 'pending';
+                    }
+                    $periodKey = $segment['start']->format('Y-m-d') . ' to ' . $segment['end']->format('Y-m-d');
+
+                    $periods[] = [
+                        'month'            => $segment['label'],
+                        'periodKey'        => $periodKey,
+                        'startDate'        => $segment['start']->format('Y-m-d'),
+                        'endDate'          => $segment['end']->format('Y-m-d'),
+                        'attendanceStatus' => $attendanceStatus,
+                        'workingDays'      => $workingDays,
+                        'payCycle'         => 'semi_monthly',
+                    ];
+                }
+
+                continue;
+            }
+
             $workingDays = 0;
-            $cursor = $start->copy();
-            while ($cursor->lte($end)) {
+            $cursor = $monthStart->copy();
+            while ($cursor->lte($monthEnd)) {
                 if ($cursor->isWeekday()) {
                     $workingDays++;
                 }
                 $cursor->addDay();
             }
 
-            // A month is "finalized" once it has fully ended
-            $attendanceStatus = $end->lt($today) ? 'finalized' : 'pending';
+            $attendanceStatus = $monthEnd->lt($today) ? 'finalized' : 'pending';
 
             $periods[] = [
                 'month'            => $month->format('F Y'),
-                'startDate'        => $start->format('Y-m-d'),
-                'endDate'          => $end->format('Y-m-d'),
+                'periodKey'        => $month->format('Y-m'),
+                'startDate'        => $monthStart->format('Y-m-d'),
+                'endDate'          => $monthEnd->format('Y-m-d'),
                 'attendanceStatus' => $attendanceStatus,
                 'workingDays'      => $workingDays,
+                'payCycle'         => 'monthly',
             ];
         }
+
+        usort($periods, static function (array $a, array $b): int {
+            return strcmp($b['startDate'], $a['startDate']);
+        });
 
         return response()->json($periods);
     }
@@ -842,13 +1160,12 @@ class PayrollController extends Controller
     // ============================================================
 
     /**
-     * Return the authenticated employee's approved/paid payslips.
+     * Return the authenticated employee's released-ready or paid payslips.
      *
      * GET /api/staff/payslips/my
      *
-     * Only payslips where Finance has approved (approval_status = 'approved')
-     * or the record is already marked paid are returned — employees cannot
-     * see pending/rejected drafts.
+     * Employees only see payrolls that have already passed final approval
+     * (`status = approved`) or have been paid.
      */
     public function myPayslips(Request $request): JsonResponse
     {
@@ -865,8 +1182,10 @@ class PayrollController extends Controller
 
         $query = Payroll::forShopOwner($user->shop_owner_id)
             ->where('employee_id', $employee->id)
-            // Show all generated payslips except Finance-rejected ones
-            ->where('approval_status', '!=', 'rejected')
+            ->where(function ($q) {
+                $q->where('status', 'approved')
+                  ->orWhere('status', 'paid');
+            })
             ->with([
                 'components' => fn ($q) => $q->orderBy('component_type')->orderBy('display_order'),
             ]);

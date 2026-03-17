@@ -14,7 +14,7 @@ type RepairOrder = {
   item: string;
   service: string;
   total: string;
-  status: "new_request" | "assigned_to_repairer" | "repairer_accepted" | "owner_approved" | "waiting_customer_confirmation" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "picked_up" | "under-review" | "pending" | "received" | "rejected" | "cancelled";
+  status: "new_request" | "assigned_to_repairer" | "repairer_accepted" | "owner_approval_pending" | "owner_approved" | "waiting_customer_confirmation" | "confirmed" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "shipped" | "picked_up" | "under-review" | "pending" | "received" | "rejected" | "cancelled";
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -218,6 +218,8 @@ const normalizeRepairStatus = (status: string | null | undefined): RepairOrder["
     case "ready_for_pickup":
     case "ready-for-pickup":
       return "ready-for-pickup";
+    case "shipped":
+      return "shipped";
     case "under_review":
     case "under-review":
       return "under-review";
@@ -604,8 +606,10 @@ export default function JobOrdersRepair() {
         // New Request tab includes new_request, assigned_to_repairer and under-review status
         matchesTab = order.status === "under-review" || order.status === "assigned_to_repairer" || order.status === "new_request";
       } else if (selectedTab === "pending") {
-        // Pending tab includes pending, repairer_accepted, owner_approval_pending, and owner_approved
-        matchesTab = order.status === "pending" || order.status === "repairer_accepted" || order.status === "owner_approval_pending" || order.status === "owner_approved";
+        // Pending tab includes pending, repairer_accepted, owner_approval_pending, owner_approved, and confirmed
+        matchesTab = order.status === "pending" || order.status === "repairer_accepted" || order.status === "owner_approval_pending" || order.status === "owner_approved" || order.status === "confirmed";
+      } else if (selectedTab === "shipped") {
+        matchesTab = order.status === "shipped";
       } else if (selectedTab === "completed") {
         // Completed tab only shows picked_up status (customer has picked up the item)
         matchesTab = order.status === "picked_up";
@@ -631,11 +635,12 @@ export default function JobOrdersRepair() {
   const stats = useMemo(() => {
     const total = orders.length;
     const underReview = orders.filter(o => o.status === "under-review" || o.status === "assigned_to_repairer" || o.status === "new_request").length;
-    const pending = orders.filter(o => o.status === "pending" || o.status === "repairer_accepted" || o.status === "owner_approval_pending" || o.status === "owner_approved").length;
+    const pending = orders.filter(o => o.status === "pending" || o.status === "repairer_accepted" || o.status === "owner_approval_pending" || o.status === "owner_approved" || o.status === "confirmed").length;
     const received = orders.filter(o => o.status === "received").length;
     const inProgress = orders.filter(o => o.status === "in-progress").length;
     const workCompleted = orders.filter(o => o.status === "completed").length;
     const readyForPickup = orders.filter(o => o.status === "ready-for-pickup").length;
+    const shipped = orders.filter(o => o.status === "shipped").length;
     const pickedUp = orders.filter(o => o.status === "picked_up").length;
     const completedAll = orders.filter(o => o.status === "picked_up").length;
     const rejected = orders.filter(o => o.status === "rejected").length;
@@ -643,14 +648,16 @@ export default function JobOrdersRepair() {
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled" && o.status !== "rejected")
       .reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
-    return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
+    return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, shipped, pickedUp, completedAll, rejected, cancelled, totalRevenue };
   }, [orders]);
 
   const activeRepairCount = useMemo(() => {
     const activeStatuses: RepairOrder['status'][] = [
       'assigned_to_repairer',
       'repairer_accepted',
+      'owner_approval_pending',
       'owner_approved',
+      'confirmed',
       'waiting_customer_confirmation',
       'pending',
       'received',
@@ -658,6 +665,7 @@ export default function JobOrdersRepair() {
       'awaiting_parts',
       'completed',
       'ready-for-pickup',
+      'shipped',
     ];
 
     return orders.filter((order) => activeStatuses.includes(order.status)).length;
@@ -674,6 +682,7 @@ export default function JobOrdersRepair() {
       "completed": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       "picked_up": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       "ready-for-pickup": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+      "shipped": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
       "rejected": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       "cancelled": "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
     };
@@ -839,6 +848,7 @@ export default function JobOrdersRepair() {
         setOrders((prev) =>
           prev.map((o) => (o.id === order.id ? { ...o, status: "in-progress", startedAt: new Date().toLocaleString() } : o))
         );
+        setViewOrder((prev) => prev && prev.id === order.id ? { ...prev, status: "in-progress", startedAt: new Date().toLocaleString() } : prev);
         setSelectedTab("in-progress");
         setCurrentPage(1);
 
@@ -1233,10 +1243,14 @@ export default function JobOrdersRepair() {
               ? {
                   ...o,
                   status: "shipped",
+                  pickup_enabled: true,
+                  pickup_enabled_at: new Date().toISOString(),
                 }
               : o
           )
         );
+        setSelectedTab("shipped");
+        setCurrentPage(1);
 
         setIsShippingModalOpen(false);
         setSelectedOrder(null);
@@ -1253,6 +1267,8 @@ export default function JobOrdersRepair() {
           confirmButtonText: "OK",
           confirmButtonColor: "#2563eb",
         });
+
+        fetchOrders();
       } else {
         throw new Error(data.message || 'Failed to update shipping information');
       }
@@ -1530,6 +1546,16 @@ export default function JobOrdersRepair() {
                   Ready for Pickup ({stats.readyForPickup})
                 </button>
                 <button
+                  onClick={() => setSelectedTab("shipped")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "shipped"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  Shipped ({stats.shipped})
+                </button>
+                <button
                   onClick={() => setSelectedTab("completed")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "completed"
@@ -1680,6 +1706,8 @@ export default function JobOrdersRepair() {
                               ? "Work Done"
                               : order.status === "ready-for-pickup"
                               ? "Ready for Pickup"
+                              : order.status === "shipped"
+                              ? "Shipped"
                               : order.status === "picked_up"
                               ? "Received"
                               : order.status === "received"
@@ -1780,8 +1808,13 @@ export default function JobOrdersRepair() {
                           {order.status === "ready-for-pickup" && order.serviceType === "pickup" && (
                             <button
                               onClick={() => handleShipOrder(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                              title="Ship this repair order"
+                              disabled={!isFullyPaidForRelease(order)}
+                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                isFullyPaidForRelease(order)
+                                  ? 'text-white bg-purple-600 hover:bg-purple-700'
+                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              }`}
+                              title={isFullyPaidForRelease(order) ? 'Ship this repair order' : getReleasePaymentBlockedMessage(order)}
                             >
                               Ship
                             </button>
@@ -1814,7 +1847,7 @@ export default function JobOrdersRepair() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center">
+                    <td colSpan={10} className="px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No repair orders found</p>
                     </td>
                   </tr>
@@ -1921,6 +1954,8 @@ export default function JobOrdersRepair() {
                       ? "Work Done"
                       : viewOrder.status === "ready-for-pickup"
                       ? "Ready for Pickup"
+                      : viewOrder.status === "shipped"
+                      ? "Shipped"
                       : viewOrder.status === "picked_up"
                         ? "Received"
                       : viewOrder.status === "rejected"
@@ -2286,8 +2321,13 @@ export default function JobOrdersRepair() {
                           {isPickupDelivery && (
                             <button
                               onClick={() => handleShipOrder(viewOrder)}
-                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-                              title="Ship this repair order"
+                              disabled={!canActivateRelease}
+                              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                canActivateRelease
+                                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              }`}
+                              title={canActivateRelease ? 'Ship this repair order' : getReleasePaymentBlockedMessage(viewOrder)}
                             >
                               Ship
                             </button>
