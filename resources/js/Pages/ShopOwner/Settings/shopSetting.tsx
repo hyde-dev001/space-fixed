@@ -174,6 +174,19 @@ const ShopSetting: React.FC = () => {
 	const markerRef = useRef<any>(null);
 	const circleRef = useRef<any>(null);
 
+	const reverseGeocode = async (lat: string | number, lng: string | number): Promise<string | null> => {
+		try {
+			const res = await fetch(
+				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+				{ headers: { 'User-Agent': 'SoleSpace/1.0' } },
+			);
+			const data = await res.json();
+			return typeof data?.display_name === 'string' && data.display_name.trim() !== '' ? data.display_name : null;
+		} catch {
+			return null;
+		}
+	};
+
 	const savePaymongoKey = async () => {
 		if (!keyInput.trim()) return;
 		setSavingKey(true);
@@ -260,18 +273,32 @@ const ShopSetting: React.FC = () => {
 			const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
 			const circle = L.circle([initLat, initLng], { radius: geoRadius, color: '#2563eb', fillOpacity: 0.08 }).addTo(map);
 
-			marker.on('dragend', () => {
+			marker.on('dragend', async () => {
 				const pos = marker.getLatLng();
-				setGeoLat(pos.lat.toFixed(8));
-				setGeoLng(pos.lng.toFixed(8));
+				const lat = pos.lat.toFixed(8);
+				const lng = pos.lng.toFixed(8);
+				setGeoLat(lat);
+				setGeoLng(lng);
 				circle.setLatLng(pos);
+				const detectedAddress = await reverseGeocode(lat, lng);
+				if (detectedAddress) {
+					setGeoAddress(detectedAddress);
+					setAddressSearch(detectedAddress);
+				}
 			});
 
-			map.on('click', (e: any) => {
+			map.on('click', async (e: any) => {
 				marker.setLatLng(e.latlng);
 				circle.setLatLng(e.latlng);
-				setGeoLat(e.latlng.lat.toFixed(8));
-				setGeoLng(e.latlng.lng.toFixed(8));
+				const lat = e.latlng.lat.toFixed(8);
+				const lng = e.latlng.lng.toFixed(8);
+				setGeoLat(lat);
+				setGeoLng(lng);
+				const detectedAddress = await reverseGeocode(lat, lng);
+				if (detectedAddress) {
+					setGeoAddress(detectedAddress);
+					setAddressSearch(detectedAddress);
+				}
 			});
 
 			leafletMapRef.current = map;
@@ -310,19 +337,10 @@ const ShopSetting: React.FC = () => {
 				setGeoLat(lat);
 				setGeoLng(lng);
 
-				// Reverse geocode so the user can see & verify the detected address
-				try {
-					const res = await fetch(
-						`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-						{ headers: { 'User-Agent': 'SoleSpace/1.0' } },
-					);
-					const data = await res.json();
-					if (data.display_name) {
-						setGeoAddress(data.display_name);
-						setAddressSearch(data.display_name);
-					}
-				} catch {
-					// reverse geocode failed — coords still set, address just stays blank
+				const detectedAddress = await reverseGeocode(lat, lng);
+				if (detectedAddress) {
+					setGeoAddress(detectedAddress);
+					setAddressSearch(detectedAddress);
 				}
 
 				setGettingGPS(false);
@@ -469,14 +487,28 @@ const ShopSetting: React.FC = () => {
 		setGeoError(null);
 		setGeoSuccess(false);
 		try {
+			const parsedLat = geoLat ? parseFloat(geoLat) : null;
+			const parsedLng = geoLng ? parseFloat(geoLng) : null;
+			const hasCoordinates = Number.isFinite(parsedLat) && Number.isFinite(parsedLng);
+
+			let resolvedAddress = geoAddress?.trim() || '';
+			if (hasCoordinates) {
+				const detectedAddress = await reverseGeocode(parsedLat as number, parsedLng as number);
+				if (detectedAddress) {
+					resolvedAddress = detectedAddress;
+					setGeoAddress(detectedAddress);
+					setAddressSearch(detectedAddress);
+				}
+			}
+
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			await axios.post(
 				'/shop-owner/settings/geofence',
 				{
 					attendance_geofence_enabled: isIndividual ? false : geofenceEnabled,
-					shop_latitude: geoLat ? parseFloat(geoLat) : null,
-					shop_longitude: geoLng ? parseFloat(geoLng) : null,
-					shop_address: geoAddress || null,
+					shop_latitude: hasCoordinates ? (parsedLat as number) : null,
+					shop_longitude: hasCoordinates ? (parsedLng as number) : null,
+					shop_address: resolvedAddress || null,
 					shop_geofence_radius: geoRadius,
 				},
 				{ headers: { 'X-CSRF-TOKEN': csrfToken || '' } },
