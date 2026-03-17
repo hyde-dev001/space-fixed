@@ -142,6 +142,8 @@ export default function StockRequest() {
 			request.product_name.toLowerCase().includes(query) ||
 			request.sku_code.toLowerCase().includes(query) ||
 			(request.requester?.name || "").toLowerCase().includes(query) ||
+			(request.request_source || "manual").toLowerCase().includes(query) ||
+			String(request.repair_request_id || "").toLowerCase().includes(query) ||
 			request.status.toLowerCase().includes(query)
 		);
 	}, [searchQuery, requests]);
@@ -164,6 +166,10 @@ export default function StockRequest() {
 			needs_details: "Needs Details",
 		};
 		return map[status] || status;
+	};
+
+	const getRequesterRoleLabel = (request: StockRequestApproval) => {
+		return (request.request_source || "manual") === "repair" ? "Repairer" : "Staff";
 	};
 
 	const handleAccept = async (request: StockRequestApproval) => {
@@ -332,6 +338,7 @@ export default function StockRequest() {
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Requested by</th>
+									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Source</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
 									<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
@@ -340,7 +347,7 @@ export default function StockRequest() {
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 								{loading ? (
 									<tr>
-										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-500">
 											Loading...
 										</td>
 									</tr>
@@ -358,7 +365,26 @@ export default function StockRequest() {
 													{formatPriority(request.priority)}
 												</span>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.requester?.name || "—"}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+												<div className="flex flex-col gap-1">
+													<span>{request.requester?.name || "—"}</span>
+													<span className="text-xs text-gray-500 dark:text-gray-400">{getRequesterRoleLabel(request)}</span>
+												</div>
+											</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+												<div className="flex flex-col gap-1">
+													<span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+														(request.request_source || 'manual') === 'repair'
+															? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+															: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+													}`}>
+														{(request.request_source || 'manual') === 'repair' ? 'Repair Job' : 'Manual'}
+													</span>
+													{request.repair_request_id && (
+														<span className="text-xs text-gray-500 dark:text-gray-400">Repair #{request.repair_request_id}</span>
+													)}
+												</div>
+											</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{request.requested_date}</td>
 											<td className="px-4 py-3">
 												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status] || ""}`}>
@@ -383,7 +409,7 @@ export default function StockRequest() {
 									))
 								) : (
 									<tr>
-										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-500">
 											No stock requests found.
 										</td>
 									</tr>
@@ -477,6 +503,16 @@ export default function StockRequest() {
 								<p className="text-base font-semibold text-gray-900 dark:text-white">Size {viewingRequest.requested_size}</p>
 							</div>
 						)}
+						<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+							<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Request Source</p>
+							<p className="text-base font-semibold text-gray-900 dark:text-white">
+								{(viewingRequest.request_source || 'manual') === 'repair' ? 'Repair Job' : 'Manual'}
+							</p>
+							<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Requester Role: {getRequesterRoleLabel(viewingRequest)}</p>
+							{viewingRequest.repair_request_id && (
+								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Repair Request ID: {viewingRequest.repair_request_id}</p>
+							)}
+						</div>
 							{viewingRequest.rejection_reason && (
 								<div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800">
 									<p className="text-sm font-medium text-red-500 dark:text-red-400 mb-1">Rejection Reason</p>

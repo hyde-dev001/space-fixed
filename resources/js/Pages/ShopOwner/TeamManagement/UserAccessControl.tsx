@@ -307,46 +307,6 @@ const UserAccessControl: React.FC = () => {
     window.location.href = `mailto:${personalEmail}?subject=Your ${shopName} Account Invitation&body=Hi ${invitationModalData.employeeName},%0D%0A%0D%0AYou've been invited to join our team at ${shopName}!%0D%0A%0D%0AClick this link to set up your account:%0D%0A${encodeURIComponent(invitationModalData.inviteUrl)}%0D%0A%0D%0AThis link expires on ${invitationModalData.expiresAt}%0D%0A%0D%0AYour work email will be: ${invitationModalData.workEmail}%0D%0A%0D%0AThanks!`;
   };
 
-  // Initialize employees from database and sync with Inertia props
-  const [employees, setEmployees] = useState<Employee[]>(
-    (initialEmployees || []).map((emp: any) => ({
-      ...emp,
-      createdAt: new Date(emp.createdAt)
-    }))
-  );
-
-  // Sync employees when Inertia props update (e.g., after successful employee creation)
-  useEffect(() => {
-    if (initialEmployees) {
-      setEmployees(
-        initialEmployees.map((emp: any) => ({
-          ...emp,
-          createdAt: new Date(emp.createdAt)
-        }))
-      );
-    }
-  }, [initialEmployees]);
-
-  // Check for flash data with employee invitation
-  useEffect(() => {
-    // Debug logging
-    console.log('Invitation data check:', { success, invite_url, timestamp, employee });
-    
-    if (success && invite_url && employee) {
-      openInvitationModal({
-        invite_url,
-        invite_expires_at,
-        work_email,
-        employee,
-        timestamp,
-      });
-    }
-  }, [success, invite_url, invite_expires_at, employee, timestamp, work_email]);
-
-  const [roles, setRoles] = useState<Role[]>([]);
-
-  const [userAccounts, setUserAccounts] = useState<UserAccount[]>([]);
-
   // Human-readable labels for role codes
   const roleLabels: Record<string, string> = {
     Manager: 'Manager',
@@ -361,8 +321,77 @@ const UserAccessControl: React.FC = () => {
     Staff: 'Staff',
     MANAGER: 'Manager',
     FINANCE: 'Finance',
+    INVENTORY: 'Inventory',
+    PROCUREMENT: 'Procurement',
+    REPAIRER: 'Repairer',
+    INVENTORY_MANAGER: 'Inventory',
+    PROCUREMENT_MANAGER: 'Procurement',
     STAFF: 'Staff',
   };
+
+  function normalizeRoleName(role?: string | null) {
+    if (!role) {
+      return 'Staff';
+    }
+
+    const normalizedKey = role.trim().replace(/\s+/g, ' ').toUpperCase();
+    const aliases: Record<string, string> = {
+      MANAGER: 'Manager',
+      FINANCE: 'Finance',
+      HR: 'HR',
+      CRM: 'CRM',
+      REPAIRER: 'Repairer',
+      INVENTORY: 'Inventory',
+      PROCUREMENT: 'Procurement',
+      STAFF: 'Staff',
+      'INVENTORY MANAGER': 'Inventory',
+      'PROCUREMENT MANAGER': 'Procurement',
+    };
+
+    return aliases[normalizedKey] || role.trim();
+  }
+
+  function mapEmployeeFromServer(emp: any): Employee {
+    return {
+      ...emp,
+      role: normalizeRoleName(emp.role ?? emp.roleName ?? emp.primaryRole ?? emp.department ?? 'Staff'),
+      roleName: emp.roleName ? normalizeRoleName(emp.roleName) : emp.roleName,
+      primaryRole: normalizeRoleName(emp.primaryRole ?? emp.roleName ?? emp.role ?? emp.department ?? 'Staff'),
+      additionalRoles: Array.isArray(emp.additionalRoles)
+        ? emp.additionalRoles.map((role: string) => normalizeRoleName(role))
+        : emp.additionalRoles,
+      createdAt: new Date(emp.createdAt)
+    };
+  }
+
+  // Initialize employees from database and sync with Inertia props
+  const [employees, setEmployees] = useState<Employee[]>(
+    (initialEmployees || []).map(mapEmployeeFromServer)
+  );
+
+  // Sync employees when Inertia props update (e.g., after successful employee creation)
+  useEffect(() => {
+    if (initialEmployees) {
+      setEmployees(initialEmployees.map(mapEmployeeFromServer));
+    }
+  }, [initialEmployees]);
+
+  // Check for flash data with employee invitation
+  useEffect(() => {
+    if (success && invite_url && employee) {
+      openInvitationModal({
+        invite_url,
+        invite_expires_at,
+        work_email,
+        employee,
+        timestamp,
+      });
+    }
+  }, [success, invite_url, invite_expires_at, employee, timestamp, work_email]);
+
+  const [roles, setRoles] = useState<Role[]>([]);
+
+  const [userAccounts, setUserAccounts] = useState<UserAccount[]>([]);
 
   // Form states - Employee information
   const [employeeForm, setEmployeeForm] = useState({
@@ -499,13 +528,14 @@ const UserAccessControl: React.FC = () => {
   // Computed values
   const filteredEmployees = useMemo(() => {
     return employees.filter((employee) => {
+      const normalizedEmployeeRole = normalizeRoleName(employee.role);
       const matchesFilter = employeeFilter === 'all' ||
         (employeeFilter === 'recent' && employee.createdAt >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) ||
-        (employee.role === employeeFilter);
+        (normalizedEmployeeRole === employeeFilter);
 
       const matchesSearch = employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        employee.role.toLowerCase().includes(searchTerm.toLowerCase());
+        normalizedEmployeeRole.toLowerCase().includes(searchTerm.toLowerCase());
 
       return matchesFilter && matchesSearch;
     });
@@ -553,7 +583,7 @@ const UserAccessControl: React.FC = () => {
 
   const metricsData: MetricData[] = [
     {
-      title: 'Total Users',
+      title: 'Total Employees',
       value: stats.totalUsers,
       change: 12,
       changeType: 'increase',
@@ -580,7 +610,7 @@ const UserAccessControl: React.FC = () => {
       description: 'from last month'
     },
     {
-      title: 'Suspended Users',
+      title: 'Suspended Employees',
       value: stats.suspendedUsers,
       change: 8,
       changeType: 'decrease',
@@ -685,7 +715,24 @@ const UserAccessControl: React.FC = () => {
     return allRoles;
   };
 
-  const availableRoleOptions = getAvailableRoles();
+  const availableRoleOptions = useMemo(() => {
+    const roleOptions = new Map<string, { value: string; label: string }>();
+
+    getAvailableRoles().forEach((role) => {
+      roleOptions.set(role.value, role);
+    });
+
+    employees.forEach((employee) => {
+      const normalizedRole = normalizeRoleName(employee.role);
+
+      roleOptions.set(normalizedRole, {
+        value: normalizedRole,
+        label: roleLabels[normalizedRole] || normalizedRole,
+      });
+    });
+
+    return Array.from(roleOptions.values());
+  }, [employees, businessType]);
 
   const handleAddEmployee = async () => {
     // Check required fields
@@ -1281,13 +1328,13 @@ const UserAccessControl: React.FC = () => {
                         </TableCell>
                         <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{employee.email}</TableCell>
                         <TableCell className="px-6 py-4">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${employee.role === 'MANAGER' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                              employee.role === 'Manager' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                              employee.role === 'STAFF' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                              employee.role === 'Staff' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                                'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                            }`}> 
-                            {roleLabels[employee.role] || employee.role}
+                          <span
+                            className={`inline-flex max-w-[180px] sm:max-w-[240px] items-center rounded-full border px-2 py-1 text-xs font-semibold ${getRoleStyle(normalizeRoleName(employee.role))}`}
+                            title={roleLabels[normalizeRoleName(employee.role)] || normalizeRoleName(employee.role)}
+                          >
+                            <span className="truncate whitespace-nowrap">
+                              {roleLabels[normalizeRoleName(employee.role)] || normalizeRoleName(employee.role)}
+                            </span>
                           </span>
                           {employee.permissions && (
                             <div className="mt-1">

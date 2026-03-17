@@ -1,8 +1,53 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
 
 type MetricColor = "success" | "error" | "warning" | "info";
+
+type PackageAnalytics = {
+	overview: {
+		total_packages: number;
+		active_packages: number;
+		inactive_packages: number;
+		total_bookings: number;
+		package_revenue: number;
+		package_base_revenue: number;
+		add_on_revenue: number;
+		average_order_value: number;
+		add_on_attach_rate: number;
+		bookings_last_30_days: number;
+		revenue_last_30_days: number;
+	};
+	top_packages: Array<{
+		id: number;
+		name: string;
+		status: "active" | "inactive";
+		booking_count: number;
+		revenue: number;
+		add_on_revenue: number;
+		average_order_value: number;
+		services_total_price: number;
+		package_price: number;
+		savings_amount: number;
+		last_booked_at?: string | null;
+	}>;
+	monthly_trend: Array<{
+		month: string;
+		bookings: number;
+		revenue: number;
+	}>;
+	recent_bookings: Array<{
+		repair_request_id: number;
+		order_number: string;
+		package_id: number;
+		package_name: string;
+		booked_at?: string | null;
+		final_total: number;
+		add_ons_total: number;
+		status: string;
+	}>;
+};
 
 type MetricCardProps = {
 	title: string;
@@ -150,6 +195,15 @@ const DashboardRepair: React.FC = () => {
 	const [requestedServices, setRequestedServices] = useState<RequestedService[]>(initialDashboard?.requestedServices ?? []);
 	const [revenueRows, setRevenueRows] = useState<RevenueRow[]>(initialDashboard?.revenueRows ?? []);
 	const [recentRepairs, setRecentRepairs] = useState<RecentRepair[]>(initialDashboard?.recentRepairs ?? []);
+	const [analytics, setAnalytics] = useState<PackageAnalytics | null>(null);
+
+	useEffect(() => {
+		axios.get("/api/repair-packages/analytics")
+			.then((res) => {
+				if (res.data?.success) setAnalytics(res.data.data || null);
+			})
+			.catch(() => { /* silently skip if no permission */ });
+	}, []);
 
 	return (
 		<AppLayoutERP>
@@ -289,6 +343,136 @@ const DashboardRepair: React.FC = () => {
 						</table>
 					</div>
 				</div>
+
+				{analytics && (
+					<div className="rounded-xl border border-gray-200 bg-white">
+						<div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+							<div>
+								<h2 className="text-lg font-semibold text-gray-900">Package Analytics</h2>
+								<p className="text-sm text-gray-500">Bundle adoption, revenue, and add-on usage from package bookings.</p>
+							</div>
+						</div>
+
+						<div className="p-6 space-y-6">
+							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+									<p className="text-xs uppercase tracking-wide text-gray-500">Packages</p>
+									<p className="mt-2 text-2xl font-bold text-gray-900">{analytics.overview.total_packages}</p>
+									<p className="mt-1 text-xs text-gray-500">{analytics.overview.active_packages} active • {analytics.overview.inactive_packages} inactive</p>
+								</div>
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+									<p className="text-xs uppercase tracking-wide text-gray-500">Bookings</p>
+									<p className="mt-2 text-2xl font-bold text-gray-900">{analytics.overview.total_bookings}</p>
+									<p className="mt-1 text-xs text-gray-500">{analytics.overview.bookings_last_30_days} in the last 30 days</p>
+								</div>
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+									<p className="text-xs uppercase tracking-wide text-gray-500">Revenue</p>
+									<p className="mt-2 text-2xl font-bold text-gray-900">₱{Number(analytics.overview.package_revenue).toFixed(2)}</p>
+									<p className="mt-1 text-xs text-gray-500">₱{Number(analytics.overview.revenue_last_30_days).toFixed(2)} in the last 30 days</p>
+								</div>
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+									<p className="text-xs uppercase tracking-wide text-gray-500">Avg Order</p>
+									<p className="mt-2 text-2xl font-bold text-gray-900">₱{Number(analytics.overview.average_order_value).toFixed(2)}</p>
+									<p className="mt-1 text-xs text-gray-500">Add-ons ₱{Number(analytics.overview.add_on_revenue).toFixed(2)}</p>
+								</div>
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+									<p className="text-xs uppercase tracking-wide text-gray-500">Add-on Attach Rate</p>
+									<p className="mt-2 text-2xl font-bold text-gray-900">{analytics.overview.add_on_attach_rate}%</p>
+									<p className="mt-1 text-xs text-gray-500">Orders with add-ons attached</p>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+								<div className="xl:col-span-2 rounded-xl border border-gray-200 bg-white overflow-hidden">
+									<div className="px-4 py-3 border-b border-gray-100">
+										<h4 className="text-sm font-semibold text-gray-900">Top Package Performance</h4>
+									</div>
+									<div className="overflow-x-auto">
+										<table className="min-w-full divide-y divide-gray-100 text-sm">
+											<thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+												<tr>
+													<th className="px-4 py-3 text-left font-semibold">Package</th>
+													<th className="px-4 py-3 text-left font-semibold">Bookings</th>
+													<th className="px-4 py-3 text-left font-semibold">Revenue</th>
+													<th className="px-4 py-3 text-left font-semibold">Avg Order</th>
+													<th className="px-4 py-3 text-left font-semibold">Last Booked</th>
+												</tr>
+											</thead>
+											<tbody className="divide-y divide-gray-100">
+												{analytics.top_packages.length === 0 ? (
+													<tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">No package bookings yet.</td></tr>
+												) : (
+													analytics.top_packages.slice(0, 5).map((item) => (
+														<tr key={item.id} className="text-gray-700">
+															<td className="px-4 py-3 align-top">
+																<p className="font-medium text-gray-900">{item.name}</p>
+																<p className="text-xs text-gray-500">Savings ₱{Number(item.savings_amount).toFixed(2)} • Add-ons ₱{Number(item.add_on_revenue).toFixed(2)}</p>
+															</td>
+															<td className="px-4 py-3">{item.booking_count}</td>
+															<td className="px-4 py-3 font-semibold text-gray-900">₱{Number(item.revenue).toFixed(2)}</td>
+															<td className="px-4 py-3">₱{Number(item.average_order_value).toFixed(2)}</td>
+															<td className="px-4 py-3 text-gray-500">{item.last_booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(item.last_booked_at)) : "—"}</td>
+														</tr>
+													))
+												)}
+											</tbody>
+										</table>
+									</div>
+								</div>
+
+								<div className="space-y-6">
+									<div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+										<div className="px-4 py-3 border-b border-gray-100">
+											<h4 className="text-sm font-semibold text-gray-900">Monthly Trend</h4>
+										</div>
+										<div className="p-4 space-y-3">
+											{analytics.monthly_trend.length === 0 ? (
+												<p className="text-sm text-gray-500">No trend data yet.</p>
+											) : (
+												analytics.monthly_trend.map((item) => (
+													<div key={item.month} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+														<div>
+															<p className="text-sm font-medium text-gray-900">{item.month}</p>
+															<p className="text-xs text-gray-500">{item.bookings} booking{item.bookings !== 1 ? "s" : ""}</p>
+														</div>
+														<p className="text-sm font-semibold text-gray-900">₱{Number(item.revenue).toFixed(2)}</p>
+													</div>
+												))
+											)}
+										</div>
+									</div>
+
+									<div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+										<div className="px-4 py-3 border-b border-gray-100">
+											<h4 className="text-sm font-semibold text-gray-900">Recent Package Bookings</h4>
+										</div>
+										<div className="p-4 space-y-3">
+											{analytics.recent_bookings.length === 0 ? (
+												<p className="text-sm text-gray-500">No recent package bookings yet.</p>
+											) : (
+												analytics.recent_bookings.map((booking) => (
+													<div key={booking.repair_request_id} className="rounded-lg bg-gray-50 px-3 py-3">
+														<div className="flex items-start justify-between gap-3">
+															<div>
+																<p className="text-sm font-medium text-gray-900">{booking.package_name}</p>
+																<p className="text-xs text-gray-500">{booking.order_number} • {booking.booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(booking.booked_at)) : "—"}</p>
+															</div>
+															<span className="text-xs font-medium uppercase tracking-wide text-gray-500">{booking.status.replace(/_/g, " ")}</span>
+														</div>
+														<div className="mt-2 flex items-center justify-between text-xs text-gray-600">
+															<span>Add-ons ₱{Number(booking.add_ons_total).toFixed(2)}</span>
+															<span className="font-semibold text-gray-900">₱{Number(booking.final_total).toFixed(2)}</span>
+														</div>
+													</div>
+												))
+											)}
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 		</AppLayoutERP>
 	);

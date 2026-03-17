@@ -69,11 +69,31 @@ interface ServiceMetrics {
   services: ServiceStat[];
 }
 
+interface PackageStat {
+  id: number;
+  name: string;
+  bookings: number;
+  revenue: number;
+}
+
+interface PackageMetrics {
+  period_revenue: number;
+  this_month_revenue: number;
+  last_month_revenue: number;
+  rev_mom_change: number | null;
+  bookings: number;
+  total_packages: number;
+  revenue_share_pct: number;
+  bookings_share_pct: number;
+  top_packages: PackageStat[];
+}
+
 interface DssData {
   business_type: string; // 'repair' | 'retail' | 'both'
   // repair fields (present when business_type is 'repair' or 'both')
   workload?: WorkloadMetrics;
   services?: ServiceMetrics;
+  packages?: PackageMetrics;
   monthly_trend?: MonthlyPoint[];
   // retail fields (present when business_type is 'retail' or 'both')
   retail_sales?: RetailSalesMetrics;
@@ -1129,6 +1149,32 @@ const DssInsights: React.FC = () => {
                 value={data.services.total_services}
                 sub="with revenue in period"
               />
+
+              {data?.packages && (
+                <SummaryStatCard
+                  icon={BoxMetricIcon}
+                  label="Package Revenue Share"
+                  value={`${data.packages.revenue_share_pct}%`}
+                  sub={`${fmt(data.packages.period_revenue)} from ${data.packages.bookings} package bookings`}
+                />
+              )}
+
+              {data?.packages && (
+                <SummaryStatCard
+                  icon={PesoIcon}
+                  label="Package Revenue (This Month)"
+                  value={fmt(data.packages.this_month_revenue)}
+                  sub="Completed paid package repairs"
+                  badge={
+                    data.packages.rev_mom_change !== null
+                      ? {
+                          text: `${data.packages.rev_mom_change > 0 ? "+" : ""}${data.packages.rev_mom_change}%`,
+                          positive: data.packages.rev_mom_change >= 0,
+                        }
+                      : undefined
+                  }
+                />
+              )}
             </div>
           )}
 
@@ -1205,6 +1251,71 @@ const DssInsights: React.FC = () => {
                 <div className="text-4xl mb-3">📊</div>
                 <div className="font-medium">No service revenue data yet</div>
                 <div className="text-sm mt-1">Data appears once repairs are completed and paid.</div>
+              </div>
+            )}
+          </div>
+
+          {/* Package revenue table */}
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-800 dark:bg-white/[0.03]">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="font-semibold text-gray-700 dark:text-gray-300">Package Revenue Breakdown</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Ranked by revenue for the selected period (completed + paid package repairs)</p>
+            </div>
+            {loading ? (
+              <div className="p-5 space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-10 bg-gray-50 dark:bg-gray-800 rounded-xl animate-pulse" />
+                ))}
+              </div>
+            ) : data?.packages && data.packages.top_packages.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs">
+                      <th className="text-left px-5 py-3">Package</th>
+                      <th className="text-right px-4 py-3">Bookings</th>
+                      <th className="text-right px-4 py-3">Revenue</th>
+                      <th className="text-right px-4 py-3">Rev Share</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {data.packages.top_packages.map((pkg, idx) => {
+                      const share = data.packages && data.packages.period_revenue > 0
+                        ? Math.round((pkg.revenue / data.packages.period_revenue) * 1000) / 10
+                        : 0;
+
+                      return (
+                        <tr key={pkg.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                          <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-400 dark:text-gray-500 w-5">#{idx + 1}</span>
+                              {pkg.name}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{pkg.bookings}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{fmt(pkg.revenue)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="w-16 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-emerald-400 dark:bg-emerald-500 rounded-full"
+                                  style={{ width: `${Math.max(0, Math.min(100, share))}%` }}
+                                />
+                              </div>
+                              <span className="text-gray-600 dark:text-gray-400 text-xs w-10 text-right">{share}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-10 text-center text-gray-400 dark:text-gray-500">
+                <div className="text-4xl mb-3">📦</div>
+                <div className="font-medium">No package revenue data yet</div>
+                <div className="text-sm mt-1">Data appears once package repairs are completed and paid.</div>
               </div>
             )}
           </div>

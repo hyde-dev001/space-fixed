@@ -157,7 +157,6 @@ const MetricCard: React.FC<MetricData> = ({
 };
 
 export default function ShopOwnerRegistrationView({ registrations = [] }: { registrations?: Registration[] }) {
-  console.log('Registrations received:', registrations);
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [registrationsState, setRegistrationsState] = useState<Registration[]>(registrations);

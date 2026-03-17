@@ -1089,13 +1089,6 @@ export const EmployeeManagement: React.FC<{
 
       const data = await response.json();
       
-      console.log('Employee permissions data:', {
-        user_id: data.user_id,
-        permissions: data.permissions,
-        direct_permissions: data.direct_permissions,
-        role_permissions: data.role_permissions
-      });
-      
       const employeeWithUser = {
         ...employee,
         userId: data.user_id,
@@ -1116,7 +1109,6 @@ export const EmployeeManagement: React.FC<{
 
       // Show all permissions (direct + role) in the UI, but only allow editing direct permissions
       const allPermissions = [...new Set([...(data.permissions || []), ...(data.direct_permissions || [])])];
-      console.log('Setting selected permissions to:', allPermissions);
       
       setSelectedEmployeeForPermissions(employeeWithUser);
       setSelectedPermissions(allPermissions);
@@ -1174,6 +1166,83 @@ export const EmployeeManagement: React.FC<{
       procurement: false,
       staff: false,
     });
+  };
+
+  const handleResetEmployeePassword = async (employee: Employee) => {
+    const result = await Swal.fire({
+      title: 'Reset employee password?',
+      html: `This will invalidate the current password for <strong>${buildName(employee)}</strong> and generate a new account setup link.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, reset password',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setIsProcessingId(employee.id);
+
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/hr/employees/${employee.id}/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf || ''
+        },
+        credentials: 'include'
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Failed to reset employee password');
+      }
+
+      const inviteUrl = data.invite_url;
+      const expiresAt = data.invite_expires_at ? new Date(data.invite_expires_at).toLocaleString() : 'N/A';
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Password Reset Ready',
+        html: `
+          <div style="text-align:left;">
+            <p style="margin-bottom:8px;">A new setup link was generated for <strong>${buildName(employee)}</strong>.</p>
+            <p style="margin-bottom:8px;"><strong>Work email:</strong> ${employee.email}</p>
+            <p style="margin-bottom:8px;"><strong>Expires:</strong> ${expiresAt}</p>
+            <div style="background:#f9fafb;padding:10px;border-radius:6px;border:1px solid #e5e7eb;word-break:break-all;font-family:monospace;font-size:12px;">
+              ${inviteUrl}
+            </div>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Copy Link',
+        cancelButtonText: 'Done',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#6b7280',
+      }).then((copyResult) => {
+        if (copyResult.isConfirmed && inviteUrl) {
+          navigator.clipboard.writeText(inviteUrl).catch(() => {});
+          Swal.fire({
+            icon: 'success',
+            title: 'Copied',
+            text: 'Setup link copied to clipboard.',
+            timer: 1500,
+            showConfirmButton: false,
+          });
+        }
+      });
+    } catch (error: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Reset Failed',
+        text: error?.message || 'Failed to reset employee password',
+      });
+    } finally {
+      setIsProcessingId(null);
+    }
   };
 
   // View/Resend Invitation Link
@@ -1958,6 +2027,16 @@ export const EmployeeManagement: React.FC<{
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end space-x-2">
+                          <button
+                            onClick={() => handleResetEmployeePassword(employee)}
+                            className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title="Reset Employee Password"
+                            disabled={isProcessingId === employee.id}
+                          >
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
+                            </svg>
+                          </button>
                           <button
                             onClick={() => viewInvitationLink(employee)}
                             className={`text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}

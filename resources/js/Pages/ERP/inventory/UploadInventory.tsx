@@ -8,8 +8,9 @@ import { ColorVariantImageUploader, ColorVariantImage } from '@/components/varia
 import { inventoryItemAPI } from '@/services/inventoryAPI';
 import type { InventoryItem as ApiInventoryItem, InventoryColorVariant, InventoryImage, InventorySize } from '@/types/inventory';
 
-type StockCategory = 'shoes' | 'cleaning_materials';
+type StockCategory = 'shoes' | 'repair_materials';
 type StockStatus = 'In Stock' | 'Low Stock' | 'Out of Stock';
+type BusinessType = 'retail' | 'repair' | 'both';
 
 type StockItem = {
   id: number;
@@ -17,10 +18,13 @@ type StockItem = {
   brand: string;
   shoeType: string;
   category: StockCategory;
-  sku: string;
   quantity: number;
   unit: string;
   notes: string;
+  reorderLevel: number;
+  reorderQuantity: number;
+  costPrice: number | null;
+  sellingPrice: number | null;
   colorVariants: ColorVariant[];
   repairImages: ColorVariantImage[];
   imageUrl?: string;
@@ -32,6 +36,19 @@ type MetricCardProps = {
   value: number | string;
   icon: React.FC<{ className?: string }>;
   color?: 'success' | 'error' | 'warning' | 'info';
+};
+
+const formatUploadDate = (iso: string): string => {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return iso;
+  return date.toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 };
 
 const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -120,8 +137,36 @@ const getPrimaryImageFromVariants = (variants: ColorVariant[]): string => {
 const toStorageUrl = (path?: string | null) =>
   path ? `/storage/${path}` : '';
 
-const mapApiItemToStock = (item: ApiInventoryItem): StockItem => {
-  const isShoes = item.category === 'shoes';
+const normalizeBusinessType = (rawBusinessType?: string): BusinessType => {
+  const normalized = (rawBusinessType ?? '').toLowerCase().trim();
+
+  if (normalized === 'retail') return 'retail';
+  if (normalized === 'repair') return 'repair';
+  if (normalized.includes('both')) return 'both';
+
+  return 'both';
+};
+
+const canUseCategoryForBusinessType = (category: StockCategory, businessType: BusinessType): boolean => {
+  if (category === 'shoes') {
+    return businessType === 'retail' || businessType === 'both';
+  }
+
+  return businessType === 'repair' || businessType === 'both';
+};
+
+const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
+  const normalizedCategory: StockCategory | null = item.category === 'shoes'
+    ? 'shoes'
+    : item.category === 'repair_materials'
+      ? 'repair_materials'
+      : null;
+
+  if (!normalizedCategory) {
+    return null;
+  }
+
+  const isShoes = normalizedCategory === 'shoes';
 
   // Map API color variants → ColorVariant[] for the ColorVariantManager
   // Item-level images (no color_variant_id) — used as fallback for old uploads
@@ -170,11 +215,14 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem => {
     name: item.name,
     brand: item.brand ?? '',
     shoeType: item.description ?? '',
-    category: (isShoes ? 'shoes' : 'cleaning_materials') as StockCategory,
-    sku: item.sku,
+    category: normalizedCategory,
     quantity: item.available_quantity,
     unit: item.unit,
     notes: item.notes ?? '',
+    reorderLevel: item.reorder_level,
+    reorderQuantity: item.reorder_quantity,
+    costPrice: item.cost_price ?? null,
+    sellingPrice: item.price ?? null,
     colorVariants,
     repairImages,
     imageUrl: toStorageUrl(item.main_image),
@@ -190,15 +238,20 @@ export default function UploadInventory() {
     auth?.shop_owner?.business_type ??
     auth?.user?.shop_owner?.business_type ??
     'both';
-  const businessType = rawBusinessType.toLowerCase() as 'retail' | 'repair' | 'both';
+  const businessType: BusinessType = normalizeBusinessType(rawBusinessType);
 
   // Derived capability flags
   const canUploadShoes    = businessType === 'retail' || businessType === 'both';
   const canUploadRepair   = businessType === 'repair' || businessType === 'both';
   const showToggle        = businessType === 'both';
 
+  const mapAndFilterVisibleStocks = (items: ApiInventoryItem[]): StockItem[] =>
+    items
+      .map(mapApiItemToStock)
+      .filter((stock): stock is StockItem => !!stock && canUseCategoryForBusinessType(stock.category, businessType));
+
   const [stocks, setStocks] = useState<StockItem[]>(
-    () => (initialData?.data ?? []).map(mapApiItemToStock)
+    () => mapAndFilterVisibleStocks(initialData?.data ?? [])
   );
   const [loadingStocks, setLoadingStocks] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -229,14 +282,25 @@ export default function UploadInventory() {
 
   const [selectedShoeTypes, setSelectedShoeTypes] = useState<string[]>([]);
   const [isShoeTypePickerOpen, setIsShoeTypePickerOpen] = useState(false);
+  const [existingColorSizeDrafts, setExistingColorSizeDrafts] = useState<Record<string, { size: string; quantity: string }>>({});
+  const [editingSizeQty, setEditingSizeQty] = useState<{ sizeId: string; value: string } | null>(null);
+  const [colorImageUploading, setColorImageUploading] = useState<Record<string, boolean>>({});
+
+  const SIZE_OPTIONS = Array.from({ length: 25 }, (_, i) => {
+    const size = 3 + i * 0.5;
+    return Number.isInteger(size) ? size.toFixed(0) : size.toFixed(1);
+  });
 
   const [formData, setFormData] = useState({
     name: '',
     brand: '',
-    category: (canUploadShoes ? 'shoes' : 'cleaning_materials') as StockCategory,
-    sku: '',
+    category: (canUploadShoes ? 'shoes' : 'repair_materials') as StockCategory,
     quantity: '',
     unit: 'pcs',
+    reorderLevel: '10',
+    reorderQuantity: '50',
+    costPrice: '',
+    sellingPrice: '',
     notes: '',
   });
 
@@ -244,7 +308,7 @@ export default function UploadInventory() {
     setLoadingStocks(true);
     try {
       const res = await inventoryItemAPI.getAll({ per_page: 200 });
-      setStocks((res.data ?? []).map(mapApiItemToStock));
+      setStocks(mapAndFilterVisibleStocks(res.data ?? []));
     } catch (err) {
       console.error('Failed to load inventory items', err);
     } finally {
@@ -256,6 +320,142 @@ export default function UploadInventory() {
     setSelectedShoeTypes((prev) =>
       prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
     );
+  };
+
+  const handleAddSizeToExistingColor = async (colorVariantId: string) => {
+    if (!editingStock) return;
+
+    const draft = existingColorSizeDrafts[colorVariantId] ?? { size: '', quantity: '' };
+    const size = draft.size.trim();
+    const quantity = Number(draft.quantity);
+
+    if (!size) {
+      await Swal.fire({ icon: 'warning', title: 'Size required', text: 'Please select a size.' });
+      return;
+    }
+
+    if (Number.isNaN(quantity) || quantity <= 0) {
+      await Swal.fire({ icon: 'warning', title: 'Invalid quantity', text: 'Quantity must be greater than 0.' });
+      return;
+    }
+
+    try {
+      await inventoryItemAPI.addSizeToColorVariant(editingStock.id, Number(colorVariantId), {
+        size,
+        quantity,
+      });
+
+      setColorVariants((prev) =>
+        prev.map((variant) => {
+          if (variant.id !== colorVariantId) return variant;
+
+          const existingSize = variant.sizes.find((s) => s.size === size);
+          if (existingSize) {
+            return {
+              ...variant,
+              sizes: variant.sizes.map((s) =>
+                s.size === size ? { ...s, quantity: s.quantity + quantity } : s
+              ),
+            };
+          }
+
+          return {
+            ...variant,
+            sizes: [
+              ...variant.sizes,
+              {
+                id: `${Date.now()}-${size}`,
+                size,
+                quantity,
+              },
+            ],
+          };
+        })
+      );
+
+      setExistingColorSizeDrafts((prev) => ({
+        ...prev,
+        [colorVariantId]: { size: '', quantity: '' },
+      }));
+
+      await fetchStocks();
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to add size to this color.';
+      await Swal.fire({ icon: 'error', title: 'Unable to add size', text: msg });
+    }
+  };
+
+  const handleUploadColorImages = async (colorVariantId: string, files: File[]) => {
+    if (!editingStock || files.length === 0) return;
+    setColorImageUploading((prev) => ({ ...prev, [colorVariantId]: true }));
+    try {
+      const result = await inventoryItemAPI.uploadImages(editingStock.id, files, Number(colorVariantId));
+      const newImages: ColorVariantImage[] = (result.images ?? []).map((img: any) => ({
+        id: String(img.id),
+        file: null,
+        preview: `/storage/${img.image_path}`,
+        is_thumbnail: img.is_thumbnail ?? false,
+        sort_order: img.sort_order ?? 0,
+        uploaded_path: img.image_path,
+      }));
+      setColorVariants((prev) =>
+        prev.map((v) =>
+          v.id === colorVariantId ? { ...v, images: [...v.images, ...newImages] } : v,
+        ),
+      );
+    } catch {
+      await Swal.fire({ icon: 'error', title: 'Upload failed', text: 'Could not upload images. Please try again.' });
+    } finally {
+      setColorImageUploading((prev) => ({ ...prev, [colorVariantId]: false }));
+    }
+  };
+
+  const handleDeleteColorImage = async (colorVariantId: string, imageId: string) => {
+    const confirm = await Swal.fire({
+      icon: 'warning',
+      title: 'Delete image?',
+      text: 'This image will be permanently removed.',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Delete',
+      cancelButtonText: 'Cancel',
+    });
+    if (!confirm.isConfirmed) return;
+    try {
+      await inventoryItemAPI.deleteImage(Number(imageId));
+      setColorVariants((prev) =>
+        prev.map((v) =>
+          v.id === colorVariantId
+            ? { ...v, images: v.images.filter((img) => img.id !== imageId) }
+            : v,
+        ),
+      );
+    } catch {
+      await Swal.fire({ icon: 'error', title: 'Failed to delete image' });
+    }
+  };
+
+  const handleUpdateSizeQty = async (sizeId: string, newValue: string) => {
+    if (!editingStock) return;
+    const qty = Number(newValue);
+    if (Number.isNaN(qty) || qty < 0) {
+      setEditingSizeQty(null);
+      return;
+    }
+    try {
+      await inventoryItemAPI.updateSizeQuantity(editingStock.id, Number(sizeId), qty);
+      setColorVariants((prev) =>
+        prev.map((v) => ({
+          ...v,
+          sizes: v.sizes.map((s) => (s.id === sizeId ? { ...s, quantity: qty } : s)),
+        })),
+      );
+      await fetchStocks();
+    } catch {
+      await Swal.fire({ icon: 'error', title: 'Failed to update quantity' });
+    } finally {
+      setEditingSizeQty(null);
+    }
   };
 
   const totalItems = useMemo(() => stocks.length, [stocks]);
@@ -272,18 +472,24 @@ export default function UploadInventory() {
     setFormData({
       name: '',
       brand: '',
-      category: canUploadShoes ? 'shoes' : 'cleaning_materials',
-      sku: '',
+      category: canUploadShoes ? 'shoes' : 'repair_materials',
       quantity: '',
       unit: 'pcs',
+      reorderLevel: '10',
+      reorderQuantity: '50',
+      costPrice: '',
+      sellingPrice: '',
       notes: '',
     });
     setSelectedShoeTypes([]);
     setColorVariants([]);
     setNewColorVariants([]);
     setRepairImages([]);
+    setExistingColorSizeDrafts({});
     setIsShoesMode(canUploadShoes);
     setEditingStock(null);
+    setEditingSizeQty(null);
+    setColorImageUploading({});
   };
 
   const handleOpenModal = (stock?: StockItem) => {
@@ -293,16 +499,22 @@ export default function UploadInventory() {
         name: stock.name,
         brand: stock.brand,
         category: stock.category,
-        sku: stock.sku,
         quantity: stock.quantity.toString(),
         unit: stock.unit,
+        reorderLevel: String(stock.reorderLevel ?? 10),
+        reorderQuantity: String(stock.reorderQuantity ?? 50),
+        costPrice: stock.costPrice !== null && stock.costPrice !== undefined ? String(stock.costPrice) : '',
+        sellingPrice: stock.sellingPrice !== null && stock.sellingPrice !== undefined ? String(stock.sellingPrice) : '',
         notes: stock.notes,
       });
       setSelectedShoeTypes(stock.shoeType ? stock.shoeType.split(',').filter(Boolean) : []);
       setColorVariants(stock.colorVariants || []);
       setNewColorVariants([]);
       setRepairImages(stock.repairImages || []);
-      setIsShoesMode(stock.category !== 'cleaning_materials');
+      setExistingColorSizeDrafts({});
+      setIsShoesMode(stock.category === 'shoes');
+      setEditingSizeQty(null);
+      setColorImageUploading({});
     } else {
       resetForm();
     }
@@ -335,13 +547,62 @@ export default function UploadInventory() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const wasEditing = Boolean(editingStock);
 
-    // For shoes, use auto-calculated total from size variants; for cleaning materials use the manual field
+    const categoryToSave: StockCategory = editingStock
+      ? editingStock.category
+      : (isShoesMode ? 'shoes' : 'repair_materials');
+
+    // For shoes, use auto-calculated total from size variants; for repair materials use the manual field
     const quantityAsNumber = isShoesMode
       ? shoesAutoQuantity
       : Number(formData.quantity);
 
-    if (!isShoesMode && (Number.isNaN(quantityAsNumber) || quantityAsNumber < 0)) {
+    if (!editingStock && isShoesMode) {
+      const allSizes = colorVariants.flatMap((v) => v.sizes);
+      if (allSizes.length === 0) {
+        alert('Please add at least one size before saving stock.');
+        return;
+      }
+
+      if (allSizes.some((s) => Number(s.quantity) <= 0)) {
+        alert('Each size must have stock greater than 0.');
+        return;
+      }
+
+      if (quantityAsNumber <= 0) {
+        alert('Total stock must be greater than 0.');
+        return;
+      }
+    }
+
+    if (!editingStock && !isShoesMode && (Number.isNaN(quantityAsNumber) || quantityAsNumber <= 0)) {
+      alert('Quantity must be greater than 0.');
+      return;
+    }
+
+    const reorderLevelNumber = isShoesMode ? 5 : Number(formData.reorderLevel);
+    const reorderQuantityNumber = isShoesMode ? 10 : Number(formData.reorderQuantity);
+    const costPriceNumber = !isShoesMode && formData.costPrice.trim() !== '' ? Number(formData.costPrice) : undefined;
+    const sellingPriceNumber = !isShoesMode && formData.sellingPrice.trim() !== '' ? Number(formData.sellingPrice) : undefined;
+
+    if (!isShoesMode && (Number.isNaN(reorderLevelNumber) || reorderLevelNumber < 0)) {
+      alert('Reorder level must be 0 or greater.');
+      return;
+    }
+
+    if (!isShoesMode && (Number.isNaN(reorderQuantityNumber) || reorderQuantityNumber < 0)) {
+      alert('Reorder quantity must be 0 or greater.');
+      return;
+    }
+
+    if (costPriceNumber !== undefined && (Number.isNaN(costPriceNumber) || costPriceNumber < 0)) {
+      alert('Unit cost must be 0 or greater.');
+      return;
+    }
+
+    if (sellingPriceNumber !== undefined && (Number.isNaN(sellingPriceNumber) || sellingPriceNumber < 0)) {
+      alert('Selling price must be 0 or greater.');
       return;
     }
 
@@ -351,11 +612,6 @@ export default function UploadInventory() {
         const totalVariantImages = colorVariants.reduce((sum, variant) => sum + variant.images.length, 0);
         if (colorVariants.length === 0 || totalVariantImages === 0) {
           alert('Please add at least one color variant and upload at least one image.');
-          return;
-        }
-      } else {
-        if (repairImages.length === 0) {
-          alert('Please add at least one repair material image.');
           return;
         }
       }
@@ -406,15 +662,16 @@ export default function UploadInventory() {
       if (editingStock) {
         await inventoryItemAPI.update(editingStock.id, {
           name: formData.name,
-          sku: formData.sku || undefined,
-          category: formData.category,
+          category: categoryToSave,
           brand: isShoesMode ? (formData.brand || undefined) : undefined,
           description: isShoesMode ? (selectedShoeTypes.join(',') || undefined) : undefined,
           unit: resolvedUnit,
           notes: formData.notes,
           available_quantity: quantityAsNumber,
-          reorder_level: 5,
-          reorder_quantity: 10,
+          reorder_level: reorderLevelNumber,
+          reorder_quantity: reorderQuantityNumber,
+          cost_price: isShoesMode ? undefined : costPriceNumber,
+          price: isShoesMode ? undefined : sellingPriceNumber,
         });
         // Upload any newly-added repair images when editing
         if (imageFiles.length > 0) {
@@ -434,15 +691,16 @@ export default function UploadInventory() {
       } else {
         await inventoryItemAPI.create({
           name: formData.name,
-          sku: formData.sku || undefined,
-          category: formData.category,
+          category: categoryToSave,
           brand: isShoesMode ? (formData.brand || undefined) : undefined,
           description: isShoesMode ? (selectedShoeTypes.join(',') || undefined) : undefined,
           unit: resolvedUnit,
           notes: formData.notes,
           available_quantity: quantityAsNumber,
-          reorder_level: 5,
-          reorder_quantity: 10,
+          reorder_level: reorderLevelNumber,
+          reorder_quantity: reorderQuantityNumber,
+          cost_price: isShoesMode ? undefined : costPriceNumber,
+          price: isShoesMode ? undefined : sellingPriceNumber,
           images: imageFiles.length > 0 ? imageFiles : undefined,
           color_variants: colorVariantsPayload,
           sizes: sizesPayload,
@@ -457,6 +715,16 @@ export default function UploadInventory() {
 
     setIsModalOpen(false);
     resetForm();
+
+    await Swal.fire({
+      icon: 'success',
+      title: wasEditing ? 'Stock updated' : 'Stock uploaded successfully',
+      text: wasEditing
+        ? 'Your stock changes were saved successfully.'
+        : 'Your stock entry has been uploaded successfully.',
+      timer: 1800,
+      showConfirmButton: false,
+    });
   };
 
   return (
@@ -497,7 +765,6 @@ export default function UploadInventory() {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Item</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">SKU</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Quantity</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Uploaded</th>
@@ -506,10 +773,10 @@ export default function UploadInventory() {
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {loadingStocks ? (
-                  <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">Loading stock entries...</td></tr>
+                  <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">Loading stock entries...</td></tr>
                 ) : stocks.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                       No stock entries yet. Create your first stock upload!
                     </td>
                   </tr>
@@ -539,9 +806,8 @@ export default function UploadInventory() {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-gray-900 dark:text-white">
-                          {stock.category === 'shoes' ? 'Shoes' : 'Cleaning Materials'}
+                          {stock.category === 'shoes' ? 'Shoes' : 'Repair Materials'}
                         </td>
-                        <td className="px-6 py-4 text-gray-900 dark:text-white">{stock.sku}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                             status === 'Out of Stock'
@@ -564,7 +830,7 @@ export default function UploadInventory() {
                             {status}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-gray-900 dark:text-white">{stock.createdAt}</td>
+                        <td className="px-6 py-4 text-gray-900 dark:text-white whitespace-nowrap">{formatUploadDate(stock.createdAt)}</td>
                         <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
                           <button
                             onClick={() => handleOpenModal(stock)}
@@ -599,118 +865,281 @@ export default function UploadInventory() {
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-6xl w-full shadow-2xl relative flex flex-col border border-gray-200 dark:border-gray-700" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {editingStock ? 'Edit Stock Entry' : 'Add Stock Entry'}
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {businessType === 'retail'
-                  ? 'Fill out stock details for shoes.'
-                  : businessType === 'repair'
-                  ? 'Fill out stock details for repair materials.'
-                  : 'Fill out stock details for shoes and repair materials.'}
-              </p>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {editingStock ? 'Edit Stock Entry' : 'Add Stock Entry'}
+                  </h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    {businessType === 'retail'
+                      ? 'Fill out stock details for shoes.'
+                      : businessType === 'repair'
+                      ? 'Fill out stock details for repair materials.'
+                      : 'Fill out stock details for shoes and repair materials.'}
+                  </p>
+                </div>
+
+                {!editingStock && showToggle ? (
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm font-medium ${!isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
+                      Repair Materials
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextIsShoes = !isShoesMode;
+                        setIsShoesMode(nextIsShoes);
+                        setFormData((prev) => ({
+                          ...prev,
+                          category: nextIsShoes ? 'shoes' : 'repair_materials',
+                        }));
+                        if (!nextIsShoes) {
+                          setColorVariants([]);
+                        }
+                      }}
+                      className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors ${
+                        isShoesMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
+                      }`}
+                      aria-label="Toggle upload type"
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          isShoesMode ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <span className={`text-sm font-medium ${isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
+                      Shoes
+                    </span>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-1 overflow-y-auto flex flex-col gap-6 p-6 pr-2">
-                <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">Upload Type</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {showToggle
-                        ? 'Toggle between repair materials and shoes.'
-                        : canUploadShoes
-                          ? 'This shop is set up for retail — uploading shoes only.'
-                          : 'This shop is set up for repair — uploading repair materials only.'}
-                    </p>
-                  </div>
-                  {showToggle ? (
-                    <div className="flex items-center gap-3">
-                      <span className={`text-sm font-medium ${!isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
-                        Repair Materials
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextIsShoes = !isShoesMode;
-                          setIsShoesMode(nextIsShoes);
-                          setFormData((prev) => ({
-                            ...prev,
-                            category: nextIsShoes ? 'shoes' : 'cleaning_materials',
-                          }));
-                          if (!nextIsShoes) {
-                            setColorVariants([]);
-                          }
-                        }}
-                        className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors ${
-                          isShoesMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                        }`}
-                        aria-label="Toggle upload type"
-                      >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                            isShoesMode ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                      <span className={`text-sm font-medium ${isShoesMode ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
-                        Shoes
-                      </span>
-                    </div>
-                  ) : (
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                      canUploadShoes
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                        : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                    }`}>
-                      {canUploadShoes ? '👟 Shoes' : '🔧 Repair Materials'}
-                    </span>
-                  )}
-                </div>
-
                 {isShoesMode && (
                 <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6 space-y-6">
                   {editingStock ? (
                     <>
-                      {/* Existing colours — read-only */}
+                      {/* Existing colours */}
                       {colorVariants.length > 0 && (
                         <div>
                           <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">
                             Existing Colours
                           </h3>
                           <div className="space-y-3">
-                            {colorVariants.map((cv) => (
-                              <div
-                                key={cv.id}
-                                className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
-                              >
-                                <div className="flex items-center gap-3 mb-2">
-                                  <div
-                                    className="h-5 w-5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
-                                    style={{ backgroundColor: cv.color_code }}
-                                  />
-                                  <span className="font-medium text-gray-900 dark:text-white text-sm">
-                                    {cv.color_name}
-                                  </span>
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    {cv.images.length} image{cv.images.length !== 1 ? 's' : ''}
-                                  </span>
-                                  <span className="ml-auto text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded-full">
-                                    {cv.sizes.reduce((sum, s) => sum + s.quantity, 0)} units
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {cv.sizes.map((s) => (
-                                    <span
-                                      key={s.id}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300"
-                                    >
-                                      {s.size} <span className="text-gray-400">×</span> {s.quantity}
+                            {colorVariants.map((cv) => {
+                              const draft = existingColorSizeDrafts[cv.id] ?? { size: '', quantity: '' };
+
+                              return (
+                                <div
+                                  key={cv.id}
+                                  className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
+                                >
+                                  {/* ── Header ── */}
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <div
+                                      className="h-5 w-5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
+                                      style={{ backgroundColor: cv.color_code }}
+                                    />
+                                    <span className="font-medium text-gray-900 dark:text-white text-sm">{cv.color_name}</span>
+                                    <span className="ml-auto text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                                      {cv.sizes.reduce((sum, s) => sum + s.quantity, 0)} units
                                     </span>
-                                  ))}
+                                  </div>
+
+                                  {/* ── Images ── */}
+                                  <div className="mb-3">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Images ({cv.images.length})</span>
+                                      <label className="cursor-pointer inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors">
+                                        {colorImageUploading[cv.id] ? (
+                                          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                          </svg>
+                                        ) : (
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                          </svg>
+                                        )}
+                                        {colorImageUploading[cv.id] ? 'Uploading…' : 'Add Images'}
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          className="hidden"
+                                          disabled={!!colorImageUploading[cv.id]}
+                                          onChange={(e) => {
+                                            const files = Array.from(e.target.files ?? []);
+                                            if (files.length > 0) handleUploadColorImages(cv.id, files);
+                                            e.target.value = '';
+                                          }}
+                                        />
+                                      </label>
+                                    </div>
+                                    {cv.images.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {cv.images.map((img) => (
+                                          <div key={img.id} className="relative group w-14 h-14 flex-shrink-0">
+                                            <img
+                                              src={img.preview}
+                                              alt={cv.color_name}
+                                              className="w-14 h-14 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+                                            />
+                                            {img.is_thumbnail && (
+                                              <span className="absolute bottom-0 left-0 right-0 bg-blue-600/80 text-white text-[9px] text-center rounded-b-lg leading-tight py-0.5">
+                                                Thumb
+                                              </span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteColorImage(cv.id, img.id)}
+                                              className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center transition-colors"
+                                              title="Delete image"
+                                            >
+                                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-gray-400 dark:text-gray-500 italic">No images — click Add Images above.</p>
+                                    )}
+                                  </div>
+
+                                  {/* ── Sizes (click to correct qty) ── */}
+                                  <div className="mb-3">
+                                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1.5">
+                                      Sizes <span className="font-normal text-gray-400">(click to correct qty)</span>
+                                    </span>
+                                    <div className="flex flex-wrap gap-2">
+                                      {cv.sizes.length > 0 ? (
+                                        cv.sizes.map((s) => {
+                                          const isEditingThis = editingSizeQty?.sizeId === s.id;
+                                          return isEditingThis ? (
+                                            <div
+                                              key={s.id}
+                                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-600"
+                                            >
+                                              <span className="text-xs font-medium text-blue-700 dark:text-blue-300">{s.size}</span>
+                                              <span className="text-blue-400 text-xs">×</span>
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={editingSizeQty?.value ?? ''}
+                                                onChange={(e) =>
+                                                  setEditingSizeQty((prev) => prev ? { ...prev, value: e.target.value } : prev)
+                                                }
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') handleUpdateSizeQty(s.id, editingSizeQty?.value ?? '');
+                                                  if (e.key === 'Escape') setEditingSizeQty(null);
+                                                }}
+                                                className="w-14 text-xs bg-transparent border-0 outline-none text-blue-700 dark:text-blue-300 font-medium"
+                                                autoFocus
+                                              title={`Quantity for size ${s.size}`}
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => handleUpdateSizeQty(s.id, editingSizeQty?.value ?? '')}
+                                                className="text-green-600 hover:text-green-700"
+                                                title="Save"
+                                              >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setEditingSizeQty(null)}
+                                                className="text-gray-400 hover:text-gray-500"
+                                                title="Cancel"
+                                              >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <button
+                                              key={s.id}
+                                              type="button"
+                                              onClick={() => setEditingSizeQty({ sizeId: s.id, value: String(s.quantity) })}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-700 dark:hover:text-blue-300 transition-colors group"
+                                              title="Click to edit quantity"
+                                            >
+                                              {s.size}
+                                              <span className="text-gray-400 group-hover:text-blue-400">×</span>
+                                              {s.quantity}
+                                              <svg className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                              </svg>
+                                            </button>
+                                          );
+                                        })
+                                      ) : (
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">No sizes yet.</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* ── Add more sizes ── */}
+                                  <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_auto] gap-2 items-end pt-2 border-t border-gray-100 dark:border-gray-800">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Add Size</label>
+                                      <select
+                                        title="Select size for this color"
+                                        value={draft.size}
+                                        onChange={(e) =>
+                                          setExistingColorSizeDrafts((prev) => ({
+                                            ...prev,
+                                            [cv.id]: {
+                                              ...((prev[cv.id] ?? { size: '', quantity: '' })),
+                                              size: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                                      >
+                                        <option value="">Select size</option>
+                                        {SIZE_OPTIONS.map((size) => (
+                                          <option key={size} value={size}>Size {size}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Quantity</label>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={draft.quantity}
+                                        onChange={(e) =>
+                                          setExistingColorSizeDrafts((prev) => ({
+                                            ...prev,
+                                            [cv.id]: {
+                                              ...((prev[cv.id] ?? { size: '', quantity: '' })),
+                                              quantity: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddSizeToExistingColor(cv.id)}
+                                      className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                                    >
+                                      Add Size
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -745,10 +1174,10 @@ export default function UploadInventory() {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          Repair Material Images
+                          Repair Material Images (Optional)
                         </h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                          Upload images for the repair materials
+                          Add photos if available. You can save repair materials without images.
                         </p>
                       </div>
                     </div>
@@ -775,21 +1204,6 @@ export default function UploadInventory() {
                     />
                   </div>
 
-                  <div>
-                    <label htmlFor="stock-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category *</label>
-                    <select
-                      id="stock-category"
-                      title="Stock category"
-                      value={formData.category}
-                      onChange={(event) => setFormData((prev) => ({ ...prev, category: event.target.value as StockCategory }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                      required
-                    >
-                      {canUploadShoes && <option value="shoes">Shoes</option>}
-                      {canUploadRepair && <option value="cleaning_materials">Cleaning Materials</option>}
-                    </select>
-                  </div>
-
                   {isShoesMode && (
                     <>
                       <div>
@@ -803,62 +1217,11 @@ export default function UploadInventory() {
                           placeholder="e.g., Nike, Adidas"
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Shoe Type</label>
-                        <button
-                          type="button"
-                          onClick={() => setIsShoeTypePickerOpen(true)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-left text-gray-500 dark:text-gray-400 text-sm"
-                        >
-                          {selectedShoeTypes.length > 0 ? `${selectedShoeTypes.length} type(s) selected` : 'Select types...'}
-                        </button>
-                        {selectedShoeTypes.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {selectedShoeTypes.map((v) => (
-                              <span
-                                key={v}
-                                className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
-                              >
-                                {shoeTypeLabelByValue[v] || v}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleShoeType(v)}
-                                  className="ml-0.5 hover:text-blue-600"
-                                  aria-label={`Remove ${v}`}
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+
                     </>
                   )}
 
-                  <div>
-                    <label htmlFor="stock-sku" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">SKU *</label>
-                    <input
-                      id="stock-sku"
-                      type="text"
-                      value={formData.sku}
-                      onChange={(event) => setFormData((prev) => ({ ...prev, sku: event.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                      placeholder="e.g., SHOE-001"
-                      required
-                    />
-                  </div>
-
-                  {isShoesMode ? (
-                    /* Shoes: show auto-calculated quantity as a read-only summary */
-                    <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 flex items-center justify-between md:col-span-1">
-                      <div>
-                        <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Total Stock (auto)</p>
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">Summed from all sizes above</p>
-                      </div>
-                      <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">{shoesAutoQuantity} pairs</span>
-                    </div>
-                  ) : (
+                  {!isShoesMode && (
                     <div>
                       <label htmlFor="stock-quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity *</label>
                       <input
@@ -896,6 +1259,64 @@ export default function UploadInventory() {
                         <option value="pairs">pairs</option>
                       </select>
                     </div>
+                  )}
+
+                  {!isShoesMode && (
+                    <>
+                      <div>
+                        <label htmlFor="stock-reorder-level" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reorder Level</label>
+                        <input
+                          id="stock-reorder-level"
+                          type="number"
+                          min="0"
+                          value={formData.reorderLevel}
+                          onChange={(event) => setFormData((prev) => ({ ...prev, reorderLevel: event.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="10"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="stock-reorder-quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reorder Quantity</label>
+                        <input
+                          id="stock-reorder-quantity"
+                          type="number"
+                          min="0"
+                          value={formData.reorderQuantity}
+                          onChange={(event) => setFormData((prev) => ({ ...prev, reorderQuantity: event.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="50"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="stock-cost-price" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Unit Cost</label>
+                        <input
+                          id="stock-cost-price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.costPrice}
+                          onChange={(event) => setFormData((prev) => ({ ...prev, costPrice: event.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="stock-selling-price" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Selling Price</label>
+                        <input
+                          id="stock-selling-price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.sellingPrice}
+                          onChange={(event) => setFormData((prev) => ({ ...prev, sellingPrice: event.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </>
                   )}
 
                   <div className="md:col-span-2">

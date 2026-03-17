@@ -37,6 +37,32 @@ type Product = {
   variants?: Variant[];
 };
 
+type ShowroomEntitlement = {
+  business_type: string;
+  is_eligible: boolean;
+  status: string;
+  has_active_subscription: boolean;
+  plan_name: string | null;
+  showroom_slot_limit: number;
+  used_slots: number;
+  remaining_slots: number;
+  context_product_featured: boolean;
+  can_upload_360: boolean;
+};
+
+type ColorVariantUploadResult = {
+  firstColorVariantId: number | null;
+  firstColorVariantImageCount: number;
+};
+
+type ShowroomFramePreview = {
+  id: string;
+  preview: string;
+  colorName: string;
+  altText: string;
+  sortOrder: number;
+};
+
 // Icon Components  
 const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -142,6 +168,33 @@ export default function ProductManagement() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const allowed3DModelExtensions = ['jpg', 'jpeg', 'png', 'webp'];
   const accepted3DModelsInput = '.jpg,.jpeg,.png,.webp';
+  const MAX_SHOWROOM_360_FILES = 120;
+  const IMAGE_UPLOAD_CONCURRENCY = 4;
+  const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 3;
+
+  const runWithConcurrency = async <T, R>(
+    items: T[],
+    concurrency: number,
+    task: (item: T, index: number) => Promise<R>
+  ): Promise<R[]> => {
+    if (items.length === 0) return [];
+
+    const cappedConcurrency = Math.max(1, Math.min(concurrency, items.length));
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    const worker = async () => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        if (currentIndex >= items.length) break;
+        results[currentIndex] = await task(items[currentIndex], currentIndex);
+      }
+    };
+
+    await Promise.all(Array.from({ length: cappedConcurrency }, () => worker()));
+    return results;
+  };
 
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
@@ -192,12 +245,34 @@ export default function ProductManagement() {
   const [variantMode, setVariantMode] = useState<'legacy' | 'color-first'>('color-first');
   const [product3DFiles, setProduct3DFiles] = useState<File[]>([]);
   const [show3DShoeModels, setShow3DShoeModels] = useState(false);
+  const [showroomEntitlement, setShowroomEntitlement] = useState<ShowroomEntitlement | null>(null);
+  const [loadingShowroomEntitlement, setLoadingShowroomEntitlement] = useState(false);
+  const canUse360Uploader = !!showroomEntitlement?.can_upload_360;
+  const [existingShowroomFrameCount, setExistingShowroomFrameCount] = useState(0);
+  const [existingShowroomFrames, setExistingShowroomFrames] = useState<ShowroomFramePreview[]>([]);
+  const hasExistingShowroomFrames = existingShowroomFrames.length > 0;
+  const canToggle360Viewer = canUse360Uploader || hasExistingShowroomFrames;
   
   const [uploading, setUploading] = useState(false);
 
+  const isShowroomFrameImageType = (imageType?: string | null) => {
+    const normalized = String(imageType || '').trim().toLowerCase();
+    return ['showroom_360', 'virtual_showroom', 'showroom', '360'].includes(normalized);
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchShowroomEntitlement();
   }, []);
+
+  useEffect(() => {
+    if (!canUse360Uploader) {
+      setProduct3DFiles([]);
+      if (show3DShoeModels && !hasExistingShowroomFrames) {
+        setShow3DShoeModels(false);
+      }
+    }
+  }, [canUse360Uploader, show3DShoeModels, hasExistingShowroomFrames]);
 
   useEffect(() => {
     setFormData((prev) => ({
@@ -231,9 +306,37 @@ export default function ProductManagement() {
     }
   };
 
+  const fetchShowroomEntitlement = async (productId?: number) => {
+    try {
+      setLoadingShowroomEntitlement(true);
+      const query = productId ? `?product_id=${productId}` : '';
+      const response = await fetch(`/api/shop-owner/products/meta/showroom-entitlement${query}`, {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setShowroomEntitlement(null);
+        return;
+      }
+
+      setShowroomEntitlement(data.entitlement || null);
+    } catch (error) {
+      console.error('Error fetching showroom entitlement:', error);
+      setShowroomEntitlement(null);
+    } finally {
+      setLoadingShowroomEntitlement(false);
+    }
+  };
+
   const handleOpenModal = async (product?: Product) => {
     setShow3DShoeModels(false);
     setProduct3DFiles([]);
+    setExistingShowroomFrameCount(0);
+    setExistingShowroomFrames([]);
+    await fetchShowroomEntitlement(product?.id);
 
     if (product) {
       setEditingProduct(product);
@@ -261,6 +364,25 @@ export default function ProductManagement() {
         if (colorVariantsResponse.ok) {
           const colorVariantsData = await colorVariantsResponse.json();
           const loadedColorVariants = colorVariantsData.color_variants || [];
+
+          const loadedShowroomFrames: ShowroomFramePreview[] = loadedColorVariants.flatMap((cv: any) =>
+            (cv.images || [])
+              .filter((img: any) => isShowroomFrameImageType(img.image_type))
+              .map((img: any, idx: number) => ({
+                id: String(img.id ?? `${cv.id || cv.color_name || 'color'}-${idx}`),
+                preview: img.image_path || img.image_url || '',
+                colorName: String(cv.color_name || ''),
+                altText: String(img.alt_text || `Showroom frame ${idx + 1}`),
+                sortOrder: Number(img.sort_order ?? idx),
+              }))
+          ).filter((frame: ShowroomFramePreview) => !!frame.preview);
+
+          loadedShowroomFrames.sort((a, b) => a.sortOrder - b.sortOrder);
+          setExistingShowroomFrames(loadedShowroomFrames);
+          setExistingShowroomFrameCount(loadedShowroomFrames.length);
+          if (loadedShowroomFrames.length > 0) {
+            setShow3DShoeModels(true);
+          }
           
           if (loadedColorVariants.length > 0) {
             // Product has color variants - use color-first mode
@@ -271,15 +393,18 @@ export default function ProductManagement() {
               id: cv.id?.toString() || Date.now().toString(),
               color_name: cv.color_name,
               color_code: cv.color_code,
-              images: (cv.images || []).map((img: any) => ({
-                id: img.id?.toString() || Date.now().toString(),
-                file: null,
-                preview: img.image_path || img.image_url,
-                uploaded_path: img.image_path || img.image_url,
-                is_thumbnail: img.is_thumbnail || false,
-                sort_order: img.sort_order || 0,
-                alt_text: img.alt_text || '',
-              })),
+              images: (cv.images || [])
+                .filter((img: any) => !isShowroomFrameImageType(img.image_type))
+                .map((img: any) => ({
+                  id: img.id?.toString() || Date.now().toString(),
+                  file: null,
+                  preview: img.image_path || img.image_url,
+                  uploaded_path: img.image_path || img.image_url,
+                  is_thumbnail: img.is_thumbnail || false,
+                  sort_order: img.sort_order || 0,
+                  alt_text: img.alt_text || '',
+                  image_type: img.image_type || 'product',
+                })),
               sizes: (cv.sizes || []).map((size: any) => ({
                 id: size.id?.toString() || Date.now().toString(),
                 size: size.size?.toString() || '',
@@ -327,6 +452,8 @@ export default function ProductManagement() {
         },
       ]);
       setColorVariants([]);
+      setExistingShowroomFrameCount(0);
+      setExistingShowroomFrames([]);
     }
     
     setIsModalOpen(true);
@@ -395,6 +522,17 @@ export default function ProductManagement() {
   };
 
   const handle3DModelFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canUse360Uploader) {
+      Swal.fire({
+        title: 'Premium Required',
+        text: 'Shoe Spin Viewer uploads require an active Retail Premium subscription with available showroom slots.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      e.target.value = '';
+      return;
+    }
+
     const pickedFiles = Array.from(e.target.files || []);
 
     if (pickedFiles.length === 0) return;
@@ -412,13 +550,32 @@ export default function ProductManagement() {
     }
 
     if (validFiles.length > 0) {
-      setProduct3DFiles((prev) => {
-        const existingKeys = new Set(prev.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
-        const newUniqueFiles = validFiles.filter(
-          (file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`)
-        );
-        return [...prev, ...newUniqueFiles];
-      });
+      const existingKeys = new Set(product3DFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+      const newUniqueFiles = validFiles.filter(
+        (file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`)
+      );
+
+      const remainingSlots = Math.max(MAX_SHOWROOM_360_FILES - product3DFiles.length, 0);
+
+      if (remainingSlots === 0) {
+        Swal.fire({
+          title: 'Frame Limit Reached',
+          text: `You can upload up to ${MAX_SHOWROOM_360_FILES} spin frames.`,
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+      } else {
+        if (newUniqueFiles.length > remainingSlots) {
+          Swal.fire({
+            title: 'Frame Limit Applied',
+            text: `Only ${remainingSlots} more frame(s) can be added (max ${MAX_SHOWROOM_360_FILES}).`,
+            icon: 'info',
+            confirmButtonColor: '#000000',
+          });
+        }
+
+        setProduct3DFiles((prev) => [...prev, ...newUniqueFiles.slice(0, remainingSlots)]);
+      }
     }
 
     e.target.value = '';
@@ -547,15 +704,18 @@ export default function ProductManagement() {
   };
 
   // Upload color variant images and create color variants via API
-  const uploadColorVariantImages = async (productId: number) => {
+  const uploadColorVariantImages = async (productId: number): Promise<ColorVariantUploadResult> => {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     let firstColorFirstImage: string | null = null;
     let isFirstColor = true;
+    const uploadResult: ColorVariantUploadResult = {
+      firstColorVariantId: null,
+      firstColorVariantImageCount: 0,
+    };
 
-    // If editing, delete existing color variants first to avoid duplicates
+    // If editing, only delete colors removed from the form. Keep existing colors/images intact.
     if (editingProduct) {
       try {
-        // Get existing color variants
         const existingResponse = await fetch(`/api/shop-owner/products/${productId}/color-variants`, {
           credentials: 'include',
           headers: { 'Accept': 'application/json' }
@@ -564,10 +724,15 @@ export default function ProductManagement() {
         if (existingResponse.ok) {
           const existingData = await existingResponse.json();
           const existingVariants = existingData.color_variants || [];
+          const keptColorNames = new Set(
+            colorVariants.map((variant) => String(variant.color_name || '').trim().toLowerCase()).filter(Boolean)
+          );
           
-          // Delete each existing color variant
           for (const variant of existingVariants) {
-            if (variant.id) {
+            const variantColorName = String(variant?.color_name || '').trim().toLowerCase();
+            const shouldDelete = !!variant.id && variantColorName && !keptColorNames.has(variantColorName);
+
+            if (shouldDelete) {
               await fetch(`/api/shop-owner/products/${productId}/color-variants/${variant.id}`, {
                 method: 'DELETE',
                 credentials: 'include',
@@ -587,19 +752,72 @@ export default function ProductManagement() {
     for (const colorVariant of colorVariants) {
       try {
         // First upload all NEW images for this color (skip already uploaded ones)
-        const uploadedImages = [];
+        const uploadedImages: any[] = [];
         let isFirstImageInColor = true;
+
+        const queuedUploads: Array<{ image: any; imageIndex: number }> = colorVariant.images
+          .map((image: any, imageIndex: number) => ({ image, imageIndex }))
+          .filter(({ image }: { image: any }) => !!image.file);
+
+        const uploadResponses = await runWithConcurrency<
+          { image: any; imageIndex: number },
+          { imageIndex: number; payload: any } | null
+        >(
+          queuedUploads,
+          IMAGE_UPLOAD_CONCURRENCY,
+          async ({ image, imageIndex }: { image: any; imageIndex: number }) => {
+            const uploadData = new FormData();
+            uploadData.append('image', image.file as File);
+
+            const response = await fetch('/api/shop-owner/products/upload-image', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'X-CSRF-TOKEN': csrfToken || '',
+              },
+              body: uploadData,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              console.error(`Failed to upload image: ${data.message || 'Unknown error'}`);
+              return null;
+            }
+
+            return {
+              imageIndex,
+              payload: {
+                path: data.path,
+                alt_text: image.alt_text || `${colorVariant.color_name} ${colorVariant.color_name}`,
+                is_thumbnail: image.is_thumbnail,
+                sort_order: image.sort_order,
+                image_type: (image as any).image_type || 'product',
+              },
+            };
+          }
+        );
+
+        const uploadedByImageIndex = new Map<number, any>();
+        uploadResponses.forEach((entry: { imageIndex: number; payload: any } | null) => {
+          if (entry?.imageIndex !== undefined && entry?.payload) {
+            uploadedByImageIndex.set(entry.imageIndex, entry.payload);
+          }
+        });
         
-        for (const image of colorVariant.images) {
+        for (const [imageIndex, image] of colorVariant.images.entries()) {
           // Skip if image is already uploaded (has uploaded_path but no new file)
           if (image.uploaded_path && !image.file) {
-            uploadedImages.push({
-              path: image.uploaded_path,
-              alt_text: image.alt_text || '',
-              is_thumbnail: image.is_thumbnail,
-              sort_order: image.sort_order,
-              image_type: 'product',
-            });
+            // During edit, keep already-uploaded images on backend to avoid duplicates and frame loss.
+            if (!editingProduct) {
+              uploadedImages.push({
+                path: image.uploaded_path,
+                alt_text: image.alt_text || '',
+                is_thumbnail: image.is_thumbnail,
+                sort_order: image.sort_order,
+                image_type: (image as any).image_type || 'product',
+              });
+            }
 
             // Save the first image of the first color as main_image
             if (isFirstColor) {
@@ -614,41 +832,21 @@ export default function ProductManagement() {
           }
           // Only upload if there's a new file
           else if (image.file) {
-            const uploadData = new FormData();
-            uploadData.append('image', image.file);
-            
-            const response = await fetch('/api/shop-owner/products/upload-image', {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'X-CSRF-TOKEN': csrfToken || '',
-              },
-              body: uploadData,
-            });
-
-            const data = await response.json();
-            if (response.ok) {
-              uploadedImages.push({
-                path: data.path,
-                alt_text: image.alt_text || `${colorVariant.color_name} ${colorVariant.color_name}`,
-                is_thumbnail: image.is_thumbnail,
-                sort_order: image.sort_order,
-                image_type: 'product',
-              });
+            const uploadedPayload = uploadedByImageIndex.get(imageIndex);
+            if (uploadedPayload) {
+              uploadedImages.push(uploadedPayload);
 
               // Save the first image of the first color as main_image
               // Priority: thumbnail from first color > first image of first color
               if (isFirstColor) {
                 if (image.is_thumbnail) {
-                  firstColorFirstImage = data.path;
+                  firstColorFirstImage = uploadedPayload.path;
                 } else if (!firstColorFirstImage && isFirstImageInColor) {
-                  firstColorFirstImage = data.path;
+                  firstColorFirstImage = uploadedPayload.path;
                 }
               }
               
               isFirstImageInColor = false;
-            } else {
-              console.error(`Failed to upload image: ${data.message || 'Unknown error'}`);
             }
           }
         }
@@ -686,9 +884,15 @@ export default function ProductManagement() {
           body: JSON.stringify(colorVariantData),
         });
 
+        const cvResponseData = await cvResponse.json();
+
         if (!cvResponse.ok) {
-          const errorData = await cvResponse.json();
-          console.error(`Failed to create color variant: ${errorData.message || 'Unknown error'}`);
+          console.error(`Failed to create color variant: ${cvResponseData.message || 'Unknown error'}`);
+        } else if (!uploadResult.firstColorVariantId && cvResponseData?.color_variant?.id) {
+          uploadResult.firstColorVariantId = cvResponseData.color_variant.id;
+          uploadResult.firstColorVariantImageCount = Array.isArray(cvResponseData?.color_variant?.images)
+            ? cvResponseData.color_variant.images.length
+            : uploadedImages.length;
         }
 
         // Create size variants (for backward compatibility with existing ProductVariant system)
@@ -728,6 +932,55 @@ export default function ProductManagement() {
         console.error('Error updating product main_image:', error);
       }
     }
+
+    return uploadResult;
+  };
+
+  const uploadShowroom360Images = async (
+    productId: number,
+    colorVariantId: number,
+    existingColorImagesCount: number,
+  ) => {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    const remainingVariantSlots = Math.max(MAX_SHOWROOM_360_FILES - existingColorImagesCount, 0);
+
+    if (remainingVariantSlots <= 0) {
+      throw new Error('No image slots left in the selected color variant for Shoe Spin Viewer frames.');
+    }
+
+    if (product3DFiles.length > remainingVariantSlots) {
+      throw new Error(`Only ${remainingVariantSlots} frame(s) can be uploaded for Shoe Spin Viewer in this product setup.`);
+    }
+
+    await runWithConcurrency(
+      product3DFiles,
+      SHOWROOM_FRAME_UPLOAD_CONCURRENCY,
+      async (frameFile, frameIndex) => {
+        const formData = new FormData();
+        formData.append('image', frameFile);
+        formData.append('alt_text', `Showroom 360 frame ${frameIndex + 1}`);
+        formData.append('image_type', 'showroom_360');
+        formData.append('assign_to_showroom', '1');
+        formData.append('sort_order', String(frameIndex));
+
+        const response = await fetch(`/api/shop-owner/products/${productId}/color-variants/${colorVariantId}/images`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'X-CSRF-TOKEN': csrfToken || '',
+            'Accept': 'application/json',
+          },
+          body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || `Failed to upload Shoe Spin Viewer frame ${frameIndex + 1}`);
+        }
+
+        return data;
+      }
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -785,6 +1038,16 @@ export default function ProductManagement() {
       Swal.fire({
         title: 'No Stock',
         text: 'Please set quantity for at least one size variant',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (show3DShoeModels && product3DFiles.length > 0 && !canUse360Uploader) {
+      Swal.fire({
+        title: 'Premium Required',
+        text: 'Shoe Spin Viewer uploads require an active Retail Premium subscription with available showroom slots.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -860,8 +1123,25 @@ export default function ProductManagement() {
       createdProductId = result.product?.id || editingProduct?.id;
 
       // Upload color variants with images
+      let colorVariantUploadResult: ColorVariantUploadResult | null = null;
       if (createdProductId) {
-        await uploadColorVariantImages(createdProductId);
+        colorVariantUploadResult = await uploadColorVariantImages(createdProductId);
+      }
+
+      if (createdProductId && show3DShoeModels && product3DFiles.length > 0) {
+        if (!canUse360Uploader) {
+          throw new Error('Active Retail Premium with available showroom slots is required for Shoe Spin Viewer uploads.');
+        }
+
+        if (!colorVariantUploadResult?.firstColorVariantId) {
+          throw new Error('Please add at least one color variant before uploading Shoe Spin Viewer frames.');
+        }
+
+        await uploadShowroom360Images(
+          createdProductId,
+          colorVariantUploadResult.firstColorVariantId,
+          colorVariantUploadResult.firstColorVariantImageCount,
+        );
       }
 
       await Swal.fire({
@@ -1131,27 +1411,47 @@ export default function ProductManagement() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShow3DShoeModels((prev) => !prev)}
-                  aria-label="Toggle Shoe Spin Viewer"
-                  title="Toggle Shoe Spin Viewer"
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                >
-                  <span>Shoe Spin Viewer</span>
-                  <span
-                    className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
-                      show3DShoeModels ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        show3DShoeModels ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
+                {loadingShowroomEntitlement ? (
+                  <span className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400">
+                    Checking Shoe Spin Viewer access...
                   </span>
-                </button>
+                ) : canToggle360Viewer ? (
+                  <button
+                    type="button"
+                    onClick={() => setShow3DShoeModels((prev) => !prev)}
+                    aria-label="Toggle Shoe Spin Viewer"
+                    title="Toggle Shoe Spin Viewer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    <span>Shoe Spin Viewer</span>
+                    {!canUse360Uploader && hasExistingShowroomFrames && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                        View only
+                      </span>
+                    )}
+                    <span
+                      className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
+                        show3DShoeModels ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          show3DShoeModels ? 'translate-x-5' : 'translate-x-1'
+                        }`}
+                      />
+                    </span>
+                  </button>
+                ) : (
+                  <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
+                    Shoe Spin Viewer requires active Retail Premium with available showroom slots
+                  </span>
+                )}
               </div>
+              {editingProduct && existingShowroomFrameCount > 0 && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {existingShowroomFrameCount} saved Shoe Spin frame(s) detected. Toggle Shoe Spin Viewer to preview them.
+                </p>
+              )}
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
@@ -1165,7 +1465,7 @@ export default function ProductManagement() {
                   />
               </div>
 
-              {show3DShoeModels && (
+              {show3DShoeModels && (canUse360Uploader || hasExistingShowroomFrames) && (
                 <div className="order-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
                   <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-4">
                     <div className="flex items-center justify-between gap-3 mb-2">
@@ -1173,19 +1473,51 @@ export default function ProductManagement() {
                         Shoe Spin Viewer
                       </label>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        JPG, JPEG, PNG, WEBP (Image Sequence)
+                        JPG, JPEG, PNG, WEBP (Image Sequence, max {MAX_SHOWROOM_360_FILES})
                       </span>
                     </div>
 
-                    <input
-                      type="file"
-                      multiple
-                      accept={accepted3DModelsInput}
-                      onChange={handle3DModelFilesChange}
-                      title="Upload image sequence files"
-                      aria-label="Upload image sequence files"
-                      className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:rounded-md file:border-0 file:bg-black file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-800"
-                    />
+                    {hasExistingShowroomFrames && (
+                      <div className="mb-4">
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
+                          Saved frames ({existingShowroomFrames.length})
+                        </p>
+                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                          {existingShowroomFrames.map((frame, index) => (
+                            <div
+                              key={`${frame.id}-${index}`}
+                              className="overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800"
+                              title={frame.altText}
+                            >
+                              <img
+                                src={frame.preview}
+                                alt={frame.altText}
+                                className="h-20 w-full object-cover"
+                                loading="lazy"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {!canUse360Uploader && hasExistingShowroomFrames && (
+                      <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
+                        View-only mode: Active Retail Premium with available showroom slots is required to upload new Shoe Spin Viewer frames.
+                      </p>
+                    )}
+
+                    {canUse360Uploader && (
+                      <input
+                        type="file"
+                        multiple
+                        accept={accepted3DModelsInput}
+                        onChange={handle3DModelFilesChange}
+                        title="Upload image sequence files"
+                        aria-label="Upload image sequence files"
+                        className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:rounded-md file:border-0 file:bg-black file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-800"
+                      />
+                    )}
 
                     {product3DFiles.length > 0 && (
                       <div className="mt-3 space-y-2">
@@ -1374,6 +1706,21 @@ export default function ProductManagement() {
                 </div>
               </div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Upload Loading Overlay */}
+      {uploading && createPortal(
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-6">
+            <div className="relative flex items-center justify-center">
+              <span className="absolute inline-block h-36 w-36 rounded-full border-8 border-white/25" />
+              <span className="inline-block h-36 w-36 animate-spin rounded-full border-8 border-transparent border-t-white" style={{ animationDuration: '0.42s' }} />
+              <span className="absolute inline-block h-20 w-20 animate-spin rounded-full border-8 border-transparent border-t-white/70" style={{ animationDuration: '0.68s', animationDirection: 'reverse' }} />
+            </div>
+            <p className="text-white text-2xl font-semibold tracking-wide animate-pulse">Uploading</p>
           </div>
         </div>,
         document.body

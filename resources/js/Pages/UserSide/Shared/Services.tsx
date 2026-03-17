@@ -19,7 +19,7 @@ const btnBase =
 const btnDark =
   'border border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/50';
 const btnLight =
-  'border border-gray-300 bg-white text-gray-900 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 focus-visible:ring-gray-300';
+  'border border-[#213257] bg-[#16284a] text-white shadow-[0_18px_35px_-18px_rgba(0,0,0,0.65)] hover:-translate-y-0.5 hover:border-[#2a3f6a] hover:bg-[#13213d] hover:text-white hover:shadow-[0_24px_38px_-18px_rgba(0,0,0,0.75)] focus-visible:ring-[#16284a]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black';
 
 const plans = [
   {
@@ -143,6 +143,14 @@ const Services: React.FC<Props> = () => {
                 <p className="text-black/65 text-sm leading-relaxed">
                   This interactive experience helps customers examine products more closely while helping shop owners present their shoes in a modern, visually appealing, and immersive storefront.
                 </p>
+                <div className="mt-28 flex justify-center lg:mt-32">
+                  <Link
+                    href="/services/product-image-spin-tutorial"
+                    className={`${btnBase} ${btnLight} px-8 py-3.5 text-xs sm:px-10 sm:py-4 sm:text-sm`}
+                  >
+                    Product Image Spin Tutorial
+                  </Link>
+                </div>
               </div>
               <div className="grid grid-cols-1 gap-4">
                 <div className="overflow-hidden rounded-2xl border border-gray-200">
@@ -186,7 +194,7 @@ const Services: React.FC<Props> = () => {
                 href="/shop-owner-register"
                 className={`${btnBase} ${btnDark} px-10 py-3.5 text-sm`}
               >
-                Register as Shop Owner or Repairer
+                Register as Retail or Repairer
                 <svg className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>

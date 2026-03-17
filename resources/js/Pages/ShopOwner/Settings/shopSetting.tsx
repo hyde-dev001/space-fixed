@@ -44,6 +44,16 @@ type ShopSettingsPayload = {
 	shop_longitude: number | null;
 	shop_address: string | null;
 	shop_geofence_radius: number;
+		premium: {
+		eligible: boolean;
+		status: 'pending' | 'active' | 'expired' | 'cancelled' | 'failed' | null;
+		has_active: boolean;
+		plan_name: string | null;
+		plan_code: string | null;
+		showroom_slot_limit: number | null;
+		starts_at: string | null;
+		ends_at: string | null;
+	};
 };
 
 type ShopSettingsPageProps = {
@@ -178,7 +188,6 @@ const ShopSetting: React.FC = () => {
 		try {
 			const res = await fetch(
 				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-				{ headers: { 'User-Agent': 'SoleSpace/1.0' } },
 			);
 			const data = await res.json();
 			return typeof data?.display_name === 'string' && data.display_name.trim() !== '' ? data.display_name : null;
@@ -230,12 +239,45 @@ const ShopSetting: React.FC = () => {
 	};
 
 	const accountLabel = isIndividual ? 'Individual Account' : 'Business Account';
+	const normalizedBusinessType = (shop_settings.business_type || '').toLowerCase().trim();
+	const hasRepairSignal = normalizedBusinessType.includes('repair') || normalizedBusinessType.includes('service');
+	const hasRetailSignal = normalizedBusinessType.includes('retail') || normalizedBusinessType.includes('shoe') || normalizedBusinessType.includes('product');
+	const isRepairOnlyShop = hasRepairSignal && !hasRetailSignal;
 	const businessTypeLabel =
 		shop_settings.business_type === 'retail'
 			? 'Retail Shop'
 			: shop_settings.business_type === 'repair'
 				? 'Repair Services'
 				: 'Retail & Repair';
+	const premiumStatus = shop_settings.premium?.status;
+	const premiumIsActive = Boolean(shop_settings.premium?.has_active);
+	const premiumIsEligible = Boolean(shop_settings.premium?.eligible);
+	const formatPremiumDate = (value: string | null) => {
+		if (!value) return null;
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return null;
+		return date.toLocaleDateString(undefined, {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric',
+		});
+	};
+	const premiumEndsAt = formatPremiumDate(shop_settings.premium?.ends_at ?? null);
+	const premiumStartsAt = formatPremiumDate(shop_settings.premium?.starts_at ?? null);
+	const premiumBadgeClass = premiumIsActive
+		? 'border-green-200 bg-green-50 text-green-700'
+		: premiumStatus === 'pending'
+			? 'border-amber-200 bg-amber-50 text-amber-700'
+			: premiumIsEligible
+				? 'border-gray-300 bg-gray-100 text-gray-700'
+				: 'border-red-200 bg-red-50 text-red-700';
+	const premiumBadgeLabel = premiumIsActive
+		? 'Premium Active'
+		: premiumStatus === 'pending'
+			? 'Premium Pending'
+			: premiumIsEligible
+				? 'Premium Inactive'
+				: 'Not Eligible';
 
 	const accountFeatures: Array<{ label: string; enabled: boolean }> = [
 		{ label: 'Staff Management', enabled: shop_settings.can_manage_staff },
@@ -360,7 +402,6 @@ const ShopSetting: React.FC = () => {
 		try {
 			const res = await fetch(
 				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addressSearch)}&format=json&limit=5&countrycodes=ph`,
-				{ headers: { 'User-Agent': 'SoleSpace/1.0' } },
 			);
 			const data = await res.json();
 			setAddressResults(data);
@@ -491,13 +532,17 @@ const ShopSetting: React.FC = () => {
 			const parsedLng = geoLng ? parseFloat(geoLng) : null;
 			const hasCoordinates = Number.isFinite(parsedLat) && Number.isFinite(parsedLng);
 
-			let resolvedAddress = geoAddress?.trim() || '';
+			let resolvedAddress = geoAddress?.trim() || addressSearch.trim() || '';
 			if (hasCoordinates) {
 				const detectedAddress = await reverseGeocode(parsedLat as number, parsedLng as number);
 				if (detectedAddress) {
 					resolvedAddress = detectedAddress;
 					setGeoAddress(detectedAddress);
 					setAddressSearch(detectedAddress);
+				} else if (!resolvedAddress) {
+					resolvedAddress = `${(parsedLat as number).toFixed(8)}, ${(parsedLng as number).toFixed(8)}`;
+					setGeoAddress(resolvedAddress);
+					setAddressSearch(resolvedAddress);
 				}
 			}
 
@@ -658,11 +703,38 @@ const ShopSetting: React.FC = () => {
 										{shop_settings.business_type === 'repair' ? <Wrench size={12} /> : <Store size={12} />}
 										{businessTypeLabel}
 									</span>
-									<span className="inline-flex items-center rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
-										Premium Active
+									<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
+										{premiumBadgeLabel}
 									</span>
 								</div>
 								<p className="truncate text-sm text-gray-700">{shop_settings.business_name || 'Business'}</p>
+								
+								<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+									{premiumIsEligible ? (
+										<>
+											<p className="font-semibold text-gray-900">
+												{shop_settings.premium.plan_name || 'No active premium plan'}
+											</p>
+											<p className="mt-1 text-xs text-gray-600">
+												{premiumIsActive && premiumEndsAt
+													? `Expires on ${premiumEndsAt}`
+													: premiumStatus === 'pending'
+														? 'Your premium payment is pending activation.'
+														: 'Upgrade to unlock the virtual showroom and image-sequence uploads.'}
+											</p>
+											{shop_settings.premium.showroom_slot_limit ? (
+												<p className="mt-1 text-xs text-gray-600">
+													Showroom slots: {shop_settings.premium.showroom_slot_limit}
+													{premiumStartsAt ? ` • Started ${premiumStartsAt}` : ''}
+												</p>
+											) : null}
+										</>
+									) : (
+										<p className="text-xs text-gray-600">
+											Premium showroom entitlements are only available to retail and retail-repair shops.
+										</p>
+									)}
+								</div>
 
 								<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 									{accountFeatures.map((feature) => (
@@ -672,21 +744,23 @@ const ShopSetting: React.FC = () => {
 										</div>
 									))}
 								</div>
-								<div className="mt-4 border-t border-gray-200 pt-4">
-									<p className="mb-3 text-center text-sm text-gray-600">
-										Unlock premium benefits: virtual showroom access, more display slots, horizontal product viewing, and image-sequence uploads.
-									</p>
-									<button
-										type="button"
-										onClick={() => router.get('/shop-owner/premium-benefits')}
-										className="inline-flex w-full items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-									>
-										Upgrade Premium Benefits
-									</button>
+								{premiumIsEligible && !premiumIsActive && (
+										<div className="mt-4 border-t border-gray-200 pt-4">
+											<p className="mb-3 text-center text-sm text-gray-600">
+												Unlock premium benefits: virtual showroom access, more display slots, horizontal product viewing, and image-sequence uploads.
+											</p>
+											<button
+												type="button"
+												onClick={() => router.get('/shop-owner/premium-benefits')}
+												className="inline-flex w-full items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+											>
+												{premiumStatus === 'pending' ? 'View Premium Status' : 'Upgrade Premium Benefits'}
+											</button>
+										</div>
+									)}
+								</div>
 								</div>
 							</div>
-						</div>
-					</div>
 
 					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-7">
 						<div className="border-b border-gray-200 p-5">

@@ -34,9 +34,12 @@ interface DashboardStats {
   };
   customers: {
     total: number;
-    unique: number;
-    guests: number;
-    repeat: number;
+    unique?: number;
+    guests?: number;
+    repeat?: number;
+    unique_customers?: number;
+    guest_orders?: number;
+    repeat_customers?: number;
   };
   top_products: Array<{
     product_id: number;

@@ -1,0 +1,371 @@
+import React, { useEffect, useState } from 'react';
+import { Head, Link } from '@inertiajs/react';
+import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
+
+const Articles: React.FC = () => {
+	const [isTagalog, setIsTagalog] = useState(false);
+	const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
+	const fromSource = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('from') : null;
+	const useHistoryBackButton = fromSource === 'premium-benefits' || fromSource === 'product-uploader';
+
+	useEffect(() => {
+		if (!selectedImage) {
+			return;
+		}
+
+		const handleEscapeKey = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				setSelectedImage(null);
+			}
+		};
+
+		window.addEventListener('keydown', handleEscapeKey);
+
+		return () => {
+			window.removeEventListener('keydown', handleEscapeKey);
+		};
+	}, [selectedImage]);
+
+	const content = {
+		en: {
+			headTitle: 'Product Image Spin Tutorial - SoleSpace',
+			category: 'Articles',
+			title: 'Shoe Photo Upload Guide',
+			description: 'Follow one clean workflow every time: setup, shoot full 360 frames, rename in order, upload, then test your spin.',
+			backToServices: 'Back to Services',
+			languageLabel: 'TAGALOG',
+			beforeYouStart: 'Before You Start',
+			beforeYouStartItems: [
+				'Use a plain background.',
+				'Keep camera height and distance fixed.',
+				'Prepare consistent bright lighting.',
+				'Plan your filename format before shooting.',
+			],
+			photoWorkflow: 'Photo Workflow',
+			steps: [
+				{
+					title: 'Setup And Lighting',
+					description:
+						'Place one shoe on a plain background. Keep the camera in one fixed position and use even light so all photos have the same look.',
+				},
+				{
+					title: 'Capture Full Rotation',
+					description: 'Start from the front as frame 1. Rotate the shoe little by little and keep shooting until you complete 360 degrees.',
+				},
+				{
+					title: 'Keep Frame Quality Consistent',
+					description: 'Avoid changes in height, zoom, angle, and brightness between shots. Consistency makes the spin smooth and professional.',
+				},
+				{
+					title: 'Rename Files In Sequence',
+					description:
+						'Use clear numbering from first to last frame. Example: ShoeName 01.jpg, ShoeName 02.jpg, ShoeName 03.jpg up to the final image.',
+				},
+				{
+					title: 'Upload And Final Check',
+					description:
+						'Upload all frames in exact order, then open your product page and drag left or right to check that the spin is continuous and not jumpy.',
+				},
+				{
+					title: 'Preview Horizontal Shoe Output',
+					description: 'Open a sample 360 shoe view and drag left or right to test how the final output should feel for users.',
+					showInlineViewer: true,
+				},
+			],
+			importantReminder: 'Important Reminder',
+			importantReminderText:
+				'No missing file numbers and no mixed filename order. If your sequence is clean and complete, your 360 viewer will animate smoothly.',
+			videoTutorials: 'Video Tutorials',
+			tutorialOneLabel: 'Tutorial 1',
+			tutorialOneTitle: 'DIY 360 Product Photography',
+			tutorialOneDescription: 'Learn the full shooting process from preparation to export-ready sequence.',
+			tutorialTwoLabel: 'Tutorial 2',
+			tutorialTwoTitle: 'How to Create a 3D View',
+			tutorialTwoDescription: 'Check another practical method if you need a different shooting sequence setup.',
+			openYoutube: 'Open on YouTube',
+			quickTips: 'Quick Tips',
+			quickTipItems: [
+				'Use consistent lighting and background in all frames.',
+				'Upload complete photo set with no missing numbers.',
+				'Use at least 24 photos; 36 photos gives smoother spin.',
+				'Review filename order before uploading.',
+			],
+			openHorizontalViewer: 'Open Horizontal Shoe Viewer',
+		},
+		tl: {
+			headTitle: 'Gabay sa 360 Larawan ng Produkto - SoleSpace',
+			category: 'Mga Artikulo',
+			title: 'Gabay sa Pag-upload ng Larawan ng Sapatos',
+			description:
+				'Sundin ang iisang maayos na proseso sa bawat pagkakataon: i-setup, kunan ng buong 360 frame, ayusin ang pangalan nang sunod-sunod, i-upload, at subukan ang spin.',
+			backToServices: 'Bumalik sa Services',
+			languageLabel: 'TAGALOG',
+			beforeYouStart: 'Bago Ka Magsimula',
+			beforeYouStartItems: [
+				'Gumamit ng simpleng background.',
+				'Panatilihing pareho ang taas at layo ng camera.',
+				'Maghanda ng pantay at maliwanag na ilaw.',
+				'Planuhin muna ang format ng filename bago mag-shoot.',
+			],
+			photoWorkflow: 'Proseso ng Pagkuha ng Larawan',
+			steps: [
+				{
+					title: 'Setup at Ilaw',
+					description:
+						'Ilagay ang isang sapatos sa simpleng background. Panatilihin ang camera sa isang nakapirming posisyon at gumamit ng pantay na ilaw para magkakapareho ang itsura ng lahat ng larawan.',
+				},
+				{
+					title: 'Kunan ang Buong Ikot',
+					description:
+						'Magsimula sa harap bilang frame 1. Paunti-unting iikot ang sapatos at magpatuloy sa pagkuha hanggang makumpleto ang 360 degrees.',
+				},
+				{
+					title: 'Panatilihing Pantay ang Kalidad ng Frame',
+					description:
+						'Iwasan ang pagbabago sa taas, zoom, anggulo, at liwanag sa pagitan ng mga kuha. Ang consistency ang susi para maging makinis at propesyonal ang spin.',
+				},
+				{
+					title: 'Pangalanan ang Files nang Sunod-sunod',
+					description:
+						'Gumamit ng malinaw na numbering mula una hanggang huling frame. Halimbawa: ShoeName 01.jpg, ShoeName 02.jpg, ShoeName 03.jpg hanggang sa huling larawan.',
+				},
+				{
+					title: 'I-upload at Huling Suri',
+					description:
+						'I-upload ang lahat ng frame sa tamang pagkakasunod-sunod, pagkatapos buksan ang product page at i-drag pakaliwa o pakanan para masigurong tuloy-tuloy at hindi putol ang spin.',
+				},
+				{
+					title: 'I-preview ang Horizontal na Shoe Output',
+					description: 'Buksan ang sample 360 shoe view at i-drag pakaliwa o pakanan para makita kung paano dapat ang final output sa users.',
+					showInlineViewer: true,
+				},
+			],
+			importantReminder: 'Mahalagang Paalala',
+			importantReminderText:
+				'Walang nawawalang file number at walang halong maling ayos ng filename. Kapag malinis at kumpleto ang sequence mo, magiging smooth ang 360 viewer mo.',
+			videoTutorials: 'Mga Video Tutorial',
+			tutorialOneLabel: 'Tutorial 1',
+			tutorialOneTitle: 'Kumpletong Setup Flow',
+			tutorialOneDescription: 'Alamin ang buong proseso ng pag-shoot mula paghahanda hanggang export-ready na sequence.',
+			tutorialTwoLabel: 'Tutorial 2',
+			tutorialTwoTitle: 'Alternatibong 360 Workflow',
+			tutorialTwoDescription: 'Tingnan ang isa pang praktikal na paraan kung kailangan mo ng ibang setup ng shooting sequence.',
+			openYoutube: 'Buksan sa YouTube',
+			quickTips: 'Mabilis na Tips',
+			quickTipItems: [
+				'Panatilihing pare-pareho ang ilaw at background sa lahat ng frame.',
+				'I-upload ang kumpletong photo set na walang nawawalang numero.',
+				'Gumamit ng hindi bababa sa 24 na larawan; mas smooth ang spin kapag 36 ang kuha.',
+				'Suriin muna ang ayos ng filename bago mag-upload.',
+			],
+			openHorizontalViewer: 'Buksan ang Horizontal Shoe Viewer',
+		},
+	};
+
+	const t = isTagalog ? content.tl : content.en;
+
+	return (
+		<>
+			<Head title={t.headTitle} />
+
+			<main className="min-h-screen bg-white font-outfit antialiased">
+				<section className="mx-auto max-w-6xl px-5 pb-14 pt-28 sm:px-6 lg:px-10 lg:pb-20 lg:pt-32">
+					<header className="mb-10 flex flex-wrap items-start justify-between gap-4 border-b border-gray-200 pb-7">
+						<section className="max-w-3xl">
+							<p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-black/70">{t.category}</p>
+							<h1 className="text-3xl font-bold uppercase tracking-tight text-black sm:text-4xl lg:text-[3.2rem] lg:leading-[1.05]">
+								{t.title}
+							</h1>
+							<p className="mt-4 max-w-2xl text-base leading-relaxed text-black/75 sm:text-lg">
+								{t.description}
+							</p>
+						</section>
+
+						<div className="flex items-center gap-3">
+							{useHistoryBackButton ? (
+								<button
+									type="button"
+									onClick={() => window.history.back()}
+									className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50"
+								>
+									Back
+								</button>
+							) : (
+								<Link
+									href="/services"
+									className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50"
+								>
+									{t.backToServices}
+								</Link>
+							)}
+						</div>
+					</header>
+
+					<article className="space-y-10 px-0 py-1">
+						<section>
+							<div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+								<h3 className="text-xl font-bold uppercase tracking-[0.12em] text-black sm:text-2xl">{t.beforeYouStart}</h3>
+								<label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-gray-300 bg-white px-3 py-2">
+									<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-900">{t.languageLabel}</span>
+									<input
+										type="checkbox"
+										checked={isTagalog}
+										onChange={(event) => setIsTagalog(event.target.checked)}
+										aria-label="Toggle Tagalog translation"
+										className="peer sr-only"
+									/>
+									<span className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors duration-300 peer-checked:bg-[#16233b]">
+										<span className="h-5 w-5 translate-x-1 rounded-full bg-white transition-transform duration-300 peer-checked:translate-x-5" />
+									</span>
+								</label>
+							</div>
+							<ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+								{t.beforeYouStartItems.map((item) => (
+									<li key={item} className="rounded-xl border border-gray-200 bg-white p-4 text-sm leading-relaxed text-black/80 sm:text-base">
+										{item}
+									</li>
+								))}
+							</ul>
+						</section>
+
+						<section>
+							<h3 className="mb-5 text-xl font-bold uppercase tracking-[0.12em] text-black sm:text-2xl">{t.photoWorkflow}</h3>
+							<ol className="space-y-4">
+								{t.steps.map((step, index) => (
+									<li key={step.title} className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
+										<div className="flex items-start gap-4">
+											<span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black bg-black text-sm font-bold text-white">
+												{index + 1}
+											</span>
+											<div>
+												<p className="text-base font-semibold uppercase tracking-[0.12em] text-black sm:text-lg">{step.title}</p>
+												<p className="mt-2 text-sm leading-relaxed text-black/80 sm:text-base">{step.description}</p>
+												{index < 5 ? (
+													<button
+														type="button"
+														onClick={() =>
+															setSelectedImage({
+																src: `/images/tuts/step${index + 1}.png`,
+																alt: `${step.title} tutorial example`,
+															})
+														}
+														className="mt-4 block w-full"
+														aria-label={`Open larger image for ${step.title}`}
+													>
+														<img
+															src={`/images/tuts/step${index + 1}.png`}
+															alt={`${step.title} tutorial example`}
+															loading="lazy"
+															className="mx-auto block h-auto w-full max-w-3xl rounded-xl border border-gray-200 bg-white object-cover shadow-sm transition-transform duration-200 hover:scale-[1.01] sm:max-w-4xl"
+														/>
+													</button>
+												) : null}
+												{step.showInlineViewer ? (
+													<div className="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+														<Virtual3DShowroom productName="Adidas Ulti" embedded embeddedHeightClass="h-[24rem] sm:h-[30rem]" showHeader={false} />
+													</div>
+												) : null}
+											</div>
+										</div>
+									</li>
+								))}
+							</ol>
+						</section>
+
+						<aside className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-5 sm:p-6">
+							<p className="text-base font-semibold uppercase tracking-widest text-emerald-900">{t.importantReminder}</p>
+							<p className="mt-2 text-sm leading-relaxed text-black/80 sm:text-base">
+								{t.importantReminderText}
+							</p>
+							<div className="mt-4 border-t border-emerald-200/80 pt-4">
+								<p className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900 sm:text-base">{t.quickTips}</p>
+								<ul className="mt-2 space-y-2 text-sm leading-relaxed text-black/80 sm:text-base">
+									{t.quickTipItems.map((tip) => (
+										<li key={tip}>{tip}</li>
+									))}
+								</ul>
+							</div>
+						</aside>
+
+						<section>
+							<h3 className="mb-5 text-xl font-bold uppercase tracking-[0.12em] text-black sm:text-2xl">{t.videoTutorials}</h3>
+							<ul className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+								<li className="rounded-3xl border border-gray-300 bg-white p-5 shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] sm:p-6">
+									<p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-black/60">{t.tutorialOneLabel}</p>
+									<h4 className="mb-2 text-xl font-bold uppercase tracking-tight text-black">{t.tutorialOneTitle}</h4>
+									<p className="mb-4 text-sm leading-relaxed text-black/80 sm:text-base">{t.tutorialOneDescription}</p>
+									<iframe
+										className="aspect-video w-full overflow-hidden rounded-2xl border border-gray-200"
+										src="https://www.youtube.com/embed/ACh9Jof7uSc"
+										title={isTagalog ? 'Tutorial sa 360 Larawan ng Produkto 1' : 'Product Image Spin Tutorial 1'}
+										loading="lazy"
+										allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+										allowFullScreen
+									/>
+									<a
+										href="https://youtu.be/ACh9Jof7uSc?si=BfeUSdZ5HC-ZTN7Y"
+										target="_blank"
+										rel="noreferrer noopener"
+										className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black"
+									>
+										{t.openYoutube}
+									</a>
+								</li>
+								<li className="rounded-3xl border border-gray-300 bg-white p-5 shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] sm:p-6">
+									<p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-black/60">{t.tutorialTwoLabel}</p>
+									<h4 className="mb-2 text-xl font-bold uppercase tracking-tight text-black">{t.tutorialTwoTitle}</h4>
+									<p className="mb-4 text-sm leading-relaxed text-black/80 sm:text-base">{t.tutorialTwoDescription}</p>
+									<iframe
+										className="aspect-video w-full overflow-hidden rounded-2xl border border-gray-200"
+										src="https://www.youtube.com/embed/2e1B0hJ3mEo"
+										title={isTagalog ? 'Tutorial sa 360 Larawan ng Produkto 2' : 'Product Image Spin Tutorial 2'}
+										loading="lazy"
+										allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+										allowFullScreen
+									/>
+									<a
+										href="https://youtu.be/2e1B0hJ3mEo?si=d6ey--pEoY-Odjlm"
+										target="_blank"
+										rel="noreferrer noopener"
+										className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black"
+									>
+										{t.openYoutube}
+									</a>
+								</li>
+							</ul>
+						</section>
+
+					</article>
+				</section>
+
+				{selectedImage ? (
+					<div
+						className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+						onClick={() => setSelectedImage(null)}
+						role="dialog"
+						aria-modal="true"
+						aria-label="Tutorial image preview"
+					>
+						<div className="relative w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+							<button
+								type="button"
+								onClick={() => setSelectedImage(null)}
+								className="absolute right-3 top-3 rounded-full border border-white/40 bg-black/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white hover:bg-black/60"
+							>
+								Close
+							</button>
+							<img
+								src={selectedImage.src}
+								alt={selectedImage.alt}
+								className="mx-auto max-h-[85vh] w-auto max-w-full rounded-2xl border border-white/20 bg-black/20 object-contain"
+							/>
+						</div>
+					</div>
+				) : null}
+
+			</main>
+		</>
+	);
+};
+
+export default Articles;

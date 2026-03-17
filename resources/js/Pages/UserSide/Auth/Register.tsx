@@ -104,16 +104,13 @@ export default function Register() {
   };
 
   const handleFileDrop = (acceptedFiles: File[]) => {
-    console.log('Files dropped in Register:', acceptedFiles);
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
-      console.log('File name:', file.name);
       setFormData(prev => ({
         ...prev,
         validId: file
       }));
       
-      console.log('About to show Swal');
       // Show success notification
       Swal.fire({
         icon: 'info',
@@ -121,7 +118,6 @@ export default function Register() {
         html: '<p><strong>' + file.name + '</strong> was added to <strong>Valid ID</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded.</p>',
         confirmButtonText: 'OK',
       }).then(() => {
-        console.log('Swal closed');
       });
       
       // Clear error when file is uploaded
@@ -144,29 +140,13 @@ export default function Register() {
   };
 
   const handleRegisterClick = async () => {
-    console.log('Register button clicked. Current step:', currentStep);
-    
     // Ensure we're on the last step
     if (currentStep !== 3) {
-      console.log('Not on step 3, cannot register');
       return;
     }
     
-    console.log('Form submission started');
-    console.log('Form data:', {
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      email: formData.email,
-      phone: formData.phone,
-      age: formData.age,
-      address: formData.address,
-      validId: formData.validId?.name,
-      termsAccepted: formData.termsAccepted,
-    });
-    
     const validation = validateForm();
     if (!validation.isValid) {
-      console.log('Validation failed:', validation.errors);
       
       // Get list of fields with errors
       const errorFields = Object.keys(validation.errors).map(key => {
@@ -218,8 +198,6 @@ export default function Register() {
       payload.append('password_confirmation', formData.confirmPassword);
       if (formData.validId) payload.append('valid_id', formData.validId);
 
-      console.log('Payload prepared, sending request...');
-
       await router.post('/user/register', payload, {
         forceFormData: true,
         preserveScroll: false,
@@ -239,12 +217,10 @@ export default function Register() {
           // Router will automatically handle redirect to verification.notice
         },
         onError: (backendErrors) => {
-          console.log('Registration errors received:', backendErrors);
           const mapped: Record<string, string> = {};
           Object.entries(backendErrors || {}).forEach(([key, val]) => {
             mapped[key] = Array.isArray(val) ? val[0] : String(val);
           });
-          console.log('Mapped errors:', mapped);
           setErrors(mapped);
           
           // Show specific error messages if available

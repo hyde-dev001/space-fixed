@@ -18,9 +18,29 @@ interface Product {
   description?: string;
 }
 
+interface RepairService {
+  id: number;
+  title: string;
+  price: string;
+  description: string;
+  category: string;
+  duration: string;
+}
+
+interface RepairPackage {
+  id: number;
+  name: string;
+  description?: string | null;
+  package_price: number;
+  service_count: number;
+  services_total_price: number;
+  savings_amount: number;
+}
+
 interface Shop {
   id: number;
   name: string;
+  business_type?: string;
   cover_image: string;
   profile_photo?: string | null;
   description: string;
@@ -52,29 +72,64 @@ interface Shop {
 interface Props {
   shop: Shop;
   products: Product[];
+  repairServices?: RepairService[];
+  repairPackages?: RepairPackage[];
 }
 
-const ShopProfile: React.FC<Props> = ({ shop, products }) => {
+const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], repairPackages = [] }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
-  const defaultCoverImage = '/images/shop/p1.jpg';
-  const shopInitials = shop.name
-    .split(' ')
-    .map((part) => part.trim()[0] || '')
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'SS';
-  const defaultProfileImage = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><rect width="240" height="240" rx="24" fill="#e5e7eb" /><text x="120" y="128" text-anchor="middle" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#111827">${shopInitials}</text></svg>`,
-  )}`;
+  const rawBusinessType = (shop.business_type || '').toLowerCase().trim();
+  const hasRepairSignal = rawBusinessType.includes('repair') || rawBusinessType.includes('service');
+  const hasRetailSignal = rawBusinessType.includes('retail') || rawBusinessType.includes('product') || rawBusinessType.includes('shoe');
+  const inferredBusinessType = rawBusinessType === 'both' || (hasRepairSignal && hasRetailSignal)
+    ? 'both'
+    : hasRepairSignal
+      ? 'repair'
+      : (repairServices.length > 0 || repairPackages.length > 0)
+        ? 'repair'
+        : 'retail';
+  const businessTypeBadge = inferredBusinessType === 'both'
+    ? {
+        label: 'Retail & Repair',
+        className: 'bg-slate-900/5 text-slate-800 border-slate-300',
+      }
+    : inferredBusinessType === 'repair'
+      ? {
+          label: 'Repair',
+          className: 'bg-slate-50 text-slate-700 border-slate-300',
+        }
+      : {
+          label: 'Retail',
+          className: 'bg-white text-slate-700 border-slate-300',
+        };
+  const isRepairOnlyShop = inferredBusinessType === 'repair';
+  const isRetailAndRepairShop = inferredBusinessType === 'both';
+  const profileSubtitle = inferredBusinessType === 'both'
+    ? 'Premium footwear products and services'
+    : inferredBusinessType === 'repair'
+      ? 'Premium services'
+      : 'Premium footwear products';
+  const categories = isRepairOnlyShop
+    ? ['Services']
+    : isRetailAndRepairShop
+      ? ['Shoes', 'Men', 'Women', 'Kids', 'Sports', 'Services']
+      : ['Shoes', 'Men', 'Women', 'Kids', 'Sports'];
+  const showVirtualShowroom = !isRepairOnlyShop;
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Shoes');
+  const [selectedCategory, setSelectedCategory] = useState<string>(isRepairOnlyShop ? 'Services' : 'Shoes');
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const hoverTimersRef = useRef<Record<number, number>>({});
   const actionMenuRef = useRef<HTMLDivElement>(null);
-  const categories = ['Shoes', 'Men', 'Women', 'Kids', 'Sports', 'Services'];
+  const isServicesTab = selectedCategory === 'Services';
+
+  useEffect(() => {
+    if (!categories.includes(selectedCategory)) {
+      setSelectedCategory(categories[0]);
+    }
+  }, [categories, selectedCategory]);
 
   const filteredProducts = products.filter((product) => {
     if (selectedCategory === 'Shoes') {
@@ -86,10 +141,6 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
-
-    if (selectedCategory === 'Services') {
-      return categoryParts.some((item) => item.includes('service') || item.includes('repair'));
-    }
 
     const target = selectedCategory.toLowerCase();
     return categoryParts.some((item) => item === target || item.includes(target));
@@ -150,24 +201,17 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
 
   return (
     <>
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-dvh flex flex-col bg-white">
       <Head title={shop.name} />
       <Navigation />
 
-      <main className="flex-1 pt-24 lg:pt-28">
+      <main className="flex-1 pt-20 sm:pt-24 lg:pt-28">
         {/* Cover Image Section */}
         <div className="relative h-64 md:h-80 bg-gray-200 overflow-hidden">
           <img
             src={shop.cover_image}
             alt="Shop Cover"
             className="w-full h-full object-cover"
-            onError={(event) => {
-              if (event.currentTarget.src.endsWith(defaultCoverImage)) {
-                return;
-              }
-
-              event.currentTarget.src = defaultCoverImage;
-            }}
           />
           <div className="absolute inset-0 bg-black bg-opacity-10"></div>
 
@@ -209,13 +253,13 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
 
         {/* Shop Profile Section */}
         <div className="bg-white border-b border-gray-200 relative">
-          <div className="max-w-6xl mx-auto px-6 py-12">
+          <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12">
             {/* Follow + Message Buttons */}
-            <div className="absolute top-6 right-6 flex flex-col gap-2">
+            <div className="mb-6 flex w-full flex-row gap-2 sm:absolute sm:right-6 sm:top-6 sm:mb-0 sm:w-auto sm:flex-col">
               <button
                 type="button"
                 onClick={() => setIsFollowing((prev) => !prev)}
-                className={`inline-flex w-28 items-center justify-center px-4 py-1 rounded text-sm font-medium transition-colors border ${
+                className={`inline-flex flex-1 items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors border sm:w-28 sm:flex-none sm:py-1 ${
                   isFollowing
                     ? 'bg-black text-white border-black hover:bg-gray-900'
                     : 'bg-white text-black border-black hover:bg-gray-50'
@@ -225,36 +269,37 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
               </button>
               <Link
                 href={`/message/${shop.id}`}
-                className="inline-flex w-28 items-center justify-center bg-white text-black border border-black px-4 py-1 rounded text-sm font-medium hover:bg-gray-50 transition-colors text-center"
+                className="inline-flex flex-1 items-center justify-center rounded border border-black bg-white px-4 py-2 text-center text-sm font-medium text-black transition-colors hover:bg-gray-50 sm:w-28 sm:flex-none sm:py-1"
               >
                 Message
               </Link>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-8 items-start">
+            <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-8">
               {/* Shop Icon and Basic Info */}
-              <div className="flex-shrink-0">
-                <div className="w-40 h-40 rounded-lg border-4 border-white shadow-lg bg-gray-100 overflow-hidden -mt-24 relative z-10">
+              <div className="shrink-0">
+                <div className="relative z-10 -mt-20 h-28 w-28 overflow-hidden rounded-lg border-4 border-white bg-gray-100 shadow-lg sm:-mt-24 sm:h-40 sm:w-40">
                   <img
-                    src={shop.profile_photo || defaultProfileImage}
+                    src={shop.profile_photo || '/images/shop/shop-icon.png'}
                     alt={shop.name}
                     className="w-full h-full object-cover"
-                    onError={(event) => {
-                      if (event.currentTarget.src.startsWith('data:image/svg+xml')) {
-                        return;
-                      }
-
-                      event.currentTarget.src = defaultProfileImage;
-                    }}
                   />
                 </div>
               </div>
 
               {/* Shop Details */}
               <div className="flex-1">
-                <h1 className="text-4xl font-bold text-black mb-3">{shop.name}</h1>
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h1 className="text-3xl font-bold text-black sm:text-4xl">{shop.name}</h1>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${businessTypeBadge.className}`}
+                    title="Shop account type"
+                  >
+                    {businessTypeBadge.label}
+                  </span>
+                </div>
                 
-                <div className="flex items-center gap-4 mb-6">
+                <div className="mb-6 flex flex-wrap items-center gap-3 sm:gap-4">
                   <div className="flex items-center gap-1">
                     <span className="text-yellow-400 text-lg">★</span>
                     <span className="font-semibold text-black">{shop.rating}</span>
@@ -264,9 +309,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                   <span className="text-gray-600">Est. {shop.established_year}</span>
                 </div>
 
-                <p className="text-gray-700 leading-relaxed mb-6 max-w-2xl">
-                  {shop.description}
-                </p>
+                <p className="text-gray-700 leading-relaxed mb-6 max-w-2xl">{profileSubtitle}</p>
 
                 {/* Contact Info Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -291,7 +334,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                 {(shop.monday_open || shop.tuesday_open || shop.wednesday_open || shop.thursday_open || shop.friday_open || shop.saturday_open || shop.sunday_open) && (
                   <div className="mt-8">
                     <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Operating Hours</h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 sm:gap-4">
                       {[
                         { day: 'Monday', open: shop.monday_open, close: shop.monday_close },
                         { day: 'Tuesday', open: shop.tuesday_open, close: shop.tuesday_close },
@@ -317,9 +360,9 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
         </div>
 
         {/* Products Section */}
-        <div className="max-w-6xl mx-auto py-16 px-6">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="mb-12">
-            <h2 className="text-3xl font-bold text-black mb-8">Featured Shoes</h2>
+            <h2 className="text-3xl font-bold text-black mb-8">{isServicesTab ? 'Services' : 'Featured Shoes'}</h2>
 
             <div className="flex gap-8 mb-10 overflow-x-auto pb-2">
               {categories.map((category) => (
@@ -336,16 +379,79 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
                   {category}
                 </button>
               ))}
-              <Link
-                href={`/shop-profile/${shop.id}/virtual-showroom`}
-                className="text-sm font-medium tracking-wide uppercase whitespace-nowrap transition-all text-gray-500 hover:text-black pb-1"
-              >
-                Virtual Showroom
-              </Link>
+              {showVirtualShowroom && (
+                <Link
+                  href={`/shop-profile/${shop.id}/virtual-showroom`}
+                  className="text-sm font-medium tracking-wide uppercase whitespace-nowrap transition-all text-gray-500 hover:text-black pb-1"
+                >
+                  Virtual Showroom
+                </Link>
+              )}
             </div>
 
-            {/* Products Grid */}
-            {filteredProducts.length > 0 ? (
+            {isServicesTab ? (
+              <div className="space-y-10">
+                {repairPackages.length > 0 && (
+                  <section>
+                    <h3 className="text-2xl font-bold text-black mb-6">Packages</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {repairPackages.map((pkg) => (
+                        <div key={pkg.id} className="border border-gray-200 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                          <div className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600 mb-3">Package</div>
+                          <h4 className="text-2xl font-bold text-black mb-2">{pkg.name}</h4>
+                          {pkg.description && <p className="text-sm text-gray-600 mb-3">{pkg.description}</p>}
+                          <p className="text-sm text-gray-600">Includes {pkg.service_count} service{pkg.service_count !== 1 ? 's' : ''}</p>
+                          {pkg.savings_amount > 0 && (
+                            <p className="text-sm text-green-700 font-medium">Save ₱{pkg.savings_amount.toLocaleString()}</p>
+                          )}
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <p className="text-3xl font-black text-black">₱{pkg.package_price.toLocaleString()}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {repairServices.length > 0 ? (
+                  <section>
+                    <h3 className="text-2xl font-bold text-black mb-6">Individual Services</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {repairServices.map((service) => (
+                        <div key={service.id} className="border border-gray-200 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                          <div className="flex items-center justify-between mb-3 gap-3">
+                            <h4 className="text-2xl font-bold text-black leading-tight">{service.title}</h4>
+                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700 whitespace-nowrap">
+                              {service.category}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-4 line-clamp-3">{service.description}</p>
+                          <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+                            <p className="text-3xl font-black text-black">{service.price}</p>
+                            <p className="text-xs text-gray-500">{service.duration}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ) : (
+                  <div className="text-center py-16">
+                    <p className="text-gray-500 text-lg">No repair services available right now</p>
+                  </div>
+                )}
+
+                {(repairPackages.length > 0 || repairServices.length > 0) && (
+                  <div className="pt-2">
+                    <Link
+                      href={`/repair-shop/${shop.id}`}
+                      className="inline-flex items-center justify-center bg-black text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-gray-900 transition-colors"
+                    >
+                      Book Repair Service
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ) : filteredProducts.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredProducts.map((product) => {
                   const productImages = getProductImages(product);
@@ -437,8 +543,8 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
 
       {/* Footer */}
       <footer className="mt-16 bg-white border-t border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 py-16">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="grid grid-cols-1 gap-10 md:grid-cols-3 md:gap-12">
             <div>
               <div className="text-2xl font-bold mb-6 text-black">SoleSpace</div>
               <p className="text-sm text-gray-500 leading-relaxed max-w-sm">
@@ -462,7 +568,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products }) => {
               </nav>
             </div>
           </div>
-          <div className="border-t border-gray-100 mt-12 pt-8 text-xs text-gray-400 flex items-center justify-between">
+          <div className="mt-12 flex flex-col gap-3 border-t border-gray-100 pt-8 text-xs text-gray-400 sm:flex-row sm:items-center sm:justify-between">
             <div>© 2026 SoleSpace. All rights reserved.</div>
           </div>
         </div>

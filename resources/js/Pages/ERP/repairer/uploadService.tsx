@@ -144,6 +144,7 @@ export default function UploadService() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
 
   // Form state
   const [formData, setFormData] = useState({
@@ -402,22 +403,53 @@ export default function UploadService() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Services</h1>
             <p className="mt-2 text-gray-600 dark:text-gray-400">
-              Manage and upload repair services for your shop
+              {activeTab === "services"
+                ? "Manage and upload repair services for your shop"
+                : "Create and manage bundled repair packages for your shop"}
             </p>
           </div>
+          {activeTab === "services" && (
+            <button
+              onClick={() => {
+                resetForm();
+                setIsAddModalOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <PlusIcon className="w-5 h-5" />
+              Add Service
+            </button>
+          )}
+        </div>
+
+        <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
           <button
-            onClick={() => {
-              resetForm();
-              setIsAddModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            type="button"
+            onClick={() => setActiveTab("services")}
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+              activeTab === "services"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+            }`}
           >
-            <PlusIcon className="w-5 h-5" />
-            Add Service
+            Services
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("packages")}
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+              activeTab === "packages"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+            }`}
+          >
+            Packages
           </button>
         </div>
 
-        {/* Stats Cards */}
+        {activeTab === "services" ? (
+          <>
+            {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <MetricCard
             title="Total Services"
@@ -602,7 +634,12 @@ export default function UploadService() {
           </div>
         </div>
 
-        <RepairPackageManager />
+          </>
+        ) : (
+          <div className="space-y-4">
+            <RepairPackageManager />
+          </div>
+        )}
       </div>
 
       {/* Add Service Modal */}
