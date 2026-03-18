@@ -78,6 +78,34 @@ trait LogsHRActivity
     }
 
     /**
+     * Backward-compatible helper used by legacy controllers.
+     */
+    protected function logHRActivity(
+        int $shopOwnerId,
+        string $action,
+        string $title,
+        string $description,
+        ?Model $entity = null,
+        array $data = []
+    ): void {
+        AuditLog::createLog(array_merge([
+            'shop_owner_id' => $shopOwnerId,
+            'module' => AuditLog::MODULE_PAYROLL,
+            'action' => $action,
+            'description' => $description,
+            'entity_type' => $entity ? get_class($entity) : null,
+            'entity_id' => $entity?->id,
+            'employee_id' => $entity?->employee_id,
+            'severity' => AuditLog::SEVERITY_INFO,
+            'tags' => ['payroll', 'approval_workflow'],
+            'new_values' => [
+                'title' => $title,
+                'status' => $entity?->approval_status,
+            ],
+        ], $data));
+    }
+
+    /**
      * Get human-readable description from entity
      */
     private function getEntityDescription(Model $entity): string

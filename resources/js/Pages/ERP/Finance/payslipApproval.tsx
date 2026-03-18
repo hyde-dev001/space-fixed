@@ -74,6 +74,12 @@ interface PayslipApprovalListResponse {
 	summary: ApprovalSummary;
 }
 
+interface PayslipApprovalProps {
+	apiBase?: string;
+	allowDisbursement?: boolean;
+	headTitle?: string;
+}
+
 const statusLabels: Record<FinanceApprovalStatus, string> = {
 	pending: "Pending",
 	approved: "Approved",
@@ -216,11 +222,22 @@ const formatCurrency = (amount: number) => {
 
 const PAGE_SIZE = 6;
 
-export default function PayslipApproval() {
+export default function PayslipApproval({
+	apiBase = '/api/finance/payslip-approvals',
+	allowDisbursement = true,
+	headTitle = 'Payslip Approval - Solespace ERP',
+}: PayslipApprovalProps = {}) {
 	const { auth } = usePage().props as any;
-	const canCheckerApprove = hasAnyPermission(auth, ["access-payslip-approval", "approve-payroll"]);
-	const canFinalApprove = hasAnyPermission(auth, ["access-approval-workflow"]);
-	const canDisburse = canFinalApprove || canCheckerApprove;
+	const normalizedApiBase = apiBase.replace(/\/+$/, '');
+	const buildApiUrl = (suffix = '') => `${normalizedApiBase}${suffix}`;
+	const permissions: string[] = Array.isArray(auth?.permissions) ? auth.permissions : [];
+	const userRoles: string[] = Array.isArray(auth?.user?.roles) ? auth.user.roles : [];
+	const isShopOwner = Boolean(auth?.shop_owner)
+		|| auth?.user?.role === 'Shop Owner'
+		|| userRoles.includes('Shop Owner');
+	const canCheckerApprove = permissions.includes('access-payslip-approval') || permissions.includes('approve-payroll');
+	const canFinalApprove = isShopOwner;
+	const canDisburse = allowDisbursement && (canFinalApprove || canCheckerApprove);
 
 	const [requests, setRequests] = useState<PayslipApprovalRequest[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
@@ -275,7 +292,7 @@ export default function PayslipApproval() {
 				params.set('workflow_status', statusFilter);
 			}
 
-			const response = await fetch(`/api/finance/payslip-approvals?${params.toString()}`, {
+			const response = await fetch(`${buildApiUrl()}?${params.toString()}`, {
 				headers: {
 					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
 					'Accept': 'application/json',
@@ -348,7 +365,7 @@ export default function PayslipApproval() {
 	const handleView = async (request: PayslipApprovalRequest) => {
 		// Fetch full payslip details
 		try {
-const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
+			const response = await fetch(buildApiUrl(`/${request.id}`), {
 				headers: {
 					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
 					'Accept': 'application/json',
@@ -393,7 +410,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		if (notes !== undefined) {
 			setIsApproving(true);
 			try {
-				const response = await fetch(`/api/finance/payslip-approvals/${request.id}/approve`, {
+				const response = await fetch(buildApiUrl(`/${request.id}/approve`), {
 					method: 'POST',
 					headers: {
 						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -454,7 +471,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		if (reason) {
 			setIsApproving(true);
 			try {
-				const response = await fetch(`/api/finance/payslip-approvals/${request.id}/reject`, {
+				const response = await fetch(buildApiUrl(`/${request.id}/reject`), {
 					method: 'POST',
 					headers: {
 						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -512,7 +529,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		if (notes !== undefined) {
 			setIsApproving(true);
 			try {
-				const response = await fetch(`/api/finance/payslip-approvals/${request.id}/final-approve`, {
+				const response = await fetch(buildApiUrl(`/${request.id}/final-approve`), {
 					method: 'POST',
 					headers: {
 						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -558,7 +575,6 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 							<option value="bank_transfer">Bank Transfer</option>
 							<option value="cash">Cash</option>
 							<option value="check">Check</option>
-							<option value="gcash">GCash</option>
 						</select>
 					</div>
 					<div style="margin-bottom: 0.75rem;">
@@ -614,7 +630,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		if (formValues) {
 			setIsApproving(true);
 			try {
-				const response = await fetch('/api/finance/payslip-approvals/disburse', {
+				const response = await fetch(buildApiUrl('/disburse'), {
 					method: 'POST',
 					headers: {
 						'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -634,7 +650,20 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 				});
 
 				const data = await response.json();
-				if (!response.ok) throw new Error(data.message || 'Disbursement failed');
+				if (!response.ok) {
+					if (data?.errors && typeof data.errors === 'object') {
+						const firstFieldError = Object.values(data.errors).find((messages) => Array.isArray(messages) && messages.length > 0) as string[] | undefined;
+						if (firstFieldError?.[0]) {
+							throw new Error(firstFieldError[0]);
+						}
+					}
+
+					throw new Error(data.message || data.error || 'Disbursement failed');
+				}
+
+				if (Array.isArray(data?.errors) && data.errors.length > 0) {
+					throw new Error(data.errors[0]);
+				}
 
 				await Swal.fire({
 					title: "Disbursed!",
@@ -671,7 +700,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/finance/payslip-approvals/batch/preview', {
+			const response = await fetch(buildApiUrl('/batch/preview'), {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -761,7 +790,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/finance/payslip-approvals/batch/approve', {
+			const response = await fetch(buildApiUrl('/batch/approve'), {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -827,7 +856,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 	if (loading) {
 		return (
 			<>
-				<Head title="Payslip Approval - Solespace ERP" />
+				<Head title={headTitle} />
 				<div className="flex items-center justify-center h-screen">
 					<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
 				</div>
@@ -837,7 +866,7 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 
 	return (
 		<>
-			<Head title="Payslip Approval - Solespace ERP" />
+			<Head title={headTitle} />
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
@@ -933,8 +962,10 @@ const response = await fetch(`/api/finance/payslip-approvals/${request.id}`, {
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							>
 								<option value="All">All Status</option>
-								<option value="pending">Pending</option>
-								<option value="approved">Approved</option>
+								<option value="awaiting_checker">Awaiting Finance</option>
+								<option value="awaiting_final_approval">Awaiting Owner</option>
+								<option value="ready_for_disbursement">Ready For Disbursement</option>
+								<option value="paid">Paid</option>
 								<option value="rejected">Rejected</option>
 							</select>
 						</div>

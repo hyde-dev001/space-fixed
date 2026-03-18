@@ -558,11 +558,23 @@ export const EmployeeManagement: React.FC<{
     staff: false,
   });
 
+  const showInsufficientPermissionModal = async (message?: string) => {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Insufficient Permission',
+      html: `
+        <p class="mb-2">You don't have permission to perform this action.</p>
+        <p class="text-sm text-gray-600">${message || 'Please contact your manager or shop owner to request access.'}</p>
+      `,
+      confirmButtonColor: '#f59e0b',
+    });
+  };
+
   // Fetch position templates on component mount
   useEffect(() => {
     const fetchPositionTemplates = async () => {
       try {
-        // Try API route first (accessible to managers), fallback to shop-owner route
+        // Try API route first (accessible to managers)
         let response = await fetch('/api/hr/position-templates', {
           headers: {
             'Accept': 'application/json',
@@ -571,8 +583,8 @@ export const EmployeeManagement: React.FC<{
           credentials: 'include'
         });
         
-        // Fallback to shop-owner route if API route fails
-        if (!response.ok) {
+        // Fallback to shop-owner route only when HR endpoint is unavailable
+        if (!response.ok && [404, 405].includes(response.status)) {
           response = await fetch('/shop-owner/position-templates', {
             headers: {
               'Accept': 'application/json',
@@ -593,7 +605,7 @@ export const EmployeeManagement: React.FC<{
     
     const fetchPermissions = async () => {
       try {
-        // Try API route first (accessible to managers), fallback to shop-owner route
+        // Try API route first (accessible to managers)
         let response = await fetch('/api/hr/permissions/available', {
           headers: {
             'Accept': 'application/json',
@@ -602,8 +614,8 @@ export const EmployeeManagement: React.FC<{
           credentials: 'include'
         });
         
-        // Fallback to shop-owner route if API route fails
-        if (!response.ok) {
+        // Fallback to shop-owner route only when HR endpoint is unavailable
+        if (!response.ok && [404, 405].includes(response.status)) {
           response = await fetch('/shop-owner/permissions/available', {
             headers: {
               'Accept': 'application/json',
@@ -611,6 +623,21 @@ export const EmployeeManagement: React.FC<{
             },
             credentials: 'include'
           });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+
+          if (response.status === 403) {
+            await showInsufficientPermissionModal(errorData.error || errorData.message);
+            return;
+          }
+
+          if (response.status === 401) {
+            throw new Error('Your session has expired. Please log in again.');
+          }
+
+          throw new Error(errorData.error || errorData.message || 'Failed to fetch permissions');
         }
         
         if (response.ok) {
@@ -620,8 +647,14 @@ export const EmployeeManagement: React.FC<{
             setAvailableRoles(data.roles);
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to fetch permissions:', error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: error?.message || 'Failed to fetch permissions',
+          timer: 2000,
+        });
       }
     };
     
@@ -1084,7 +1117,18 @@ export const EmployeeManagement: React.FC<{
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch employee details');
+        const errorData = await response.json().catch(() => ({}));
+
+        if (response.status === 403) {
+          await showInsufficientPermissionModal(errorData.error || errorData.message);
+          return;
+        }
+
+        if (response.status === 401) {
+          throw new Error('Your session has expired. Please log in again.');
+        }
+
+        throw new Error(errorData.error || errorData.message || 'Failed to fetch employee details');
       }
 
       const data = await response.json();
@@ -1114,12 +1158,12 @@ export const EmployeeManagement: React.FC<{
       setSelectedPermissions(allPermissions);
       setSelectedAdditionalRoles(data.additional_roles || []);
       setIsPermissionModalOpen(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to open permission modal:', error);
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: 'Failed to load employee permissions',
+        text: error?.message || 'Failed to load employee permissions',
         timer: 2000
       });
     }
@@ -1452,7 +1496,7 @@ export const EmployeeManagement: React.FC<{
     try {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      // Try API route first (accessible to managers), fallback to shop-owner route
+      // Try API route first (accessible to managers)
       let response = await fetch(`/api/hr/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
         method: 'POST',
         headers: {
@@ -1466,8 +1510,8 @@ export const EmployeeManagement: React.FC<{
         })
       });
 
-      // Fallback to shop-owner route if API route fails
-      if (!response.ok) {
+      // Fallback to shop-owner route only when HR endpoint is unavailable
+      if (!response.ok && [404, 405].includes(response.status)) {
         response = await fetch(`/shop-owner/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
           method: 'POST',
           headers: {
@@ -1483,7 +1527,7 @@ export const EmployeeManagement: React.FC<{
       }
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         
         // Check if it's a finance permission restriction error for managers
         if (response.status === 403 && errorData.forbidden_permissions) {
@@ -1501,6 +1545,15 @@ export const EmployeeManagement: React.FC<{
             confirmButtonColor: '#ef4444'
           });
           return;
+        }
+
+        if (response.status === 403) {
+          await showInsufficientPermissionModal(errorData.error || errorData.message);
+          return;
+        }
+
+        if (response.status === 401) {
+          throw new Error(errorData.error || errorData.message || 'Your session has expired. Please log in again.');
         }
         
         throw new Error(errorData.error || 'Failed to update permissions');

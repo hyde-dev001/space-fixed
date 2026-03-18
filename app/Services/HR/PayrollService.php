@@ -90,58 +90,40 @@ class PayrollService
 
             // 1. Create base payroll record
             $payroll = $this->createPayrollRecord($employee, $payPeriod, $overrides);
-            
-            // 2. Calculate and create all components
-            $components = $this->calculateComponents($employee, $payroll, $customComponents, $overrides);
-            
-            // 3. Calculate totals
-            $earnings = $components
-                ->where('component_type', PayrollComponent::TYPE_EARNING)
-                ->where('affects_gross', true);
-            $deductions = $components->where('component_type', PayrollComponent::TYPE_DEDUCTION);
-            $benefits = $components
-                ->where('component_type', PayrollComponent::TYPE_BENEFIT)
-                ->where('affects_gross', true);
-            
-            $totalEarnings = $earnings->sum('calculated_amount');
-            $totalDeductions = $deductions->sum('calculated_amount');
-            $totalBenefits = $benefits->sum('calculated_amount');
-            
-            // 4. Calculate gross pay (earnings + benefits)
-            $grossPay = $totalEarnings + $totalBenefits;
-            
-            // 5. Calculate statutory deductions + withholding tax per run date
-            $taxableAmount = $components
-                ->where('is_taxable', true)
-                ->where('affects_gross', true)
-                ->sum('calculated_amount');
-            $runDate = $this->resolveRunDate($payroll->pay_period_end ?? null, $overrides);
-            $statutory = $this->calculateStatutoryDeductions(
-                (int) $employee->shop_owner_id,
-                (float) $taxableAmount,
-                $runDate
+
+            // 2. Build a shared calculation payload used by preview and generation.
+            $calculation = $this->buildPayrollCalculation(
+                $employee,
+                $customComponents,
+                $overrides,
+                $payroll->pay_period_end ?? null
             );
+            
+            // 3. Persist the calculation's component rows.
+            $components = $this->calculateComponents($employee, $payroll, $customComponents, $overrides, $calculation);
+
+            // 4. Reuse the shared totals for the saved payroll record.
+            $grossPay = (float) ($calculation['gross_salary'] ?? 0);
+            $totalDeductions = (float) ($calculation['total_deductions'] ?? 0);
+            $runDate = $calculation['run_date'];
+            $statutory = $calculation['statutory'] ?? [];
 
             $sssContribution = (float) ($statutory['sss_contribution'] ?? 0);
             $philhealthContribution = (float) ($statutory['philhealth_contribution'] ?? 0);
             $pagibigContribution = (float) ($statutory['pagibig_contribution'] ?? 0);
             $taxAmount = (float) ($statutory['withholding_tax'] ?? 0);
             
-            // 6. Calculate net pay
-            $netPay = $grossPay
-                - $totalDeductions
-                - $taxAmount
-                - $sssContribution
-                - $philhealthContribution
-                - $pagibigContribution;
+            // 5. Calculate net pay
+            $netPay = (float) ($calculation['net_salary'] ?? 0);
+            $basicPayForRun = (float) (($calculation['breakdown']['basic_pay'] ?? 0));
 
-            $legacyDeductions = $totalDeductions + $taxAmount + $sssContribution + $philhealthContribution + $pagibigContribution;
-            
-            // 7. Update payroll record with totals
+            // 6. Update payroll record with totals
             $payroll->update([
+                'basic_salary' => round($basicPayForRun, 2),
+                'base_salary' => round($basicPayForRun, 2),
                 'gross_salary' => $grossPay,
-                'deductions' => round($legacyDeductions, 2),
-                'total_deductions' => $totalDeductions,
+                'deductions' => round($totalDeductions, 2),
+                'total_deductions' => round($totalDeductions, 2),
                 'tax_amount' => $taxAmount,
                 'tax_deductions' => $taxAmount,
                 'sss_contributions' => round($sssContribution, 2),
@@ -151,13 +133,14 @@ class PayrollService
                 'status' => 'processed'
             ]);
             
-            // 8. Create tax component record
+            // 7. Create tax component record
             if ($taxAmount > 0) {
                 PayrollComponent::create([
                     'payroll_id' => $payroll->id,
                     'shop_owner_id' => $employee->shop_owner_id,
                     'component_type' => PayrollComponent::TYPE_DEDUCTION,
                     'component_name' => 'Income Tax',
+                    'amount' => $taxAmount,
                     'base_amount' => 0,
                     'calculation_method' => PayrollComponent::METHOD_CUSTOM,
                     'calculated_amount' => $taxAmount,
@@ -167,10 +150,10 @@ class PayrollService
                 ]);
             }
 
-            // 10. Persist 13th-month monthly accrual ledger
+            // 8. Persist 13th-month monthly accrual ledger
             $this->recordThirteenthMonthAccrual($payroll, $employee, $components, $runDate);
             
-            // 11. Log audit trail
+            // 9. Log audit trail
             $this->logPayrollGeneration($payroll, $employee, $components->count());
             
             DB::commit();
@@ -200,6 +183,35 @@ class PayrollService
             
             throw new Exception("Payroll generation failed: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Build a payroll preview using the same core computation path as generation
+     * without persisting payroll/component rows.
+     */
+    public function previewPayroll(Employee $employee, string $payPeriod, array $additionalEarnings = [], array $overrides = []): array
+    {
+        $period = $this->parsePayPeriod($payPeriod);
+
+        $resolvedAdditionalEarnings = $this->resolveAdditionalEarnings($employee, $period['normalized_period_key'], $additionalEarnings);
+        $customComponents = $resolvedAdditionalEarnings['components'] ?? [];
+
+        $calculation = $this->buildPayrollCalculation(
+            $employee,
+            $customComponents,
+            $overrides,
+            $period['end_date']
+        );
+
+        return [
+            'period' => $period,
+            'resolved_additional_earnings' => [
+                'sales_commission' => (float) ($resolvedAdditionalEarnings['sales_commission'] ?? 0),
+                'performance_bonus' => (float) ($resolvedAdditionalEarnings['performance_bonus'] ?? 0),
+                'other_allowances' => (float) ($resolvedAdditionalEarnings['other_allowances'] ?? 0),
+            ],
+            'calculation' => $calculation,
+        ];
     }
     
     /**
@@ -244,18 +256,10 @@ class PayrollService
      */
     protected function createPayrollRecord(Employee $employee, string $payPeriod, array $overrides): Payroll
     {
-        // Parse pay period
-        if (strpos($payPeriod, ' to ') !== false) {
-            [$startDate, $endDate] = explode(' to ', $payPeriod);
-        } else {
-            // Assume monthly format YYYY-MM
-            $startDate = $payPeriod . '-01';
-            $endDate = date('Y-m-t', strtotime($startDate));
-        }
-
-        $normalizedPeriodKey = strpos($payPeriod, ' to ') !== false
-            ? trim($payPeriod)
-            : date('Y-m', strtotime($startDate));
+        $period = $this->parsePayPeriod($payPeriod);
+        $startDate = $period['start_date'];
+        $endDate = $period['end_date'];
+        $normalizedPeriodKey = $period['normalized_period_key'];
         
         return Payroll::create([
             'employee_id' => $employee->id,
@@ -278,29 +282,259 @@ class PayrollService
             'generated_at' => now()
         ]);
     }
+
+    /**
+     * Normalize payroll period labels into concrete bounds and canonical keys.
+     */
+    protected function parsePayPeriod(string $payPeriod): array
+    {
+        if (strpos($payPeriod, ' to ') !== false) {
+            [$startDateRaw, $endDateRaw] = array_map('trim', explode(' to ', $payPeriod, 2));
+            $startDate = Carbon::parse($startDateRaw)->toDateString();
+            $endDate = Carbon::parse($endDateRaw)->toDateString();
+
+            if ($startDate > $endDate) {
+                [$startDate, $endDate] = [$endDate, $startDate];
+            }
+
+            return [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'normalized_period_key' => $startDate . ' to ' . $endDate,
+            ];
+        }
+
+        $startDate = Carbon::createFromFormat('Y-m-d', trim($payPeriod) . '-01')->toDateString();
+        $endDate = Carbon::parse($startDate)->endOfMonth()->toDateString();
+
+        return [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'normalized_period_key' => Carbon::parse($startDate)->format('Y-m'),
+        ];
+    }
+
+    /**
+     * Build a normalized payroll calculation payload that can be reused by
+     * preview and generation flows without persisting component rows.
+     */
+    public function buildPayrollCalculation(
+        Employee $employee,
+        array $customComponents = [],
+        array $overrides = [],
+        mixed $runDate = null
+    ): array {
+        $rules = $this->computeRuleEngineAmounts($employee, $overrides);
+        $componentDefinitions = $this->buildComponentDefinitions($employee, $customComponents, $overrides, $rules);
+        $basicSalary = (float) ($employee->salary ?? 0);
+
+        $components = collect($componentDefinitions)
+            ->map(function (array $componentData) use ($basicSalary, $overrides) {
+                $baseAmount = (float) ($componentData['base_amount'] ?? 0);
+
+                return [
+                    'type' => $componentData['type'],
+                    'name' => $componentData['name'],
+                    'component_type' => $componentData['type'],
+                    'component_name' => $componentData['name'],
+                    'code' => $componentData['code'] ?? null,
+                    'component_code' => $componentData['code'] ?? null,
+                    'amount' => $baseAmount,
+                    'base_amount' => $baseAmount,
+                    'method' => $componentData['method'],
+                    'calculation_method' => $componentData['method'],
+                    'calculated_amount' => round(
+                        $this->calculateComponentAmount(
+                            $componentData['method'],
+                            $baseAmount,
+                            $basicSalary,
+                            $overrides
+                        ),
+                        2
+                    ),
+                    'is_taxable' => (bool) ($componentData['taxable'] ?? false),
+                    'is_recurring' => (bool) ($componentData['recurring'] ?? false),
+                    'affects_gross' => (bool) ($componentData['affects_gross'] ?? true),
+                    'show_on_payslip' => (bool) ($componentData['show_on_payslip'] ?? true),
+                    'category' => $componentData['category'] ?? null,
+                    'metadata' => $componentData['metadata'] ?? null,
+                    'applies_to_grade' => $componentData['grade'] ?? null,
+                    'applies_to_department' => $componentData['department'] ?? null,
+                    'description' => $componentData['description'] ?? null,
+                ];
+            })
+            ->values();
+
+        $earnings = $components
+            ->where('component_type', PayrollComponent::TYPE_EARNING)
+            ->where('affects_gross', true);
+        $deductions = $components->where('component_type', PayrollComponent::TYPE_DEDUCTION);
+        $benefits = $components
+            ->where('component_type', PayrollComponent::TYPE_BENEFIT)
+            ->where('affects_gross', true);
+
+        $grossPay = (float) ($earnings->sum('calculated_amount') + $benefits->sum('calculated_amount'));
+        $componentDeductions = (float) $deductions->sum('calculated_amount');
+        $resolvedRunDate = $this->resolveRunDate($runDate, $overrides);
+        $taxableAmount = array_key_exists('taxable_income_override', $overrides)
+            ? (float) $overrides['taxable_income_override']
+            : (float) $components
+                ->where('is_taxable', true)
+                ->where('affects_gross', true)
+                ->sum('calculated_amount');
+        $statutory = $this->calculateStatutoryDeductions(
+            (int) $employee->shop_owner_id,
+            $taxableAmount,
+            $resolvedRunDate
+        );
+
+        $withholdingTax = (float) ($statutory['withholding_tax'] ?? 0);
+        $sssContribution = (float) ($statutory['sss_contribution'] ?? 0);
+        $philhealthContribution = (float) ($statutory['philhealth_contribution'] ?? 0);
+        $pagibigContribution = (float) ($statutory['pagibig_contribution'] ?? 0);
+        $totalDeductions = $componentDeductions + $withholdingTax + $sssContribution + $philhealthContribution + $pagibigContribution;
+        $netPay = $grossPay - $totalDeductions;
+
+        return [
+            'run_date' => $resolvedRunDate,
+            'rules' => $rules,
+            'components' => $components,
+            'gross_salary' => round($grossPay, 2),
+            'net_salary' => round($netPay, 2),
+            'taxable_income' => round($taxableAmount, 2),
+            'component_deductions' => round($componentDeductions, 2),
+            'total_deductions' => round($totalDeductions, 2),
+            'statutory' => [
+                'withholding_tax' => round($withholdingTax, 2),
+                'sss_contribution' => round($sssContribution, 2),
+                'philhealth_contribution' => round($philhealthContribution, 2),
+                'pagibig_contribution' => round($pagibigContribution, 2),
+            ],
+            'breakdown' => [
+                'basic_pay' => $this->sumComponentAmounts($components, ['Basic Salary']),
+                'overtime_pay' => $this->sumComponentAmounts($components, ['Overtime Pay']),
+                'rest_day_pay' => $this->sumComponentAmounts($components, ['Rest Day Pay']),
+                'special_holiday_pay' => $this->sumComponentAmounts($components, ['Special Holiday Pay']),
+                'regular_holiday_pay' => $this->sumComponentAmounts($components, ['Regular Holiday Pay']),
+                'night_differential_pay' => $this->sumComponentAmounts($components, ['Night Differential Pay']),
+                'sales_commission' => $this->sumComponentAmounts($components, ['Sales Commission']),
+                'performance_bonus' => $this->sumComponentAmounts($components, ['Performance Bonus']),
+                'other_allowances' => $this->sumComponentAmounts($components, ['Other Allowances', 'Allowances']),
+                'absent_deductions' => $this->sumComponentAmounts($components, ['Absent Day Deduction', 'Absent Deductions']),
+                'undertime_deductions' => $this->sumComponentAmounts($components, ['Undertime Deduction', 'Undertime Deductions']),
+            ],
+        ];
+    }
+
+    /**
+     * Resolve additional earning amounts and map them to custom payroll components.
+     *
+     * When explicit amounts are not supplied, employee-level defaults are used:
+     * - sales_commission = monthly salary × sales_commission_rate
+     * - performance_bonus = monthly salary × performance_bonus_rate
+     * - other_allowances = employee.other_allowances
+     */
+    public function resolveAdditionalEarnings(Employee $employee, ?string $periodLabel = null, array $values = []): array
+    {
+        $baseSalary = $this->normalizeNumber($employee->salary ?? 0);
+
+        $salesCommission = array_key_exists('sales_commission', $values)
+            ? $this->normalizeNumber($values['sales_commission'])
+            : round($baseSalary * $this->normalizeNumber($employee->sales_commission_rate ?? 0), 2);
+
+        $performanceBonus = array_key_exists('performance_bonus', $values)
+            ? $this->normalizeNumber($values['performance_bonus'])
+            : round($baseSalary * $this->normalizeNumber($employee->performance_bonus_rate ?? 0), 2);
+
+        $otherAllowances = array_key_exists('other_allowances', $values)
+            ? $this->normalizeNumber($values['other_allowances'])
+            : $this->normalizeNumber($employee->other_allowances ?? 0);
+
+        $periodSuffix = $periodLabel ? ' – ' . $periodLabel : '';
+        $components = [];
+
+        if ($salesCommission > 0) {
+            $components[] = [
+                'type' => PayrollComponent::TYPE_EARNING,
+                'name' => 'Sales Commission',
+                'base_amount' => $salesCommission,
+                'method' => PayrollComponent::METHOD_COMMISSION,
+                'taxable' => true,
+                'recurring' => false,
+                'affects_gross' => true,
+                'description' => 'Sales commission' . $periodSuffix,
+            ];
+        }
+
+        if ($performanceBonus > 0) {
+            $components[] = [
+                'type' => PayrollComponent::TYPE_EARNING,
+                'name' => 'Performance Bonus',
+                'base_amount' => $performanceBonus,
+                'method' => PayrollComponent::METHOD_CUSTOM,
+                'taxable' => true,
+                'recurring' => false,
+                'affects_gross' => true,
+                'description' => 'Performance bonus' . $periodSuffix,
+            ];
+        }
+
+        if ($otherAllowances > 0) {
+            $components[] = [
+                'type' => PayrollComponent::TYPE_EARNING,
+                'name' => 'Other Allowances',
+                'base_amount' => $otherAllowances,
+                'method' => PayrollComponent::METHOD_ALLOWANCE,
+                'taxable' => false,
+                'recurring' => false,
+                'affects_gross' => true,
+                'description' => 'Additional allowances' . $periodSuffix,
+            ];
+        }
+
+        return [
+            'sales_commission' => round($salesCommission, 2),
+            'performance_bonus' => round($performanceBonus, 2),
+            'other_allowances' => round($otherAllowances, 2),
+            'components' => $components,
+        ];
+    }
     
     /**
      * Calculate all payroll components
      */
-    protected function calculateComponents(Employee $employee, Payroll $payroll, array $customComponents, array $overrides)
+    protected function calculateComponents(Employee $employee, Payroll $payroll, array $customComponents, array $overrides, ?array $calculation = null)
     {
-        $components = collect();
-        $basicSalary = $employee->salary ?? 0;
-        $rules = $this->computeRuleEngineAmounts($employee, $overrides);
-        
-        // Standard earnings (Philippine SME structure)
+        $calculation ??= $this->buildPayrollCalculation(
+            $employee,
+            $customComponents,
+            $overrides,
+            $payroll->pay_period_end ?? null
+        );
+
+        return $this->persistCalculatedComponents($employee, $payroll, $calculation['components'] ?? collect());
+    }
+
+    protected function buildComponentDefinitions(Employee $employee, array $customComponents, array $overrides, ?array $rules = null): array
+    {
+        $basicSalary = (float) ($employee->salary ?? 0);
+        $rules ??= $this->computeRuleEngineAmounts($employee, $overrides);
+        $noWorkNoPay = $this->isNoWorkNoPayEnabled();
+
         $standardEarnings = [
             [
                 'type' => PayrollComponent::TYPE_EARNING,
                 'name' => 'Basic Salary',
                 'code' => PayrollComponent::CODE_BASIC_SALARY,
                 'base_amount' => $basicSalary,
-                'method' => PayrollComponent::METHOD_FIXED,
+                'method' => $noWorkNoPay ? PayrollComponent::METHOD_DAYS_WORKED : PayrollComponent::METHOD_FIXED,
                 'taxable' => true,
                 'recurring' => true,
                 'affects_gross' => true,
                 'category' => 'Basic Pay',
-                'description' => 'Monthly basic salary'
+                'description' => $noWorkNoPay
+                    ? 'No-work-no-pay: prorated by paid days (attendance + approved leave)'
+                    : 'Monthly basic salary'
             ],
             [
                 'type' => PayrollComponent::TYPE_EARNING,
@@ -394,7 +628,7 @@ class PayrollService
         
         // Absent-day deduction: prorate daily rate × absent days
         // absent_days = working days that were neither attended nor on approved leave.
-        if (($rules['absent_deduction'] ?? 0) > 0) {
+        if (! $noWorkNoPay && ($rules['absent_deduction'] ?? 0) > 0) {
             $standardDeductions[] = [
                 'type'        => PayrollComponent::TYPE_DEDUCTION,
                 'name'        => 'Absent Day Deduction',
@@ -422,28 +656,26 @@ class PayrollService
             ];
         }
 
-        // Merge standard and custom components
-        $allComponents = array_merge($standardEarnings, $standardDeductions, $customComponents);
-        
-        // Create component records
-        foreach ($allComponents as $componentData) {
+        return array_merge($standardEarnings, $standardDeductions, $customComponents);
+    }
+
+    protected function persistCalculatedComponents(Employee $employee, Payroll $payroll, $calculatedComponents)
+    {
+        $components = collect();
+
+        foreach (collect($calculatedComponents) as $componentData) {
             $component = PayrollComponent::create([
                 'payroll_id' => $payroll->id,
                 'shop_owner_id' => $employee->shop_owner_id,
-                'component_type' => $componentData['type'],
-                'component_name' => $componentData['name'],
-                'component_code' => $componentData['code'] ?? null,
-                'amount' => $componentData['base_amount'],           // raw input amount
-                'base_amount' => $componentData['base_amount'],      // alias stored for reference
-                'calculation_method' => $componentData['method'],
-                'calculated_amount' => $this->calculateComponentAmount(
-                    $componentData['method'],
-                    $componentData['base_amount'],
-                    $basicSalary,
-                    $overrides
-                ),
-                'is_taxable' => $componentData['taxable'],
-                'is_recurring' => $componentData['recurring'],
+                'component_type' => $componentData['component_type'] ?? $componentData['type'],
+                'component_name' => $componentData['component_name'] ?? $componentData['name'],
+                'component_code' => $componentData['component_code'] ?? $componentData['code'] ?? null,
+                'amount' => $componentData['amount'] ?? $componentData['base_amount'],
+                'base_amount' => $componentData['base_amount'],
+                'calculation_method' => $componentData['calculation_method'] ?? $componentData['method'],
+                'calculated_amount' => $componentData['calculated_amount'],
+                'is_taxable' => $componentData['is_taxable'] ?? $componentData['taxable'],
+                'is_recurring' => $componentData['is_recurring'] ?? $componentData['recurring'],
                 'affects_gross' => (bool) ($componentData['affects_gross'] ?? true),
                 'show_on_payslip' => (bool) ($componentData['show_on_payslip'] ?? true),
                 'category' => $componentData['category'] ?? null,
@@ -458,6 +690,13 @@ class PayrollService
         
         return $components;
     }
+
+    protected function sumComponentAmounts($components, array $names): float
+    {
+        return round((float) collect($components)
+            ->whereIn('component_name', $names)
+            ->sum('calculated_amount'), 2);
+    }
     
     /**
      * Calculate component amount based on method
@@ -468,11 +707,16 @@ class PayrollService
         $workHours = max(1, $this->normalizeNumber($overrides['standard_work_hours_per_day'] ?? 8));
         $monthlyHours = max(1, $workDays * $workHours);
 
+        $attendanceDays = $this->normalizeNumber($overrides['attendance_days'] ?? $workDays);
+        $leaveDays = $this->normalizeNumber($overrides['leave_days'] ?? 0);
+        $paidLeaveAsWorked = $this->doesPaidLeaveCountAsWorked();
+        $paidDays = min($workDays, max(0, $attendanceDays + ($paidLeaveAsWorked ? $leaveDays : 0)));
+
         return match($method) {
             PayrollComponent::METHOD_FIXED => $baseAmount,
             PayrollComponent::METHOD_PERCENTAGE_OF_BASIC => $basicSalary * ($baseAmount / 100),
             PayrollComponent::METHOD_PERCENTAGE_OF_GROSS => ($overrides['gross_salary'] ?? $basicSalary) * ($baseAmount / 100),
-            PayrollComponent::METHOD_DAYS_WORKED => ($basicSalary / $workDays) * ($overrides['attendance_days'] ?? $workDays),
+            PayrollComponent::METHOD_DAYS_WORKED => ($basicSalary / $workDays) * $paidDays,
             PayrollComponent::METHOD_HOURS_WORKED => ($basicSalary / $monthlyHours) * ($overrides['hours_worked'] ?? $monthlyHours),
             PayrollComponent::METHOD_ALLOWANCE => $baseAmount,
             PayrollComponent::METHOD_OVERTIME => $baseAmount,
@@ -480,6 +724,16 @@ class PayrollService
             PayrollComponent::METHOD_CUSTOM => $baseAmount,
             default => $baseAmount
         };
+    }
+
+    protected function isNoWorkNoPayEnabled(): bool
+    {
+        return (bool) config('payroll_governance.attendance_policy.no_work_no_pay', false);
+    }
+
+    protected function doesPaidLeaveCountAsWorked(): bool
+    {
+        return (bool) config('payroll_governance.attendance_policy.paid_leave_counts_as_worked', true);
     }
 
     protected function resolveRateBasis(Employee $employee, array $overrides): array

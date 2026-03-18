@@ -32,30 +32,79 @@ Route::post('/webhooks/paymongo', [\App\Http\Controllers\PaymongoWebhookControll
  * PayMongo Proxy - Frontend calls this to avoid CORS
  * Uses payment links API (the one that was working for you last week)
  */
-Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Request $request) {
+Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy', function (Request $request) {
     try {
-        $amount = $request->input('amount');
-        $description = $request->input('description', 'SoleSpace Purchase');
+        $validated = $request->validate([
+            'order_id' => ['nullable', 'integer', 'required_without:repair_request_id'],
+            'repair_request_id' => ['nullable', 'integer', 'required_without:order_id'],
+        ]);
 
-        if (!$amount || $amount <= 0) {
-            return response()->json(['error' => 'Invalid amount'], 400);
+        $customer = Auth::guard('user')->user();
+        if (!$customer) {
+            return response()->json(['error' => 'Unauthorized'], 401);
         }
 
         // --- Resolve the correct PayMongo key ---
         // Shop payments must ALWAYS use the shop's own key.
         // The platform key (.env) is reserved for platform-level payments (e.g. premium subscriptions).
         // If no shop key is configured, we block the payment — no silent fallback.
-        $shopOwnerId = $request->input('shop_owner_id');
-        $orderId     = $request->input('order_id');
-
         $apiKey = null;
+        $amount = 0;
+        $description = 'SoleSpace Purchase';
+        $successUrl = url('/order-success') . '?paymongo_success=1';
+        $failedUrl = url('/order-success') . '?paymongo_failed=1';
 
-        if ($shopOwnerId) {
-            $shopOwner = \App\Models\ShopOwner::find($shopOwnerId);
-            $apiKey = $shopOwner?->paymongo_secret_key;
-        } elseif ($orderId) {
-            $order = \App\Models\Order::find($orderId);
-            $apiKey = $order?->shopOwner?->paymongo_secret_key;
+        if (!empty($validated['order_id'])) {
+            $order = \App\Models\Order::with('shopOwner')
+                ->where('id', (int) $validated['order_id'])
+                ->where('customer_id', (int) $customer->id)
+                ->first();
+
+            if (!$order) {
+                return response()->json(['error' => 'Order not found'], 404);
+            }
+
+            if (in_array((string) $order->payment_status, ['paid', 'completed'], true)) {
+                return response()->json(['error' => 'Order is already paid'], 409);
+            }
+
+            $apiKey = $order->shopOwner?->paymongo_secret_key;
+            $amount = (float) $order->total_amount;
+            $description = 'SoleSpace Order #' . $order->order_number;
+        } else {
+            $repair = \App\Models\RepairRequest::with('shopOwner')
+                ->where('id', (int) $validated['repair_request_id'])
+                ->where('user_id', (int) $customer->id)
+                ->first();
+
+            if (!$repair) {
+                return response()->json(['error' => 'Repair request not found'], 404);
+            }
+
+            if ((string) $repair->payment_status === 'completed') {
+                return response()->json(['error' => 'Repair is already fully paid'], 409);
+            }
+
+            $apiKey = $repair->shopOwner?->paymongo_secret_key;
+
+            $chargeTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
+            if ($chargeTotal <= 0) {
+                $chargeTotal = (float) (($repair->package_price ?? 0) + ($repair->add_ons_total ?? 0));
+            }
+
+            $policy = strtolower((string) ($repair->payment_policy ?? 'deposit_50'));
+            $isRemainingBalancePhase = (string) $repair->status === 'ready_for_pickup';
+            if ($policy === 'full_upfront' || $policy === 'pay_after') {
+                $amount = $chargeTotal;
+                $phase = 'full payment';
+            } else {
+                $amount = max(1.0, round($chargeTotal / 2, 2));
+                $phase = $isRemainingBalancePhase ? 'remaining balance' : 'down payment';
+            }
+
+            $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
+            $successUrl = url('/my-repairs') . '?paymongo_success=1';
+            $failedUrl = url('/my-repairs') . '?paymongo_failed=1';
         }
 
         // Hard block: shop must have their own key configured
@@ -65,10 +114,11 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
                 'message' => 'This shop has not set up payment processing yet. Please contact the shop owner.',
             ], 503);
         }
-        // --- End key resolution ---
 
-        $successUrl  = $request->input('success_url', url('/order-success') . '?paymongo_success=1');
-        $failedUrl   = $request->input('failed_url',  url('/order-success') . '?paymongo_failed=1');
+        if ($amount <= 0) {
+            return response()->json(['error' => 'Invalid payable amount'], 422);
+        }
+        // --- End key resolution ---
         
         $response = \Illuminate\Support\Facades\Http::withHeaders([
             'Content-Type' => 'application/json',
@@ -84,7 +134,7 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
                     'show_line_items'    => true,
                     'line_items' => [[
                         'currency' => 'PHP',
-                        'amount'   => (int)($amount * 100),
+                        'amount'   => (int) round($amount * 100),
                         'name'     => $description,
                         'quantity' => 1,
                     ]],
@@ -98,7 +148,7 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
             $errors = $response->json('errors');
             
             // Log detailed error for debugging
-            \Log::error('PayMongo API Error', [
+            \Illuminate\Support\Facades\Log::error('PayMongo API Error', [
                 'status' => $response->status(),
                 'message' => $errorMsg,
                 'errors' => $errors,
@@ -115,7 +165,7 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
         $linkId = $data['data']['id'] ?? null;
 
         if (!$checkoutUrl || !$linkId) {
-            \Log::error('Missing data in PayMongo response', ['response' => $data]);
+            \Illuminate\Support\Facades\Log::error('Missing data in PayMongo response', ['response' => $data]);
             return response()->json(['error' => 'Incomplete PayMongo response'], 500);
         }
 
@@ -124,8 +174,8 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
             'link_id' => $linkId,
         ]);
     } catch (\Exception $e) {
-        \Log::error('PayMongo Proxy Exception', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-        return response()->json(['error' => 'Server error: ' . $e->getMessage()], 500);
+        \Illuminate\Support\Facades\Log::error('PayMongo Proxy Exception', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        return response()->json(['error' => 'Server error while creating payment session'], 500);
     }
 });
 
@@ -138,19 +188,21 @@ Route::withoutMiddleware(['web', 'api'])->post('/paymongo-proxy', function (Requ
 //     Route::get('/my-pending', [PriceChangeRequestController::class, 'myPending']);
 // });
 
-// Debug endpoint to check current user
-Route::get('/debug/me', function () {
-    $user = Auth::guard('web')->user() ?? Auth::guard('user')->user();
-    if (!$user) {
-        return response()->json(['error' => 'Not authenticated']);
-    }
-    return response()->json([
-        'id' => $user->id,
-        'email' => $user->email,
-        'role' => $user->role,
-        'shop_owner_id' => $user->shop_owner_id,
-    ]);
-})->middleware('web');
+// Debug endpoint to check current user (disabled in production)
+if (!app()->environment('production')) {
+    Route::get('/debug/me', function () {
+        $user = Auth::guard('web')->user() ?? Auth::guard('user')->user();
+        if (!$user) {
+            return response()->json(['error' => 'Not authenticated']);
+        }
+        return response()->json([
+            'id' => $user->id,
+            'email' => $user->email,
+            'role' => $user->role,
+            'shop_owner_id' => $user->shop_owner_id,
+        ]);
+    })->middleware('web');
+}
 
 /**
  * Legacy Finance Routes (to be migrated to finance-api.php)
@@ -228,9 +280,12 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
  */
 Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder'])
     ->middleware(['web', 'auth:user']);
-Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink']);
-Route::post('/orders/{id}/verify-payment',       [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment']);
-Route::get('/orders/{id}/details',               [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails']);
+Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink'])
+    ->middleware(['web', 'auth:user', 'throttle:20,1']);
+Route::post('/orders/{id}/verify-payment', [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment'])
+    ->middleware(['web', 'auth:user', 'throttle:20,1']);
+Route::get('/orders/{id}/details', [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails'])
+    ->middleware(['web', 'auth:user', 'throttle:20,1']);
 
 /**
  * Staff/Manager Customer Management API

@@ -9,6 +9,7 @@ type Deduction = {
 };
 
 type SlipRecord = {
+    payrollId: number;
     id: string;
     employeeName: string;
     employeeId: string;
@@ -26,10 +27,15 @@ type SlipRecord = {
         philhealth: number;
         pagibig: number;
         other: number;
+        total: number;
     };
     // Hours breakdown (to match Generate Payslip output)
     totalRegularHours?: number;
     totalOvertimeHours?: number;
+    totalRestDayHours?: number;
+    totalSpecialHolidayHours?: number;
+    totalRegularHolidayHours?: number;
+    totalNightDifferentialHours?: number;
     totalUndertimeHours?: number;
     totalAbsentDays?: number;
 };
@@ -59,6 +65,33 @@ const AlertIcon = ({ className = "size-5" }: { className?: string }) => (
 );
 
 // Transform function to convert snake_case API response to camelCase
+const toNumber = (value: unknown): number => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const buildDeductionDetails = (apiPayroll: any) => {
+    const withholdingTax = toNumber(apiPayroll.tax_deductions ?? apiPayroll.tax_amount);
+    const sss = toNumber(apiPayroll.sss_contributions ?? apiPayroll.sss);
+    const philhealth = toNumber(apiPayroll.philhealth ?? apiPayroll.philhealth_contributions);
+    const pagibig = toNumber(apiPayroll.pag_ibig ?? apiPayroll.pagibig);
+
+    const legacyTotal = toNumber(apiPayroll.deductions);
+    const componentTotal = toNumber(apiPayroll.total_deductions);
+    const statutoryTotal = withholdingTax + sss + philhealth + pagibig;
+    const total = legacyTotal > 0 ? legacyTotal : componentTotal + statutoryTotal;
+    const other = Math.max(0, total - statutoryTotal);
+
+    return {
+        withholding_tax: withholdingTax,
+        sss,
+        philhealth,
+        pagibig,
+        other,
+        total,
+    };
+};
+
 const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
     const employeeName = apiPayroll.employee 
         ? `${apiPayroll.employee.first_name || ''} ${apiPayroll.employee.last_name || ''}`.trim()
@@ -66,8 +99,13 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
     
     const department = apiPayroll.employee?.department || 'N/A';
     const employeeIdDisplay = apiPayroll.employee?.employee_id || 'N/A';
+    const deductionDetails = buildDeductionDetails(apiPayroll);
+    const attendanceDays = toNumber(apiPayroll.attendance_days);
+    const regularHours = toNumber(apiPayroll.regular_hours);
+    const absentDays = toNumber(apiPayroll.absent_days ?? apiPayroll.leave_days);
     
     return {
+        payrollId: toNumber(apiPayroll.id),
         id: `PS-${apiPayroll.id}`,
         employeeName: employeeName,
         employeeId: employeeIdDisplay,
@@ -76,24 +114,22 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
         payPeriod: apiPayroll.pay_period_start && apiPayroll.pay_period_end 
             ? `${new Date(apiPayroll.pay_period_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(apiPayroll.pay_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
             : apiPayroll.payroll_period || 'N/A',
-        grossPay: parseFloat(apiPayroll.gross_salary || apiPayroll.base_salary || 0),
-        deductions: parseFloat(apiPayroll.total_deductions || apiPayroll.deductions || 0),
-        netPay: parseFloat(apiPayroll.net_salary || 0),
+        grossPay: toNumber(apiPayroll.gross_salary || apiPayroll.base_salary),
+        deductions: deductionDetails.total,
+        netPay: toNumber(apiPayroll.net_salary),
         generatedOn: apiPayroll.generated_at 
             ? new Date(apiPayroll.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
             : new Date(apiPayroll.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         status: apiPayroll.status as SlipStatus,
-        deductionDetails: {
-            withholding_tax: parseFloat(apiPayroll.tax_deductions || apiPayroll.tax_amount || 0),
-            sss: parseFloat(apiPayroll.sss_contributions || 0),
-            philhealth: parseFloat(apiPayroll.philhealth || 0),
-            pagibig: parseFloat(apiPayroll.pag_ibig || 0),
-            other: 0,
-        },
-        totalRegularHours: apiPayroll.attendance_days ? apiPayroll.attendance_days * 8 : 0,
-        totalOvertimeHours: parseFloat(apiPayroll.overtime_hours || 0),
-        totalUndertimeHours: 0,
-        totalAbsentDays: apiPayroll.leave_days || 0,
+        deductionDetails,
+        totalRegularHours: regularHours > 0 ? regularHours : attendanceDays * 8,
+        totalOvertimeHours: toNumber(apiPayroll.overtime_hours),
+        totalRestDayHours: toNumber(apiPayroll.rest_day_hours),
+        totalSpecialHolidayHours: toNumber(apiPayroll.special_holiday_hours),
+        totalRegularHolidayHours: toNumber(apiPayroll.regular_holiday_hours),
+        totalNightDifferentialHours: toNumber(apiPayroll.night_differential_hours),
+        totalUndertimeHours: toNumber(apiPayroll.undertime_hours),
+        totalAbsentDays: absentDays,
     };
 };
 
@@ -125,6 +161,8 @@ const EyeIcon = ({ className = "size-5" }: { className?: string }) => (
 const formatPHP = (value: number) =>
     value.toLocaleString("en-PH", { style: "currency", currency: "PHP" });
 
+const formatHours = (value: number) => `${Math.round(value * 100) / 100}h`;
+
 const getInitials = (name: string) =>
     name
         .split(" ")
@@ -148,6 +186,8 @@ export default function ViewSlip() {
     const [month, setMonth] = useState<string>("");
     const [page, setPage] = useState(1);
     const [selectedSlip, setSelectedSlip] = useState<SlipRecord | null>(null);
+    const [loadingSlipId, setLoadingSlipId] = useState<number | null>(null);
+    const [slipDetailError, setSlipDetailError] = useState<{ payrollId: number; message: string } | null>(null);
     const [paginationMeta, setPaginationMeta] = useState<any>(null);
 
     // Fetch payroll data from API
@@ -247,8 +287,57 @@ export default function ViewSlip() {
 
     const totalPages = paginationMeta ? paginationMeta.last_page : Math.max(1, Math.ceil(filtered.length / pageSize));
 
-    const openSlip = (slip: SlipRecord) => setSelectedSlip(slip);
-    const closeSlip = () => setSelectedSlip(null);
+    const openSlip = async (slip: SlipRecord) => {
+        setSelectedSlip(slip);
+        setSlipDetailError(null);
+        setLoadingSlipId(slip.payrollId);
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            const response = await fetch(`/api/hr/payroll/${slip.payrollId}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                credentials: 'include',
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const detail = await response.json();
+            const detailSlip = transformPayrollFromApi(detail);
+
+            setSelectedSlip((current) => {
+                if (!current || current.payrollId !== slip.payrollId) {
+                    return current;
+                }
+
+                return {
+                    ...current,
+                    ...detailSlip,
+                    id: current.id,
+                };
+            });
+        } catch (error) {
+            console.error(`Error fetching payroll detail for ${slip.payrollId}:`, error);
+            setSlipDetailError({
+                payrollId: slip.payrollId,
+                message: 'Unable to load full payslip details. Showing list snapshot.',
+            });
+        } finally {
+            setLoadingSlipId((current) => (current === slip.payrollId ? null : current));
+        }
+    };
+
+    const closeSlip = () => {
+        setSelectedSlip(null);
+        setLoadingSlipId(null);
+        setSlipDetailError(null);
+    };
 
     const resetPage = () => setPage(1);
 
@@ -266,6 +355,11 @@ export default function ViewSlip() {
         setMonth(value);
         resetPage();
     };
+
+    const isSlipDetailLoading = selectedSlip ? loadingSlipId === selectedSlip.payrollId : false;
+    const activeSlipError = selectedSlip && slipDetailError?.payrollId === selectedSlip.payrollId
+        ? slipDetailError.message
+        : null;
 
     const startIndex = (page - 1) * pageSize;
     const endIndex = Math.min(startIndex + pageSize, filtered.length);
@@ -378,7 +472,9 @@ export default function ViewSlip() {
                                     </td>
                                     <td className="px-6 py-4 text-center">
                                         <button
-                                            onClick={() => openSlip(slip)}
+                                            onClick={() => {
+                                                void openSlip(slip);
+                                            }}
                                             className="inline-flex items-center justify-center p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                                             title="View payslip details"
                                             aria-label="View payslip details"
@@ -456,6 +552,12 @@ export default function ViewSlip() {
                             <div>
                                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Payslip Details</h3>
                                 <p className="text-gray-500 dark:text-gray-400 text-sm">{selectedSlip.month} · {selectedSlip.payPeriod}</p>
+                                {isSlipDetailLoading && (
+                                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Loading detailed payslip fields...</p>
+                                )}
+                                {activeSlipError && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{activeSlipError}</p>
+                                )}
                             </div>
                             <button
                                 onClick={closeSlip}
@@ -496,15 +598,31 @@ export default function ViewSlip() {
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Hours</span>
-                                    <span className="text-lg font-bold text-gray-900 dark:text-white">{Math.round((selectedSlip.totalRegularHours || 0) * 100) / 100}h</span>
+                                    <span className="text-lg font-bold text-gray-900 dark:text-white">{formatHours(selectedSlip.totalRegularHours || 0)}</span>
                                 </div>
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Overtime Hours</span>
-                                    <span className="text-lg font-bold text-green-600 dark:text-green-400">{Math.round((selectedSlip.totalOvertimeHours || 0) * 100) / 100}h</span>
+                                    <span className="text-lg font-bold text-green-600 dark:text-green-400">{formatHours(selectedSlip.totalOvertimeHours || 0)}</span>
+                                </div>
+                                <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Rest Day Hours</span>
+                                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalRestDayHours || 0)}</span>
+                                </div>
+                                <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Special Holiday Hours</span>
+                                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalSpecialHolidayHours || 0)}</span>
+                                </div>
+                                <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Holiday Hours</span>
+                                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalRegularHolidayHours || 0)}</span>
+                                </div>
+                                <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Night Diff Hours</span>
+                                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalNightDifferentialHours || 0)}</span>
                                 </div>
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Undertime</span>
-                                    <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{Math.round((selectedSlip.totalUndertimeHours || 0) * 100) / 100}h</span>
+                                    <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{formatHours(selectedSlip.totalUndertimeHours || 0)}</span>
                                 </div>
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Absent Days</span>
@@ -570,7 +688,7 @@ export default function ViewSlip() {
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-semibold text-gray-900 dark:text-white">Total Deductions</span>
                                             <span className="text-base font-bold text-red-600 dark:text-red-400">
-                                                -{formatPHP(selectedSlip.deductions)}
+                                                -{formatPHP(selectedSlip.deductionDetails?.total ?? selectedSlip.deductions)}
                                             </span>
                                         </div>
                                     </div>

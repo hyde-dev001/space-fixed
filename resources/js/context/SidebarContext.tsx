@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 
 type SidebarContextType = {
   isExpanded: boolean;
@@ -11,6 +11,7 @@ type SidebarContextType = {
   setIsHovered: (isHovered: boolean) => void;
   setActiveItem: (item: string | null) => void;
   toggleSubmenu: (item: string) => void;
+  setOpenSubmenu: (item: string | null) => void;
 };
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -35,7 +36,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isMobile, setIsMobile] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [activeItem, setActiveItem] = useState<string | null>(null);
-  const [openSubmenu, setOpenSubmenu] = useState<string | null>(() => {
+  const [openSubmenu, setOpenSubmenuState] = useState<string | null>(() => {
     const saved = localStorage.getItem('sidebarOpenSubmenu');
     return saved || null;
   });
@@ -79,9 +80,13 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsMobileOpen((prev) => !prev);
   };
 
-  const toggleSubmenu = (item: string) => {
-    setOpenSubmenu((prev) => (prev === item ? null : item));
-  };
+  const toggleSubmenu = useCallback((item: string) => {
+    setOpenSubmenuState((prev) => (prev === item ? null : item));
+  }, []);
+
+  const setOpenSubmenu = useCallback((item: string | null) => {
+    setOpenSubmenuState(item);
+  }, []);
 
   return (
     <SidebarContext.Provider
@@ -96,6 +101,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsHovered,
         setActiveItem,
         toggleSubmenu,
+        setOpenSubmenu,
       }}
     >
       {children}

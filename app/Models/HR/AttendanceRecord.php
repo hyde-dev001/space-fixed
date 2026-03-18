@@ -199,8 +199,8 @@ class AttendanceRecord extends Model
 
         $checkIn = \Carbon\Carbon::parse($this->check_in_time);
         $checkOut = \Carbon\Carbon::parse($this->check_out_time);
-        
-        $hours = $checkOut->diffInMinutes($checkIn) / 60;
+
+        $hours = abs($checkOut->diffInMinutes($checkIn, false)) / 60;
         
         // Subtract lunch break if working more than 6 hours
         if ($hours > 6) {

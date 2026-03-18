@@ -14,6 +14,102 @@ use Inertia\Response;
 
 class CartController extends Controller
 {
+    private function normalizeSizeSystem(?string $rawSystem): string
+    {
+        $normalized = strtoupper(trim((string) $rawSystem));
+        return in_array($normalized, ['US', 'UK', 'EU', 'AU', 'CN'], true) ? $normalized : 'US';
+    }
+
+    private function parseSizeComponents(?string $rawSize): array
+    {
+        $normalizedRaw = trim((string) $rawSize);
+        if ($normalizedRaw === '') {
+            return ['system' => 'US', 'value' => '', 'explicit_system' => false];
+        }
+
+        if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $normalizedRaw, $matches)) {
+            return [
+                'system' => $this->normalizeSizeSystem($matches[1] ?? null),
+                'value' => trim((string) ($matches[2] ?? '')),
+                'explicit_system' => true,
+            ];
+        }
+
+        return ['system' => 'US', 'value' => $normalizedRaw, 'explicit_system' => false];
+    }
+
+    private function buildVariantSizeCandidates(?string $rawSize): array
+    {
+        $parsed = $this->parseSizeComponents($rawSize);
+        $value = (string) ($parsed['value'] ?? '');
+        $system = (string) ($parsed['system'] ?? 'US');
+        $explicitSystem = (bool) ($parsed['explicit_system'] ?? false);
+        $normalizedRaw = trim((string) $rawSize);
+
+        if ($value === '') {
+            return [];
+        }
+
+        $candidates = [];
+
+        if ($explicitSystem) {
+            $candidates[] = $system === 'US' ? $value : "{$system} {$value}";
+            if ($system === 'US') {
+                $candidates[] = "US {$value}";
+            }
+            $candidates[] = $normalizedRaw;
+        } else {
+            $candidates[] = $value;
+            $candidates[] = "US {$value}";
+            $candidates[] = $normalizedRaw;
+        }
+
+        $filtered = array_values(array_filter(array_map(fn ($item) => trim((string) $item), $candidates)));
+        return array_values(array_unique($filtered));
+    }
+
+    private function resolveVariant(Product $product, ?string $size, ?string $color): ?\App\Models\ProductVariant
+    {
+        $normalizedColor = strtolower(trim((string) $color));
+        $sizeCandidates = $this->buildVariantSizeCandidates($size);
+
+        if ($normalizedColor === '' || empty($sizeCandidates)) {
+            return null;
+        }
+
+        $matchingVariants = \App\Models\ProductVariant::where('product_id', $product->id)
+            ->whereRaw('LOWER(color) = ?', [$normalizedColor])
+            ->whereIn('size', $sizeCandidates)
+            ->get();
+
+        foreach ($sizeCandidates as $candidate) {
+            $matched = $matchingVariants->first(fn ($variant) => (string) $variant->size === (string) $candidate);
+            if ($matched) {
+                return $matched;
+            }
+        }
+
+        $requestedValue = strtolower((string) ($this->parseSizeComponents($size)['value'] ?? ''));
+        if ($requestedValue === '') {
+            return null;
+        }
+
+        $sameValueCandidates = \App\Models\ProductVariant::where('product_id', $product->id)
+            ->whereRaw('LOWER(color) = ?', [$normalizedColor])
+            ->get()
+            ->filter(function ($variant) use ($requestedValue) {
+                $variantValue = strtolower((string) ($this->parseSizeComponents($variant->size)['value'] ?? ''));
+                return $variantValue !== '' && $variantValue === $requestedValue;
+            })
+            ->values();
+
+        if ($sameValueCandidates->count() === 1) {
+            return $sameValueCandidates->first();
+        }
+
+        return null;
+    }
+
     /**
      * Get all cart items for the authenticated user
      */
@@ -112,6 +208,8 @@ class CartController extends Controller
         $options = $validated['options'] ?? [];
         $variantColor = isset($options['color']) ? $options['color'] : null;
         $variantImage = isset($options['image']) ? $options['image'] : null;
+        $requestedSize = $validated['size'] ?? null;
+        $resolvedSize = $requestedSize;
         
         // Normalize options to ensure consistent key order (prevents duplicates)
         $normalizedOptions = [];
@@ -127,22 +225,24 @@ class CartController extends Controller
         $variant = null;
         
         // If product has variants, check the specific variant stock
-        if ($validated['size'] && $variantColor) {
-            $variant = \App\Models\ProductVariant::where('product_id', $product->id)
-                ->where('size', $validated['size'])
-                ->where('color', $variantColor)
-                ->first();
-                
-            if ($variant) {
-                $availableStock = $variant->quantity;
+        if ($requestedSize && $variantColor) {
+            $variant = $this->resolveVariant($product, (string) $requestedSize, (string) $variantColor);
+
+            if (!$variant) {
+                return response()->json([
+                    'error' => "Variant not found for {$product->name} (Size {$requestedSize}, Color {$variantColor})",
+                ], 404);
             }
+
+            $availableStock = $variant->quantity;
+            $resolvedSize = $variant->size;
         }
         
         // Find existing cart item with same product, size, color, AND image variant
         // Use lockForUpdate to prevent race conditions from concurrent requests
         $cartItem = CartItem::where('user_id', $user->id)
             ->where('product_id', $validated['product_id'])
-            ->where('size', $validated['size'])
+            ->where('size', $resolvedSize)
             ->where(function ($query) use ($normalizedOptions) {
                 if (!empty($normalizedOptions)) {
                     $query->where('options', json_encode($normalizedOptions));
@@ -221,7 +321,7 @@ class CartController extends Controller
             $createData = [
                 'user_id' => $user->id,
                 'product_id' => $validated['product_id'],
-                'size' => $validated['size'],
+                'size' => $resolvedSize,
                 'quantity' => $validated['quantity'],
                 'price' => $product->price,
                 'image' => $cartImage,
@@ -285,10 +385,7 @@ class CartController extends Controller
         $variantColor = $options['color'] ?? null;
         
         if ($cartItem->size && $variantColor) {
-            $variant = \App\Models\ProductVariant::where('product_id', $product->id)
-                ->where('size', $cartItem->size)
-                ->where('color', $variantColor)
-                ->first();
+            $variant = $this->resolveVariant($product, (string) $cartItem->size, (string) $variantColor);
                 
             if ($variant) {
                 $availableStock = $variant->quantity;

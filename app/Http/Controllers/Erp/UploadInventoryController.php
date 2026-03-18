@@ -22,6 +22,7 @@ class UploadInventoryController extends Controller
 {
     private const CATEGORY_SHOES = 'shoes';
     private const CATEGORY_REPAIR_MATERIALS = 'repair_materials';
+    private const SIZE_SYSTEMS = ['US', 'UK', 'EU', 'AU', 'CN'];
 
     /**
      * List uploaded inventory items
@@ -33,7 +34,7 @@ class UploadInventoryController extends Controller
             $this->resolveBusinessType($request)
         );
         
-        $items = InventoryItem::with(['sizes', 'colorVariants.images', 'images'])
+        $items = InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
             ->whereIn('category', $allowedCategories)
             ->when($request->search, function ($query, $search) {
@@ -81,11 +82,16 @@ class UploadInventoryController extends Controller
             'weight' => 'nullable|numeric|min:0',
             'sizes' => 'nullable|array',
             'sizes.*.size' => 'required|string',
+            'sizes.*.size_system' => 'nullable|in:US,UK,EU,AU,CN',
             'sizes.*.quantity' => 'required|integer|min:1',
             'color_variants' => 'nullable|array',
             'color_variants.*.color_name' => 'required|string',
             'color_variants.*.color_code' => 'nullable|string',
             'color_variants.*.quantity' => 'required|integer|min:1',
+            'color_variants.*.sizes' => 'nullable|array',
+            'color_variants.*.sizes.*.size' => 'required|string',
+            'color_variants.*.sizes.*.size_system' => 'nullable|in:US,UK,EU,AU,CN',
+            'color_variants.*.sizes.*.quantity' => 'required|integer|min:1',
             'color_variants.*.images' => 'nullable|array',
             'color_variants.*.images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'images' => 'nullable|array',
@@ -97,7 +103,12 @@ class UploadInventoryController extends Controller
         }
 
         if ($validated['category'] === 'shoes') {
-            if (empty($validated['sizes']) || count($validated['sizes']) === 0) {
+            $topLevelSizesCount = count($validated['sizes'] ?? []);
+            $variantSizesCount = collect($validated['color_variants'] ?? [])->sum(function ($variant) {
+                return count($variant['sizes'] ?? []);
+            });
+
+            if (($topLevelSizesCount + $variantSizesCount) === 0) {
                 return response()->json([
                     'message' => 'At least one size with stock is required for shoes.'
                 ], 422);
@@ -139,31 +150,76 @@ class UploadInventoryController extends Controller
                 'created_by' => $request->user()->id
             ]);
             
-            // Create sizes if provided
-            if (!empty($validated['sizes'])) {
-                foreach ($validated['sizes'] as $sizeData) {
-                    InventorySize::create([
-                        'inventory_item_id' => $item->id,
-                        'size' => $sizeData['size'],
-                        'quantity' => $sizeData['quantity']
-                    ]);
-                }
-            }
-            
             // Create color variants if provided
             if (!empty($validated['color_variants'])) {
                 foreach ($validated['color_variants'] as $idx => $variantData) {
+                    $variantSizes = $variantData['sizes'] ?? [];
+                    $variantQuantity = !empty($variantSizes)
+                        ? collect($variantSizes)->sum('quantity')
+                        : (int) $variantData['quantity'];
+
                     $variant = InventoryColorVariant::create([
                         'inventory_item_id' => $item->id,
                         'color_name' => $variantData['color_name'],
                         'color_code' => $variantData['color_code'] ?? null,
-                        'quantity' => $variantData['quantity']
+                        'quantity' => $variantQuantity
                     ]);
+
+                    if (!empty($variantSizes)) {
+                        foreach ($variantSizes as $sizeData) {
+                            $sizeValue = trim((string) $sizeData['size']);
+                            $sizeSystem = $this->normalizeSizeSystem($sizeData['size_system'] ?? null);
+
+                            $existingSize = InventorySize::where('inventory_item_id', $item->id)
+                                ->where('inventory_color_variant_id', $variant->id)
+                                ->where('size', $sizeValue)
+                                ->where('size_system', $sizeSystem)
+                                ->first();
+
+                            if ($existingSize) {
+                                $existingSize->increment('quantity', (int) $sizeData['quantity']);
+                            } else {
+                                InventorySize::create([
+                                    'inventory_item_id' => $item->id,
+                                    'inventory_color_variant_id' => $variant->id,
+                                    'size' => $sizeValue,
+                                    'size_system' => $sizeSystem,
+                                    'quantity' => (int) $sizeData['quantity'],
+                                ]);
+                            }
+                        }
+                    }
 
                     // Process images for this specific color variant
                     $variantImages = $request->file("color_variants.{$idx}.images");
                     if (!empty($variantImages)) {
                         $this->uploadItemImages($item, $variantImages, $variant->id);
+                    }
+                }
+            }
+
+            // Backward compatibility: if sizes are submitted at item-level, keep them item-level.
+            if (!empty($validated['sizes'])) {
+                foreach ($validated['sizes'] as $sizeData) {
+                    $sizeValue = trim((string) $sizeData['size']);
+                    $sizeSystem = $this->normalizeSizeSystem($sizeData['size_system'] ?? null);
+
+                    $existingSize = InventorySize::where('inventory_item_id', $item->id)
+                        ->whereNull('inventory_color_variant_id')
+                        ->where('size', $sizeValue)
+                        ->where('size_system', $sizeSystem)
+                        ->first();
+
+                    if ($existingSize) {
+                        $existingSize->increment('quantity', (int) $sizeData['quantity']);
+                    } else {
+                        InventorySize::create([
+                            'inventory_item_id' => $item->id,
+                            'inventory_color_variant_id' => null,
+                            'size' => $sizeValue,
+                            'size_system' => $sizeSystem,
+                            'quantity' => (int) $sizeData['quantity'],
+                        ]);
                     }
                 }
             }
@@ -192,7 +248,7 @@ class UploadInventoryController extends Controller
             
             return response()->json([
                 'message' => 'Inventory item created successfully',
-                'item' => $item->load(['sizes', 'colorVariants', 'images'])
+                'item' => $item->load(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
             ], 201);
             
         } catch (\Exception $e) {
@@ -268,7 +324,7 @@ class UploadInventoryController extends Controller
         
         return response()->json([
             'message' => 'Inventory item updated successfully',
-            'item' => $item->fresh(['sizes', 'colorVariants', 'images'])
+            'item' => $item->fresh(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
         ]);
     }
     
@@ -403,6 +459,7 @@ class UploadInventoryController extends Controller
             'color_code'        => 'nullable|string|max:20',
             'sizes'             => 'nullable|array',
             'sizes.*.size'      => 'required|string',
+            'sizes.*.size_system' => 'nullable|in:US,UK,EU,AU,CN',
             'sizes.*.quantity'  => 'required|integer|min:0',
             'images'            => 'nullable|array',
             'images.*'          => 'image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -445,10 +502,15 @@ class UploadInventoryController extends Controller
                 );
             }
 
-            // 3. Update sizes (increment existing, create new) — sizes are per-item not per-colour
+            // 3. Update sizes for this specific colour variant
             foreach ($validated['sizes'] ?? [] as $sizeData) {
+                $sizeValue = trim((string) $sizeData['size']);
+                $sizeSystem = $this->normalizeSizeSystem($sizeData['size_system'] ?? null);
+
                 $existingSize = InventorySize::where('inventory_item_id', $item->id)
-                    ->where('size', $sizeData['size'])
+                    ->where('inventory_color_variant_id', $colorVariant->id)
+                    ->where('size', $sizeValue)
+                    ->where('size_system', $sizeSystem)
                     ->first();
 
                 if ($existingSize) {
@@ -456,7 +518,9 @@ class UploadInventoryController extends Controller
                 } else {
                     InventorySize::create([
                         'inventory_item_id' => $item->id,
-                        'size'              => $sizeData['size'],
+                        'inventory_color_variant_id' => $colorVariant->id,
+                        'size'              => $sizeValue,
+                        'size_system'       => $sizeSystem,
                         'quantity'          => $sizeData['quantity'],
                     ]);
                 }
@@ -511,10 +575,15 @@ class UploadInventoryController extends Controller
 
                 // Create / update product variants (size × colour)
                 foreach ($validated['sizes'] ?? [] as $sizeData) {
+                    $variantSizeValue = $this->formatProductVariantSize(
+                        (string) $sizeData['size'],
+                        $this->normalizeSizeSystem($sizeData['size_system'] ?? null)
+                    );
+
                     ProductVariant::updateOrCreate(
                         [
                             'product_id' => $item->product_id,
-                            'size'       => $sizeData['size'],
+                            'size'       => $variantSizeValue,
                             'color'      => $validated['color_name'],
                         ],
                         [
@@ -537,7 +606,7 @@ class UploadInventoryController extends Controller
 
             return response()->json([
                 'message'       => 'Colour variant added successfully',
-                'color_variant' => $colorVariant->load('images'),
+                'color_variant' => $colorVariant->load(['images', 'sizes']),
             ], 201);
 
         } catch (\Exception $e) {
@@ -557,6 +626,7 @@ class UploadInventoryController extends Controller
     {
         $validated = $request->validate([
             'size' => 'required|string|max:20',
+            'size_system' => 'nullable|in:US,UK,EU,AU,CN',
             'quantity' => 'required|integer|min:1',
         ]);
 
@@ -583,10 +653,13 @@ class UploadInventoryController extends Controller
         try {
             $quantityToAdd = (int) $validated['quantity'];
             $sizeValue = trim((string) $validated['size']);
+            $sizeSystem = $this->normalizeSizeSystem($validated['size_system'] ?? null);
 
-            // Update/create item-level size stock
+            // Update/create size stock for this specific color variant
             $sizeRow = InventorySize::where('inventory_item_id', $item->id)
+                ->where('inventory_color_variant_id', $colorVariant->id)
                 ->where('size', $sizeValue)
+                ->where('size_system', $sizeSystem)
                 ->first();
 
             if ($sizeRow) {
@@ -594,7 +667,9 @@ class UploadInventoryController extends Controller
             } else {
                 InventorySize::create([
                     'inventory_item_id' => $item->id,
+                    'inventory_color_variant_id' => $colorVariant->id,
                     'size' => $sizeValue,
+                    'size_system' => $sizeSystem,
                     'quantity' => $quantityToAdd,
                 ]);
             }
@@ -622,7 +697,7 @@ class UploadInventoryController extends Controller
             // Sync linked product variant if this inventory item is linked to product
             if ($item->product_id) {
                 $existingVariant = ProductVariant::where('product_id', $item->product_id)
-                    ->where('size', $sizeValue)
+                    ->where('size', $this->formatProductVariantSize($sizeValue, $sizeSystem))
                     ->where('color', $colorVariant->color_name)
                     ->first();
 
@@ -633,7 +708,7 @@ class UploadInventoryController extends Controller
                 } else {
                     ProductVariant::create([
                         'product_id' => $item->product_id,
-                        'size' => $sizeValue,
+                        'size' => $this->formatProductVariantSize($sizeValue, $sizeSystem),
                         'color' => $colorVariant->color_name,
                         'quantity' => $quantityToAdd,
                         'is_active' => true,
@@ -654,6 +729,7 @@ class UploadInventoryController extends Controller
                 'message' => 'Size added successfully',
                 'color_variant_id' => (int) $colorVariant->id,
                 'size' => $sizeValue,
+                'size_system' => $sizeSystem,
                 'quantity_added' => $quantityToAdd,
                 'item_quantity' => $newTotalQty,
             ]);
@@ -704,8 +780,23 @@ class UploadInventoryController extends Controller
             $size->quantity = $newQty;
             $size->save();
 
-            // Recompute item total from all sizes
-            $newTotal = InventorySize::where('inventory_item_id', $item->id)->sum('quantity');
+            if ($size->inventory_color_variant_id) {
+                $newColorQty = (int) InventorySize::where('inventory_item_id', $item->id)
+                    ->where('inventory_color_variant_id', $size->inventory_color_variant_id)
+                    ->sum('quantity');
+
+                InventoryColorVariant::where('inventory_item_id', $item->id)
+                    ->where('id', $size->inventory_color_variant_id)
+                    ->update(['quantity' => $newColorQty]);
+            }
+
+            // Recompute item total from all color variants (fallback to item-level sizes for legacy rows)
+            $newTotal = (int) $item->colorVariants()->sum('quantity');
+            if ($newTotal === 0) {
+                $newTotal = (int) InventorySize::where('inventory_item_id', $item->id)
+                    ->whereNull('inventory_color_variant_id')
+                    ->sum('quantity');
+            }
             $item->available_quantity = $newTotal;
             $item->save();
 
@@ -728,6 +819,7 @@ class UploadInventoryController extends Controller
                 'message'       => 'Size quantity updated',
                 'size_id'       => (int) $size->id,
                 'size'          => $size->size,
+                'size_system'   => $size->size_system,
                 'quantity'      => $newQty,
                 'item_quantity' => $newTotal,
             ]);
@@ -837,5 +929,28 @@ class UploadInventoryController extends Controller
         }
         
         return $uploadedImages;
+    }
+
+    protected function normalizeSizeSystem(?string $sizeSystem): string
+    {
+        $normalized = strtoupper(trim((string) $sizeSystem));
+
+        if (in_array($normalized, self::SIZE_SYSTEMS, true)) {
+            return $normalized;
+        }
+
+        return 'US';
+    }
+
+    protected function formatProductVariantSize(string $size, string $sizeSystem): string
+    {
+        $sizeValue = trim($size);
+        $normalizedSystem = $this->normalizeSizeSystem($sizeSystem);
+
+        if ($normalizedSystem === 'US') {
+            return $sizeValue;
+        }
+
+        return "{$normalizedSystem} {$sizeValue}";
     }
 }

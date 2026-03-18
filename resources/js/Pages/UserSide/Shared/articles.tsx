@@ -31,12 +31,12 @@ const Articles: React.FC = () => {
 			headTitle: 'Product Image Spin Tutorial - SoleSpace',
 			category: 'Articles',
 			title: 'Shoe Photo Upload Guide',
-			description: 'Follow one clean workflow every time: setup, shoot full 360 frames, rename in order, upload, then test your spin.',
+				description: 'Follow one clean workflow every time: setup, shoot full 360 frames, rename in order, upload, then test your spin. For cleaner results, prioritize transparent-background frames.',
 			backToServices: 'Back to Services',
 			languageLabel: 'TAGALOG',
 			beforeYouStart: 'Before You Start',
 			beforeYouStartItems: [
-				'Use a plain background.',
+					'Use a plain background, then export transparent-background frames when possible.',
 				'Keep camera height and distance fixed.',
 				'Prepare consistent bright lighting.',
 				'Plan your filename format before shooting.',
@@ -46,7 +46,7 @@ const Articles: React.FC = () => {
 				{
 					title: 'Setup And Lighting',
 					description:
-						'Place one shoe on a plain background. Keep the camera in one fixed position and use even light so all photos have the same look.',
+						'Place one shoe on a plain background. Keep the camera in one fixed position and use even light so all photos have the same look. If possible, prepare transparent-background PNG output for a cleaner viewer presentation.',
 				},
 				{
 					title: 'Capture Full Rotation',
@@ -85,7 +85,7 @@ const Articles: React.FC = () => {
 			openYoutube: 'Open on YouTube',
 			quickTips: 'Quick Tips',
 			quickTipItems: [
-				'Use consistent lighting and background in all frames.',
+					'Use consistent lighting and prefer transparent-background output for all frames.',
 				'Upload complete photo set with no missing numbers.',
 				'Use at least 24 photos; 36 photos gives smoother spin.',
 				'Review filename order before uploading.',
@@ -97,12 +97,12 @@ const Articles: React.FC = () => {
 			category: 'Mga Artikulo',
 			title: 'Gabay sa Pag-upload ng Larawan ng Sapatos',
 			description:
-				'Sundin ang iisang maayos na proseso sa bawat pagkakataon: i-setup, kunan ng buong 360 frame, ayusin ang pangalan nang sunod-sunod, i-upload, at subukan ang spin.',
+					'Sundin ang iisang maayos na proseso sa bawat pagkakataon: i-setup, kunan ng buong 360 frame, ayusin ang pangalan nang sunod-sunod, i-upload, at subukan ang spin. Para mas malinis ang output, mas mainam ang transparent background frames.',
 			backToServices: 'Bumalik sa Services',
 			languageLabel: 'TAGALOG',
 			beforeYouStart: 'Bago Ka Magsimula',
 			beforeYouStartItems: [
-				'Gumamit ng simpleng background.',
+					'Gumamit ng simpleng background, tapos gawing transparent ang background ng final frames kung maaari.',
 				'Panatilihing pareho ang taas at layo ng camera.',
 				'Maghanda ng pantay at maliwanag na ilaw.',
 				'Planuhin muna ang format ng filename bago mag-shoot.',
@@ -112,7 +112,7 @@ const Articles: React.FC = () => {
 				{
 					title: 'Setup at Ilaw',
 					description:
-						'Ilagay ang isang sapatos sa simpleng background. Panatilihin ang camera sa isang nakapirming posisyon at gumamit ng pantay na ilaw para magkakapareho ang itsura ng lahat ng larawan.',
+						'Ilagay ang isang sapatos sa simpleng background. Panatilihin ang camera sa isang nakapirming posisyon at gumamit ng pantay na ilaw para magkakapareho ang itsura ng lahat ng larawan. Kung kaya, i-export ang final frames bilang PNG na transparent ang background para mas malinis tingnan sa viewer.',
 				},
 				{
 					title: 'Kunan ang Buong Ikot',
@@ -153,7 +153,7 @@ const Articles: React.FC = () => {
 			openYoutube: 'Buksan sa YouTube',
 			quickTips: 'Mabilis na Tips',
 			quickTipItems: [
-				'Panatilihing pare-pareho ang ilaw at background sa lahat ng frame.',
+					'Panatilihing pare-pareho ang ilaw at mas mainam kung transparent ang background ng lahat ng frame.',
 				'I-upload ang kumpletong photo set na walang nawawalang numero.',
 				'Gumamit ng hindi bababa sa 24 na larawan; mas smooth ang spin kapag 36 ang kuha.',
 				'Suriin muna ang ayos ng filename bago mag-upload.',

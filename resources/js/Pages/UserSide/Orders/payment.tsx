@@ -442,13 +442,13 @@ const Payment: React.FC = () => {
       // Now create PayMongo payment link
       const response = await fetch('/api/paymongo-proxy', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
         },
         body: JSON.stringify({
-          amount: checkoutData.total_amount,
-          description: `SoleSpace Order #${orderResult.order_number || orderResult.order?.order_number || ''} - ${checkoutData.items.map(item => item.name).join(', ')}`,
           order_id: orderId,
         }),
       });

@@ -22,11 +22,28 @@ class PaymongoWebhookController extends Controller
     {
         try {
             $payload = $request->all();
-            
-            Log::info('PayMongo Webhook Received', ['payload' => $payload]);
 
-            // Verify webhook signature (recommended for production)
-            // $this->verifyWebhookSignature($request);
+            $webhookSecret = (string) config('services.paymongo.webhook_secret');
+            if ($webhookSecret !== '') {
+                try {
+                    $this->verifyWebhookSignature($request);
+                } catch (\RuntimeException $e) {
+                    Log::warning('Rejected PayMongo webhook due to invalid signature', [
+                        'error' => $e->getMessage(),
+                    ]);
+                    return response()->json(['message' => 'Invalid webhook signature'], 401);
+                }
+            } else {
+                if (app()->environment('production')) {
+                    Log::error('PAYMONGO webhook secret is missing in production');
+                    return response()->json(['message' => 'Webhook secret is not configured'], 503);
+                }
+                Log::warning('PAYMONGO webhook secret is not configured; signature verification skipped');
+            }
+
+            Log::info('PayMongo Webhook Received', [
+                'event_type' => $payload['data']['attributes']['type'] ?? null,
+            ]);
 
             $eventType = $payload['data']['attributes']['type'] ?? null;
             $eventData = $payload['data']['attributes']['data'] ?? null;
@@ -253,21 +270,51 @@ class PaymongoWebhookController extends Controller
     /**
      * Verify webhook signature (optional but recommended)
      */
-    private function verifyWebhookSignature(Request $request)
+    private function verifyWebhookSignature(Request $request): void
     {
         $signature = $request->header('Paymongo-Signature');
         $payload = $request->getContent();
         $webhookSecret = config('services.paymongo.webhook_secret');
 
         if (!$signature || !$webhookSecret) {
-            throw new \Exception('Missing webhook signature or secret');
+            throw new \RuntimeException('Missing webhook signature or secret');
+        }
+
+        $providedSignature = $this->extractSignatureValue((string) $signature);
+        if (!$providedSignature) {
+            throw new \RuntimeException('Webhook signature format is invalid');
         }
 
         $computedSignature = hash_hmac('sha256', $payload, $webhookSecret);
 
-        if (!hash_equals($computedSignature, $signature)) {
-            throw new \Exception('Invalid webhook signature');
+        if (!hash_equals($computedSignature, $providedSignature)) {
+            throw new \RuntimeException('Invalid webhook signature');
         }
+    }
+
+    private function extractSignatureValue(string $signatureHeader): ?string
+    {
+        $trimmed = trim($signatureHeader);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (str_contains($trimmed, ',')) {
+            $parts = array_map('trim', explode(',', $trimmed));
+            foreach ($parts as $part) {
+                if (str_starts_with($part, 'v1=')) {
+                    $value = trim((string) substr($part, 3));
+                    return $value !== '' ? $value : null;
+                }
+            }
+        }
+
+        if (str_starts_with($trimmed, 'v1=')) {
+            $value = trim((string) substr($trimmed, 3));
+            return $value !== '' ? $value : null;
+        }
+
+        return $trimmed;
     }
 
     /**

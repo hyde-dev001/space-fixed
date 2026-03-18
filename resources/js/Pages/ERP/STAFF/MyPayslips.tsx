@@ -34,6 +34,12 @@ interface Payslip {
 	approval_status: 'pending' | 'approved' | 'rejected';
 	payment_date?: string;
 	payment_method?: string;
+	payout_reference?: string;
+	payout_proof_type?: string;
+	payout_proof_reference?: string;
+	disbursed_by?: number;
+	disbursed_at?: string;
+	disburser?: { id: number; name: string };
 	attendance_days?: number;
 	overtime_hours?: string;
 	components: PayrollComponent[];
@@ -329,7 +335,48 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 					<span className="text-base font-bold text-gray-900 dark:text-white">NET PAY</span>
 					<span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formatPHP(slip.net_salary)}</span>
 				</div>
-
+			{/* Disbursement record (shown only when paid) */}
+			{slip.status === 'paid' && slip.payment_method && (
+				<div className="mt-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg px-5 py-4 border border-emerald-200 dark:border-emerald-800">
+					<h3 className="text-sm font-semibold text-emerald-900 dark:text-emerald-300 mb-3">Disbursement Record</h3>
+					<div className="grid grid-cols-2 gap-x-8 gap-y-2.5 text-sm">
+						<div>
+							<span className="text-emerald-700 dark:text-emerald-400 text-xs font-medium">Method</span>
+							<p className="font-semibold text-emerald-900 dark:text-emerald-100 capitalize">{slip.payment_method.replace('_', ' ')}</p>
+						</div>
+						{slip.payment_date && (
+							<div>
+								<span className="text-emerald-700 dark:text-emerald-400 text-xs font-medium">Date</span>
+								<p className="font-semibold text-emerald-900 dark:text-emerald-100">{formatDate(slip.payment_date)}</p>
+							</div>
+						)}
+						{slip.payout_reference && (
+							<div>
+								<span className="text-emerald-700 dark:text-emerald-400 text-xs font-medium">Reference</span>
+								<p className="font-semibold text-emerald-900 dark:text-emerald-100">{slip.payout_reference}</p>
+							</div>
+						)}
+						{slip.payout_proof_type && (
+							<div>
+								<span className="text-emerald-700 dark:text-emerald-400 text-xs font-medium">Proof Type</span>
+								<p className="font-semibold text-emerald-900 dark:text-emerald-100 capitalize">{slip.payout_proof_type.replace('_', ' ')}</p>
+							</div>
+						)}
+						{slip.payout_proof_reference && (
+							<div>
+								<span className="text-emerald-700 dark:text-emerald-400 text-xs font-medium">Proof Ref</span>
+								<p className="font-semibold text-emerald-900 dark:text-emerald-100">{slip.payout_proof_reference}</p>
+							</div>
+						)}
+						{slip.disburser?.name && (
+							<div>
+								<span className="text-emerald-700 dark:text-emerald-400 text-xs font-medium">Disbursed by</span>
+								<p className="font-semibold text-emerald-900 dark:text-emerald-100">{slip.disburser.name}</p>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
 				{/* Footer note */}
 				<p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-4">
 					This is an official payslip issued by {shopName}. Please keep for your records.

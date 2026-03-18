@@ -357,12 +357,10 @@ export default function ProductInventory() {
 								<col className="w-1/7" />
 								<col className="w-1/7" />
 								<col className="w-1/7" />
-								<col className="w-1/7" />
 							</colgroup>
 							<thead className="bg-gray-50 dark:bg-gray-800/50">
 								<tr>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product name</th>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">SKU / Code</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Sizes</th>
 									<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Available quantity</th>
 									<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
@@ -372,7 +370,7 @@ export default function ProductInventory() {
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 							{loading ? (
-								<tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
+								<tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
 							) : paginatedItems.length > 0 ? (
 									paginatedItems.map((item) => {
 										const status = getStatus(item.availableQuantity);
@@ -380,7 +378,6 @@ export default function ProductInventory() {
 										return (
 											<tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 												<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{item.productName}</td>
-												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{item.skuCode}</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{item.sizes.join(", ")}</td>
 												<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white text-center">{item.availableQuantity}</td>
 												<td className="px-4 py-3 text-center">
@@ -408,7 +405,7 @@ export default function ProductInventory() {
 									})
 								) : (
 									<tr>
-										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
 											No product inventory records found.
 										</td>
 									</tr>

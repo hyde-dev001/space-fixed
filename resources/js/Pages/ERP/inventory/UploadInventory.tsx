@@ -11,6 +11,7 @@ import type { InventoryItem as ApiInventoryItem, InventoryColorVariant, Inventor
 type StockCategory = 'shoes' | 'repair_materials';
 type StockStatus = 'In Stock' | 'Low Stock' | 'Out of Stock';
 type BusinessType = 'retail' | 'repair' | 'both';
+type SizeSystem = 'US' | 'UK' | 'EU' | 'AU' | 'CN';
 
 type StockItem = {
   id: number;
@@ -174,9 +175,20 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
     (img: InventoryImage) => !img.inventory_color_variant_id,
   );
 
+  const hasSingleColorVariant = (item.color_variants?.length ?? 0) === 1;
+
   const colorVariants: ColorVariant[] = (item.color_variants ?? []).map((v: InventoryColorVariant, vi: number) => {
     // Use variant-specific images when available, otherwise assign all item images to the first variant
     const variantImgs = v.images?.length > 0 ? v.images : vi === 0 ? itemLevelImages : [];
+    const linkedItemSizes = (item.sizes ?? []).filter(
+      (size) => Number(size.inventory_color_variant_id ?? 0) === Number(v.id),
+    );
+    const variantSizes = (v.sizes ?? []).length > 0
+      ? (v.sizes ?? [])
+      : linkedItemSizes.length > 0
+        ? linkedItemSizes
+        : (hasSingleColorVariant && vi === 0 ? (item.sizes ?? []) : []);
+
     return {
       id: String(v.id),
       color_name: v.color_name,
@@ -190,9 +202,10 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
         sort_order: img.sort_order,
         uploaded_path: img.image_path,
       })),
-      sizes: (item.sizes ?? []).map((s: InventorySize) => ({
+      sizes: variantSizes.map((s: InventorySize) => ({
         id: String(s.id),
         size: s.size,
+        size_system: (s.size_system ?? 'US') as SizeSystem,
         quantity: s.quantity,
       })),
     };
@@ -282,14 +295,58 @@ export default function UploadInventory() {
 
   const [selectedShoeTypes, setSelectedShoeTypes] = useState<string[]>([]);
   const [isShoeTypePickerOpen, setIsShoeTypePickerOpen] = useState(false);
-  const [existingColorSizeDrafts, setExistingColorSizeDrafts] = useState<Record<string, { size: string; quantity: string }>>({});
+  const [existingColorSizeDrafts, setExistingColorSizeDrafts] = useState<Record<string, { size: string; sizeSystem: SizeSystem; quantity: string }>>({});
   const [editingSizeQty, setEditingSizeQty] = useState<{ sizeId: string; value: string } | null>(null);
   const [colorImageUploading, setColorImageUploading] = useState<Record<string, boolean>>({});
+  const [editSizeSystem, setEditSizeSystem] = useState<SizeSystem>('US');
 
   const SIZE_OPTIONS = Array.from({ length: 25 }, (_, i) => {
     const size = 3 + i * 0.5;
     return Number.isInteger(size) ? size.toFixed(0) : size.toFixed(1);
   });
+
+  const formatSizeBySystem = (sizeValue: string, system: SizeSystem): string => {
+    const parsed = Number(sizeValue);
+    if (Number.isNaN(parsed)) return sizeValue;
+
+    let converted = parsed;
+    switch (system) {
+      case 'UK':
+      case 'AU':
+        converted = parsed - 1;
+        break;
+      case 'EU':
+      case 'CN':
+        converted = parsed + 33;
+        break;
+      case 'US':
+      default:
+        converted = parsed;
+        break;
+    }
+
+    return Number.isInteger(converted) ? converted.toFixed(0) : converted.toFixed(1);
+  };
+
+  const getDisplaySizeLabel = (sizeValue: string, system: SizeSystem): string =>
+    `${system} ${formatSizeBySystem(sizeValue, system)}`;
+
+  const getStoredSizeLabel = (sizeVariant: SizeVariant): string => {
+    const rawSize = String(sizeVariant.size ?? '').trim();
+    const matched = rawSize.match(/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i);
+
+    if (matched) {
+      return `${matched[1].toUpperCase()} ${matched[2].trim()}`;
+    }
+
+    const system = (sizeVariant.size_system ?? 'US') as SizeSystem;
+    return `${system} ${rawSize}`;
+  };
+
+  const getSizeIdentity = (sizeVariant: { size: string; size_system?: SizeSystem }): string => {
+    const system = (sizeVariant.size_system ?? 'US') as SizeSystem;
+    return `${system}::${sizeVariant.size}`;
+  };
 
   const [formData, setFormData] = useState({
     name: '',
@@ -297,10 +354,6 @@ export default function UploadInventory() {
     category: (canUploadShoes ? 'shoes' : 'repair_materials') as StockCategory,
     quantity: '',
     unit: 'pcs',
-    reorderLevel: '10',
-    reorderQuantity: '50',
-    costPrice: '',
-    sellingPrice: '',
     notes: '',
   });
 
@@ -325,8 +378,10 @@ export default function UploadInventory() {
   const handleAddSizeToExistingColor = async (colorVariantId: string) => {
     if (!editingStock) return;
 
-    const draft = existingColorSizeDrafts[colorVariantId] ?? { size: '', quantity: '' };
+    const draft = existingColorSizeDrafts[colorVariantId] ?? { size: '', sizeSystem: editSizeSystem, quantity: '' };
     const size = draft.size.trim();
+    const sizeSystem = draft.sizeSystem ?? editSizeSystem;
+    const normalizedSize = formatSizeBySystem(size, sizeSystem);
     const quantity = Number(draft.quantity);
 
     if (!size) {
@@ -341,7 +396,8 @@ export default function UploadInventory() {
 
     try {
       await inventoryItemAPI.addSizeToColorVariant(editingStock.id, Number(colorVariantId), {
-        size,
+        size: normalizedSize,
+        size_system: sizeSystem,
         quantity,
       });
 
@@ -349,12 +405,13 @@ export default function UploadInventory() {
         prev.map((variant) => {
           if (variant.id !== colorVariantId) return variant;
 
-          const existingSize = variant.sizes.find((s) => s.size === size);
+          const incomingIdentity = `${sizeSystem}::${normalizedSize}`;
+          const existingSize = variant.sizes.find((s) => getSizeIdentity(s) === incomingIdentity);
           if (existingSize) {
             return {
               ...variant,
               sizes: variant.sizes.map((s) =>
-                s.size === size ? { ...s, quantity: s.quantity + quantity } : s
+                getSizeIdentity(s) === incomingIdentity ? { ...s, quantity: s.quantity + quantity } : s
               ),
             };
           }
@@ -364,8 +421,9 @@ export default function UploadInventory() {
             sizes: [
               ...variant.sizes,
               {
-                id: `${Date.now()}-${size}`,
-                size,
+                id: `${Date.now()}-${sizeSystem}-${normalizedSize}`,
+                size: normalizedSize,
+                size_system: sizeSystem,
                 quantity,
               },
             ],
@@ -375,7 +433,7 @@ export default function UploadInventory() {
 
       setExistingColorSizeDrafts((prev) => ({
         ...prev,
-        [colorVariantId]: { size: '', quantity: '' },
+        [colorVariantId]: { size: '', sizeSystem: editSizeSystem, quantity: '' },
       }));
 
       await fetchStocks();
@@ -475,10 +533,6 @@ export default function UploadInventory() {
       category: canUploadShoes ? 'shoes' : 'repair_materials',
       quantity: '',
       unit: 'pcs',
-      reorderLevel: '10',
-      reorderQuantity: '50',
-      costPrice: '',
-      sellingPrice: '',
       notes: '',
     });
     setSelectedShoeTypes([]);
@@ -490,6 +544,7 @@ export default function UploadInventory() {
     setEditingStock(null);
     setEditingSizeQty(null);
     setColorImageUploading({});
+    setEditSizeSystem('US');
   };
 
   const handleOpenModal = (stock?: StockItem) => {
@@ -501,10 +556,6 @@ export default function UploadInventory() {
         category: stock.category,
         quantity: stock.quantity.toString(),
         unit: stock.unit,
-        reorderLevel: String(stock.reorderLevel ?? 10),
-        reorderQuantity: String(stock.reorderQuantity ?? 50),
-        costPrice: stock.costPrice !== null && stock.costPrice !== undefined ? String(stock.costPrice) : '',
-        sellingPrice: stock.sellingPrice !== null && stock.sellingPrice !== undefined ? String(stock.sellingPrice) : '',
         notes: stock.notes,
       });
       setSelectedShoeTypes(stock.shoeType ? stock.shoeType.split(',').filter(Boolean) : []);
@@ -515,6 +566,7 @@ export default function UploadInventory() {
       setIsShoesMode(stock.category === 'shoes');
       setEditingSizeQty(null);
       setColorImageUploading({});
+      setEditSizeSystem('US');
     } else {
       resetForm();
     }
@@ -581,30 +633,10 @@ export default function UploadInventory() {
       return;
     }
 
-    const reorderLevelNumber = isShoesMode ? 5 : Number(formData.reorderLevel);
-    const reorderQuantityNumber = isShoesMode ? 10 : Number(formData.reorderQuantity);
-    const costPriceNumber = !isShoesMode && formData.costPrice.trim() !== '' ? Number(formData.costPrice) : undefined;
-    const sellingPriceNumber = !isShoesMode && formData.sellingPrice.trim() !== '' ? Number(formData.sellingPrice) : undefined;
-
-    if (!isShoesMode && (Number.isNaN(reorderLevelNumber) || reorderLevelNumber < 0)) {
-      alert('Reorder level must be 0 or greater.');
-      return;
-    }
-
-    if (!isShoesMode && (Number.isNaN(reorderQuantityNumber) || reorderQuantityNumber < 0)) {
-      alert('Reorder quantity must be 0 or greater.');
-      return;
-    }
-
-    if (costPriceNumber !== undefined && (Number.isNaN(costPriceNumber) || costPriceNumber < 0)) {
-      alert('Unit cost must be 0 or greater.');
-      return;
-    }
-
-    if (sellingPriceNumber !== undefined && (Number.isNaN(sellingPriceNumber) || sellingPriceNumber < 0)) {
-      alert('Selling price must be 0 or greater.');
-      return;
-    }
+    const reorderLevelNumber = isShoesMode ? 5 : 10;
+    const reorderQuantityNumber = isShoesMode ? 10 : 50;
+    const costPriceNumber = undefined;
+    const sellingPriceNumber = undefined;
 
     // Only require images/variants when creating — not when editing (already uploaded)
     if (!editingStock) {
@@ -629,17 +661,17 @@ export default function UploadInventory() {
             color_name: v.color_name,
             color_code: v.color_code,
             quantity: v.sizes.reduce((sum, s) => sum + s.quantity, 0),
+            sizes: v.sizes.map((s) => ({
+              size: s.size,
+              size_system: (s.size_system ?? 'US') as SizeSystem,
+              quantity: s.quantity,
+            })),
             images: v.images.map((img) => img.file).filter((f): f is File => f !== null),
           }))
         : undefined;
 
-    // Build flat sizes payload from all color variants
-    const sizesPayload =
-      isShoesMode && colorVariants.length > 0
-        ? colorVariants.flatMap((v) =>
-            v.sizes.map((s) => ({ size: s.size, quantity: s.quantity }))
-          )
-        : undefined;
+    // Keep top-level sizes undefined for shoes; size rows are scoped per color variant.
+    const sizesPayload = undefined;
 
     if (editingStock) {
       const confirmation = await Swal.fire({
@@ -684,7 +716,11 @@ export default function UploadInventory() {
               color_name: variant.color_name,
               color_code: variant.color_code || undefined,
               images: variant.images.map((img) => img.file).filter((f): f is File => f !== null),
-              sizes: variant.sizes.map((s) => ({ size: s.size, quantity: s.quantity })),
+              sizes: variant.sizes.map((s) => ({
+                size: s.size,
+                size_system: (s.size_system ?? 'US') as SizeSystem,
+                quantity: s.quantity,
+              })),
             });
           }
         }
@@ -709,7 +745,18 @@ export default function UploadInventory() {
       await fetchStocks();
     } catch (err) {
       console.error('Failed to save stock entry', err);
-      alert('Could not save stock entry. Please try again.');
+      const fallbackText = 'Could not save stock entry. Please try again.';
+      const apiMessage = typeof (err as any)?.message === 'string' ? (err as any).message : '';
+      const fieldErrors = (err as any)?.errors as Record<string, string[]> | undefined;
+      const firstFieldError = fieldErrors
+        ? Object.values(fieldErrors).flat().find((value) => typeof value === 'string')
+        : undefined;
+
+      await Swal.fire({
+        icon: 'error',
+        title: 'Update failed',
+        text: firstFieldError || apiMessage || fallbackText,
+      });
       return;
     }
 
@@ -925,35 +972,61 @@ export default function UploadInventory() {
                       {/* Existing colours */}
                       {colorVariants.length > 0 && (
                         <div>
-                          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">
-                            Existing Colours
-                          </h3>
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                              Existing Colours
+                            </h3>
+                            <div className="inline-flex flex-wrap rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-1 gap-1">
+                              {(['US', 'UK', 'EU', 'AU', 'CN'] as SizeSystem[]).map((system) => (
+                                <button
+                                  key={system}
+                                  type="button"
+                                  onClick={() => setEditSizeSystem(system)}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                                    editSizeSystem === system
+                                      ? 'bg-blue-600 text-white'
+                                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                                  }`}
+                                >
+                                  {system}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                           <div className="space-y-3">
                             {colorVariants.map((cv) => {
-                              const draft = existingColorSizeDrafts[cv.id] ?? { size: '', quantity: '' };
+                              const draft = existingColorSizeDrafts[cv.id] ?? { size: '', sizeSystem: editSizeSystem, quantity: '' };
+                              const activeSize = cv.sizes.find((s) => s.id === editingSizeQty?.sizeId);
+                              const parsedDraftQty = Number(draft.quantity);
+                              const canAddSize = draft.size.trim() !== '' && !Number.isNaN(parsedDraftQty) && parsedDraftQty > 0;
 
                               return (
                                 <div
                                   key={cv.id}
-                                  className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
+                                  className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-sm"
                                 >
-                                  {/* ── Header ── */}
-                                  <div className="flex items-center gap-3 mb-3">
+                                  <div className="flex items-center gap-3 mb-4">
                                     <div
                                       className="h-5 w-5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
                                       style={{ backgroundColor: cv.color_code }}
                                     />
-                                    <span className="font-medium text-gray-900 dark:text-white text-sm">{cv.color_name}</span>
-                                    <span className="ml-auto text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                                    <span className="font-semibold text-gray-900 dark:text-white text-sm">{cv.color_name}</span>
+                                    <span className="text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 px-2 py-0.5 rounded-full">
+                                      {cv.sizes.length} sizes
+                                    </span>
+                                    <span className="ml-auto text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2.5 py-0.5 rounded-full">
                                       {cv.sizes.reduce((sum, s) => sum + s.quantity, 0)} units
                                     </span>
                                   </div>
 
-                                  {/* ── Images ── */}
-                                  <div className="mb-3">
-                                    <div className="flex items-center justify-between mb-1.5">
-                                      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Images ({cv.images.length})</span>
-                                      <label className="cursor-pointer inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors">
+                                  <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Images ({cv.images.length})</span>
+                                      <label
+                                        className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-blue-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors dark:border-gray-600 dark:bg-gray-900 dark:text-blue-300 dark:hover:border-blue-700"
+                                        title={colorImageUploading[cv.id] ? 'Uploading images...' : 'Add images'}
+                                        aria-label="Add images"
+                                      >
                                         {colorImageUploading[cv.id] ? (
                                           <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -961,10 +1034,10 @@ export default function UploadInventory() {
                                           </svg>
                                         ) : (
                                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h3l1.2 1.5a2 2 0 001.56.75H19a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v4m2-2h-4" />
                                           </svg>
                                         )}
-                                        {colorImageUploading[cv.id] ? 'Uploading…' : 'Add Images'}
                                         <input
                                           type="file"
                                           accept="image/*"
@@ -1011,72 +1084,30 @@ export default function UploadInventory() {
                                     )}
                                   </div>
 
-                                  {/* ── Sizes (click to correct qty) ── */}
-                                  <div className="mb-3">
-                                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1.5">
-                                      Sizes <span className="font-normal text-gray-400">(click to correct qty)</span>
-                                    </span>
+                                  <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Sizes</span>
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">Click a size chip to adjust quantity</span>
+                                    </div>
                                     <div className="flex flex-wrap gap-2">
                                       {cv.sizes.length > 0 ? (
                                         cv.sizes.map((s) => {
                                           const isEditingThis = editingSizeQty?.sizeId === s.id;
-                                          return isEditingThis ? (
-                                            <div
-                                              key={s.id}
-                                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-600"
-                                            >
-                                              <span className="text-xs font-medium text-blue-700 dark:text-blue-300">{s.size}</span>
-                                              <span className="text-blue-400 text-xs">×</span>
-                                              <input
-                                                type="number"
-                                                min="0"
-                                                value={editingSizeQty?.value ?? ''}
-                                                onChange={(e) =>
-                                                  setEditingSizeQty((prev) => prev ? { ...prev, value: e.target.value } : prev)
-                                                }
-                                                onKeyDown={(e) => {
-                                                  if (e.key === 'Enter') handleUpdateSizeQty(s.id, editingSizeQty?.value ?? '');
-                                                  if (e.key === 'Escape') setEditingSizeQty(null);
-                                                }}
-                                                className="w-14 text-xs bg-transparent border-0 outline-none text-blue-700 dark:text-blue-300 font-medium"
-                                                autoFocus
-                                              title={`Quantity for size ${s.size}`}
-                                              />
-                                              <button
-                                                type="button"
-                                                onClick={() => handleUpdateSizeQty(s.id, editingSizeQty?.value ?? '')}
-                                                className="text-green-600 hover:text-green-700"
-                                                title="Save"
-                                              >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => setEditingSizeQty(null)}
-                                                className="text-gray-400 hover:text-gray-500"
-                                                title="Cancel"
-                                              >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                              </button>
-                                            </div>
-                                          ) : (
+                                          return (
                                             <button
                                               key={s.id}
                                               type="button"
                                               onClick={() => setEditingSizeQty({ sizeId: s.id, value: String(s.quantity) })}
-                                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-700 dark:hover:text-blue-300 transition-colors group"
+                                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                                                isEditingThis
+                                                  ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/20 dark:border-blue-600 dark:text-blue-300'
+                                                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-blue-900/20 dark:hover:border-blue-700 dark:hover:text-blue-300'
+                                              }`}
                                               title="Click to edit quantity"
                                             >
-                                              {s.size}
-                                              <span className="text-gray-400 group-hover:text-blue-400">×</span>
-                                              {s.quantity}
-                                              <svg className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                              </svg>
+                                              <span>{getStoredSizeLabel(s)}</span>
+                                              <span className="text-gray-400">x</span>
+                                              <span className="font-semibold">{s.quantity}</span>
                                             </button>
                                           );
                                         })
@@ -1084,58 +1115,139 @@ export default function UploadInventory() {
                                         <span className="text-xs text-gray-500 dark:text-gray-400">No sizes yet.</span>
                                       )}
                                     </div>
+
+                                    {activeSize && (
+                                      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-800 dark:bg-blue-900/20 p-3">
+                                        <div className="flex flex-wrap items-end gap-2">
+                                          <div className="min-w-[120px]">
+                                            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">Editing Size</p>
+                                            <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">{getStoredSizeLabel(activeSize)}</p>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setEditingSizeQty((prev) => {
+                                                  if (!prev) return prev;
+                                                  const current = Number(prev.value);
+                                                  const next = Number.isNaN(current) ? 0 : Math.max(0, current - 1);
+                                                  return { ...prev, value: String(next) };
+                                                })
+                                              }
+                                              className="h-9 w-9 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                                              title="Decrease quantity"
+                                            >
+                                              -
+                                            </button>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={editingSizeQty?.value ?? ''}
+                                              onChange={(e) =>
+                                                setEditingSizeQty((prev) => (prev ? { ...prev, value: e.target.value } : prev))
+                                              }
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') handleUpdateSizeQty(activeSize.id, editingSizeQty?.value ?? '');
+                                                if (e.key === 'Escape') setEditingSizeQty(null);
+                                              }}
+                                              className="h-9 w-24 rounded-lg border border-blue-300 bg-white px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-700 dark:bg-gray-900 dark:text-white"
+                                              title={`Quantity for size ${getStoredSizeLabel(activeSize)}`}
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setEditingSizeQty((prev) => {
+                                                  if (!prev) return prev;
+                                                  const current = Number(prev.value);
+                                                  const next = Number.isNaN(current) ? 1 : current + 1;
+                                                  return { ...prev, value: String(next) };
+                                                })
+                                              }
+                                              className="h-9 w-9 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                                              title="Increase quantity"
+                                            >
+                                              +
+                                            </button>
+                                          </div>
+                                          <div className="flex items-center gap-2 md:ml-auto">
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingSizeQty(null)}
+                                              className="h-9 px-3 rounded-lg border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                                            >
+                                              Cancel
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateSizeQty(activeSize.id, editingSizeQty?.value ?? '')}
+                                              className="h-9 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                                            >
+                                              Save Quantity
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
 
-                                  {/* ── Add more sizes ── */}
-                                  <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_auto] gap-2 items-end pt-2 border-t border-gray-100 dark:border-gray-800">
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Add Size</label>
-                                      <select
-                                        title="Select size for this color"
-                                        value={draft.size}
-                                        onChange={(e) =>
-                                          setExistingColorSizeDrafts((prev) => ({
-                                            ...prev,
-                                            [cv.id]: {
-                                              ...((prev[cv.id] ?? { size: '', quantity: '' })),
-                                              size: e.target.value,
-                                            },
-                                          }))
-                                        }
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                                  <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-800/40 p-3">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Add Size</label>
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">If size already exists, quantity will be added</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_auto] gap-2 items-end">
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Shoe Size</label>
+                                        <select
+                                          title="Select size for this color"
+                                          value={draft.size}
+                                          onChange={(e) =>
+                                            setExistingColorSizeDrafts((prev) => ({
+                                              ...prev,
+                                              [cv.id]: {
+                                                ...((prev[cv.id] ?? { size: '', sizeSystem: editSizeSystem, quantity: '' })),
+                                                size: e.target.value,
+                                                sizeSystem: editSizeSystem,
+                                              },
+                                            }))
+                                          }
+                                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                                        >
+                                          <option value="">Select size</option>
+                                          {SIZE_OPTIONS.map((size) => (
+                                            <option key={size} value={size}>{getDisplaySizeLabel(size, editSizeSystem)}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Quantity</label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          value={draft.quantity}
+                                          onChange={(e) =>
+                                            setExistingColorSizeDrafts((prev) => ({
+                                              ...prev,
+                                              [cv.id]: {
+                                                ...((prev[cv.id] ?? { size: '', sizeSystem: editSizeSystem, quantity: '' })),
+                                                sizeSystem: editSizeSystem,
+                                                quantity: e.target.value,
+                                              },
+                                            }))
+                                          }
+                                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                                          placeholder="0"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddSizeToExistingColor(cv.id)}
+                                        disabled={!canAddSize}
+                                        className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
-                                        <option value="">Select size</option>
-                                        {SIZE_OPTIONS.map((size) => (
-                                          <option key={size} value={size}>Size {size}</option>
-                                        ))}
-                                      </select>
+                                        Add Size
+                                      </button>
                                     </div>
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Quantity</label>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        value={draft.quantity}
-                                        onChange={(e) =>
-                                          setExistingColorSizeDrafts((prev) => ({
-                                            ...prev,
-                                            [cv.id]: {
-                                              ...((prev[cv.id] ?? { size: '', quantity: '' })),
-                                              quantity: e.target.value,
-                                            },
-                                          }))
-                                        }
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
-                                        placeholder="0"
-                                      />
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAddSizeToExistingColor(cv.id)}
-                                      className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-                                    >
-                                      Add Size
-                                    </button>
                                   </div>
                                 </div>
                               );
@@ -1144,21 +1256,14 @@ export default function UploadInventory() {
                         </div>
                       )}
 
-                      {/* New colours to add */}
                       <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                            Add New Colours
-                          </h3>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                          New colours are saved when you click Save and are automatically synced to the linked product.
-                        </p>
                         <ColorVariantManager
                           colorVariants={newColorVariants}
                           onColorVariantsChange={setNewColorVariants}
+                          blockedColorNames={colorVariants.map((cv) => cv.color_name)}
                         />
                       </div>
+
                     </>
                   ) : (
                     <ColorVariantManager
@@ -1259,64 +1364,6 @@ export default function UploadInventory() {
                         <option value="pairs">pairs</option>
                       </select>
                     </div>
-                  )}
-
-                  {!isShoesMode && (
-                    <>
-                      <div>
-                        <label htmlFor="stock-reorder-level" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reorder Level</label>
-                        <input
-                          id="stock-reorder-level"
-                          type="number"
-                          min="0"
-                          value={formData.reorderLevel}
-                          onChange={(event) => setFormData((prev) => ({ ...prev, reorderLevel: event.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                          placeholder="10"
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="stock-reorder-quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reorder Quantity</label>
-                        <input
-                          id="stock-reorder-quantity"
-                          type="number"
-                          min="0"
-                          value={formData.reorderQuantity}
-                          onChange={(event) => setFormData((prev) => ({ ...prev, reorderQuantity: event.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                          placeholder="50"
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="stock-cost-price" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Unit Cost</label>
-                        <input
-                          id="stock-cost-price"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.costPrice}
-                          onChange={(event) => setFormData((prev) => ({ ...prev, costPrice: event.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                          placeholder="0.00"
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="stock-selling-price" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Selling Price</label>
-                        <input
-                          id="stock-selling-price"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.sellingPrice}
-                          onChange={(event) => setFormData((prev) => ({ ...prev, sellingPrice: event.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </>
                   )}
 
                   <div className="md:col-span-2">

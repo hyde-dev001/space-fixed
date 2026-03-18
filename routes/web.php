@@ -639,6 +639,11 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         return Inertia::render('ShopOwner/DssInsights');
     })->name('dss-insights');
 
+    // VOUCHERS & DISCOUNT - Retail-capable shops only
+    Route::get('/vouchers-discount', function () {
+        return Inertia::render('ShopOwner/Orders/order management/discount');
+    })->middleware('check.business.type:retail,both')->name('vouchers-discount');
+
     // AUDIT LOGS - Company only (individual has no staff to audit)
     Route::middleware('check.registration.type:company')->group(function () {
         Route::get('/audit-logs', function () {
@@ -656,6 +661,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::get('/price-approvals', function () {
             return Inertia::render('ShopOwner/Approvals/PriceApprovals');
         })->name('price-approvals');
+
+        Route::get('/payslip-approvals', function () {
+            return Inertia::render('ShopOwner/Approvals/PayslipApproval');
+        })->name('payslip-approvals');
 
         Route::get('/purchase-request-approval', function () {
             return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval');
@@ -716,6 +725,13 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
     Route::get('price-changes/pending', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerPending'])->middleware('check.business.type:retail,both');
     Route::post('price-changes/{id}/approve', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerApprove'])->middleware('check.business.type:retail,both');
     Route::post('price-changes/{id}/reject', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerReject'])->middleware('check.business.type:retail,both');
+
+    // Payslip Approvals (Shop Owner Portal)
+    Route::prefix('payslip-approvals')->middleware('check.registration.type:company')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'getPayslipsForApproval'])->name('shop_owner.payslip_approval.index');
+        Route::get('/{id}', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'getPayslipForApproval'])->name('shop_owner.payslip_approval.show');
+        Route::post('/{id}/final-approve', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'finalApprovePayslip'])->name('shop_owner.payslip_approval.final_approve');
+    });
 });
 
 // Staff Price Change Requests (session-based auth)
@@ -878,13 +894,18 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     Route::post('{id}/confirm', [\App\Http\Controllers\Api\RepairRequestController::class, 'confirmRepair']);
 
     // Update payment link (PayMongo integration)
-    Route::post('{id}/update-payment-link', [\App\Http\Controllers\Api\RepairRequestController::class, 'updatePaymentLink']);
+    Route::post('{id}/update-payment-link', [\App\Http\Controllers\Api\RepairRequestController::class, 'updatePaymentLink'])
+        ->middleware('throttle:20,1');
 
-    // Simulate payment for testing (bypasses PayMongo)
-    Route::post('{id}/simulate-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'simulatePayment']);
+    // Simulate payment for testing (bypasses PayMongo) - disabled in production
+    if (!app()->environment('production')) {
+        Route::post('{id}/simulate-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'simulatePayment'])
+            ->middleware('throttle:10,1');
+    }
 
     // Verify payment with PayMongo API (called when customer returns from checkout)
-    Route::post('{id}/verify-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'verifyPayment']);
+    Route::post('{id}/verify-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'verifyPayment'])
+        ->middleware('throttle:20,1');
 
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
@@ -924,6 +945,8 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
     Route::get('/material-requests', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myMaterialRequests'])
         ->middleware('permission:access-repair-stocks');
     Route::post('/material-requests', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'createMaterialRequest'])
+        ->middleware('permission:access-repair-stocks');
+    Route::post('/material-requests/bulk', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'createBulkMaterialRequests'])
         ->middleware('permission:access-repair-stocks');
 });
 
@@ -1292,7 +1315,7 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Finance pages
-Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-payslip-approval|access-refund-approval'])->group(function () {
+Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_permission:Shop Owner|access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-payslip-approval|access-refund-approval'])->group(function () {
     Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1473,7 +1496,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'images'])
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
             ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
         return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->middleware('permission:access-upload-inventory')->name('upload-stocks');
@@ -1541,7 +1564,7 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'images'])
+        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
             ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
         return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->name('upload-stocks');

@@ -123,6 +123,18 @@ const APPROVAL_ITEMS: ApprovalItemConfig[] = [
 const REPAIR_REQUEST_LIMIT_KEY = 'repair_request_limit';
 const DEFAULT_REPAIR_REQUEST_LIMIT = 20;
 
+const formatOrdinalDay = (day: number): string => {
+	const mod10 = day % 10;
+	const mod100 = day % 100;
+	if (mod10 === 1 && mod100 !== 11) return `${day}st of the month`;
+	if (mod10 === 2 && mod100 !== 12) return `${day}nd of the month`;
+	if (mod10 === 3 && mod100 !== 13) return `${day}rd of the month`;
+	return `${day}th of the month`;
+};
+
+const FIRST_PAYOUT_DAY_OPTIONS = Array.from({ length: 30 }, (_, index) => index + 1);
+const SECOND_PAYOUT_DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => index + 1);
+
 const readRepairRequestLimit = (): number => {
 	if (typeof window === 'undefined') return DEFAULT_REPAIR_REQUEST_LIMIT;
 	const raw = window.localStorage.getItem(REPAIR_REQUEST_LIMIT_KEY);
@@ -133,7 +145,13 @@ const readRepairRequestLimit = (): number => {
 
 const ShopSetting: React.FC = () => {
 	const { shop_settings } = usePage<ShopSettingsPageProps>().props;
-	const isIndividual = shop_settings.registration_type === 'individual';
+	const normalizedRegistrationType = String(shop_settings.registration_type ?? '')
+		.trim()
+		.toLowerCase()
+		.replace(/[-\s]+/g, '_');
+	const isIndividual = normalizedRegistrationType === 'individual'
+		|| normalizedRegistrationType.startsWith('individual_')
+		|| normalizedRegistrationType.endsWith('_individual');
 	const LAST_SHOP_OWNER_PAGE_KEY = 'shop_owner_last_sidebar_page';
 	const [saveSuccess, setSaveSuccess] = useState(false);
 	const [processing, setProcessing] = useState(false);
@@ -143,8 +161,10 @@ const ShopSetting: React.FC = () => {
 		shop_settings.repair_payment_policy ?? 'deposit_50',
 	);
 	const [payCycle, setPayCycle] = useState<'monthly' | 'semi_monthly'>(shop_settings.pay_cycle ?? 'monthly');
-	const [payDayFirst, setPayDayFirst] = useState<number>(shop_settings.pay_day_first ?? 15);
-	const [payDaySecond, setPayDaySecond] = useState<number>(shop_settings.pay_day_second ?? 30);
+	const initialPayDayFirst = Math.min(Math.max(shop_settings.pay_day_first ?? 15, 1), 30);
+	const initialPayDaySecond = Math.min(Math.max(shop_settings.pay_day_second ?? 30, initialPayDayFirst + 1), 31);
+	const [payDayFirst, setPayDayFirst] = useState<number>(initialPayDayFirst);
+	const [payDaySecond, setPayDaySecond] = useState<number>(initialPayDaySecond);
 	const [savingPayrollCutoff, setSavingPayrollCutoff] = useState(false);
 	const [payrollCutoffSuccess, setPayrollCutoffSuccess] = useState(false);
 	const [payrollCutoffError, setPayrollCutoffError] = useState<string | null>(null);
@@ -936,10 +956,10 @@ const ShopSetting: React.FC = () => {
 						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-4">
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">
-									{payCycle === 'monthly' ? 'Payroll Cycle' : 'Payroll Cutoff (Kinsenas)'}
+									{payCycle === 'monthly' ? 'Payroll Cycle' : 'Payroll Cutoff'}
 								</h2>
 								<p className="mt-1 text-sm text-gray-600">
-									Choose monthly payroll or semi-monthly cutoff (kinsenas).
+									Choose monthly payroll or semi-monthly cutoff.
 								</p>
 							</div>
 							<div className={`grid grid-cols-1 gap-4 p-6 ${payCycle === 'semi_monthly' ? 'md:grid-cols-3' : 'md:grid-cols-1'}`}>
@@ -955,44 +975,50 @@ const ShopSetting: React.FC = () => {
 										className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 									>
 										<option value="monthly">Monthly</option>
-										<option value="semi_monthly">Semi-monthly (Kinsenas)</option>
+										<option value="semi_monthly">Semi-monthly</option>
 									</select>
 								</div>
 								{payCycle === 'semi_monthly' && (
 									<>
 										<div>
 											<label className="mb-1.5 block text-sm font-medium text-gray-700">First Payout Day</label>
-											<input
-												type="number"
-												min={1}
-												max={31}
-												step={1}
+											<select
 												value={payDayFirst}
 												title="First payroll payout day"
-												placeholder="15"
 												onChange={(e) => {
-													setPayDayFirst(Number(e.target.value));
+													const nextFirstDay = Number(e.target.value);
+													setPayDayFirst(nextFirstDay);
+													if (payDaySecond <= nextFirstDay) {
+														setPayDaySecond(Math.min(nextFirstDay + 1, 31));
+													}
 													if (payrollCutoffError) setPayrollCutoffError(null);
 												}}
 												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-											/>
+											>
+												{FIRST_PAYOUT_DAY_OPTIONS.map((day) => (
+													<option key={`first-day-${day}`} value={day}>
+														{formatOrdinalDay(day)}
+													</option>
+												))}
+											</select>
 										</div>
 										<div>
 											<label className="mb-1.5 block text-sm font-medium text-gray-700">Second Payout Day</label>
-											<input
-												type="number"
-												min={1}
-												max={31}
-												step={1}
+											<select
 												value={payDaySecond}
 												title="Second payroll payout day"
-												placeholder="30"
 												onChange={(e) => {
 													setPayDaySecond(Number(e.target.value));
 													if (payrollCutoffError) setPayrollCutoffError(null);
 												}}
 												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-											/>
+											>
+												{SECOND_PAYOUT_DAY_OPTIONS.filter((day) => day > payDayFirst).map((day) => (
+													<option key={`second-day-${day}`} value={day}>
+														{formatOrdinalDay(day)}
+													</option>
+												))}
+											</select>
 										</div>
 									</>
 								)}
@@ -1001,7 +1027,7 @@ const ShopSetting: React.FC = () => {
 								<p className="mb-3 text-xs text-gray-500">
 									{payCycle === 'semi_monthly'
 										? <>
-											Example setup: first payout day <span className="font-semibold">15</span>, second payout day <span className="font-semibold">30</span>.
+												Example setup: first payout day <span className="font-semibold">15th of the month</span>, second payout day <span className="font-semibold">30th of the month</span>.
 										</>
 										: 'Monthly cycle uses one payroll period per month.'}
 								</p>

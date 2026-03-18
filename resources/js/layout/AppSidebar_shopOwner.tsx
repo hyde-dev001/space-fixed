@@ -88,6 +88,19 @@ const navItems: NavItem[] = [
     route: "shop-owner.dss-insights",
     path: "/shop-owner/dss-insights",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 8.5V6a2 2 0 0 0-2-2h-5.5a2 2 0 0 0-1.414.586L3.5 13.172a2 2 0 0 0 0 2.828l4.5 4.5a2 2 0 0 0 2.828 0l8.586-8.586A2 2 0 0 0 20 10.5V8.5z"></path>
+        <circle cx="16" cy="8" r="1"></circle>
+        <path d="M8 12h8"></path>
+        <path d="M12 8v8"></path>
+      </svg>
+    ),
+    name: "Vouchers & Discount",
+    route: "shop-owner.vouchers-discount",
+    path: "/shop-owner/vouchers-discount",
+  },
 ];
 
 const approvalWorkflowItems: NavItem[] = [
@@ -102,6 +115,7 @@ const approvalWorkflowItems: NavItem[] = [
     subItems: [
       { name: "Refund Approval", route: "shop-owner.refund-approvals" },
       { name: "Price Approvals", route: "shop-owner.price-approvals" },
+      { name: "Payslip Approval", route: "shop-owner.payslip-approvals" },
       { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval" },
       { name: "Expense Approvals", route: "shop-owner.expense-approvals" },
       { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval" },
@@ -262,6 +276,11 @@ const AppSidebar_shopOwner: React.FC = () => {
     // DSS Insights - visible to ALL individual accounts (repair, retail, both) AND company accounts
     if (menuItem.route === 'shop-owner.dss-insights') {
       return true;
+    }
+
+    // Vouchers & Discount - visible to retail-capable shops only
+    if (menuItem.route === 'shop-owner.vouchers-discount') {
+      return itemBusinessType === 'retail' || itemBusinessType === 'both';
     }
 
     // Business-only features (require Business registration)

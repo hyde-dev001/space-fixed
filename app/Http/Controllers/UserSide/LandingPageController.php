@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryItem;
 use App\Models\Product;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
@@ -256,6 +257,14 @@ class LandingPageController extends Controller
         $sizes = $product->sizes_available ?? [];
         $colors = $product->colors_available ?? [];
 
+        $linkedInventory = InventoryItem::where('product_id', $product->id)
+            ->with([
+                'colorVariants.sizes' => function ($query) {
+                    $query->where('quantity', '>', 0);
+                },
+            ])
+            ->first();
+
         // Get all product images with full URLs using accessor
         $images = $product->image_urls;
 
@@ -323,7 +332,36 @@ class LandingPageController extends Controller
                     ];
                 })->toArray() : [],
                 'sales_count' => $product->sales_count,
-                'colorVariants' => $product->colorVariants ? $product->colorVariants->map(function ($variant) {
+                'colorVariants' => $product->colorVariants ? $product->colorVariants->map(function ($variant) use ($linkedInventory) {
+                    $variantSizes = [];
+
+                    if ($linkedInventory) {
+                        $matchedInventoryColor = $linkedInventory->colorVariants->first(function ($inventoryColor) use ($variant) {
+                            if ($variant->inventory_color_id) {
+                                return (int) $inventoryColor->id === (int) $variant->inventory_color_id;
+                            }
+
+                            return strcasecmp(
+                                trim((string) $inventoryColor->color_name),
+                                trim((string) $variant->color_name)
+                            ) === 0;
+                        });
+
+                        if ($matchedInventoryColor) {
+                            $variantSizes = collect($matchedInventoryColor->sizes ?? [])
+                                ->map(function ($size) {
+                                    return [
+                                        'id' => $size->id,
+                                        'size' => $size->size,
+                                        'size_system' => $size->size_system,
+                                        'quantity' => (int) $size->quantity,
+                                    ];
+                                })
+                                ->values()
+                                ->all();
+                        }
+                    }
+
                     return [
                         'id' => $variant->id,
                         'color_name' => $variant->color_name,
@@ -331,6 +369,7 @@ class LandingPageController extends Controller
                         'sku_prefix' => $variant->sku_prefix,
                         'sort_order' => $variant->sort_order,
                         'is_active' => $variant->is_active,
+                        'sizes' => $variantSizes,
                         'images' => $variant->images ? $variant->images
                             ->filter(function ($img) {
                                 return !$this->isShowroomImageType($img->image_type ?? null);

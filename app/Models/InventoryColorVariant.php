@@ -35,4 +35,12 @@ class InventoryColorVariant extends Model
     {
         return $this->hasMany(InventoryImage::class);
     }
+
+    /**
+     * Get all sizes for this color variant
+     */
+    public function sizes(): HasMany
+    {
+        return $this->hasMany(InventorySize::class, 'inventory_color_variant_id');
+    }
 }

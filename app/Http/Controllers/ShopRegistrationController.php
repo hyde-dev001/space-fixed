@@ -20,6 +20,15 @@ class ShopRegistrationController extends Controller
         return $validated['shop_longitude'] ?? $validated['shopLongitude'] ?? null;
     }
 
+    private function resolvedPostalCode(array $validated)
+    {
+        return $validated['postal_code']
+            ?? $validated['postalCode']
+            ?? $validated['zip_code']
+            ?? $validated['zipCode']
+            ?? null;
+    }
+
     // <!-- API endpoint to register shop owner from React frontend -->
     public function store(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
@@ -31,6 +40,10 @@ class ShopRegistrationController extends Controller
             'phone' => 'required|string|max:20|unique:shop_owners,phone',
             'businessName' => 'required|string|max:255',
             'businessAddress' => 'required|string|max:255',
+            'postalCode' => 'nullable|string|max:20',
+            'postal_code' => 'nullable|string|max:20',
+            'zipCode' => 'nullable|string|max:20',
+            'zip_code' => 'nullable|string|max:20',
             'businessType' => 'required|string|max:100',
             'registrationType' => 'required|string|max:100',
             'operatingHours' => 'nullable|array',
@@ -70,6 +83,7 @@ class ShopRegistrationController extends Controller
                 'phone' => $validated['phone'],
                 'business_name' => $validated['businessName'],
                 'business_address' => $validated['businessAddress'],
+                'postal_code' => $this->resolvedPostalCode($validated),
                 'business_type' => $validated['businessType'],
                 'registration_type' => $validated['registrationType'],
                 'shop_latitude' => $this->resolvedLatitude($validated),
@@ -112,6 +126,10 @@ class ShopRegistrationController extends Controller
             'phone' => 'required|string|max:20|unique:shop_owners,phone',
             'businessName' => 'required|string|max:255',
             'businessAddress' => 'required|string|max:255',
+            'postalCode' => 'nullable|string|max:20',
+            'postal_code' => 'nullable|string|max:20',
+            'zipCode' => 'nullable|string|max:20',
+            'zip_code' => 'nullable|string|max:20',
             'businessType' => 'required|string|max:100',
             'registrationType' => 'required|string|max:100',
             'operatingHours' => 'required|array',
@@ -176,6 +194,7 @@ class ShopRegistrationController extends Controller
                 'phone' => $validated['phone'],
                 'business_name' => $validated['businessName'],
                 'business_address' => $validated['businessAddress'],
+                'postal_code' => $this->resolvedPostalCode($validated),
                 'business_type' => $validated['businessType'],
                 'registration_type' => $validated['registrationType'],
                 'shop_latitude' => $this->resolvedLatitude($validated),
@@ -239,6 +258,10 @@ class ShopRegistrationController extends Controller
             'phone' => 'required|string|max:20|unique:shop_owners,phone',
             'businessName' => 'required|string|max:255',
             'businessAddress' => 'required|string|max:255',
+            'postalCode' => 'nullable|string|max:20',
+            'postal_code' => 'nullable|string|max:20',
+            'zipCode' => 'nullable|string|max:20',
+            'zip_code' => 'nullable|string|max:20',
             'businessType' => 'required|string|max:100',
             'registrationType' => 'required|string|max:100',
             'operatingHours' => 'required|array',
@@ -294,6 +317,7 @@ class ShopRegistrationController extends Controller
                 'phone' => $validated['phone'],
                 'business_name' => $validated['businessName'],
                 'business_address' => $validated['businessAddress'],
+                'postal_code' => $this->resolvedPostalCode($validated),
                 'business_type' => $validated['businessType'],
                 'registration_type' => $validated['registrationType'],
                 'shop_latitude' => $this->resolvedLatitude($validated),

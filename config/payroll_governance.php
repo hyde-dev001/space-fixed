@@ -71,4 +71,13 @@ return [
             ],
         ],
     ],
+
+    'attendance_policy' => [
+        // If true, basic pay is prorated by paid days (attendance + paid leave)
+        // instead of granting full monthly basic then deducting absences.
+        'no_work_no_pay' => true,
+
+        // If true, approved leave days are counted as paid day units.
+        'paid_leave_counts_as_worked' => true,
+    ],
 ];

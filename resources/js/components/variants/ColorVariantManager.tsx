@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 export type SizeVariant = {
   id: string;
   size: string;
+  size_system?: SizeSystem;
   quantity: number;
   sku?: string;
 };
@@ -18,9 +19,12 @@ export type ColorVariant = {
   isExpanded: boolean;
 };
 
+type SizeSystem = 'US' | 'UK' | 'EU' | 'AU' | 'CN';
+
 type ColorVariantManagerProps = {
   colorVariants: ColorVariant[];
   onColorVariantsChange: (variants: ColorVariant[]) => void;
+  blockedColorNames?: string[];
   /** When true the "+ Add Color" button is hidden (e.g. when editing a product
    *  whose colours must come from inventory). */
   isEditing?: boolean;
@@ -49,16 +53,65 @@ const SIZE_OPTIONS = Array.from({ length: 25 }, (_, i) => {
 export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   colorVariants,
   onColorVariantsChange,
+  blockedColorNames = [],
   isEditing = false,
 }) => {
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showSizePickerForColorId, setShowSizePickerForColorId] = useState<string | null>(null);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [sizeSystem, setSizeSystem] = useState<SizeSystem>('US');
   const [customColorName, setCustomColorName] = useState('');
   const [customColorCode, setCustomColorCode] = useState('#000000');
 
+  const formatSizeBySystem = (sizeValue: string) => {
+    const parsed = Number(sizeValue);
+    if (Number.isNaN(parsed)) return sizeValue;
+
+    let converted = parsed;
+    switch (sizeSystem) {
+      case 'UK':
+      case 'AU':
+        converted = parsed - 1;
+        break;
+      case 'EU':
+      case 'CN':
+        converted = parsed + 33;
+        break;
+      case 'US':
+      default:
+        converted = parsed;
+        break;
+    }
+
+    return Number.isInteger(converted) ? converted.toFixed(0) : converted.toFixed(1);
+  };
+
+  const getSizeLabel = (sizeValue: string) => `${sizeSystem} ${formatSizeBySystem(sizeValue)}`;
+
+  const getStoredSizeLabel = (sizeVariant: SizeVariant) => {
+    const rawSize = String(sizeVariant.size ?? '').trim();
+    const matched = rawSize.match(/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i);
+
+    if (matched) {
+      return `${matched[1].toUpperCase()} ${matched[2].trim()}`;
+    }
+
+    const system = sizeVariant.size_system ?? 'US';
+    return `${system} ${rawSize}`;
+  };
+
   const addColorVariant = (colorName: string, colorCode: string) => {
+    const normalizedColor = colorName.trim().toLowerCase();
+    const isDuplicateInCurrent = colorVariants.some((cv) => cv.color_name.toLowerCase() === normalizedColor);
+    const isDuplicateInBlocked = blockedColorNames.some((name) => name.trim().toLowerCase() === normalizedColor);
+
     // Check if color already exists
-    if (colorVariants.some(cv => cv.color_name.toLowerCase() === colorName.toLowerCase())) {
-      alert(`${colorName} color already exists!`);
+    if (isDuplicateInCurrent || isDuplicateInBlocked) {
+      void Swal.fire({
+        icon: 'warning',
+        title: 'Color already exists',
+        text: `${colorName} color already exists!`,
+      });
       return;
     }
 
@@ -102,25 +155,81 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     updateColorVariant(id, { isExpanded: !colorVariants.find(cv => cv.id === id)?.isExpanded });
   };
 
-  const addSizeToColor = (colorId: string, size: string) => {
+  const addSizesToColor = (colorId: string, sizesToAdd: string[]) => {
     const colorVariant = colorVariants.find(cv => cv.id === colorId);
-    if (!colorVariant) return;
+    if (!colorVariant || sizesToAdd.length === 0) return;
 
-    // Check if size already exists
-    if (colorVariant.sizes.some(s => s.size === size)) {
-      alert(`Size ${size} already exists for this color!`);
+    const existingSizes = new Set(
+      colorVariant.sizes.map((s) => `${s.size_system ?? 'US'}::${s.size}`)
+    );
+
+    const uniqueNewSizes = sizesToAdd
+      .map((size) => ({
+        normalizedSize: formatSizeBySystem(size),
+        system: sizeSystem,
+      }))
+      .filter((entry) => !existingSizes.has(`${entry.system}::${entry.normalizedSize}`));
+
+    if (uniqueNewSizes.length === 0) {
+      alert('Selected sizes already exist for this color.');
       return;
     }
 
-    const newSize: SizeVariant = {
-      id: Date.now().toString(),
-      size,
+    const newSizes: SizeVariant[] = uniqueNewSizes.map((entry, index) => ({
+      id: `${Date.now()}-${index}-${entry.system}-${entry.normalizedSize}`,
+      size: entry.normalizedSize,
+      size_system: entry.system,
       quantity: 0,
-    };
+    }));
 
     updateColorVariant(colorId, {
-      sizes: [...colorVariant.sizes, newSize],
+      sizes: [...colorVariant.sizes, ...newSizes],
     });
+  };
+
+  const openSizePicker = (colorId: string) => {
+    const colorVariant = colorVariants.find(cv => cv.id === colorId);
+    if (!colorVariant) return;
+
+    setSelectedSizes([]);
+    setShowSizePickerForColorId(colorId);
+  };
+
+  const toggleSizeSelection = (size: string) => {
+    setSelectedSizes((prev) =>
+      prev.includes(size) ? prev.filter((s) => s !== size) : [...prev, size],
+    );
+  };
+
+  const applySelectedSizes = () => {
+    if (!showSizePickerForColorId || selectedSizes.length === 0) {
+      setShowSizePickerForColorId(null);
+      setSelectedSizes([]);
+      return;
+    }
+
+    addSizesToColor(showSizePickerForColorId, selectedSizes);
+    setShowSizePickerForColorId(null);
+    setSelectedSizes([]);
+  };
+
+  const updateSizeQuantityByStep = (colorId: string, sizeId: string, delta: number) => {
+    const colorVariant = colorVariants.find(cv => cv.id === colorId);
+    if (!colorVariant) return;
+
+    const sizeVariant = colorVariant.sizes.find((s) => s.id === sizeId);
+    if (!sizeVariant) return;
+
+    const nextValue = Math.max(0, sizeVariant.quantity + delta);
+    updateSize(colorId, sizeId, { quantity: nextValue });
+  };
+
+  const updateSizeQuantityFromInput = (colorId: string, sizeId: string, rawValue: string) => {
+    // Allow only digits so quantity always remains a non-negative integer.
+    if (!/^\d*$/.test(rawValue)) return;
+
+    const nextValue = rawValue === '' ? 0 : parseInt(rawValue, 10);
+    updateSize(colorId, sizeId, { quantity: nextValue });
   };
 
   const removeSizeFromColor = (colorId: string, sizeId: string) => {
@@ -183,6 +292,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                 type="button"
                 onClick={() => setShowColorPicker(false)}
                 className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                title="Close color picker"
+                aria-label="Close color picker"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -233,6 +344,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   value={customColorCode}
                   onChange={(e) => setCustomColorCode(e.target.value)}
                   className="w-16 h-10 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer"
+                  title="Pick custom color"
                 />
                 <button
                   type="button"
@@ -248,6 +360,156 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   Add
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Size Picker Modal */}
+      {showSizePickerForColorId && (
+        <div className="fixed inset-0 z-[1000002] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h4 className="text-xl font-semibold text-gray-900 dark:text-white">Select Sizes</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Choose your size system before selecting.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSizePickerForColorId(null);
+                  setSelectedSizes([]);
+                }}
+                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                title="Close size picker"
+                aria-label="Close size picker"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+              You can select multiple sizes at once.
+            </p>
+
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="inline-flex flex-wrap rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-1 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSizeSystem('US')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    sizeSystem === 'US'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  US
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSizeSystem('UK')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    sizeSystem === 'UK'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  UK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSizeSystem('EU')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    sizeSystem === 'EU'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  EU
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSizeSystem('AU')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    sizeSystem === 'AU'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  AU
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSizeSystem('CN')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    sizeSystem === 'CN'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  CN
+                </button>
+              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Saved size value remains in US standard.
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {SIZE_OPTIONS.map((size) => {
+                  const colorVariant = colorVariants.find((cv) => cv.id === showSizePickerForColorId);
+                  const isExisting = !!colorVariant?.sizes.some((s) => s.size === size);
+                  const isSelected = selectedSizes.includes(size);
+
+                  return (
+                    <label
+                      key={size}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+                        isExisting
+                          ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-500'
+                          : isSelected
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                            : 'border-gray-300 text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:text-gray-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isExisting}
+                        onChange={() => toggleSizeSelection(size)}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        title={`Select ${getSizeLabel(size)}`}
+                      />
+                      <span>{getSizeLabel(size)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSizePickerForColorId(null);
+                  setSelectedSizes([]);
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applySelectedSizes}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Add Selected ({selectedSizes.length})
+              </button>
             </div>
           </div>
         </div>
@@ -331,25 +593,13 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                     <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Size & Stock
                     </h5>
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          addSizeToColor(colorVariant.id, e.target.value);
-                          e.target.value = '';
-                        }
-                      }}
-                      className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
-                      value=""
+                    <button
+                      type="button"
+                      onClick={() => openSizePicker(colorVariant.id)}
+                      className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
-                      <option value="">+ Add Size</option>
-                      {SIZE_OPTIONS.filter(
-                        size => !colorVariant.sizes.some(s => s.size === size)
-                      ).map((size) => (
-                        <option key={size} value={size}>
-                          Size {size}
-                        </option>
-                      ))}
-                    </select>
+                      + Add Size
+                    </button>
                   </div>
 
                   {colorVariant.sizes.length === 0 ? (
@@ -365,7 +615,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                         >
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                              Size {sizeVariant.size}
+                              {getStoredSizeLabel(sizeVariant)}
                             </span>
                             <button
                               type="button"
@@ -378,18 +628,49 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                               </svg>
                             </button>
                           </div>
-                          <input
-                            type="number"
-                            value={sizeVariant.quantity}
-                            onChange={(e) =>
-                              updateSize(colorVariant.id, sizeVariant.id, {
-                                quantity: Math.max(0, parseInt(e.target.value) || 0),
-                              })
-                            }
-                            placeholder="Quantity"
-                            min="0"
-                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                          />
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateSizeQuantityByStep(colorVariant.id, sizeVariant.id, -1)}
+                              className="h-10 w-10 rounded-full border border-gray-300 bg-gray-100 text-xl leading-none text-gray-700 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                              aria-label={`Decrease quantity for ${getStoredSizeLabel(sizeVariant)}`}
+                            >
+                              -
+                            </button>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={String(sizeVariant.quantity)}
+                              onChange={(e) => updateSizeQuantityFromInput(colorVariant.id, sizeVariant.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                const allowedKeys = [
+                                  'Backspace',
+                                  'Delete',
+                                  'ArrowLeft',
+                                  'ArrowRight',
+                                  'Tab',
+                                  'Home',
+                                  'End',
+                                ];
+
+                                if (allowedKeys.includes(e.key)) return;
+                                if (/^\d$/.test(e.key)) return;
+
+                                e.preventDefault();
+                              }}
+                              className="h-10 w-14 px-2 rounded-full border border-gray-300 bg-white text-center text-sm font-semibold text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                              title={`Quantity for ${getStoredSizeLabel(sizeVariant)}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateSizeQuantityByStep(colorVariant.id, sizeVariant.id, 1)}
+                              className="h-10 w-10 rounded-full border border-gray-300 bg-gray-100 text-xl leading-none text-gray-700 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                              aria-label={`Increase quantity for ${getStoredSizeLabel(sizeVariant)}`}
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

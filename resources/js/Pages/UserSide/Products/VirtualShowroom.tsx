@@ -28,6 +28,19 @@ interface ShoeViewSet {
 	frames: string[];
 }
 
+interface ShoePickupAnimation {
+	shoeIdx: number;
+	startTimeMs: number;
+	durationMs: number;
+}
+
+interface PendingFocusOpen {
+	shoeIdx: number;
+	frameIdx: number;
+	frameSrc: string | null;
+	ready: boolean;
+}
+
 const getUniqueFrames = (frames: Array<string | null | undefined>): string[] => {
 	return Array.from(
 		new Set(
@@ -35,7 +48,6 @@ const getUniqueFrames = (frames: Array<string | null | undefined>): string[] => 
 		),
 	);
 };
-
 const buildProductFrames = (product: Product): string[] => {
 	const showroomFrames = getUniqueFrames(product.showroom_360_frames ?? []);
 	if (showroomFrames.length > 0) {
@@ -66,6 +78,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const focusedDragStartXRef = useRef(0);
 	const focusedIsDraggingRef = useRef(false);
 	const focusedPointerIdRef = useRef<number | null>(null);
+	const focusedPointerMoveDistanceRef = useRef(0);
 	const focusedAccumulatedDeltaRef = useRef(0);
 	const focusedPendingDeltaRef = useRef(0);
 	const focusedRafIdRef = useRef<number | null>(null);
@@ -78,6 +91,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const focusedShoeIndexRef = useRef<number | null>(null);
 	const focusedFrameOffsetRef = useRef(0);
 	const focusedFrameIndexRef = useRef(-1);
+	const pickupAnimationRef = useRef<ShoePickupAnimation | null>(null);
+	const isPickupAnimatingRef = useRef(false);
+	const pendingFocusOpenRef = useRef<PendingFocusOpen | null>(null);
+	const loadedFocusedFramesRef = useRef(new Set<string>());
+	const focusedFramePromiseCacheRef = useRef(new Map<string, Promise<void>>());
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);
 	const [isSceneLoading, setIsSceneLoading] = useState(true);
@@ -85,7 +103,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const [showSwipeHint, setShowSwipeHint] = useState(false);
 	const [focusedShoeIndex, setFocusedShoeIndex] = useState<number | null>(null);
 	const [isFocusedDragging, setIsFocusedDragging] = useState(false);
+	const [isPickupAnimating, setIsPickupAnimating] = useState(false);
 	const [showFocusedHint, setShowFocusedHint] = useState(true);
+	const [focusedFrameSrc, setFocusedFrameSrc] = useState<string | null>(null);
+	const [isFocusedImageVisible, setIsFocusedImageVisible] = useState(false);
 	const lightsOn = isNightMode;
 
 	const shoes = useMemo<ShoeViewSet[]>(() => {
@@ -128,6 +149,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		if (focusedShoeIndex === null) {
 			focusedIsDraggingRef.current = false;
 			focusedPointerIdRef.current = null;
+			focusedPointerMoveDistanceRef.current = 0;
 			focusedAccumulatedDeltaRef.current = 0;
 			focusedPendingDeltaRef.current = 0;
 			if (focusedRafIdRef.current !== null) {
@@ -142,8 +164,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			return;
 		}
 
-		focusedFrameOffsetRef.current = 0;
-		focusedFrameIndexRef.current = 0;
+		if (focusedFrameIndexRef.current < 0) {
+			focusedFrameIndexRef.current = 0;
+		}
+		focusedFrameOffsetRef.current = focusedFrameIndexRef.current;
+		focusedPointerMoveDistanceRef.current = 0;
 		focusedAccumulatedDeltaRef.current = 0;
 		focusedPendingDeltaRef.current = 0;
 		if (focusedRafIdRef.current !== null) {
@@ -154,7 +179,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		if (focusedImageRef.current) {
 			focusedImageRef.current.style.transform = 'scale(1)';
 		}
-		setShowFocusedHint(false);
+		setShowFocusedHint(true);
 	}, [focusedShoeIndex]);
 
 	useEffect(() => {
@@ -166,7 +191,16 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			const image = new Image();
 			image.decoding = 'async';
 			image.loading = 'eager';
+			image.onload = () => {
+				loadedFocusedFramesRef.current.add(src);
+			};
+			image.onerror = () => {
+				loadedFocusedFramesRef.current.add(src);
+			};
 			image.src = src;
+			if (image.complete) {
+				loadedFocusedFramesRef.current.add(src);
+			}
 			return image;
 		});
 
@@ -177,8 +211,66 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		};
 	}, [focusedShoeIndex, shoes]);
 
+	const ensureFocusedFrameReady = (url: string | null | undefined) => {
+		if (!url) {
+			return Promise.resolve();
+		}
+
+		if (loadedFocusedFramesRef.current.has(url)) {
+			return Promise.resolve();
+		}
+
+		const cachedPromise = focusedFramePromiseCacheRef.current.get(url);
+		if (cachedPromise) {
+			return cachedPromise;
+		}
+
+		const promise = new Promise<void>((resolve) => {
+			const image = new Image();
+			image.decoding = 'async';
+			image.loading = 'eager';
+
+			let finalized = false;
+			const finalize = () => {
+				if (finalized) return;
+				finalized = true;
+				loadedFocusedFramesRef.current.add(url);
+				focusedFramePromiseCacheRef.current.delete(url);
+				resolve();
+			};
+
+			image.onload = finalize;
+			image.onerror = finalize;
+			image.src = url;
+
+			if (image.complete) {
+				finalize();
+			}
+		});
+
+		focusedFramePromiseCacheRef.current.set(url, promise);
+		return promise;
+	};
+
+	useEffect(() => {
+		if (focusedShoeIndex === null || !focusedFrameSrc) {
+			setIsFocusedImageVisible(false);
+			return;
+		}
+
+		if (focusedImageRef.current?.complete) {
+			setIsFocusedImageVisible(true);
+		}
+	}, [focusedShoeIndex, focusedFrameSrc]);
+
 	const closeFocusedModal = () => {
 		setFocusedShoeIndex(null);
+		setFocusedFrameSrc(null);
+		setIsFocusedImageVisible(false);
+		pickupAnimationRef.current = null;
+		pendingFocusOpenRef.current = null;
+		isPickupAnimatingRef.current = false;
+		setIsPickupAnimating(false);
 		focusedIsDraggingRef.current = false;
 		focusedPointerIdRef.current = null;
 		setIsFocusedDragging(false);
@@ -207,6 +299,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			const frames = shoes[focusedShoeIndexRef.current]?.frames;
 			const firstFrame = frames?.[0];
 			if (focusedImageRef.current && firstFrame) {
+				setFocusedFrameSrc(firstFrame);
+				setIsFocusedImageVisible(false);
 				focusedImageRef.current.src = firstFrame;
 				focusedImageRef.current.style.transform = 'scale(1)';
 			}
@@ -259,9 +353,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const startFocusedDrag = (pointerId: number, clientX: number, target: HTMLDivElement) => {
 		focusedPointerIdRef.current = pointerId;
 		focusedDragStartXRef.current = clientX;
+		focusedPointerMoveDistanceRef.current = 0;
 		focusedIsDraggingRef.current = true;
 		setIsFocusedDragging(true);
-		setShowFocusedHint(false);
 		target.setPointerCapture(pointerId);
 	};
 
@@ -269,6 +363,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		if (focusedPointerIdRef.current !== pointerId || !focusedIsDraggingRef.current) return;
 		const deltaX = clientX - focusedDragStartXRef.current;
 		focusedDragStartXRef.current = clientX;
+		focusedPointerMoveDistanceRef.current += Math.abs(deltaX);
+		if (focusedPointerMoveDistanceRef.current > 12) {
+			setShowFocusedHint(false);
+		}
 		rotateFocusedFrameByDelta(deltaX);
 	};
 
@@ -779,67 +877,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 		const shelfCardMaterials: THREE.MeshBasicMaterial[] = [];
 		const shelfCards: THREE.Mesh[] = [];
-		const shoeCaseMeshes: THREE.Mesh[] = [];
-		const shoeCaseMaterials: THREE.Material[] = [];
-		const shoeCaseFrameMaterial = new THREE.MeshStandardMaterial({ color: '#1f2937', roughness: 0.45, metalness: 0.2 });
-		const shoeCaseBackMaterial = new THREE.MeshStandardMaterial({
-			color: '#111827',
-			transparent: true,
-			opacity: 0.48,
-			roughness: 0.72,
-			metalness: 0.08,
-		});
-		const shoeCaseFrontMaterial = new THREE.MeshStandardMaterial({
-			color: '#94a3b8',
-			transparent: true,
-			opacity: 0.16,
-			roughness: 0.06,
-			metalness: 0.42,
-		});
-		shoeCaseMaterials.push(shoeCaseFrameMaterial, shoeCaseBackMaterial, shoeCaseFrontMaterial);
-
-		const createShoeCase = (position: THREE.Vector3, rotationY: number, cardWidth: number, cardHeight: number) => {
-			const caseDepth = 0.2;
-			const caseWidth = cardWidth + 0.22;
-			const caseHeight = cardHeight + 0.2;
-
-			const caseGroup = new THREE.Group();
-			caseGroup.position.copy(position);
-			caseGroup.position.y += 0.08;
-			caseGroup.rotation.y = rotationY;
-
-			const backPanel = new THREE.Mesh(new THREE.PlaneGeometry(caseWidth, caseHeight), shoeCaseBackMaterial);
-			backPanel.position.set(0, 0, -caseDepth * 0.5);
-			caseGroup.add(backPanel);
-			shoeCaseMeshes.push(backPanel);
-
-			const frontPanel = new THREE.Mesh(new THREE.PlaneGeometry(caseWidth * 0.98, caseHeight * 0.96), shoeCaseFrontMaterial);
-			frontPanel.position.set(0, 0, caseDepth * 0.5);
-			caseGroup.add(frontPanel);
-			shoeCaseMeshes.push(frontPanel);
-
-			const frameTop = new THREE.Mesh(new THREE.BoxGeometry(caseWidth, 0.04, caseDepth), shoeCaseFrameMaterial);
-			frameTop.position.set(0, caseHeight * 0.5, 0);
-			caseGroup.add(frameTop);
-			shoeCaseMeshes.push(frameTop);
-
-			const frameBottom = new THREE.Mesh(new THREE.BoxGeometry(caseWidth, 0.04, caseDepth), shoeCaseFrameMaterial);
-			frameBottom.position.set(0, -caseHeight * 0.5, 0);
-			caseGroup.add(frameBottom);
-			shoeCaseMeshes.push(frameBottom);
-
-			const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.04, caseHeight, caseDepth), shoeCaseFrameMaterial);
-			frameLeft.position.set(-caseWidth * 0.5, 0, 0);
-			caseGroup.add(frameLeft);
-			shoeCaseMeshes.push(frameLeft);
-
-			const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.04, caseHeight, caseDepth), shoeCaseFrameMaterial);
-			frameRight.position.set(caseWidth * 0.5, 0, 0);
-			caseGroup.add(frameRight);
-			shoeCaseMeshes.push(frameRight);
-
-			scene.add(caseGroup);
-		};
 
 		const animatedShelfCards: Array<{
 			material: THREE.MeshBasicMaterial;
@@ -848,6 +885,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			speed: number;
 			lastFrameIdx: number;
 		}> = [];
+		const pickupLookVector = new THREE.Vector3();
+		const pickupTargetPosition = new THREE.Vector3();
+		const pickupCurveOffset = new THREE.Vector3();
 		const slotDefinitions: Array<{
 			position: THREE.Vector3;
 			rotationY: number;
@@ -903,10 +943,16 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			const basePosition = slot.position.clone();
 			card.position.copy(basePosition);
 			card.rotation.y = slot.rotationY;
-			createShoeCase(basePosition.clone(), slot.rotationY, slot.cardWidth, slot.cardHeight);
 			const insetOffset = 0.08;
 			card.position.x -= Math.sin(card.rotation.y) * insetOffset;
 			card.position.z -= Math.cos(card.rotation.y) * insetOffset;
+			card.userData.basePosition = card.position.clone();
+			card.userData.baseRotationX = card.rotation.x;
+			card.userData.baseRotationY = card.rotation.y;
+			card.userData.baseRotationZ = card.rotation.z;
+			card.userData.baseScaleX = card.scale.x;
+			card.userData.baseScaleY = card.scale.y;
+			card.userData.baseScaleZ = card.scale.z;
 			card.userData.baseY = basePosition.y;
 			card.userData.shoeIdx = shoeIdx;
 			card.castShadow = false;
@@ -961,6 +1007,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			if (isModalOpen) {
 				swipeGuideGroup.visible = false;
 				focusGroup.visible = false;
+				renderer.render(scene, camera);
 				rafId = requestAnimationFrame(animate);
 				return;
 			}
@@ -977,12 +1024,138 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			const lookZ = camera.position.z - Math.cos(cameraYawRef.current) * Math.cos(cameraPitchRef.current) * lookDistance;
 			camera.lookAt(lookX, lookY, lookZ);
 
+			const pickupAnimation = pickupAnimationRef.current;
+			const activePickupShoeIdx = pickupAnimation?.shoeIdx ?? null;
+
+			if (pickupAnimation) {
+				const elapsedMs = performance.now() - pickupAnimation.startTimeMs;
+				const t = Math.max(0, Math.min(1, elapsedMs / pickupAnimation.durationMs));
+				const eased = 1 - Math.pow(1 - t, 4);
+				const selectedCard = shelfCards.find((card) => (card.userData.shoeIdx as number) === pickupAnimation.shoeIdx);
+				const activeEntry = animatedShelfCards.find((entry) => entry.shoeIdx === pickupAnimation.shoeIdx);
+
+				if (selectedCard) {
+					const basePosition = (selectedCard.userData.basePosition as THREE.Vector3 | undefined) ?? selectedCard.position;
+					camera.getWorldDirection(pickupLookVector);
+					pickupTargetPosition.copy(camera.position).add(pickupLookVector.multiplyScalar(2.55));
+					pickupTargetPosition.y -= 0.18;
+
+					pickupCurveOffset.set(
+						Math.sin(t * Math.PI) * 0.12,
+						Math.sin(t * Math.PI * 0.9) * 0.2,
+						(1 - eased) * -0.2,
+					);
+
+					if (activeEntry) {
+						const frames = shoes[activeEntry.shoeIdx]?.frames;
+						if (frames && frames.length > 0) {
+							const spinFrameIdx = Math.floor((elapsedMs / 26) + activeEntry.frameOffset) % frames.length;
+							if (spinFrameIdx !== activeEntry.lastFrameIdx) {
+								activeEntry.lastFrameIdx = spinFrameIdx;
+								activeEntry.material.map = getTexture(frames[spinFrameIdx]);
+								activeEntry.material.needsUpdate = true;
+							}
+						}
+					}
+
+					selectedCard.position.lerpVectors(basePosition, pickupTargetPosition, eased).add(pickupCurveOffset);
+					selectedCard.rotation.x += ((((selectedCard.userData.baseRotationX as number) ?? 0) - 0.1 - 0.16 * eased - selectedCard.rotation.x) * 0.16);
+					selectedCard.rotation.y += ((Math.atan2(camera.position.x - selectedCard.position.x, camera.position.z - selectedCard.position.z) - selectedCard.rotation.y) * 0.18);
+					selectedCard.rotation.z += (((0.05 * (1 - eased)) - selectedCard.rotation.z) * 0.14);
+					selectedCard.scale.setScalar(1 + 0.52 * eased);
+
+					const selectedMaterial = selectedCard.material as THREE.MeshBasicMaterial;
+					selectedMaterial.opacity = 1;
+				}
+
+				if (t >= 1) {
+					const resolvedFrameIdx = activeEntry?.lastFrameIdx ?? 0;
+					const resolvedFrameSrc = shoes[pickupAnimation.shoeIdx]?.frames[resolvedFrameIdx]
+						?? shoes[pickupAnimation.shoeIdx]?.frames[0]
+						?? null;
+
+					if (
+						!pendingFocusOpenRef.current
+						|| pendingFocusOpenRef.current.shoeIdx !== pickupAnimation.shoeIdx
+						|| pendingFocusOpenRef.current.frameIdx !== resolvedFrameIdx
+					) {
+						pendingFocusOpenRef.current = {
+							shoeIdx: pickupAnimation.shoeIdx,
+							frameIdx: resolvedFrameIdx,
+							frameSrc: resolvedFrameSrc,
+							ready: !resolvedFrameSrc,
+						};
+
+						void ensureFocusedFrameReady(resolvedFrameSrc).then(() => {
+							if (
+								pendingFocusOpenRef.current
+								&& pendingFocusOpenRef.current.shoeIdx === pickupAnimation.shoeIdx
+								&& pendingFocusOpenRef.current.frameIdx === resolvedFrameIdx
+							) {
+								pendingFocusOpenRef.current.ready = true;
+							}
+						});
+					}
+
+					if (!pendingFocusOpenRef.current?.ready) {
+					// Shoe is held at camera — rotate it slowly while waiting for image load
+					if (selectedCard) {
+						selectedCard.rotation.y += 0.018;
+					}
+						rafId = requestAnimationFrame(animate);
+						return;
+					}
+
+					if (selectedCard) {
+						const basePosition = selectedCard.userData.basePosition as THREE.Vector3 | undefined;
+						if (basePosition) {
+							selectedCard.position.copy(basePosition);
+						}
+						selectedCard.rotation.x = (selectedCard.userData.baseRotationX as number) ?? 0;
+						selectedCard.rotation.y = (selectedCard.userData.baseRotationY as number) ?? selectedCard.rotation.y;
+						selectedCard.rotation.z = (selectedCard.userData.baseRotationZ as number) ?? 0;
+						selectedCard.scale.set(
+							(selectedCard.userData.baseScaleX as number) ?? 1,
+							(selectedCard.userData.baseScaleY as number) ?? 1,
+							(selectedCard.userData.baseScaleZ as number) ?? 1,
+						);
+						const selectedMaterial = selectedCard.material as THREE.MeshBasicMaterial;
+						selectedMaterial.opacity = 1;
+						focusedFrameIndexRef.current = resolvedFrameIdx;
+						focusedFrameOffsetRef.current = resolvedFrameIdx;
+					}
+
+					const readyFocusState = pendingFocusOpenRef.current;
+					pickupAnimationRef.current = null;
+					pendingFocusOpenRef.current = null;
+					isPickupAnimatingRef.current = false;
+					setIsPickupAnimating(false);
+					setFocusedFrameSrc(readyFocusState?.frameSrc ?? resolvedFrameSrc);
+					setIsFocusedImageVisible(false);
+					setFocusedShoeIndex(pickupAnimation.shoeIdx);
+				}
+			}
+
 			shelfCards.forEach((card) => {
+				if (activePickupShoeIdx !== null && (card.userData.shoeIdx as number) === activePickupShoeIdx) {
+					return;
+				}
 				const baseY = (card.userData.baseY as number) ?? card.position.y;
 				card.position.y += (baseY - card.position.y) * 0.08;
+				card.rotation.x += ((((card.userData.baseRotationX as number) ?? 0) - card.rotation.x) * 0.18);
+				card.rotation.y += ((((card.userData.baseRotationY as number) ?? 0) - card.rotation.y) * 0.18);
+				card.rotation.z += ((((card.userData.baseRotationZ as number) ?? 0) - card.rotation.z) * 0.18);
+				const baseScaleX = (card.userData.baseScaleX as number) ?? 1;
+				const baseScaleY = (card.userData.baseScaleY as number) ?? 1;
+				const baseScaleZ = (card.userData.baseScaleZ as number) ?? 1;
+				card.scale.x += (baseScaleX - card.scale.x) * 0.18;
+				card.scale.y += (baseScaleY - card.scale.y) * 0.18;
+				card.scale.z += (baseScaleZ - card.scale.z) * 0.18;
 			});
 
 			animatedShelfCards.forEach((entry) => {
+				if (activePickupShoeIdx !== null && entry.shoeIdx === activePickupShoeIdx) return;
+
 				const frames = shoes[entry.shoeIdx]?.frames;
 				if (!frames || frames.length === 0) return;
 
@@ -1034,6 +1207,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 		return () => {
 			isDisposed = true;
+			pickupAnimationRef.current = null;
+			pendingFocusOpenRef.current = null;
+			isPickupAnimatingRef.current = false;
 			if (focusedRafIdRef.current !== null) {
 				cancelAnimationFrame(focusedRafIdRef.current);
 				focusedRafIdRef.current = null;
@@ -1063,8 +1239,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			fixtureMaterial.dispose();
 			shelfCards.forEach((card) => (card.geometry as THREE.BufferGeometry).dispose());
 			shelfCardMaterials.forEach((material) => material.dispose());
-			shoeCaseMeshes.forEach((mesh) => mesh.geometry.dispose());
-			shoeCaseMaterials.forEach((material) => material.dispose());
 			decorMeshes.forEach((mesh) => mesh.geometry.dispose());
 			Array.from(new Set(decorMaterials)).forEach((material) => material.dispose());
 			decorTextures.forEach((texture) => texture.dispose());
@@ -1104,15 +1278,16 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	};
 
 	const handlePointerDown = (clientX: number, clientY: number) => {
+		if (isPickupAnimatingRef.current) return;
 		dragStartXRef.current = clientX;
 		dragStartYRef.current = clientY;
 		pointerMoveDistanceRef.current = 0;
 		isDraggingRef.current = true;
 		setIsDragging(true);
-		setShowSwipeHint(false);
 	};
 
 	const handlePointerMove = (clientX: number, clientY: number) => {
+		if (isPickupAnimatingRef.current) return;
 		if (!isDraggingRef.current) return;
 
 		const deltaX = clientX - dragStartXRef.current;
@@ -1120,6 +1295,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		pointerMoveDistanceRef.current += Math.abs(deltaX) + Math.abs(deltaY);
 		dragStartXRef.current = clientX;
 		dragStartYRef.current = clientY;
+		if (pointerMoveDistanceRef.current > 14 && showSwipeHintRef.current) {
+			setShowSwipeHint(false);
+		}
 
 		if (focusedShoeIndexRef.current !== null) {
 			focusedFrameOffsetRef.current += deltaX * 0.35;
@@ -1133,6 +1311,13 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	};
 
 	const handlePointerUp = (clientX?: number, clientY?: number) => {
+		if (isPickupAnimatingRef.current) {
+			isDraggingRef.current = false;
+			setIsDragging(false);
+			pointerMoveDistanceRef.current = 0;
+			return;
+		}
+
 		if (
 			pointerMoveDistanceRef.current < 8 &&
 			focusedShoeIndexRef.current === null &&
@@ -1141,9 +1326,20 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		) {
 			const pickedShoeIdx = pickShoeAtPointer(clientX, clientY);
 			if (pickedShoeIdx !== null) {
-				focusedFrameOffsetRef.current = 0;
-				focusedFrameIndexRef.current = -1;
-				setFocusedShoeIndex(pickedShoeIdx);
+				shoes[pickedShoeIdx]?.frames.forEach((frameSrc) => {
+					void ensureFocusedFrameReady(frameSrc);
+				});
+				setFocusedFrameSrc(null);
+				setIsFocusedImageVisible(false);
+				pickupAnimationRef.current = {
+					shoeIdx: pickedShoeIdx,
+					startTimeMs: performance.now(),
+					durationMs: 1180,
+				};
+				pendingFocusOpenRef.current = null;
+				isPickupAnimatingRef.current = true;
+				setIsPickupAnimating(true);
+				setShowSwipeHint(false);
 			}
 		}
 
@@ -1162,12 +1358,28 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 	const activeShoe = shoes[currentIndex];
 	const focusedShoe = focusedShoeIndex !== null ? shoes[focusedShoeIndex] : null;
-	const focusedInitialFrameSrc =
-		focusedShoe && focusedShoe.frames.length > 0
-			? focusedShoe.frames[Math.max(0, Math.min(focusedShoe.frames.length - 1, focusedFrameIndexRef.current >= 0 ? focusedFrameIndexRef.current : 0))]
-			: null;
 
 	return (
+		<>
+			<style>{`
+				@keyframes focused-swipe-arrow-left {
+					0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.72; }
+					50% { transform: translate3d(-16px, 0, 0); opacity: 1; }
+				}
+
+				@keyframes focused-swipe-arrow-right {
+					0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.72; }
+					50% { transform: translate3d(16px, 0, 0); opacity: 1; }
+				}
+
+				.focused-swipe-arrow-left {
+					animation: focused-swipe-arrow-left 1.35s ease-in-out infinite;
+				}
+
+				.focused-swipe-arrow-right {
+					animation: focused-swipe-arrow-right 1.35s ease-in-out infinite;
+				}
+			`}</style>
 		<section className={isStandalonePage
 			? 'h-screen w-screen bg-white'
 			: 'relative left-1/2 right-1/2 -mx-[50vw] w-screen border-y border-gray-200 bg-white py-4 md:py-6'}>
@@ -1204,7 +1416,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			)}
 
 			<div
-				className={`relative ${isStandalonePage ? 'h-screen min-h-0' : 'h-[calc(100vh-180px)] min-h-170'} w-full touch-none overflow-hidden ${isStandalonePage ? '' : 'border-y border-gray-200'} bg-slate-200 ${isDragging ? 'cursor-grabbing' : focusedShoeIndex !== null ? 'cursor-ew-resize' : 'cursor-grab'}`}
+				className={`relative ${isStandalonePage ? 'h-screen min-h-0' : 'h-[calc(100vh-180px)] min-h-170'} w-full touch-none overflow-hidden ${isStandalonePage ? '' : 'border-y border-gray-200'} bg-slate-200 ${isPickupAnimating ? 'cursor-progress' : isDragging ? 'cursor-grabbing' : focusedShoeIndex !== null ? 'cursor-ew-resize' : 'cursor-grab'}`}
 				onPointerDown={(event) => {
 					if (activePointerIdRef.current !== null) return;
 					activePointerIdRef.current = event.pointerId;
@@ -1237,7 +1449,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 				{focusedShoeIndex !== null && focusedShoe && (
 					<div
-						className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-4"
+						className="absolute inset-0 z-30 opacity-100"
 						onPointerDown={(event) => {
 							if (event.target === event.currentTarget) {
 								closeFocusedModal();
@@ -1245,30 +1457,13 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 						}}
 					>
 						<div
-							className="flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
+							className={`relative flex h-full w-full touch-none items-center justify-center overflow-hidden ${isFocusedDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
 							onPointerDown={(event) => {
 								event.stopPropagation();
 							}}
 						>
-							<div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-								<div>
-									<h2 className="text-2xl font-bold text-black">{focusedShoe.name}</h2>
-									<p className="mt-1 text-sm text-gray-600">360 Interactive View - Drag to rotate</p>
-								</div>
-								<button
-									type="button"
-									onClick={closeFocusedModal}
-									className="text-gray-500 transition-colors hover:text-gray-700"
-									aria-label="Close showroom"
-								>
-									<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-									</svg>
-								</button>
-							</div>
-
 							<div
-								className={`relative flex flex-1 touch-none items-center justify-center overflow-hidden bg-white ${isFocusedDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+								className="relative flex h-full w-full items-center justify-center overflow-hidden"
 								onWheel={(event) => {
 									event.preventDefault();
 									event.stopPropagation();
@@ -1300,17 +1495,54 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 									moveFocusedDrag(event.pointerId, event.clientX);
 								}}
 							>
-								{focusedInitialFrameSrc && (
+								{focusedFrameSrc && (
 									<img
 										ref={focusedImageRef}
-										src={focusedInitialFrameSrc}
+										src={focusedFrameSrc}
 										alt={`${focusedShoe.name} 360 view`}
-										className="pointer-events-none h-full w-full select-none object-contain"
+										className={`pointer-events-none max-h-full max-w-full select-none object-contain transition-all duration-500 ease-out ${isFocusedImageVisible ? 'scale-100 opacity-100' : 'scale-[0.94] opacity-0'}`}
 										draggable={false}
 										loading="eager"
 										decoding="async"
+										onLoad={() => setIsFocusedImageVisible(true)}
 									/>
 								)}
+
+								<div className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-between px-4 transition-opacity duration-500 md:px-10 ${showFocusedHint ? 'opacity-100' : 'opacity-0'}`}>
+									<div
+										className="focused-swipe-arrow-left flex flex-col items-center gap-2"
+									>
+										<svg viewBox="0 0 220 72" className="h-12 w-36 drop-shadow-[0_10px_28px_rgba(15,23,42,0.42)] md:h-16 md:w-52" aria-hidden="true">
+											<polygon points="72,0 0,36 72,72 72,48 220,48 220,24 72,24" fill="rgba(30,41,59,0.78)" />
+										</svg>
+										<span className="rounded-full bg-slate-800/70 px-3 py-0.5 text-xs font-bold tracking-widest text-white shadow md:text-sm">swipe left</span>
+									</div>
+									<div
+										className="focused-swipe-arrow-right flex flex-col items-center gap-2"
+									>
+										<svg viewBox="0 0 220 72" className="h-12 w-36 drop-shadow-[0_10px_28px_rgba(15,23,42,0.42)] md:h-16 md:w-52" aria-hidden="true">
+											<polygon points="148,0 220,36 148,72 148,48 0,48 0,24 148,24" fill="rgba(30,41,59,0.78)" />
+										</svg>
+										<span className="rounded-full bg-slate-800/70 px-3 py-0.5 text-xs font-bold tracking-widest text-white shadow md:text-sm">swipe right</span>
+									</div>
+								</div>
+
+								<button
+									type="button"
+									onPointerDown={(event) => event.stopPropagation()}
+									onPointerMove={(event) => event.stopPropagation()}
+									onPointerUp={(event) => event.stopPropagation()}
+									onClick={(event) => {
+										event.stopPropagation();
+										closeFocusedModal();
+									}}
+									className="absolute left-4 top-4 z-10 rounded-full bg-black/75 p-2.5 text-white shadow-lg transition-colors hover:bg-black"
+									aria-label="Close showroom"
+								>
+									<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+									</svg>
+								</button>
 
 								<button
 									type="button"
@@ -1374,6 +1606,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 				<div className="mt-4 px-4 text-xs text-gray-500 md:px-8">Swipe horizontally and vertically for full 360 shelf view from the center POV.</div>
 			)}
 		</section>
+		</>
 	);
 };
 

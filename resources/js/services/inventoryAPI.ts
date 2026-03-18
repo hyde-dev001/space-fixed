@@ -222,6 +222,9 @@ export const inventoryItemAPI = {
             if (data.sizes) {
                 data.sizes.forEach((size, index) => {
                     formData.append(`sizes[${index}][size]`, size.size);
+                    if (size.size_system) {
+                        formData.append(`sizes[${index}][size_system]`, size.size_system);
+                    }
                     formData.append(`sizes[${index}][quantity]`, String(size.quantity));
                 });
             }
@@ -236,6 +239,15 @@ export const inventoryItemAPI = {
                     formData.append(`color_variants[${index}][quantity]`, String(variant.quantity));
                     if (variant.sku_suffix) {
                         formData.append(`color_variants[${index}][sku_suffix]`, variant.sku_suffix);
+                    }
+                    if (variant.sizes) {
+                        variant.sizes.forEach((size, sizeIndex) => {
+                            formData.append(`color_variants[${index}][sizes][${sizeIndex}][size]`, size.size);
+                            if (size.size_system) {
+                                formData.append(`color_variants[${index}][sizes][${sizeIndex}][size_system]`, size.size_system);
+                            }
+                            formData.append(`color_variants[${index}][sizes][${sizeIndex}][quantity]`, String(size.quantity));
+                        });
                     }
                     // Send each variant's images as nested files
                     if (variant.images) {
@@ -284,7 +296,7 @@ export const inventoryItemAPI = {
             color_name: string;
             color_code?: string;
             images?: File[];
-            sizes?: { size: string; quantity: number }[];
+            sizes?: { size: string; size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN'; quantity: number }[];
         }
     ): Promise<any> {
         try {
@@ -296,6 +308,9 @@ export const inventoryItemAPI = {
             if (data.sizes) {
                 data.sizes.forEach((s, i) => {
                     formData.append(`sizes[${i}][size]`, s.size);
+                    if (s.size_system) {
+                        formData.append(`sizes[${i}][size_system]`, s.size_system);
+                    }
                     formData.append(`sizes[${i}][quantity]`, String(s.quantity));
                 });
             }
@@ -327,10 +342,13 @@ export const inventoryItemAPI = {
     /**
      * Upload images
      */
-    async uploadImages(itemId: number, images: File[]): Promise<ApiResponse<{ images: any[] }>> {
+    async uploadImages(itemId: number, images: File[], colorVariantId?: number): Promise<ApiResponse<{ images: any[] }>> {
         try {
             const formData = new FormData();
             formData.append('inventory_item_id', String(itemId));
+            if (colorVariantId !== undefined) {
+                formData.append('color_variant_id', String(colorVariantId));
+            }
             images.forEach((image, index) => {
                 formData.append(`images[${index}]`, image);
             });
@@ -338,6 +356,37 @@ export const inventoryItemAPI = {
             const response = await axios.post(`${API_BASE}/items/images`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
+     * Add size stock to an existing color variant.
+     */
+    async addSizeToColorVariant(
+        itemId: number,
+        colorVariantId: number,
+        data: { size: string; size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN'; quantity: number }
+    ): Promise<ApiResponse<any>> {
+        try {
+            const response = await axios.post(
+                `${API_BASE}/items/${itemId}/colors/${colorVariantId}/sizes`,
+                data,
+            );
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
+     * Correct/update quantity for an existing size row.
+     */
+    async updateSizeQuantity(itemId: number, sizeId: number, quantity: number): Promise<ApiResponse<any>> {
+        try {
+            const response = await axios.put(`${API_BASE}/items/${itemId}/sizes/${sizeId}`, { quantity });
             return response.data;
         } catch (error) {
             return handleApiError(error);

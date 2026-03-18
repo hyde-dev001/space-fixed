@@ -230,7 +230,9 @@ class ShopSettingsController extends Controller
         $shopOwner = Auth::guard('shop_owner')->user();
 
         $validated = $request->validate([
-            'paymongo_secret_key' => ['required', 'string', 'min:20'],
+            'paymongo_secret_key' => ['required', 'string', 'min:20', 'max:255', 'regex:/^sk_(test|live)_[A-Za-z0-9_-]+$/'],
+        ], [
+            'paymongo_secret_key.regex' => 'Please enter a valid PayMongo secret key (sk_test_... or sk_live_...).',
         ]);
 
         $shopOwner->update(['paymongo_secret_key' => $validated['paymongo_secret_key']]);

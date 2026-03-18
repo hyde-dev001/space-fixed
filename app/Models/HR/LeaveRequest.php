@@ -132,7 +132,7 @@ class LeaveRequest extends Model
     /**
      * Calculate number of days automatically
      */
-    public static function calculateDays($startDateInput, $endDateInput): int
+    public static function calculateDays($startDateInput, $endDateInput, ?int $shopOwnerId = null): int
     {
         if (!$startDateInput || !$endDateInput) {
             return 0;
@@ -140,13 +140,26 @@ class LeaveRequest extends Model
 
         $startDate = \Carbon\Carbon::parse($startDateInput);
         $endDate = \Carbon\Carbon::parse($endDateInput);
-        
-        // Calculate business days (excluding weekends)
+
+        $shopOwner = $shopOwnerId ? ShopOwner::find($shopOwnerId) : null;
+
+        // Calculate leave days based on shop schedule when available;
+        // otherwise fallback to Mon-Fri business days.
         $days = 0;
         while ($startDate <= $endDate) {
-            if (!$startDate->isWeekend()) {
+            if ($shopOwner) {
+                $dayKey = strtolower($startDate->format('l'));
+                if ($shopOwner->hasScheduleOn($dayKey)) {
+                    if ($shopOwner->isOpenOn($dayKey)) {
+                        $days++;
+                    }
+                } elseif (!$startDate->isWeekend()) {
+                    $days++;
+                }
+            } elseif (!$startDate->isWeekend()) {
                 $days++;
             }
+
             $startDate->addDay();
         }
 
@@ -162,7 +175,11 @@ class LeaveRequest extends Model
 
         static::saving(function ($leaveRequest) {
             if ($leaveRequest->start_date && $leaveRequest->end_date) {
-                $leaveRequest->no_of_days = self::calculateDays($leaveRequest->start_date, $leaveRequest->end_date);
+                $leaveRequest->no_of_days = self::calculateDays(
+                    $leaveRequest->start_date,
+                    $leaveRequest->end_date,
+                    $leaveRequest->shop_owner_id ? (int) $leaveRequest->shop_owner_id : null
+                );
             }
         });
     }

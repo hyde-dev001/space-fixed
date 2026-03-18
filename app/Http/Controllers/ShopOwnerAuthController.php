@@ -43,6 +43,8 @@ class ShopOwnerAuthController extends Controller
                 'phone' => 'required|string|max:20|min:10',
                 'business_name' => 'required|string|max:255',
                 'business_address' => 'required|string|max:500',
+                'postal_code' => 'nullable|string|max:20',
+                'zip_code' => 'nullable|string|max:20',
                 'business_type' => 'required|in:retail,repair,both (retail & repair)',
                 'registration_type' => 'required|in:individual,company',
                 'attendance_geofence_enabled' => 'sometimes|boolean',
@@ -98,6 +100,7 @@ class ShopOwnerAuthController extends Controller
                 'password' => null, // Will be set after admin approval via email
                 'business_name' => $validated['business_name'],
                 'business_address' => $validated['business_address'],
+                'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
                 'business_type' => $validated['business_type'],
                 'registration_type' => $validated['registration_type'],
                 'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),

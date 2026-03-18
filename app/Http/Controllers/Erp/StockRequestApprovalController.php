@@ -46,6 +46,11 @@ class StockRequestApprovalController extends Controller
             $query->where('priority', $request->priority);
         }
 
+        // Request source filter (manual | repair)
+        if ($request->filled('request_source') && in_array($request->request_source, ['manual', 'repair'], true)) {
+            $query->where('request_source', $request->request_source);
+        }
+
         // Sorting
         $sortBy = $request->get('sort_by', 'requested_date');
         $sortOrder = $request->get('sort_order', 'desc');
@@ -241,12 +246,19 @@ class StockRequestApprovalController extends Controller
 
         $shopOwnerId = Auth::user()->shop_owner_id;
 
+        $baseQuery = StockRequestApproval::where('shop_owner_id', $shopOwnerId);
+        $requestSource = request()->get('request_source');
+
+        if (in_array($requestSource, ['manual', 'repair'], true)) {
+            $baseQuery->where('request_source', $requestSource);
+        }
+
         $metrics = [
-            'total_stock_requests' => StockRequestApproval::where('shop_owner_id', $shopOwnerId)->count(),
-            'pending_requests' => StockRequestApproval::where('shop_owner_id', $shopOwnerId)->pending()->count(),
-            'accepted_requests' => StockRequestApproval::where('shop_owner_id', $shopOwnerId)->accepted()->count(),
-            'rejected_requests' => StockRequestApproval::where('shop_owner_id', $shopOwnerId)->rejected()->count(),
-            'needs_details' => StockRequestApproval::where('shop_owner_id', $shopOwnerId)->needsDetails()->count(),
+            'total_stock_requests' => (clone $baseQuery)->count(),
+            'pending_requests' => (clone $baseQuery)->pending()->count(),
+            'accepted_requests' => (clone $baseQuery)->accepted()->count(),
+            'rejected_requests' => (clone $baseQuery)->rejected()->count(),
+            'needs_details' => (clone $baseQuery)->needsDetails()->count(),
         ];
 
         return response()->json($metrics);

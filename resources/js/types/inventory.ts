@@ -36,7 +36,9 @@ export interface InventoryItem {
 export interface InventorySize {
     id: number;
     inventory_item_id: number;
+    inventory_color_variant_id?: number | null;
     size: string;
+    size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN';
     quantity: number;
     created_at?: string;
     updated_at?: string;
@@ -50,6 +52,7 @@ export interface InventoryColorVariant {
     quantity: number;
     sku_suffix?: string;
     images: InventoryImage[];
+    sizes?: InventorySize[];
     created_at?: string;
     updated_at?: string;
 }
@@ -218,13 +221,22 @@ export interface CreateInventoryItemData {
     price?: number;
     cost_price?: number;
     weight?: number;
-    sizes?: Array<{ size: string; quantity: number }>;
+    sizes?: Array<{
+        size: string;
+        size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN';
+        quantity: number;
+    }>;
     color_variants?: Array<{
         color_name: string;
         color_code?: string;
         quantity: number;
         sku_suffix?: string;
         images?: File[];
+        sizes?: Array<{
+            size: string;
+            size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN';
+            quantity: number;
+        }>;
     }>;
     images?: File[];
 }

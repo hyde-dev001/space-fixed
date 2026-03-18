@@ -1,20 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-const TOTAL_FRAMES = 48;
-const BASE_PATH = '/images/360/golf-shoe-360-product-photography-1500w-';
-
-const getFrameUrl = (index: number) => `${BASE_PATH}${String(index).padStart(3, '0')}.jpg`;
+const DEFAULT_FRAME_INDICES = Array.from({ length: 48 }, (_, index) => index + 1).filter((index) => index !== 41);
+const getDefaultFrameUrl = (index: number) =>
+  `/images/360/golf-shoe-360-product-photography-1500w-${String(index).padStart(3, '0')}-removebg-preview.png`;
 
 const Virtual3DShowroom: React.FC<{
   productName: string;
   onClose?: () => void;
   embedded?: boolean;
+  embeddedHeightClass?: string;
   frameUrls?: string[];
-}> = ({ productName, onClose, embedded = false, frameUrls }) => {
+  showHeader?: boolean;
+}> = ({ productName, onClose, embedded = false, embeddedHeightClass = 'h-[calc(100vh-72px)]', frameUrls, showHeader = true }) => {
   const frames = useMemo(
     () => (frameUrls && frameUrls.length > 0
       ? frameUrls
-      : Array.from({ length: TOTAL_FRAMES }, (_, index) => getFrameUrl(index + 1))),
+      : DEFAULT_FRAME_INDICES.map((index) => getDefaultFrameUrl(index))),
     [frameUrls]
   );
 
@@ -178,24 +179,26 @@ const Virtual3DShowroom: React.FC<{
         }
       }}
     >
-      <div className={embedded ? 'bg-white w-full h-[calc(100vh-72px)] flex flex-col' : 'bg-white w-full h-full xl:rounded-lg xl:shadow-2xl xl:w-[90%] xl:h-[90vh] xl:max-w-5xl flex flex-col'}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div>
-            <h2 className="text-2xl font-bold text-black">{productName}</h2>
-            <p className="text-sm text-gray-600 mt-1">360 Interactive View - Drag to rotate</p>
+      <div className={embedded ? `bg-white w-full ${embeddedHeightClass} flex flex-col` : 'bg-white w-full h-full xl:rounded-lg xl:shadow-2xl xl:w-[90%] xl:h-[90vh] xl:max-w-5xl flex flex-col'}>
+        {showHeader ? (
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div>
+              <h2 className="text-2xl font-bold text-black">{productName}</h2>
+              <p className="text-sm text-gray-600 mt-1">360 Interactive View - Drag to rotate</p>
+            </div>
+            {!embedded && (
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+                aria-label="Close showroom"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
-          {!embedded && (
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 transition-colors"
-              aria-label="Close showroom"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
+        ) : null}
 
         <div
           ref={containerRef}

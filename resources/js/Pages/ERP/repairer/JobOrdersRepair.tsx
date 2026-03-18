@@ -4,7 +4,7 @@ import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
-import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem } from "@/services/repairMaterialsApi";
+import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem } from "../../../services/repairMaterialsApi";
 
 type RepairOrder = {
   id: string;
@@ -661,12 +661,26 @@ export default function JobOrdersRepair() {
       });
 
       if (response.success) {
+        const stockStatus = response.meta?.stock_status ?? "ok";
+        const footerDetails: string[] = [];
+
+        if (typeof response.meta?.remaining_quantity === "number") {
+          footerDetails.push(`Remaining stock: ${response.meta.remaining_quantity}`);
+        }
+
+        if (response.meta?.auto_reorder?.triggered && response.meta.auto_reorder.request_number) {
+          footerDetails.push(`Auto-reorder: ${response.meta.auto_reorder.request_number}`);
+        } else if (response.meta?.auto_reorder?.existing_request_number) {
+          footerDetails.push(`Pending request: ${response.meta.auto_reorder.existing_request_number}`);
+        }
+
         setMaterialForm((prev) => ({ ...prev, quantity_used: "", notes: "" }));
         await fetchRepairMaterials(viewOrder.database_id);
         await Swal.fire({
           title: "Usage logged",
           text: response.message,
-          icon: "success",
+          icon: stockStatus === "ok" ? "success" : "warning",
+          footer: footerDetails.length > 0 ? footerDetails.join(" • ") : undefined,
           confirmButtonColor: "#2563eb",
         });
       }

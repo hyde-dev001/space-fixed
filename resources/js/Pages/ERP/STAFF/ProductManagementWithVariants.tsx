@@ -63,6 +63,8 @@ type ExistingShowroomFrame = {
   sort_order: number;
 };
 
+type SizeSystem = 'US' | 'UK' | 'EU' | 'AU' | 'CN';
+
 // Icon Components  
 const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -244,7 +246,6 @@ export default function ProductManagement() {
     name: '',
     description: '',
     price: '',
-    compare_at_price: '',
     brand: '',
     category: 'shoes',
   });
@@ -279,6 +280,40 @@ export default function ProductManagement() {
   const canToggle360Viewer = canUse360Uploader || hasExistingShowroomFrames;
   
   const [uploading, setUploading] = useState(false);
+  const allowedSizeSystems = new Set<SizeSystem>(['US', 'UK', 'EU', 'AU', 'CN']);
+
+  const normalizeSizeSystem = (sizeSystem?: string | null): SizeSystem => {
+    const normalized = String(sizeSystem || '').trim().toUpperCase();
+    return allowedSizeSystems.has(normalized as SizeSystem) ? (normalized as SizeSystem) : 'US';
+  };
+
+  const parseSizeWithSystem = (
+    rawSize: string,
+    explicitSystem?: string | null,
+  ): { size: string; size_system: SizeSystem } => {
+    const normalizedRaw = String(rawSize || '').trim();
+    const matched = normalizedRaw.match(/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i);
+
+    if (matched) {
+      return {
+        size_system: normalizeSizeSystem(matched[1]),
+        size: String(matched[2] || '').trim(),
+      };
+    }
+
+    return {
+      size_system: normalizeSizeSystem(explicitSystem),
+      size: normalizedRaw,
+    };
+  };
+
+  const formatVariantSizeForStorage = (size: string, sizeSystem?: string | null): string => {
+    const normalizedSize = String(size || '').trim();
+    const normalizedSystem = normalizeSizeSystem(sizeSystem);
+
+    if (!normalizedSize) return normalizedSize;
+    return normalizedSystem === 'US' ? normalizedSize : `${normalizedSystem} ${normalizedSize}`;
+  };
 
   const isShowroomFrameImageType = (imageType?: string | null) => {
     const normalized = String(imageType || '').trim().toLowerCase();
@@ -415,7 +450,6 @@ export default function ProductManagement() {
         name: product.name,
         description: product.description || '',
         price: product.price.toString(),
-        compare_at_price: product.compare_at_price?.toString() || '',
         brand: product.brand || '',
         category: product.category,
       });
@@ -481,8 +515,8 @@ export default function ProductManagement() {
                   image_type: img.image_type || 'product',
                 })),
               sizes: (cv.sizes || []).map((size: any) => ({
+                ...parseSizeWithSystem(size.size?.toString() || '', size.size_system),
                 id: size.id?.toString() || Date.now().toString(),
-                size: size.size?.toString() || '',
                 quantity: size.quantity || 0,
                 sku: size.sku || '',
               })),
@@ -529,7 +563,6 @@ export default function ProductManagement() {
       name: stock.name,
       description: '',
       price: '',
-      compare_at_price: '',
       brand: stock.brand || '',
       category: derivedCategories.join(','),
     });
@@ -551,8 +584,8 @@ export default function ProductManagement() {
       })),
       // Sizes are stored at item level and are shared across all color variants
       sizes: (stock.sizes ?? []).map((s: any) => ({
+        ...parseSizeWithSystem(String(s.size), s.size_system),
         id: String(s.id),
-        size: String(s.size),
         quantity: s.quantity,
         sku: '',
       })),
@@ -610,6 +643,15 @@ export default function ProductManagement() {
   const getFileExtension = (fileName: string) => {
     const parts = fileName.toLowerCase().split('.');
     return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+
+  const formatSizeChipLabel = (rawSize: string, quantity: number, rawSystem?: string | null) => {
+    const parsed = parseSizeWithSystem(rawSize, rawSystem);
+    const sizeSystem = parsed.size_system;
+    const sizeValue = parsed.size || '-';
+    const pairLabel = quantity === 1 ? 'pair' : 'pairs';
+
+    return `Size ${sizeValue} (${sizeSystem}) • ${quantity} ${pairLabel}`;
   };
 
   const isAllowed3DModelFile = (file: File) => {
@@ -1195,13 +1237,19 @@ export default function ProductManagement() {
         sum + cv.sizes.reduce((s, size) => s + size.quantity, 0), 0
       );
 
-      const uniqueSizes = [...new Set(colorVariants.flatMap(cv => cv.sizes.map(s => s.size)))];
+      const uniqueSizes = [
+        ...new Set(
+          colorVariants.flatMap((cv) =>
+            cv.sizes.map((s) => formatVariantSizeForStorage(s.size, s.size_system))
+          )
+        )
+      ];
       const uniqueColors = colorVariants.map(cv => cv.color_name);
 
       // Prepare variant data for backward compatibility
       const variantData = colorVariants.flatMap(cv => 
         cv.sizes.map(size => ({
-          size: size.size,
+          size: formatVariantSizeForStorage(size.size, size.size_system),
           color: cv.color_name,
           quantity: size.quantity,
           image: '', // Will be set after color variant creation
@@ -1228,7 +1276,6 @@ export default function ProductManagement() {
         : {
             ...baseProductData,
             price: parseFloat(formData.price),
-            compare_at_price: formData.compare_at_price ? parseFloat(formData.compare_at_price) : null,
           };
 
       const url = editingProduct
@@ -1513,9 +1560,6 @@ export default function ProductManagement() {
                       <td className="px-6 py-4">
                         <div className="space-y-1">
                           <p className="text-gray-900 dark:text-white font-medium">₱{product.price.toLocaleString()}</p>
-                          {product.compare_at_price && (
-                            <p className="text-sm text-gray-500 line-through">₱{product.compare_at_price.toLocaleString()}</p>
-                          )}
                           {product.pending_price_request && (
                             <div className="flex items-center gap-1.5 mt-1">
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
@@ -1625,11 +1669,7 @@ export default function ProductManagement() {
                       />
                     </span>
                   </button>
-                ) : (
-                  <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
-                    Shoe Spin Viewer requires active Retail Premium with available showroom slots
-                  </span>
-                )}
+                ) : null}
               </div>
               {editingProduct && existingShowroomFrameCount > 0 && (
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1647,10 +1687,10 @@ export default function ProductManagement() {
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-base font-semibold text-gray-900 dark:text-white">Color Variants &amp; Sizes</h3>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                        📦 From Inventory: {selectedInventoryItem.name}
-                      </span>
                     </div>
+                    <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                      Sizes are shown as: Size value (US/UK/EU/AU/CN) • stock pairs. If no size system is provided, US is used by default.
+                    </p>
                     {colorVariants.length === 0 ? (
                       <p className="text-sm text-gray-500 dark:text-gray-400">No color variants found in this stock item.</p>
                     ) : (
@@ -1677,7 +1717,7 @@ export default function ProductManagement() {
                             <div className="flex flex-wrap gap-2">
                               {cv.sizes.map((s) => (
                                 <span key={s.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300">
-                                  {s.size} <span className="text-gray-400">×</span> {s.quantity}
+                                  {formatSizeChipLabel(String(s.size), Number(s.quantity || 0), s.size_system)}
                                 </span>
                               ))}
                             </div>
@@ -1876,21 +1916,6 @@ export default function ProductManagement() {
                         Price updates are handled in the Shoe Pricing page.
                       </p>
                     )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Compare at Price
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.compare_at_price}
-                      onChange={(e) => setFormData({ ...formData, compare_at_price: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                      placeholder="Original price (optional)"
-                      disabled={!!editingProduct}
-                    />
                   </div>
 
                   <div>

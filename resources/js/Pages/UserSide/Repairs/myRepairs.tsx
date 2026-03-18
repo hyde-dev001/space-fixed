@@ -45,6 +45,7 @@ type RepairOrder = {
   repair_package_id?: number | null;
   package_price?: number | null;
   add_ons_total?: number | null;
+  materials_total?: number | null;
   final_total?: number | null;
   included_services_snapshot?: Array<{
     id: number;
@@ -67,6 +68,8 @@ type RepairOrder = {
     included_services_total?: number;
     package_price?: number;
     add_ons_total?: number;
+    base_total?: number;
+    materials_total?: number;
     final_total?: number;
   } | null;
 };
@@ -99,6 +102,8 @@ const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walkin' |
 };
 
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
+const getOrderGrandTotal = (order: RepairOrder) => Number(order.final_total ?? order.total_amount ?? 0);
+const getOrderMaterialsTotal = (order: RepairOrder) => Number(order.materials_total ?? order.pricing_breakdown?.materials_total ?? 0);
 
 // Static mock data for testing
 const getStaticRepairOrders = (): RepairOrder[] => {
@@ -704,26 +709,7 @@ const MyRepairs: React.FC = () => {
   };
 
   const handlePayNow = async (orderId: number) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
-
-    const policy = order.payment_policy ?? 'deposit_50';
-    const isRemainingBalancePhase = order.status === 'ready_for_pickup';
-
-    // Compute amount and label based on policy
-    let paymentAmount: number;
-    let paymentLabel: string;
-    if (policy === 'full_upfront') {
-      paymentAmount = order.total_amount;
-      paymentLabel = 'full payment';
-    } else if (policy === 'pay_after') {
-      paymentAmount = order.total_amount;
-      paymentLabel = 'full payment (at pickup)';
-    } else {
-      // deposit_50: 50% each phase
-      paymentAmount = Math.max(1, order.total_amount / 2);
-      paymentLabel = isRemainingBalancePhase ? 'remaining balance' : 'down payment';
-    }
+    if (!orders.find(o => o.id === orderId)) return;
 
     setProcessingPayment(true);
 
@@ -733,16 +719,14 @@ const MyRepairs: React.FC = () => {
       // Create PayMongo payment link for simulation
       const response = await fetch('/api/paymongo-proxy', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
         },
         body: JSON.stringify({
-          amount: paymentAmount,
-          description: `SoleSpace Repair #${order.order_number} - ${order.repair_type} (${paymentLabel})`,
-          success_url: `${window.location.origin}/my-repairs?paymongo_success=1`,
-          failed_url:  `${window.location.origin}/my-repairs?paymongo_failed=1`,
-          shop_owner_id: order.shop_owner_id ?? order.shop_id,
+          repair_request_id: orderId,
         }),
       });
 
@@ -1258,11 +1242,14 @@ const MyRepairs: React.FC = () => {
       repair_id: String(order.id),
       order_number: order.order_number,
       repair_type: order.repair_type,
-      total: String(order.total_amount),
+      total: String(getOrderGrandTotal(order)),
     });
 
     return `/payment?${params.toString()}`;
   };
+
+  const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
+  const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -1616,10 +1603,12 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Repair Total</p>
-                          <p className="font-bold text-black text-2xl">{formatCurrency(order.final_total ?? order.total_amount)}</p>
-                          {order.repair_package_id && (
+                          <p className="font-bold text-black text-2xl">{formatCurrency(getOrderGrandTotal(order))}</p>
+                          {(order.repair_package_id || getOrderMaterialsTotal(order) > 0) && (
                             <p className="mt-1 text-xs text-gray-500">
-                              Package {formatCurrency(order.package_price)}{Number(order.add_ons_total || 0) > 0 ? ` + Add-ons ${formatCurrency(order.add_ons_total)}` : ''}
+                              {order.repair_package_id
+                                ? `Package ${formatCurrency(order.package_price)}${Number(order.add_ons_total || 0) > 0 ? ` + Add-ons ${formatCurrency(order.add_ons_total)}` : ''}${getOrderMaterialsTotal(order) > 0 ? ` + Materials ${formatCurrency(getOrderMaterialsTotal(order))}` : ''}`
+                                : `Materials ${formatCurrency(getOrderMaterialsTotal(order))}`}
                             </p>
                           )}
                         </div>
@@ -2030,11 +2019,11 @@ const MyRepairs: React.FC = () => {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-700">Repair Total:</span>
-                          <span className="text-sm text-gray-900">₱{orders.find(o => o.id === refundOrderId)?.total_amount.toLocaleString()}</span>
+                          <span className="text-sm text-gray-900">{formatCurrency(refundTotal)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-bold text-gray-900">Refund Amount:</span>
-                          <span className="text-sm font-bold text-green-600">₱{orders.find(o => o.id === refundOrderId)?.total_amount.toLocaleString()}</span>
+                          <span className="text-sm font-bold text-green-600">{formatCurrency(refundTotal)}</span>
                         </div>
                       </div>
                     </div>

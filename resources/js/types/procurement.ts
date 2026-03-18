@@ -121,6 +121,7 @@ export interface StockRequestApproval {
     request_number: string;
     shop_owner_id: number;
     inventory_item_id: number;
+    repair_request_id?: number | null;
     inventory_item?: InventoryItem;
     product_name: string;
     sku_code: string;
@@ -128,6 +129,7 @@ export interface StockRequestApproval {
     requested_size?: string;
     priority: 'high' | 'medium' | 'low';
     priority_label?: string;
+    request_source?: 'manual' | 'repair';
     status: 'pending' | 'accepted' | 'rejected' | 'needs_details';
     status_label?: string;
     requested_by: number;
@@ -256,6 +258,7 @@ export interface StockRequestFilters {
     search?: string;
     status?: string;
     priority?: string;
+    request_source?: 'manual' | 'repair';
     page?: number;
     per_page?: number;
 }

@@ -29,16 +29,6 @@ type Employee = {
 	hasSlipForPeriod?: boolean; // Whether slip already exists for selected period
 };
 
-type AttendanceRecord = {
-	date: string;
-	status: "present" | "absent" | "late" | "half_day" | "on_leave";
-	regularHours: number;
-	overtimeHours: number;
-	undertimeHours: number;
-	checkIn?: string;
-	checkOut?: string;
-};
-
 type PayrollPeriod = {
 	month: string;
 	periodKey?: string;
@@ -47,32 +37,38 @@ type PayrollPeriod = {
 	endDate: string;
 	attendanceStatus: AttendanceStatus;
 	workingDays: number;
+	expectedAttendanceDays?: number;
+	expectedRegularHours?: number;
+	hasConfiguredOperatingHours?: boolean;
 };
 
-type PayrollCalculation = {
-	// Hours Breakdown
-	totalRegularHours: number;
-	totalOvertimeHours: number;
-	totalRestDayHours: number;
-	totalSpecialHolidayHours: number;
-	totalRegularHolidayHours: number;
-	totalNightDifferentialHours: number;
-	totalUndertimeHours: number;
-	totalAbsentDays: number;
-	
-	// Earnings
+type PayrollHoursBreakdown = {
+	regularHours: number;
+	overtimeHours: number;
+	restDayHours: number;
+	specialHolidayHours: number;
+	regularHolidayHours: number;
+	nightDifferentialHours: number;
+	undertimeHours: number;
+	absentDays: number;
+	attendanceDays: number;
+	leaveDays: number;
+};
+
+type PayrollEarningsBreakdown = {
 	basicPay: number;
 	overtimePay: number;
 	restDayPay: number;
 	specialHolidayPay: number;
 	regularHolidayPay: number;
 	nightDifferentialPay: number;
-	salesCommission: number; // Commission from sales
-	performanceBonus: number; // Target-based bonus
-	otherAllowances: number; // Holiday pay, special bonuses
+	salesCommission: number;
+	performanceBonus: number;
+	otherAllowances: number;
 	totalEarnings: number;
-	
-	// Deductions
+};
+
+type PayrollDeductionsBreakdown = {
 	withholdingTax: number;
 	sssContribution: number;
 	philhealthContribution: number;
@@ -82,23 +78,42 @@ type PayrollCalculation = {
 	loanDeductions: number;
 	otherDeductions: number;
 	totalDeductions: number;
-	
-	// Net Pay
-	grossPay: number;
-	netPay: number;
 };
 
-type Payslip = {
-	id: string;
-	employeeId: string;
+type PayrollBreakdown = {
+	employeeId: number;
 	employeeName: string;
 	department: string;
 	position: string;
-	payrollPeriod: PayrollPeriod;
-	calculation: PayrollCalculation;
-	generatedAt: string;
-	generatedBy: string;
-	status: "generated" | "approved" | "paid";
+	hours: PayrollHoursBreakdown;
+	earnings: PayrollEarningsBreakdown;
+	deductions: PayrollDeductionsBreakdown;
+	grossPay: number;
+	totalDeductions: number;
+	netPay: number;
+};
+
+type BatchPreviewIssue = {
+	employee_id: number;
+	employee_name?: string;
+	message: string;
+	severity: "error" | "warning";
+};
+
+type BatchPreviewSummary = {
+	total_employees: number;
+	preview_count: number;
+	error_count: number;
+	warning_count: number;
+	total_gross: number;
+	total_net: number;
+};
+
+type BatchPreviewResponse = {
+	previews: PayrollBreakdown[];
+	errors: BatchPreviewIssue[];
+	warnings: BatchPreviewIssue[];
+	summary: BatchPreviewSummary;
 };
 
 type ThirteenthMonthReleaseResult = {
@@ -127,6 +142,19 @@ type GovernanceReadinessStatus = {
 	paidPayrolls: number;
 	requireChecker: boolean;
 	requireFinalApprover: boolean;
+};
+
+type SingleSlipAttendanceSummary = {
+	attendanceDays: number;
+	leaveDays: number;
+	absentDays: number;
+	regularHours: number;
+	overtimeHours: number;
+	undertimeHours: number;
+	restDayHours: number;
+	specialHolidayHours: number;
+	regularHolidayHours: number;
+	nightDifferentialHours: number;
 };
 
 // ==================== Icon Components ====================
@@ -173,214 +201,6 @@ const LockIcon = ({ className = "size-5" }: { className?: string }) => (
 	</svg>
 );
 
-// ==================== Payroll Calculation Engine ====================
-
-/**
- * Philippine SSS Contribution Table (2026)
- * Employee share based on monthly salary compensation
- */
-const calculateSSSContribution = (monthlySalary: number): number => {
-	if (monthlySalary < 4250) return 180;
-	if (monthlySalary < 4750) return 202.50;
-	if (monthlySalary < 5250) return 225;
-	if (monthlySalary < 5750) return 247.50;
-	if (monthlySalary < 6250) return 270;
-	if (monthlySalary < 6750) return 292.50;
-	if (monthlySalary < 7250) return 315;
-	if (monthlySalary < 7750) return 337.50;
-	if (monthlySalary < 8250) return 360;
-	if (monthlySalary < 8750) return 382.50;
-	if (monthlySalary < 9250) return 405;
-	if (monthlySalary < 9750) return 427.50;
-	if (monthlySalary < 10250) return 450;
-	if (monthlySalary < 10750) return 472.50;
-	if (monthlySalary < 11250) return 495;
-	if (monthlySalary < 11750) return 517.50;
-	if (monthlySalary < 12250) return 540;
-	if (monthlySalary < 12750) return 562.50;
-	if (monthlySalary < 13250) return 585;
-	if (monthlySalary < 13750) return 607.50;
-	if (monthlySalary < 14250) return 630;
-	if (monthlySalary < 14750) return 652.50;
-	if (monthlySalary < 15250) return 675;
-	if (monthlySalary < 15750) return 697.50;
-	if (monthlySalary < 16250) return 720;
-	if (monthlySalary < 16750) return 742.50;
-	if (monthlySalary < 17250) return 765;
-	if (monthlySalary < 17750) return 787.50;
-	if (monthlySalary < 18250) return 810;
-	if (monthlySalary < 18750) return 832.50;
-	if (monthlySalary < 19250) return 855;
-	if (monthlySalary < 19750) return 877.50;
-	if (monthlySalary >= 30000) return 1350; // Maximum
-	return 900; // Default mid-range
-};
-
-/**
- * Philippine PhilHealth Contribution (2026)
- * Employee share = 2.5% of monthly basic salary (capped)
- */
-const calculatePhilHealthContribution = (monthlySalary: number): number => {
-	const rate = 0.025; // 2.5% employee share
-	const minSalary = 10000;
-	const maxSalary = 100000;
-	
-	let baseSalary = monthlySalary;
-	if (baseSalary < minSalary) baseSalary = minSalary;
-	if (baseSalary > maxSalary) baseSalary = maxSalary;
-	
-	return Math.round(baseSalary * rate * 100) / 100;
-};
-
-/**
- * Philippine Pag-IBIG Contribution (2026)
- * Employee share: 1-2% based on monthly compensation
- */
-const calculatePagIbigContribution = (monthlySalary: number): number => {
-	if (monthlySalary <= 1500) {
-		return Math.round(monthlySalary * 0.01 * 100) / 100; // 1%
-	} else {
-		const contribution = Math.round(monthlySalary * 0.02 * 100) / 100; // 2%
-		return Math.min(contribution, 100); // Capped at ₱100
-	}
-};
-
-/**
- * Philippine Withholding Tax Calculation (2026)
- * Based on graduated tax rates
- */
-const calculateWithholdingTax = (taxableIncome: number): number => {
-	// Annual tax brackets
-	if (taxableIncome <= 250000) return 0;
-	if (taxableIncome <= 400000) return (taxableIncome - 250000) * 0.15;
-	if (taxableIncome <= 800000) return 22500 + (taxableIncome - 400000) * 0.20;
-	if (taxableIncome <= 2000000) return 102500 + (taxableIncome - 800000) * 0.25;
-	if (taxableIncome <= 8000000) return 402500 + (taxableIncome - 2000000) * 0.30;
-	return 2202500 + (taxableIncome - 8000000) * 0.35;
-};
-
-/**
- * Calculate monthly tax from annual taxable income
- */
-const calculateMonthlyTax = (monthlyGrossPay: number, monthlyDeductions: number): number => {
-	const monthlyTaxableIncome = monthlyGrossPay - monthlyDeductions;
-	const annualTaxableIncome = monthlyTaxableIncome * 12;
-	const annualTax = calculateWithholdingTax(annualTaxableIncome);
-	const monthlyTax = annualTax / 12;
-	return Math.round(monthlyTax * 100) / 100;
-};
-
-/**
- * Main Payroll Calculation Function
- */
-const calculatePayroll = (
-	employee: Employee,
-	attendanceRecords: AttendanceRecord[],
-	payrollPeriod: PayrollPeriod
-): PayrollCalculation => {
-	// Step 1: Calculate total hours
-	const totalRegularHours = attendanceRecords.reduce((sum, record) => sum + record.regularHours, 0);
-	const totalOvertimeHours = attendanceRecords.reduce((sum, record) => sum + record.overtimeHours, 0);
-	const totalUndertimeHours = attendanceRecords.reduce((sum, record) => sum + record.undertimeHours, 0);
-	const totalAbsentDays = attendanceRecords.filter(r => r.status === "absent").length;
-	
-	// Step 2: Determine pay rate based on employee type
-	let hourlyRate = 0;
-	let dailyRate = 0;
-	let monthlyBase = 0;
-	
-	if (employee.monthlySalary) {
-		monthlyBase = employee.monthlySalary;
-		dailyRate = monthlyBase / payrollPeriod.workingDays;
-		hourlyRate = dailyRate / 8; // Assuming 8 hours per day
-	} else if (employee.dailyRate) {
-		dailyRate = employee.dailyRate;
-		hourlyRate = dailyRate / 8;
-		monthlyBase = dailyRate * payrollPeriod.workingDays;
-	} else if (employee.hourlyRate) {
-		hourlyRate = employee.hourlyRate;
-		dailyRate = hourlyRate * 8;
-		monthlyBase = dailyRate * payrollPeriod.workingDays;
-	}
-	
-	// Step 3: Calculate earnings
-	const basicPay = totalRegularHours * hourlyRate;
-	const overtimeRate = hourlyRate * 1.25; // 25% overtime premium
-	const overtimePay = totalOvertimeHours * overtimeRate;
-	
-	// Retail commission structure — apply the employee's stored rates against
-	// monthly base pay as the frontend proxy.  PayrollService on the server will
-	// also read these rates and may incorporate live sales figures when available.
-	const salesCommission = monthlyBase * (employee.salesCommissionRate ?? 0);
-	const performanceBonus = monthlyBase * (employee.performanceBonusRate ?? 0);
-	const otherAllowances = employee.otherAllowances || 0;
-	
-	const totalEarnings = basicPay + overtimePay + salesCommission + performanceBonus + otherAllowances;
-	const grossPay = basicPay + overtimePay;
-	
-	// Step 4: Calculate deductions
-	const sssContribution = calculateSSSContribution(monthlyBase);
-	const philhealthContribution = calculatePhilHealthContribution(monthlyBase);
-	const pagibigContribution = calculatePagIbigContribution(monthlyBase);
-	
-	const totalStatutoryDeductions = sssContribution + philhealthContribution + pagibigContribution;
-	const withholdingTax = calculateMonthlyTax(grossPay, totalStatutoryDeductions);
-	
-	// Absent deductions (pro-rated)
-	const absentDeductions = totalAbsentDays * dailyRate;
-	
-	// Undertime deductions
-	const undertimeDeductions = totalUndertimeHours * hourlyRate;
-	
-	// Loan deductions
-	const loanDeductions = employee.loans?.monthlyDeduction || 0;
-	
-	const otherDeductions = absentDeductions + undertimeDeductions;
-	
-	const totalDeductions = 
-		withholdingTax +
-		sssContribution +
-		philhealthContribution +
-		pagibigContribution +
-		otherDeductions +
-		loanDeductions;
-	
-	// Step 5: Calculate net pay
-	const netPay = totalEarnings - totalDeductions;
-	
-	return {
-		totalRegularHours,
-		totalOvertimeHours,
-		totalRestDayHours: 0,
-		totalSpecialHolidayHours: 0,
-		totalRegularHolidayHours: 0,
-		totalNightDifferentialHours: 0,
-		totalUndertimeHours,
-		totalAbsentDays,
-		basicPay: Math.round(basicPay * 100) / 100,
-		overtimePay: Math.round(overtimePay * 100) / 100,
-		restDayPay: 0,
-		specialHolidayPay: 0,
-		regularHolidayPay: 0,
-		nightDifferentialPay: 0,
-		salesCommission: Math.round(salesCommission * 100) / 100,
-		performanceBonus: Math.round(performanceBonus * 100) / 100,
-		otherAllowances: Math.round(otherAllowances * 100) / 100,
-		totalEarnings: Math.round(totalEarnings * 100) / 100,
-		withholdingTax: Math.round(withholdingTax * 100) / 100,
-		sssContribution: Math.round(sssContribution * 100) / 100,
-		philhealthContribution: Math.round(philhealthContribution * 100) / 100,
-		pagibigContribution: Math.round(pagibigContribution * 100) / 100,
-		absentDeductions: Math.round(absentDeductions * 100) / 100,
-		undertimeDeductions: Math.round(undertimeDeductions * 100) / 100,
-		loanDeductions: Math.round(loanDeductions * 100) / 100,
-		otherDeductions: Math.round(otherDeductions * 100) / 100,
-		totalDeductions: Math.round(totalDeductions * 100) / 100,
-		grossPay: Math.round(grossPay * 100) / 100,
-		netPay: Math.round(netPay * 100) / 100,
-	};
-};
-
 // ==================== Transformation Functions ====================
 
 // Transform employee API response
@@ -426,6 +246,146 @@ const formatPHP = (value: number) =>
 const getInitials = (firstName: string, lastName: string) =>
 	(firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
 
+const toNumber = (value: unknown): number => Number(value ?? 0);
+
+const formatHours = (value: number) => `${Math.round(value * 100) / 100}h`;
+const clampNonNegative = (value: unknown): number => Math.max(0, Number(value ?? 0));
+
+const buildSingleSlipAttendanceSummary = (summary: any): SingleSlipAttendanceSummary => ({
+	attendanceDays: Number(summary?.attendance_days ?? 0),
+	leaveDays: Number(summary?.total_on_leave ?? 0),
+	absentDays: Number(summary?.total_absent ?? 0),
+	regularHours: Number(summary?.total_regular_hours ?? 0),
+	overtimeHours: Number(summary?.total_overtime_hours ?? 0),
+	undertimeHours: clampNonNegative(summary?.total_undertime_hours),
+	restDayHours: Number(summary?.rest_day_hours ?? 0),
+	specialHolidayHours: Number(summary?.special_holiday_hours ?? 0),
+	regularHolidayHours: Number(summary?.regular_holiday_hours ?? 0),
+	nightDifferentialHours: Number(summary?.night_differential_hours ?? 0),
+});
+
+const normalizeSinglePreviewBreakdown = (employee: Employee, calc: any): PayrollBreakdown => ({
+	employeeId: employee.id,
+	employeeName: `${employee.firstName} ${employee.lastName}`,
+	department: employee.department,
+	position: employee.position,
+	hours: {
+		regularHours: toNumber(calc?.hours?.regular_hours),
+		overtimeHours: toNumber(calc?.hours?.overtime_hours),
+		restDayHours: toNumber(calc?.hours?.rest_day_hours),
+		specialHolidayHours: toNumber(calc?.hours?.special_holiday_hours),
+		regularHolidayHours: toNumber(calc?.hours?.regular_holiday_hours),
+		nightDifferentialHours: toNumber(calc?.hours?.night_differential_hours),
+		undertimeHours: toNumber(calc?.hours?.undertime_hours),
+		absentDays: toNumber(calc?.hours?.absent_days),
+		attendanceDays: toNumber(calc?.hours?.attendance_days),
+		leaveDays: toNumber(calc?.hours?.leave_days),
+	},
+	earnings: {
+		basicPay: toNumber(calc?.earnings?.basic_pay),
+		overtimePay: toNumber(calc?.earnings?.overtime_pay),
+		restDayPay: toNumber(calc?.earnings?.rest_day_pay),
+		specialHolidayPay: toNumber(calc?.earnings?.special_holiday_pay),
+		regularHolidayPay: toNumber(calc?.earnings?.regular_holiday_pay),
+		nightDifferentialPay: toNumber(calc?.earnings?.night_differential_pay),
+		salesCommission: toNumber(calc?.earnings?.sales_commission),
+		performanceBonus: toNumber(calc?.earnings?.performance_bonus),
+		otherAllowances: toNumber(calc?.earnings?.other_allowances),
+		totalEarnings: toNumber(calc?.earnings?.total_earnings),
+	},
+	deductions: {
+		withholdingTax: toNumber(calc?.deductions?.withholding_tax),
+		sssContribution: toNumber(calc?.deductions?.sss_contribution),
+		philhealthContribution: toNumber(calc?.deductions?.philhealth_contribution),
+		pagibigContribution: toNumber(calc?.deductions?.pagibig_contribution),
+		absentDeductions: toNumber(calc?.deductions?.absent_deductions),
+		undertimeDeductions: toNumber(calc?.deductions?.undertime_deductions),
+		loanDeductions: 0,
+		otherDeductions: toNumber(calc?.deductions?.other_deductions),
+		totalDeductions: toNumber(calc?.deductions?.total_deductions),
+	},
+	grossPay: toNumber(calc?.gross_pay),
+	totalDeductions: toNumber(calc?.deductions?.total_deductions),
+	netPay: toNumber(calc?.net_pay),
+});
+
+const normalizeBatchPreviewIssue = (issue: any): BatchPreviewIssue => ({
+	employee_id: toNumber(issue?.employee_id),
+	employee_name: issue?.employee_name,
+	message: String(issue?.message ?? issue?.error ?? "Unknown validation issue"),
+	severity: issue?.severity === "warning" ? "warning" : "error",
+});
+
+const normalizeBatchPreviewBreakdown = (preview: any): PayrollBreakdown => {
+	const attendance = preview?.attendance ?? preview?.calculation?.attendance_summary ?? {};
+	const calculation = preview?.calculation ?? {};
+
+	return {
+		employeeId: toNumber(preview?.employee_id),
+		employeeName: String(preview?.employee_name ?? "Unknown Employee"),
+		department: String(preview?.department ?? "N/A"),
+		position: String(preview?.position ?? "N/A"),
+		hours: {
+			regularHours: toNumber(attendance?.total_regular_hours),
+			overtimeHours: toNumber(attendance?.total_overtime_hours),
+			restDayHours: toNumber(attendance?.rest_day_hours),
+			specialHolidayHours: toNumber(attendance?.special_holiday_hours),
+			regularHolidayHours: toNumber(attendance?.regular_holiday_hours),
+			nightDifferentialHours: toNumber(attendance?.night_differential_hours),
+			undertimeHours: toNumber(attendance?.total_undertime_hours),
+			absentDays: toNumber(attendance?.total_absent_days),
+			attendanceDays: toNumber(attendance?.total_present_days),
+			leaveDays: 0,
+		},
+		earnings: {
+			basicPay: toNumber(calculation?.basic_pay),
+			overtimePay: toNumber(calculation?.overtime_pay),
+			restDayPay: toNumber(calculation?.rest_day_pay),
+			specialHolidayPay: toNumber(calculation?.special_holiday_pay),
+			regularHolidayPay: toNumber(calculation?.regular_holiday_pay),
+			nightDifferentialPay: toNumber(calculation?.night_differential_pay),
+			salesCommission: toNumber(calculation?.sales_commission),
+			performanceBonus: toNumber(calculation?.performance_bonus),
+			otherAllowances: toNumber(calculation?.other_allowances),
+			totalEarnings: toNumber(calculation?.gross_salary),
+		},
+		deductions: {
+			withholdingTax: toNumber(calculation?.withholding_tax),
+			sssContribution: toNumber(calculation?.sss_contribution),
+			philhealthContribution: toNumber(calculation?.philhealth_contribution),
+			pagibigContribution: toNumber(calculation?.pagibig_contribution),
+			absentDeductions: toNumber(calculation?.absent_deductions),
+			undertimeDeductions: toNumber(calculation?.undertime_deductions),
+			loanDeductions: toNumber(calculation?.loan_deductions),
+			otherDeductions: toNumber(calculation?.other_deductions),
+			totalDeductions: toNumber(calculation?.total_deductions),
+		},
+		grossPay: toNumber(calculation?.gross_salary),
+		totalDeductions: toNumber(calculation?.total_deductions),
+		netPay: toNumber(calculation?.net_salary),
+	};
+};
+
+const normalizeBatchPreviewResponse = (payload: any): BatchPreviewResponse => ({
+	previews: Array.isArray(payload?.previews)
+		? payload.previews.map((preview: any) => normalizeBatchPreviewBreakdown(preview))
+		: [],
+	errors: Array.isArray(payload?.errors)
+		? payload.errors.map((issue: any) => normalizeBatchPreviewIssue(issue))
+		: [],
+	warnings: Array.isArray(payload?.warnings)
+		? payload.warnings.map((issue: any) => normalizeBatchPreviewIssue(issue))
+		: [],
+	summary: {
+		total_employees: toNumber(payload?.summary?.total_employees),
+		preview_count: toNumber(payload?.summary?.preview_count),
+		error_count: toNumber(payload?.summary?.error_count),
+		warning_count: toNumber(payload?.summary?.warning_count),
+		total_gross: toNumber(payload?.summary?.total_gross),
+		total_net: toNumber(payload?.summary?.total_net),
+	},
+});
+
 export default function GenerateSlip() {
 	const [employeeData, setEmployeeData] = useState<Employee[]>([]);
 	const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
@@ -435,10 +395,12 @@ export default function GenerateSlip() {
 	const [department, setDepartment] = useState<string>("");
 	const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0);
 	const [page, setPage] = useState(1);
+	const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
 	const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
-	const [calculation, setCalculation] = useState<PayrollCalculation | null>(null);
+	const [payrollBreakdown, setPayrollBreakdown] = useState<PayrollBreakdown | null>(null);
 	const [isCalculating, setIsCalculating] = useState(false);
+	const [attendanceSummary, setAttendanceSummary] = useState<SingleSlipAttendanceSummary | null>(null);
 	
 	// Manual hours input state
 	const [totalRegularHours, setTotalRegularHours] = useState<number>(0);
@@ -451,10 +413,8 @@ export default function GenerateSlip() {
 	const [totalAbsentDays, setTotalAbsentDays] = useState<number>(0);
 	
 	// Batch generation states
-	const [showValidationModal, setShowValidationModal] = useState(false);
-	const [showPreviewModal, setShowPreviewModal] = useState(false);
-	const [validationSummary, setValidationSummary] = useState<any>(null);
-	const [previewData, setPreviewData] = useState<any>(null);
+	const [showBatchPreviewModal, setShowBatchPreviewModal] = useState(false);
+	const [batchPreviewData, setBatchPreviewData] = useState<BatchPreviewResponse | null>(null);
 	const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 	const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
 	const [retryQueue, setRetryQueue] = useState<number[]>([]);
@@ -682,7 +642,26 @@ export default function GenerateSlip() {
 		return filtered.slice(start, start + pageSize);
 	}, [filtered, page]);
 
+	const selectedPendingEmployees = useMemo(
+		() => employeeData.filter((e) => selectedEmployeeIds.includes(e.id) && e.status === "active" && !e.hasSlipForPeriod),
+		[employeeData, selectedEmployeeIds]
+	);
+
+	const filteredSelectableIds = useMemo(
+		() => filtered.filter((e) => !e.hasSlipForPeriod && e.status === "active").map((e) => e.id),
+		[filtered]
+	);
+
+	const isAllFilteredSelected = filteredSelectableIds.length > 0 && filteredSelectableIds.every((id) => selectedEmployeeIds.includes(id));
+
 	const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+	useEffect(() => {
+		const validEmployeeIds = new Set(
+			employeeData.filter((e) => e.status === "active" && !e.hasSlipForPeriod).map((e) => e.id)
+		);
+		setSelectedEmployeeIds((prev) => prev.filter((id) => validEmployeeIds.has(id)));
+	}, [employeeData]);
 
 	const resetPage = () => setPage(1);
 
@@ -694,6 +673,28 @@ export default function GenerateSlip() {
 	const handleDepartment = (value: string) => {
 		setDepartment(value);
 		resetPage();
+	};
+
+	const toggleEmployeeSelection = (employeeId: number) => {
+		setSelectedEmployeeIds((prev) =>
+			prev.includes(employeeId)
+				? prev.filter((id) => id !== employeeId)
+				: [...prev, employeeId]
+		);
+	};
+
+	const toggleAllFilteredSelection = () => {
+		if (filteredSelectableIds.length === 0) return;
+
+		setSelectedEmployeeIds((prev) => {
+			if (isAllFilteredSelected) {
+				return prev.filter((id) => !filteredSelectableIds.includes(id));
+			}
+
+			const selectedSet = new Set(prev);
+			filteredSelectableIds.forEach((id) => selectedSet.add(id));
+			return Array.from(selectedSet);
+		});
 	};
 
 	const openEmployee = async (employee: Employee) => {
@@ -739,9 +740,10 @@ export default function GenerateSlip() {
 		setNightDifferentialHours(0);
 		setTotalUndertimeHours(0);
 		setTotalAbsentDays(0);
+		setAttendanceSummary(null);
 		
 		setSelectedEmployee(employee);
-		setCalculation(null);
+		setPayrollBreakdown(null);
 		
 		// Auto-fetch attendance data for this period
 		fetchAttendanceAndCalculate(employee);
@@ -768,9 +770,12 @@ export default function GenerateSlip() {
 
 			if (!response.ok) {
 				console.error('Failed to fetch attendance data');
-				// Use default values
-				const expectedRegularHours = selectedPeriod.workingDays * 8;
-				setTotalRegularHours(expectedRegularHours);
+				await Swal.fire({
+					icon: 'error',
+					title: 'Attendance Fetch Failed',
+					text: 'Could not load attendance data for this employee and period. Payroll preview needs attendance records first.',
+					confirmButtonColor: '#dc2626',
+				});
 				return;
 			}
 
@@ -778,31 +783,34 @@ export default function GenerateSlip() {
 
 			// Auto-populate hours from attendance summary
 			if (data.summary) {
-				setTotalRegularHours(data.summary.total_regular_hours || 0);
-				setTotalOvertimeHours(data.summary.total_overtime_hours || 0);
-				setRestDayHours(data.summary.rest_day_hours || 0);
-				setSpecialHolidayHours(data.summary.special_holiday_hours || 0);
-				setRegularHolidayHours(data.summary.regular_holiday_hours || 0);
-				setNightDifferentialHours(data.summary.night_differential_hours || 0);
-				setTotalUndertimeHours(data.summary.total_undertime_hours || 0);
-				setTotalAbsentDays(data.summary.total_absent || 0);
-				
-				// Auto-calculate after fetching attendance
-				setTimeout(() => {
-					handleCalculate();
-				}, 100);
+				const nextAttendanceSummary = buildSingleSlipAttendanceSummary(data.summary);
+				setAttendanceSummary(nextAttendanceSummary);
+				setTotalRegularHours(nextAttendanceSummary.regularHours);
+				setTotalOvertimeHours(nextAttendanceSummary.overtimeHours);
+				setRestDayHours(nextAttendanceSummary.restDayHours);
+				setSpecialHolidayHours(nextAttendanceSummary.specialHolidayHours);
+				setRegularHolidayHours(nextAttendanceSummary.regularHolidayHours);
+				setNightDifferentialHours(nextAttendanceSummary.nightDifferentialHours);
+				setTotalUndertimeHours(nextAttendanceSummary.undertimeHours);
+				setTotalAbsentDays(nextAttendanceSummary.absentDays);
+
+				await handleCalculate(employee, nextAttendanceSummary);
 			}
 		} catch (error) {
 			console.error('Error fetching attendance:', error);
-			// Use default values
-			const expectedRegularHours = selectedPeriod.workingDays * 8;
-			setTotalRegularHours(expectedRegularHours);
+			await Swal.fire({
+				icon: 'error',
+				title: 'Attendance Fetch Failed',
+				text: 'Could not load attendance data for this employee and period. Payroll preview needs attendance records first.',
+				confirmButtonColor: '#dc2626',
+			});
 		}
 	};
 
 	const closeEmployee = () => {
 		setSelectedEmployee(null);
-		setCalculation(null);
+		setPayrollBreakdown(null);
+		setAttendanceSummary(null);
 		setTotalRegularHours(0);
 		setTotalOvertimeHours(0);
 		setRestDayHours(0);
@@ -815,13 +823,13 @@ export default function GenerateSlip() {
 	
 	// Generate all pending payslips with validation and preview
 	const handleGenerateAll = async () => {
-		const pendingEmployees = employeeData.filter(e => e.status === "active" && !e.hasSlipForPeriod);
+		const pendingEmployees = selectedPendingEmployees;
 		
 		if (pendingEmployees.length === 0) {
 			await Swal.fire({
 				icon: "info",
-				title: "No Pending Payslips",
-				text: "All active employees already have payslips for this period.",
+				title: "No Selected Employees",
+				text: "Please select at least one pending employee before generating payslips.",
 				confirmButtonColor: "#3b82f6",
 			});
 			return;
@@ -850,13 +858,13 @@ export default function GenerateSlip() {
 				throw new Error('Failed to generate preview');
 			}
 
-			const previewResult = await response.json();
-			setPreviewData(previewResult);
+			const previewPayload = normalizeBatchPreviewResponse(await response.json());
+			setBatchPreviewData(previewPayload);
 			setIsLoadingPreview(false);
 
 			// Show validation summary
-			const hasErrors = previewResult.errors.length > 0;
-			const hasWarnings = previewResult.warnings.length > 0;
+			const hasErrors = previewPayload.errors.length > 0;
+			const hasWarnings = previewPayload.warnings.length > 0;
 
 			if (hasErrors || hasWarnings) {
 				const result = await Swal.fire({
@@ -867,9 +875,9 @@ export default function GenerateSlip() {
 							<p class="mb-2 font-semibold">Review the following issues before proceeding:</p>
 							${hasErrors ? `
 								<div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-									<p class="text-sm font-semibold text-red-800 mb-2">⚠️ Errors (${previewResult.errors.length}):</p>
+									<p class="text-sm font-semibold text-red-800 mb-2">⚠️ Errors (${previewPayload.errors.length}):</p>
 									<ul class="list-disc list-inside text-sm text-red-700 space-y-1">
-										${previewResult.errors.map((err: any) => `
+										${previewPayload.errors.map((err) => `
 											<li>${err.employee_name || `Employee ${err.employee_id}`}: ${err.message}</li>
 										`).join('')}
 									</ul>
@@ -877,9 +885,9 @@ export default function GenerateSlip() {
 							` : ''}
 							${hasWarnings ? `
 								<div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
-									<p class="text-sm font-semibold text-amber-800 mb-2">⚠️ Warnings (${previewResult.warnings.length}):</p>
+									<p class="text-sm font-semibold text-amber-800 mb-2">⚠️ Warnings (${previewPayload.warnings.length}):</p>
 									<ul class="list-disc list-inside text-sm text-amber-700 space-y-1">
-										${previewResult.warnings.map((warn: any) => `
+										${previewPayload.warnings.map((warn) => `
 											<li>${warn.employee_name}: ${warn.message}</li>
 										`).join('')}
 									</ul>
@@ -887,7 +895,7 @@ export default function GenerateSlip() {
 							` : ''}
 							<div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
 								<p class="text-sm text-blue-800">
-									<strong>${previewResult.previews.length}</strong> payslips can be generated successfully
+									<strong>${previewPayload.previews.length}</strong> payslips can be generated successfully
 								</p>
 							</div>
 						</div>
@@ -905,7 +913,7 @@ export default function GenerateSlip() {
 			}
 
 			// Step 2: Show preview modal
-			setShowPreviewModal(true);
+			setShowBatchPreviewModal(true);
 
 		} catch (error) {
 			console.error('Error generating preview:', error);
@@ -921,7 +929,7 @@ export default function GenerateSlip() {
 
 	// Confirm and generate batch
 	const handleConfirmBatchGeneration = async () => {
-		if (!previewData) return;
+		if (!batchPreviewData) return;
 
 		const result = await Swal.fire({
 			icon: "question",
@@ -931,10 +939,10 @@ export default function GenerateSlip() {
 					<div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
 						<h4 class="font-semibold text-blue-900 mb-2">📊 Summary</h4>
 						<ul class="text-sm text-blue-800 space-y-1">
-							<li><strong>${previewData.summary.preview_count}</strong> employees</li>
+							<li><strong>${batchPreviewData.summary.preview_count}</strong> employees</li>
 							<li><strong>Period:</strong> ${selectedPeriod.month}</li>
-							<li><strong>Total Gross:</strong> ${formatPHP(previewData.summary.total_gross)}</li>
-							<li><strong>Total Net:</strong> ${formatPHP(previewData.summary.total_net)}</li>
+							<li><strong>Total Gross:</strong> ${formatPHP(batchPreviewData.summary.total_gross)}</li>
+							<li><strong>Total Net:</strong> ${formatPHP(batchPreviewData.summary.total_net)}</li>
 						</ul>
 					</div>
 					
@@ -963,14 +971,14 @@ export default function GenerateSlip() {
 		});
 
 		if (!result.isConfirmed) {
-			setShowPreviewModal(false);
+			setShowBatchPreviewModal(false);
 			return;
 		}
 
 		// Generate batch with backend
 		setIsGenerating(true);
-		setGenerationProgress({ current: 0, total: previewData.previews.length });
-		setShowPreviewModal(false);
+		setGenerationProgress({ current: 0, total: batchPreviewData.previews.length });
+		setShowBatchPreviewModal(false);
 
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -985,7 +993,7 @@ export default function GenerateSlip() {
 				credentials: 'include',
 				body: JSON.stringify({
 					payrollPeriod: payrollPeriodKey || selectedPeriod.month,
-					employeeIds: previewData.previews.map((p: any) => p.employee_id),
+					employeeIds: batchPreviewData.previews.map((preview) => preview.employeeId),
 					paymentMethod: 'bank_transfer',
 					sendNotifications: result.value.sendNotifications,
 				}),
@@ -1014,6 +1022,7 @@ export default function GenerateSlip() {
 						: e
 				)
 			);
+			setSelectedEmployeeIds((prev) => prev.filter((id) => !batchResult.payrolls.some((p: any) => p.employee_id === id)));
 			
 			setGenerationProgress({ current: batchResult.created, total: batchResult.created });
 			setIsGenerating(false);
@@ -1089,6 +1098,10 @@ export default function GenerateSlip() {
 				confirmButtonColor: "#dc2626",
 			});
 		}
+	};
+
+	const closeBatchPreviewModal = () => {
+		setShowBatchPreviewModal(false);
 	};
 
 	// Export batch to CSV
@@ -1202,8 +1215,25 @@ export default function GenerateSlip() {
 	};
 	
 	// Auto-calculate when hours change (backend-driven for Phase 1-4 parity)
-	const handleCalculate = async () => {
-		if (!selectedEmployee || !selectedPeriod) return;
+	const handleCalculate = async (
+		employeeOverride?: Employee,
+		attendanceOverride?: SingleSlipAttendanceSummary
+	) => {
+		const activeEmployee = employeeOverride ?? selectedEmployee;
+		const activeAttendanceSummary = attendanceOverride ?? attendanceSummary;
+
+		if (!activeEmployee || !selectedPeriod || !activeAttendanceSummary) return;
+
+		const regularHours = attendanceOverride?.regularHours ?? totalRegularHours;
+		const overtimeHours = attendanceOverride?.overtimeHours ?? totalOvertimeHours;
+		const undertimeHours = clampNonNegative(attendanceOverride?.undertimeHours ?? totalUndertimeHours);
+		const absentDays = activeAttendanceSummary.absentDays;
+		const attendanceDays = activeAttendanceSummary.attendanceDays;
+		const leaveDays = activeAttendanceSummary.leaveDays;
+		const currentRestDayHours = attendanceOverride?.restDayHours ?? restDayHours;
+		const currentSpecialHolidayHours = attendanceOverride?.specialHolidayHours ?? specialHolidayHours;
+		const currentRegularHolidayHours = attendanceOverride?.regularHolidayHours ?? regularHolidayHours;
+		const currentNightDifferentialHours = attendanceOverride?.nightDifferentialHours ?? nightDifferentialHours;
 
 		setIsCalculating(true);
 		try {
@@ -1218,26 +1248,31 @@ export default function GenerateSlip() {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					employee_id: selectedEmployee.id,
+					employee_id: activeEmployee.id,
 					start_date: selectedPeriod.startDate,
 					end_date: selectedPeriod.endDate,
-					regular_hours: totalRegularHours,
-					overtime_hours: totalOvertimeHours,
-					rest_day_hours: restDayHours,
-					special_holiday_hours: specialHolidayHours,
-					regular_holiday_hours: regularHolidayHours,
-					night_differential_hours: nightDifferentialHours,
-					undertime_hours: totalUndertimeHours,
-					absent_days: totalAbsentDays,
-					sales_commission: selectedEmployee.monthlySalary ? (selectedEmployee.monthlySalary * (selectedEmployee.salesCommissionRate ?? 0)) : 0,
-					performance_bonus: selectedEmployee.monthlySalary ? (selectedEmployee.monthlySalary * (selectedEmployee.performanceBonusRate ?? 0)) : 0,
-					other_allowances: selectedEmployee.otherAllowances ?? 0,
+					attendance_days: attendanceDays,
+					leave_days: leaveDays,
+					regular_hours: regularHours,
+					overtime_hours: overtimeHours,
+					rest_day_hours: currentRestDayHours,
+					special_holiday_hours: currentSpecialHolidayHours,
+					regular_holiday_hours: currentRegularHolidayHours,
+					night_differential_hours: currentNightDifferentialHours,
+					undertime_hours: undertimeHours,
+					absent_days: absentDays,
+					sales_commission: activeEmployee.monthlySalary ? (activeEmployee.monthlySalary * (activeEmployee.salesCommissionRate ?? 0)) : 0,
+					performance_bonus: activeEmployee.monthlySalary ? (activeEmployee.monthlySalary * (activeEmployee.performanceBonusRate ?? 0)) : 0,
+					other_allowances: activeEmployee.otherAllowances ?? 0,
 				}),
 			});
 
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({ error: 'Failed to calculate preview' }));
-				throw new Error(errorData.error || errorData.message || 'Failed to calculate preview');
+				const validationError = errorData?.errors
+					? Object.values(errorData.errors).flat().find(Boolean)
+					: null;
+				throw new Error(String(validationError || errorData.error || errorData.message || 'Failed to calculate preview'));
 			}
 
 			const previewData = await response.json();
@@ -1247,47 +1282,23 @@ export default function GenerateSlip() {
 				throw new Error('Invalid preview response');
 			}
 
-			setCalculation({
-				totalRegularHours: Number(calc.hours?.regular_hours ?? totalRegularHours),
-				totalOvertimeHours: Number(calc.hours?.overtime_hours ?? totalOvertimeHours),
-				totalRestDayHours: Number(calc.hours?.rest_day_hours ?? restDayHours),
-				totalSpecialHolidayHours: Number(calc.hours?.special_holiday_hours ?? specialHolidayHours),
-				totalRegularHolidayHours: Number(calc.hours?.regular_holiday_hours ?? regularHolidayHours),
-				totalNightDifferentialHours: Number(calc.hours?.night_differential_hours ?? nightDifferentialHours),
-				totalUndertimeHours: Number(calc.hours?.undertime_hours ?? totalUndertimeHours),
-				totalAbsentDays: Number(calc.hours?.absent_days ?? totalAbsentDays),
-				basicPay: Number(calc.earnings?.basic_pay ?? 0),
-				overtimePay: Number(calc.earnings?.overtime_pay ?? 0),
-				restDayPay: Number(calc.earnings?.rest_day_pay ?? 0),
-				specialHolidayPay: Number(calc.earnings?.special_holiday_pay ?? 0),
-				regularHolidayPay: Number(calc.earnings?.regular_holiday_pay ?? 0),
-				nightDifferentialPay: Number(calc.earnings?.night_differential_pay ?? 0),
-				salesCommission: Number(calc.earnings?.sales_commission ?? 0),
-				performanceBonus: Number(calc.earnings?.performance_bonus ?? 0),
-				otherAllowances: Number(calc.earnings?.other_allowances ?? 0),
-				totalEarnings: Number(calc.earnings?.total_earnings ?? 0),
-				withholdingTax: Number(calc.deductions?.withholding_tax ?? 0),
-				sssContribution: Number(calc.deductions?.sss_contribution ?? 0),
-				philhealthContribution: Number(calc.deductions?.philhealth_contribution ?? 0),
-				pagibigContribution: Number(calc.deductions?.pagibig_contribution ?? 0),
-				absentDeductions: Number(calc.deductions?.absent_deductions ?? 0),
-				undertimeDeductions: Number(calc.deductions?.undertime_deductions ?? 0),
-				loanDeductions: 0,
-				otherDeductions: Number(calc.deductions?.other_deductions ?? 0),
-				totalDeductions: Number(calc.deductions?.total_deductions ?? 0),
-				grossPay: Number(calc.gross_pay ?? 0),
-				netPay: Number(calc.net_pay ?? 0),
-			});
+			setPayrollBreakdown(normalizeSinglePreviewBreakdown(activeEmployee, calc));
 		} catch (error) {
 			console.error('Error calculating payroll preview:', error);
-			setCalculation(null);
+			setPayrollBreakdown(null);
+			await Swal.fire({
+				icon: 'error',
+				title: 'Calculation Failed',
+				text: error instanceof Error ? error.message : 'Failed to calculate payroll preview.',
+				confirmButtonColor: '#dc2626',
+			});
 		} finally {
 			setIsCalculating(false);
 		}
 	};
 
 	const handleGenerateSlip = async () => {
-		if (!selectedEmployee || !calculation) return;
+		if (!selectedEmployee || !payrollBreakdown || !attendanceSummary) return;
 
 		// Confirm generation
 		const result = await Swal.fire({
@@ -1299,7 +1310,7 @@ export default function GenerateSlip() {
 					<ul class="list-disc list-inside mb-4">
 						<li><strong>Employee:</strong> ${selectedEmployee.firstName} ${selectedEmployee.lastName}</li>
 						<li><strong>Period:</strong> ${selectedPeriod.month}</li>
-						<li><strong>Net Pay:</strong> ${formatPHP(calculation.netPay)}</li>
+						<li><strong>Net Pay:</strong> ${formatPHP(payrollBreakdown.netPay)}</li>
 					</ul>
 					<p class="text-sm text-gray-600">This saves a payroll record for tracking. Actual payout and physical payslip handout are handled offline by the shop owner.</p>
 				</div>
@@ -1322,20 +1333,16 @@ export default function GenerateSlip() {
 			// base_salary and deductions are intentionally omitted — store() reads
 			// base salary from the employee record and computes statutory deductions
 			// (SSS, PhilHealth, Pag-IBIG, tax) via PayrollService.
-			const workingDays = selectedPeriod.workingDays;
-			const daysPresent  = Math.round(totalRegularHours / 8);
-			// absent_days = working days that were neither attended nor on approved leave.
-			// leave_days  = days covered by approved leave (no pay deduction).
-			// The backend uses absent_days to create a prorated deduction component.
-			const leaveDays  = 0;  // approved leave (fetched from attendance; 0 if not tracked separately)
-			const absentDays = Math.max(0, workingDays - daysPresent - leaveDays);
+			const attendanceDays = attendanceSummary.attendanceDays;
+			const leaveDays = attendanceSummary.leaveDays;
+			const absentDays = attendanceSummary.absentDays;
 
 			const payrollData = {
 				employee_id:      selectedEmployee.id,
 				payrollPeriod:    payrollPeriodKey || selectedPeriod.month,
 				paymentMethod:    'bank_transfer',
 				// Attendance inputs — drive the service's day-worked calculation
-				attendance_days:  daysPresent,
+				attendance_days:  attendanceDays,
 				leave_days:       leaveDays,
 				absent_days:      absentDays,
 				overtime_hours:   totalOvertimeHours,
@@ -1343,11 +1350,11 @@ export default function GenerateSlip() {
 				special_holiday_hours: specialHolidayHours,
 				regular_holiday_hours: regularHolidayHours,
 				night_differential_hours: nightDifferentialHours,
-				undertime_hours:  totalUndertimeHours,
+				undertime_hours:  clampNonNegative(totalUndertimeHours),
 				// Extra earnings — appended as custom components by the service
-				salesCommission:  calculation.salesCommission,
-				performanceBonus: calculation.performanceBonus,
-				otherAllowances:  calculation.otherAllowances,
+				salesCommission:  payrollBreakdown.earnings.salesCommission,
+				performanceBonus: payrollBreakdown.earnings.performanceBonus,
+				otherAllowances:  payrollBreakdown.earnings.otherAllowances,
 				notes: `Generated payslip for period ${selectedPeriod.month}. Regular: ${totalRegularHours}h, OT: ${totalOvertimeHours}h, Rest Day: ${restDayHours}h, Special Holiday: ${specialHolidayHours}h, Regular Holiday: ${regularHolidayHours}h, Night Diff: ${nightDifferentialHours}h, Undertime: ${totalUndertimeHours}h, Absent: ${absentDays} day(s)`,
 			};
 
@@ -1397,8 +1404,8 @@ export default function GenerateSlip() {
 						<ul class="list-disc list-inside mb-4">
 							<li><strong>Employee:</strong> ${selectedEmployee.firstName} ${selectedEmployee.lastName}</li>
 							<li><strong>Period:</strong> ${selectedPeriod.month}</li>
-							<li><strong>Gross Pay:</strong> ${formatPHP(calculation.grossPay)}</li>
-							<li><strong>Net Pay:</strong> ${formatPHP(calculation.netPay)}</li>
+							<li><strong>Gross Pay:</strong> ${formatPHP(payrollBreakdown.grossPay)}</li>
+							<li><strong>Net Pay:</strong> ${formatPHP(payrollBreakdown.netPay)}</li>
 						</ul>
 						<p class="text-sm text-green-700">The payslip has been locked and is ready for review.</p>
 					</div>
@@ -1421,6 +1428,10 @@ export default function GenerateSlip() {
 		}
 	};
 
+	const handleCalculateClick = () => {
+		void handleCalculate();
+	};
+
 	const startIndex = (page - 1) * pageSize;
 	const endIndex = Math.min(startIndex + pageSize, filtered.length);
 
@@ -1431,6 +1442,8 @@ export default function GenerateSlip() {
 	const thirteenthYearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
 	const handleReleaseThirteenthMonth = async () => {
+		const controlledReleaseDate = `${thirteenthYear}-12-31`;
+
 		const result = await Swal.fire({
 			icon: "question",
 			title: "Run 13th-Month Release?",
@@ -1439,6 +1452,7 @@ export default function GenerateSlip() {
 					<p class="mb-2">This will execute controlled 13th-month release for:</p>
 					<ul class="list-disc list-inside mb-3">
 						<li><strong>Year:</strong> ${thirteenthYear}</li>
+						<li><strong>Release Date:</strong> ${controlledReleaseDate}</li>
 						<li><strong>Window:</strong> December-only (unless backend override is allowed)</li>
 					</ul>
 					<p class="text-xs text-gray-600">Only employees with accrued unreleased balance and valid December payroll will be processed.</p>
@@ -1466,6 +1480,7 @@ export default function GenerateSlip() {
 				credentials: 'include',
 				body: JSON.stringify({
 					year: thirteenthYear,
+					release_date: controlledReleaseDate,
 				}),
 			});
 
@@ -1508,13 +1523,13 @@ export default function GenerateSlip() {
 				<p className="text-gray-600 dark:text-gray-400">Generate payroll records for SME tracking; payslips are released physically by the shop owner.</p>
 			</div>
 
-			{/* Phase 5: 13th-Month Controls */}
-			<div className="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-900/20 p-4">
+			{/* 13th-Month Controls */}
+			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-6">
 				<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
 					<div>
-						<h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">13th-Month Controls</h3>
-						<p className="text-sm text-indigo-900 dark:text-indigo-200 mt-1">
-							Run controlled December release for Phase 5.
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">13th-Month Release</h3>
+						<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+							Run controlled December release for your selected year.
 						</p>
 					</div>
 					<div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
@@ -1522,7 +1537,7 @@ export default function GenerateSlip() {
 							value={thirteenthYear}
 							onChange={(e) => setThirteenthYear(Number(e.target.value))}
 							aria-label="Select 13th-month year"
-							className="rounded-lg border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+							className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
 						>
 							{thirteenthYearOptions.map((year) => (
 								<option key={year} value={year}>{year}</option>
@@ -1531,7 +1546,7 @@ export default function GenerateSlip() {
 						<button
 							onClick={handleReleaseThirteenthMonth}
 							disabled={isProcessingThirteenth}
-							className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+							className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 						>
 							{isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
 						</button>
@@ -1539,39 +1554,39 @@ export default function GenerateSlip() {
 				</div>
 			</div>
 
-			{/* Phase 1: Governance Status */}
-			<div className="rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-900/20 p-4">
+			{/* Release Authorization Status */}
+			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-6">
 				<div className="flex flex-col gap-3">
 					<div>
-						<h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Phase 1 Governance Status</h3>
-						<p className="text-sm text-emerald-900 dark:text-emerald-200 mt-1">
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Release Authorization Status</h3>
+						<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
 							{selectedPeriod ? `${selectedPeriod.month} readiness for release controls` : 'Select a payroll period to view release readiness'}
 						</p>
 					</div>
-					<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-						<div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white/80 dark:bg-gray-900/60 px-3 py-2">
-							<p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Checker Approved</p>
-							<p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
+							<p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Checker Approved</p>
+							<p className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
 								{isLoadingGovernanceStatus
 									? 'Loading…'
 									: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
 							</p>
-							<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+							<p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
 								{governanceStatus.requireChecker
 									? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
 									: 'Checker step is not required'}
 							</p>
 						</div>
-						<div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white/80 dark:bg-gray-900/60 px-3 py-2">
-							<p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Final Approver Required</p>
-							<p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
+						<div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
+							<p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Final Approver Required</p>
+							<p className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
 								{isLoadingGovernanceStatus
 									? 'Loading…'
 									: governanceStatus.requireFinalApprover
 										? `${governanceStatus.awaitingFinalApprover} awaiting final release`
 										: 'Not required'}
 							</p>
-							<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+							<p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
 								{isLoadingGovernanceStatus
 									? 'Fetching governance checks...'
 									: `${governanceStatus.paidPayrolls} already paid`}
@@ -1609,52 +1624,73 @@ export default function GenerateSlip() {
 			</div>
 
 			{/* Employee Table */}
-			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-				<div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-					<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Active Employees</h3>
-					<div className="flex items-center gap-3">
-						<button
-							onClick={handleGenerateAll}
-							disabled={pendingSlips === 0 || isGenerating}
-							className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-							title={pendingSlips === 0 ? "No pending payslips" : `Generate ${pendingSlips} payslips`}
-						>
-							<CalculatorIcon className="size-4" />
-							Generate All ({pendingSlips})
-						</button>
+			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
+				<div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800 bg-linear-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-900/90">
+					<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 						<div>
-							<label className="text-sm text-gray-600 dark:text-gray-300">Payroll Period: </label>
-							<select
-								value={selectedPeriodIndex}
-								onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
-								disabled={isLoadingPeriods || payrollPeriods.length === 0}
-								aria-label="Select payroll period"
-								className="ml-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1 text-sm text-gray-900 dark:text-white inline-block disabled:opacity-50"
-							>
-								{isLoadingPeriods ? (
-									<option>Loading periods...</option>
-								) : payrollPeriods.length === 0 ? (
-									<option>No periods available</option>
-								) : (
-									payrollPeriods.map((period, index) => (
-										<option key={index} value={index}>
-											{period.month} {period.attendanceStatus === "finalized" ? "✓" : "⏳"}
-										</option>
-									))
-								)}
-							</select>
-							{selectedPeriod?.payCycle && (
-								<span className="ml-2 inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-900/20 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300">
-									Cycle: {selectedPeriod.payCycle === "semi_monthly" ? "Semi-monthly" : "Monthly"}
-								</span>
-							)}
+							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Active Employees</h3>
+							<p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+								Select employees to include in this payroll run.
+							</p>
+						</div>
+
+						<div className="w-full lg:w-auto">
+							<div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
+								<label className="text-sm font-medium text-gray-600 dark:text-gray-300">Payroll Period</label>
+								<select
+									value={selectedPeriodIndex}
+									onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
+									disabled={isLoadingPeriods || payrollPeriods.length === 0}
+									aria-label="Select payroll period"
+									className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white inline-block disabled:opacity-50"
+								>
+									{isLoadingPeriods ? (
+										<option>Loading periods...</option>
+									) : payrollPeriods.length === 0 ? (
+										<option>No periods available</option>
+									) : (
+										payrollPeriods.map((period, index) => (
+											<option key={index} value={index}>
+												{period.month} {period.attendanceStatus === "finalized" ? "✓" : ""}
+											</option>
+										))
+									)}
+								</select>
+								<button
+									onClick={handleGenerateAll}
+									disabled={selectedPendingEmployees.length === 0 || isGenerating}
+									className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+									title={selectedPendingEmployees.length === 0 ? "Select employees first" : `Generate ${selectedPendingEmployees.length} payslips`}
+								>
+									<CalculatorIcon className="size-4" />
+									Generate Selected ({selectedPendingEmployees.length})
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>
+
+				{selectedPendingEmployees.length > 0 && (
+					<div className="px-6 py-3 border-b border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-900/10">
+						<p className="text-sm text-blue-800 dark:text-blue-300">
+							{selectedPendingEmployees.length} employee{selectedPendingEmployees.length > 1 ? "s" : ""} selected for payroll generation.
+						</p>
+					</div>
+				)}
 				<div className="overflow-x-auto">
 					<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm">
 						<thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase text-gray-500 dark:text-gray-400">
 							<tr>
+								<th className="px-4 py-3 text-center">
+									<input
+										type="checkbox"
+										checked={isAllFilteredSelected}
+										onChange={toggleAllFilteredSelection}
+										disabled={filteredSelectableIds.length === 0}
+										className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+										aria-label="Select all filtered employees"
+									/>
+								</th>
 								<th className="px-6 py-3 text-left">Employee</th>
 								<th className="px-6 py-3 text-left">Position</th>
 								<th className="px-6 py-3 text-left">Base Salary</th>
@@ -1665,7 +1701,7 @@ export default function GenerateSlip() {
 						<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
 							{isLoadingEmployees ? (
 								<tr>
-									<td colSpan={5} className="px-6 py-12 text-center">
+									<td colSpan={6} className="px-6 py-12 text-center">
 										<div className="flex flex-col items-center justify-center space-y-3">
 											<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
 											<p className="text-sm text-gray-500 dark:text-gray-400">Loading employees...</p>
@@ -1674,13 +1710,30 @@ export default function GenerateSlip() {
 								</tr>
 							) : paginated.length === 0 ? (
 								<tr>
-									<td className="px-6 py-6 text-center text-gray-500 dark:text-gray-400" colSpan={5}>
+									<td className="px-6 py-6 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
 										No active employees found.
 									</td>
 								</tr>
 							) : (
 								paginated.map((employee) => (
-								<tr key={employee.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+								<tr
+									key={employee.id}
+									className={`transition-colors ${
+										selectedEmployeeIds.includes(employee.id)
+											? "bg-blue-50/70 dark:bg-blue-900/10"
+											: "hover:bg-gray-50 dark:hover:bg-gray-800/50"
+									}`}
+								>
+									<td className="px-4 py-4 text-center">
+										<input
+											type="checkbox"
+											checked={selectedEmployeeIds.includes(employee.id)}
+											onChange={() => toggleEmployeeSelection(employee.id)}
+											disabled={employee.hasSlipForPeriod || employee.status !== "active"}
+											className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+											aria-label={`Select ${employee.firstName} ${employee.lastName}`}
+										/>
+									</td>
 									<td className="px-6 py-4">
 										<div className="flex items-center gap-3">
 											<div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
@@ -1755,7 +1808,7 @@ export default function GenerateSlip() {
 										<button
 											key={p}
 											onClick={() => setPage(p)}
-											className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
+											className={`min-w-10 h-10 px-3 rounded-lg font-medium transition-colors ${
 												page === p
 													? "bg-blue-600 text-white"
 													: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -1791,7 +1844,7 @@ export default function GenerateSlip() {
 
 			{/* Generation Modal - Continued in next part due to length */}
 			{selectedEmployee && createPortal(
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
 						<div className="flex items-start justify-between mb-6">
 							<div>
@@ -1882,7 +1935,7 @@ export default function GenerateSlip() {
 									</p>
 								</div>
 								<button
-									onClick={handleCalculate}
+									onClick={handleCalculateClick}
 									className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-all flex items-center gap-2"
 								>
 									<CalculatorIcon className="size-4" />
@@ -1907,7 +1960,11 @@ export default function GenerateSlip() {
 										/>
 										<span className="absolute right-3 top-2.5 text-xs text-green-600 dark:text-green-400">Auto</span>
 									</div>
-									<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Expected: {selectedPeriod.workingDays * 8}h</p>
+									<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+										Expected: {selectedPeriod.hasConfiguredOperatingHours
+											? formatHours(Number(selectedPeriod.expectedRegularHours ?? 0))
+											: 'Not configured'}
+									</p>
 								</div>
 								
 								<div>
@@ -1963,7 +2020,12 @@ export default function GenerateSlip() {
 										/>
 										<span className="absolute right-3 top-2.5 text-xs text-green-600 dark:text-green-400">Auto</span>
 									</div>
-									<p className="text-xs text-red-500 dark:text-red-400 mt-1">Max: {selectedPeriod.workingDays}</p>
+									<p className="text-xs text-red-500 dark:text-red-400 mt-1">
+										Max: {selectedPeriod.hasConfiguredOperatingHours
+											? Number(selectedPeriod.expectedAttendanceDays ?? 0)
+											: selectedPeriod.workingDays}{' '}
+										{selectedPeriod.hasConfiguredOperatingHours ? 'scheduled days' : 'weekdays'}
+									</p>
 								</div>
 
 								<div>
@@ -2043,7 +2105,7 @@ export default function GenerateSlip() {
 									<p className="text-gray-600 dark:text-gray-400">Calculating payroll...</p>
 								</div>
 							</div>
-						) : calculation ? (
+						) : payrollBreakdown ? (
 							<div className="space-y-4">
 								{/* Hours Breakdown */}
 								<div className="rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
@@ -2054,35 +2116,35 @@ export default function GenerateSlip() {
 									<div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Hours</span>
-											<span className="text-lg font-bold text-gray-900 dark:text-white">{Math.round(calculation.totalRegularHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-gray-900 dark:text-white">{formatHours(payrollBreakdown.hours.regularHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Overtime Hours</span>
-											<span className="text-lg font-bold text-green-600 dark:text-green-400">{Math.round(calculation.totalOvertimeHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-green-600 dark:text-green-400">{formatHours(payrollBreakdown.hours.overtimeHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Rest Day Hours</span>
-											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalRestDayHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.restDayHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Special Holiday Hours</span>
-											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalSpecialHolidayHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.specialHolidayHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Holiday Hours</span>
-											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalRegularHolidayHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.regularHolidayHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Night Diff Hours</span>
-											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(calculation.totalNightDifferentialHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.nightDifferentialHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Undertime</span>
-											<span className="text-lg font-bold text-amber-600 dark:text-amber-400">{Math.round(calculation.totalUndertimeHours * 100) / 100}h</span>
+											<span className="text-lg font-bold text-amber-600 dark:text-amber-400">{formatHours(payrollBreakdown.hours.undertimeHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Absent Days</span>
-											<span className="text-lg font-bold text-red-600 dark:text-red-400">{calculation.totalAbsentDays}</span>
+											<span className="text-lg font-bold text-red-600 dark:text-red-400">{payrollBreakdown.hours.absentDays}</span>
 										</div>
 									</div>
 								</div>
@@ -2093,58 +2155,58 @@ export default function GenerateSlip() {
 									<div className="space-y-2.5 text-sm">
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">Basic Pay</span>
-											<span className="text-gray-900 dark:text-white font-medium">{formatPHP(calculation.basicPay)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">{formatPHP(payrollBreakdown.earnings.basicPay)}</span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">Overtime Pay</span>
-											<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.overtimePay)}</span>
+											<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.overtimePay)}</span>
 										</div>
-										{calculation.restDayPay > 0 && (
+										{payrollBreakdown.earnings.restDayPay > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Rest Day Pay</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.restDayPay)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.restDayPay)}</span>
 											</div>
 										)}
-										{calculation.specialHolidayPay > 0 && (
+										{payrollBreakdown.earnings.specialHolidayPay > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Special Holiday Pay</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.specialHolidayPay)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.specialHolidayPay)}</span>
 											</div>
 										)}
-										{calculation.regularHolidayPay > 0 && (
+										{payrollBreakdown.earnings.regularHolidayPay > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Regular Holiday Pay</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.regularHolidayPay)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.regularHolidayPay)}</span>
 											</div>
 										)}
-										{calculation.nightDifferentialPay > 0 && (
+										{payrollBreakdown.earnings.nightDifferentialPay > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Night Differential Pay</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.nightDifferentialPay)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.nightDifferentialPay)}</span>
 											</div>
 										)}
-										{calculation.salesCommission > 0 && (
+										{payrollBreakdown.earnings.salesCommission > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Sales Commission</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.salesCommission)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.salesCommission)}</span>
 											</div>
 										)}
-										{calculation.performanceBonus > 0 && (
+										{payrollBreakdown.earnings.performanceBonus > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Performance Bonus</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.performanceBonus)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.performanceBonus)}</span>
 											</div>
 										)}
-										{calculation.otherAllowances > 0 && (
+										{payrollBreakdown.earnings.otherAllowances > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Other Allowances</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(calculation.otherAllowances)}</span>
+												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.otherAllowances)}</span>
 											</div>
 										)}
 										<div className="border-t border-gray-200 dark:border-gray-700 pt-2.5 mt-2.5">
 											<div className="flex items-center justify-between">
 												<span className="text-sm font-semibold text-gray-900 dark:text-white">Total Earnings</span>
-												<span className="text-base font-bold text-green-600 dark:text-green-400">{formatPHP(calculation.totalEarnings)}</span>
+												<span className="text-base font-bold text-green-600 dark:text-green-400">{formatPHP(payrollBreakdown.earnings.totalEarnings)}</span>
 											</div>
 										</div>
 									</div>
@@ -2156,48 +2218,48 @@ export default function GenerateSlip() {
 									<div className="space-y-2.5 text-sm">
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">Withholding Tax</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.withholdingTax)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.withholdingTax)}</span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">SSS Contribution</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.sssContribution)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.sssContribution)}</span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">PhilHealth Contribution</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.philhealthContribution)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.philhealthContribution)}</span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">Pag-IBIG Contribution</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.pagibigContribution)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.pagibigContribution)}</span>
 										</div>
-										{calculation.absentDeductions > 0 && (
+										{payrollBreakdown.deductions.absentDeductions > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Absent Deductions</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.absentDeductions)}</span>
+												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.absentDeductions)}</span>
 											</div>
 										)}
-										{calculation.undertimeDeductions > 0 && (
+										{payrollBreakdown.deductions.undertimeDeductions > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Undertime Deductions</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.undertimeDeductions)}</span>
+												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.undertimeDeductions)}</span>
 											</div>
 										)}
-										{calculation.loanDeductions > 0 && (
+										{payrollBreakdown.deductions.loanDeductions > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Loan Payment</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.loanDeductions)}</span>
+												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.loanDeductions)}</span>
 											</div>
 										)}
-										{calculation.otherDeductions > 0 && (
+										{payrollBreakdown.deductions.otherDeductions > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Other Deductions</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(calculation.otherDeductions)}</span>
+												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.otherDeductions)}</span>
 											</div>
 										)}
 										<div className="border-t border-gray-200 dark:border-gray-700 pt-2.5 mt-2.5">
 											<div className="flex items-center justify-between">
 												<span className="text-sm font-semibold text-gray-900 dark:text-white">Total Deductions</span>
-												<span className="text-base font-bold text-red-600 dark:text-red-400">-{formatPHP(calculation.totalDeductions)}</span>
+												<span className="text-base font-bold text-red-600 dark:text-red-400">-{formatPHP(payrollBreakdown.totalDeductions)}</span>
 											</div>
 										</div>
 									</div>
@@ -2208,18 +2270,18 @@ export default function GenerateSlip() {
 									<div className="flex items-center justify-between">
 										<div>
 											<p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Net Pay</p>
-											<p className="text-3xl font-extrabold text-green-600 dark:text-green-400">{formatPHP(calculation.netPay)}</p>
+											<p className="text-3xl font-extrabold text-green-600 dark:text-green-400">{formatPHP(payrollBreakdown.netPay)}</p>
 										</div>
 										<CheckCircleIcon className="size-16 text-green-500 dark:text-green-400 opacity-50" />
 									</div>
 									<div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-2 gap-4 text-sm">
 										<div>
 											<span className="text-gray-600 dark:text-gray-400 block">Gross Pay</span>
-											<span className="font-semibold text-gray-900 dark:text-white">{formatPHP(calculation.grossPay)}</span>
+											<span className="font-semibold text-gray-900 dark:text-white">{formatPHP(payrollBreakdown.grossPay)}</span>
 										</div>
 										<div>
 											<span className="text-gray-600 dark:text-gray-400 block">Total Deductions</span>
-											<span className="font-semibold text-red-600 dark:text-red-400">-{formatPHP(calculation.totalDeductions)}</span>
+											<span className="font-semibold text-red-600 dark:text-red-400">-{formatPHP(payrollBreakdown.totalDeductions)}</span>
 										</div>
 									</div>
 								</div>
@@ -2227,7 +2289,7 @@ export default function GenerateSlip() {
 								{/* Warning Message */}
 								<div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/30 rounded-lg p-4">
 									<div className="flex gap-3">
-										<AlertIcon className="size-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+										<AlertIcon className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
 										<div className="text-sm text-amber-800 dark:text-amber-300">
 											<p className="font-semibold mb-1">Important Notice</p>
 											<p>Once generated, this payslip will be locked and cannot be modified without proper authorization. Please verify all calculations before proceeding.</p>
@@ -2238,29 +2300,64 @@ export default function GenerateSlip() {
 						) : (
 							<div className="text-center py-12 text-gray-500 dark:text-gray-400">
 								<CalculatorIcon className="size-16 mx-auto mb-4 opacity-30" />
-								<p className="text-lg font-medium">Enter hours and click Calculate</p>
-								<p className="text-sm">Input the employee's hours worked above to see the payroll calculation</p>
+								<p className="text-lg font-medium">Review attendance inputs and click Calculate</p>
+								<p className="text-sm">A payroll preview will appear here for the selected employee and period.</p>
 							</div>
 						)}
 
-						{showPreviewModal && previewData && (
-							<>
-								<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+						<div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
+							<button
+								onClick={closeEmployee}
+								className="px-5 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={handleGenerateSlip}
+								disabled={!payrollBreakdown || isCalculating || isGenerating}
+								className="px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-green-500/30"
+							>
+								<CheckIcon className="size-4" />
+								{isGenerating ? 'Generating...' : 'Generate Payslip'}
+							</button>
+						</div>
+
+					</div>
+				</div>,
+				document.body
+			)}
+
+			{showBatchPreviewModal && batchPreviewData && createPortal(
+				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-8">
+						<div className="flex items-start justify-between mb-6">
+							<div>
+								<h3 className="text-2xl font-bold text-gray-900 dark:text-white">Batch Payroll Preview</h3>
+								<p className="text-gray-500 dark:text-gray-400 text-sm">{selectedPeriod.month} ({selectedPeriod.startDate} to {selectedPeriod.endDate})</p>
+							</div>
+							<button
+								onClick={closeBatchPreviewModal}
+								className="text-2xl text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+							>
+								×
+							</button>
+						</div>
+
+						<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
 							<div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
 								<p className="text-sm text-green-600 dark:text-green-400 mb-1">Total Gross</p>
-								<p className="text-2xl font-bold text-green-900 dark:text-green-300">{formatPHP(previewData.summary.total_gross)}</p>
+								<p className="text-2xl font-bold text-green-900 dark:text-green-300">{formatPHP(batchPreviewData.summary.total_gross)}</p>
 							</div>
 							<div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
 								<p className="text-sm text-red-600 dark:text-red-400 mb-1">Total Deductions</p>
-								<p className="text-2xl font-bold text-red-900 dark:text-red-300">{formatPHP(previewData.summary.total_gross - previewData.summary.total_net)}</p>
+								<p className="text-2xl font-bold text-red-900 dark:text-red-300">{formatPHP(batchPreviewData.summary.total_gross - batchPreviewData.summary.total_net)}</p>
 							</div>
 							<div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
 								<p className="text-sm text-purple-600 dark:text-purple-400 mb-1">Total Net</p>
-								<p className="text-2xl font-bold text-purple-900 dark:text-purple-300">{formatPHP(previewData.summary.total_net)}</p>
+								<p className="text-2xl font-bold text-purple-900 dark:text-purple-300">{formatPHP(batchPreviewData.summary.total_net)}</p>
 							</div>
 						</div>
 
-						{/* Employee Preview Table */}
 						<div className="overflow-x-auto mb-6">
 							<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm">
 								<thead className="bg-gray-50 dark:bg-gray-900/40">
@@ -2274,11 +2371,11 @@ export default function GenerateSlip() {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-									{previewData.previews.map((preview: any) => (
-										<tr key={preview.employee_id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+									{batchPreviewData.previews.map((preview) => (
+										<tr key={preview.employeeId} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
 											<td className="px-4 py-3">
 												<div className="flex flex-col">
-													<span className="font-medium text-gray-900 dark:text-white">{preview.employee_name}</span>
+													<span className="font-medium text-gray-900 dark:text-white">{preview.employeeName}</span>
 													<span className="text-xs text-gray-500 dark:text-gray-400">{preview.position}</span>
 												</div>
 											</td>
@@ -2286,28 +2383,28 @@ export default function GenerateSlip() {
 											<td className="px-4 py-3 text-right">
 												<div className="text-xs space-y-1">
 													<div className="text-gray-600 dark:text-gray-400">
-														R: {preview.attendance.total_regular_hours}h
+														R: {formatHours(preview.hours.regularHours)}
 													</div>
-													{preview.attendance.total_overtime_hours > 0 && (
+													{preview.hours.overtimeHours > 0 && (
 														<div className="text-green-600 dark:text-green-400">
-															OT: {preview.attendance.total_overtime_hours}h
+															OT: {formatHours(preview.hours.overtimeHours)}
 														</div>
 													)}
-													{preview.attendance.total_absent_days > 0 && (
+													{preview.hours.absentDays > 0 && (
 														<div className="text-red-600 dark:text-red-400">
-															Absent: {preview.attendance.total_absent_days}d
+															Absent: {preview.hours.absentDays}d
 														</div>
 													)}
 												</div>
 											</td>
 											<td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
-												{formatPHP(preview.calculation.gross_salary)}
+												{formatPHP(preview.grossPay)}
 											</td>
 											<td className="px-4 py-3 text-right text-red-600 dark:text-red-400">
-												{formatPHP(preview.calculation.total_deductions)}
+												{formatPHP(preview.totalDeductions)}
 											</td>
 											<td className="px-4 py-3 text-right font-bold text-green-600 dark:text-green-400">
-												{formatPHP(preview.calculation.net_salary)}
+												{formatPHP(preview.netPay)}
 											</td>
 										</tr>
 									))}
@@ -2315,10 +2412,9 @@ export default function GenerateSlip() {
 							</table>
 						</div>
 
-						{/* Action Buttons */}
 						<div className="flex justify-end gap-3">
 							<button
-								onClick={() => setShowPreviewModal(false)}
+								onClick={closeBatchPreviewModal}
 								className="px-5 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
 							>
 								Cancel
@@ -2331,8 +2427,6 @@ export default function GenerateSlip() {
 								Confirm & Generate All
 							</button>
 						</div>
-							</>
-						)}
 					</div>
 				</div>,
 				document.body
@@ -2340,7 +2434,7 @@ export default function GenerateSlip() {
 
 			{/* Generation Progress Overlay */}
 			{isGenerating && generationProgress.total > 0 && createPortal(
-				<div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+				<div className="fixed inset-0 z-999999 bg-black/80 backdrop-blur-sm flex items-center justify-center">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 max-w-md w-full">
 						<div className="text-center">
 							<div className="mb-4">
@@ -2355,12 +2449,11 @@ export default function GenerateSlip() {
 							<p className="text-gray-600 dark:text-gray-400 mb-4">
 								Processing {generationProgress.current} of {generationProgress.total} employees
 							</p>
-							<div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
-								<div 
-									className="bg-blue-600 h-full transition-all duration-300 rounded-full"
-									style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
-								/>
-							</div>
+							<progress
+								className="h-4 w-full overflow-hidden rounded-full appearance-none [&::-webkit-progress-bar]:bg-gray-200 dark:[&::-webkit-progress-bar]:bg-gray-700 [&::-webkit-progress-value]:bg-blue-600 [&::-moz-progress-bar]:bg-blue-600"
+								value={generationProgress.current}
+								max={generationProgress.total}
+							/>
 							<p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
 								{Math.round((generationProgress.current / generationProgress.total) * 100)}% Complete
 							</p>

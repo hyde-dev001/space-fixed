@@ -10,6 +10,7 @@ use App\Models\HR\BranchPayrollSetting;
 use App\Models\Employee;
 use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
+use App\Models\HR\LeaveRequest;
 use App\Services\HR\LatenessTrackingService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
@@ -238,7 +239,55 @@ class AttendanceController extends Controller
         $employee = Employee::forShopOwner($user->shop_owner_id)
             ->findOrFail($request->employee_id);
 
-        $today = Carbon::today()->toDateString();
+        // Use shop timezone for all date/time operations
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $now = Carbon::now($shopTimezone);
+        $today = $now->toDateString();
+
+        $shopOwner = ShopOwner::find($user->shop_owner_id);
+        $dayOfWeek = strtolower($now->format('l'));
+        $openField = $dayOfWeek . '_open';
+        $closeField = $dayOfWeek . '_close';
+        $shopOpenTimeValue = $shopOwner ? $shopOwner->{$openField} : null;
+        $shopCloseTimeValue = $shopOwner ? $shopOwner->{$closeField} : null;
+
+        if (!$shopOpenTimeValue || !$shopCloseTimeValue) {
+            return response()->json([
+                'error' => 'Shop is closed',
+                'message' => 'The shop is closed today. You cannot clock in at this time.',
+            ], 422);
+        }
+
+        $shopOpenTime = Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopOpenTimeValue);
+        $shopCloseTime = Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopCloseTimeValue);
+
+        // Handle overnight schedules (e.g., 22:00 to 06:00 next day)
+        if ($shopCloseTime->lessThanOrEqualTo($shopOpenTime)) {
+            $shopCloseTime->addDay();
+        }
+
+        // Grace period: allow check-in up to 30 minutes before opening
+        $earliestAllowedTime = $shopOpenTime->copy()->subMinutes(30);
+
+        if ($now->lt($earliestAllowedTime)) {
+            $minutesTooEarly = ceil($now->diffInMinutes($earliestAllowedTime, true));
+            return response()->json([
+                'error' => 'Too early to check in',
+                'message' => "Shop opens at {$shopOpenTime->format('H:i')}. You can check in starting from {$earliestAllowedTime->format('H:i')}.",
+                'shop_open_time' => $shopOpenTime->format('H:i'),
+                'earliest_check_in' => $earliestAllowedTime->format('H:i'),
+                'minutes_too_early' => $minutesTooEarly,
+            ], 422);
+        }
+
+        if ($now->gt($shopCloseTime)) {
+            return response()->json([
+                'error' => 'Outside shop hours',
+                'message' => "Shop hours for today are {$shopOpenTime->format('H:i')} to {$shopCloseTime->format('H:i')}. You can no longer clock in.",
+                'shop_open_time' => $shopOpenTime->format('H:i'),
+                'shop_close_time' => $shopCloseTime->format('H:i'),
+            ], 422);
+        }
 
         // Check if employee already checked in today
         $existingRecord = AttendanceRecord::forEmployee($request->employee_id)
@@ -251,11 +300,10 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        $now = Carbon::now();
         $checkInTime = $now->format('H:i');
 
         // Determine status based on check-in time
-        $standardTime = Carbon::parse('08:00:00');
+        $standardTime = $shopOpenTime;
         $status = $now->gt($standardTime) ? 'late' : 'present';
 
         if ($existingRecord) {
@@ -545,17 +593,32 @@ class AttendanceController extends Controller
         // ── END GEOFENCE ────────────────────────────────────────────────
         $dayOfWeek = strtolower($now->format('l')); // monday, tuesday, etc.
         $openField = $dayOfWeek . '_open';
+        $closeField = $dayOfWeek . '_close';
         $shopOpenTimeValue = $shopOwner ? $shopOwner->{$openField} : null;
+        $shopCloseTimeValue = $shopOwner ? $shopOwner->{$closeField} : null;
+
+        if (!$shopOpenTimeValue || !$shopCloseTimeValue) {
+            return response()->json([
+                'error' => 'Shop is closed',
+                'message' => 'The shop is closed today. You cannot clock in at this time.',
+            ], 422);
+        }
+
+        $shopOpenTime = Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopOpenTimeValue);
+        $shopCloseTime = Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopCloseTimeValue);
+
+        // Handle overnight schedules (e.g., 22:00 to 06:00 next day)
+        if ($shopCloseTime->lessThanOrEqualTo($shopOpenTime)) {
+            $shopCloseTime->addDay();
+        }
         
         $isEarly = false;
         $minutesEarly = 0;
         $expectedCheckIn = null;
         
-        if (!$isSecondShift && $shopOpenTimeValue) {
+        if (!$isSecondShift) {
             // Only validate early check-in for first shift
             $expectedCheckIn = substr($shopOpenTimeValue, 0, 5); // HH:MM format
-            // Parse shop open time for TODAY using shop timezone
-            $shopOpenTime = Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopOpenTimeValue);
             
             // Grace period: Allow check-in up to 30 minutes before shop opens
             $earliestAllowedTime = $shopOpenTime->copy()->subMinutes(30);
@@ -570,6 +633,16 @@ class AttendanceController extends Controller
                     'shop_open_time' => $expectedCheckIn,
                     'earliest_check_in' => $earliestAllowedTime->format('H:i'),
                     'minutes_too_early' => $minutesTooEarly,
+                ], 422);
+            }
+
+            // Do not allow check-in after shop closing time
+            if ($now->gt($shopCloseTime)) {
+                return response()->json([
+                    'error' => 'Outside shop hours',
+                    'message' => "Shop hours for today are {$shopOpenTime->format('H:i')} to {$shopCloseTime->format('H:i')}. You can no longer clock in.",
+                    'shop_open_time' => $shopOpenTime->format('H:i'),
+                    'shop_close_time' => $shopCloseTime->format('H:i'),
                 ], 422);
             }
             
@@ -1110,7 +1183,8 @@ class AttendanceController extends Controller
             return response()->json(['error' => 'Shop not found'], 404);
         }
 
-        $today = strtolower(now()->format('l')); // monday, tuesday, etc. (lowercase)
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $today = strtolower(Carbon::now($shopTimezone)->format('l')); // monday, tuesday, etc. (lowercase)
         
         $openField = $today . '_open';
         $closeField = $today . '_close';
@@ -1287,11 +1361,56 @@ class AttendanceController extends Controller
             ->orderBy('date', 'asc')
             ->get();
 
-        // Calculate summary statistics
-        $totalPresent = $attendanceRecords->where('status', 'present')->count();
-        $totalAbsent = $attendanceRecords->where('status', 'absent')->count();
-        $totalLate = $attendanceRecords->where('status', 'late')->count();
-        $totalHalfDay = $attendanceRecords->where('status', 'half-day')->count();
+        // --- Approved-leave reconciliation (same logic as PayrollBatchController::getAttendanceData) ---
+        // Build a set of dates covered by approved leave so that:
+        //  - absent records on those dates count as leave, not absent
+        //  - on_leave status records are also captured
+        $approvedLeaves = LeaveRequest::where('employee_id', $employeeId)
+            ->where('status', 'approved')
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('start_date', [$startDate, $endDate])
+                  ->orWhere(function ($sub) use ($startDate, $endDate) {
+                      $sub->whereDate('end_date', '>=', $startDate)
+                          ->whereDate('start_date', '<=', $endDate);
+                  });
+            })
+            ->get();
+
+        $leaveDateSet = [];
+        foreach ($approvedLeaves as $leave) {
+            $cursor  = Carbon::parse($leave->start_date);
+            $leaveEnd = Carbon::parse($leave->end_date);
+            while ($cursor->lte($leaveEnd)) {
+                $leaveDateSet[$cursor->toDateString()] = true;
+                $cursor->addDay();
+            }
+        }
+
+        // Calculate summary statistics with leave reconciliation
+        $totalPresent = 0;
+        $totalAbsent  = 0;
+        $totalOnLeave = 0;
+        $totalLate    = 0;
+        $totalHalfDay = 0;
+
+        foreach ($attendanceRecords as $rec) {
+            $dateStr = $rec->date->toDateString();
+            if (in_array($rec->status, ['present'], true)) {
+                $totalPresent++;
+            } elseif ($rec->status === 'late') {
+                $totalLate++;
+            } elseif ($rec->status === 'half-day') {
+                $totalHalfDay++;
+            } elseif ($rec->status === 'on_leave') {
+                $totalOnLeave++;
+            } elseif ($rec->status === 'absent') {
+                if (isset($leaveDateSet[$dateStr])) {
+                    $totalOnLeave++;
+                } else {
+                    $totalAbsent++;
+                }
+            }
+        }
 
         $holidays = HolidayCalendar::where('shop_owner_id', $user->shop_owner_id)
             ->where('is_active', true)
@@ -1330,7 +1449,8 @@ class AttendanceController extends Controller
             }
 
             $totalOvertimeHours += (float) ($record->overtime_hours ?? 0);
-            $totalUndertimeHours += (float) (($record->minutes_early_departure ?? 0) / 60);
+            $minutesEarlyDeparture = max((float) ($record->minutes_early_departure ?? 0), 0.0);
+            $totalUndertimeHours += (float) ($minutesEarlyDeparture / 60);
 
             $dateStr = $record->date->toDateString();
             $holiday = $holidays->get($dateStr);
@@ -1372,9 +1492,11 @@ class AttendanceController extends Controller
             'summary' => [
                 'total_records' => $attendanceRecords->count(),
                 'total_present' => $totalPresent,
-                'total_absent' => $totalAbsent,
-                'total_late' => $totalLate,
+                'total_absent'  => $totalAbsent,
+                'total_on_leave' => $totalOnLeave,
+                'total_late'    => $totalLate,
                 'total_half_day' => $totalHalfDay,
+                'attendance_days' => $totalPresent + $totalLate + $totalHalfDay,
                 'total_regular_hours' => round($totalRegularHours, 2),
                 'total_overtime_hours' => round($totalOvertimeHours, 2),
                 'total_undertime_hours' => round($totalUndertimeHours, 2),

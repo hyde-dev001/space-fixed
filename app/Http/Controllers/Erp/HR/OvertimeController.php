@@ -246,12 +246,15 @@ class OvertimeController extends Controller
         // Send notification to the employee
         try {
             $employee = $overtimeRequest->employee()->with('user')->first();
+            $recipientUserId = $employee?->user?->id;
+
             if ($employee && $employee->user) {
                 $employee->user->notify(new OvertimeRequestApproved($overtimeRequest->fresh(), $user));
             }
+
             // Also store live DB notification
-            if ($employee && $employee->user_id) {
-                $this->notificationService->notifyOvertimeApproved($employee->user_id, $user->shop_owner_id, [
+            if ($recipientUserId) {
+                $this->notificationService->notifyOvertimeApproved($recipientUserId, $user->shop_owner_id, [
                     'overtime_id' => $overtimeRequest->id,
                     'date'        => $overtimeRequest->overtime_date ?? 'N/A',
                     'hours'       => $overtimeRequest->hours ?? $overtimeRequest->requested_hours ?? 0,
@@ -342,8 +345,10 @@ class OvertimeController extends Controller
         // Live notification to employee
         try {
             $employee = $overtimeRequest->employee()->with('user')->first();
-            if ($employee && $employee->user_id) {
-                $this->notificationService->notifyOvertimeRejected($employee->user_id, $user->shop_owner_id, [
+            $recipientUserId = $employee?->user?->id;
+
+            if ($recipientUserId) {
+                $this->notificationService->notifyOvertimeRejected($recipientUserId, $user->shop_owner_id, [
                     'overtime_request_id' => $overtimeRequest->id,
                     'overtime_date'       => $overtimeRequest->overtime_date,
                     'hours'               => $overtimeRequest->hours,
@@ -696,6 +701,25 @@ class OvertimeController extends Controller
             'approved_by' => $user->id,
             'approved_at' => Carbon::now(),
         ]);
+
+        // Notify employee of manager-assigned overtime
+        try {
+            $employee->loadMissing('user');
+            $recipientUserId = $employee->user?->id;
+
+            if ($recipientUserId) {
+                $this->notificationService->notifyOvertimeApproved($recipientUserId, $user->shop_owner_id, [
+                    'overtime_id' => $overtimeRequest->id,
+                    'date' => $overtimeRequest->overtime_date?->format('Y-m-d') ?? (string) $overtimeRequest->overtime_date,
+                    'hours' => $overtimeRequest->hours,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send assigned overtime notification', [
+                'overtime_request_id' => $overtimeRequest->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'message' => 'Overtime assigned to employee successfully',

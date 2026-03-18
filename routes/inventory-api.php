@@ -7,6 +7,7 @@ use App\Http\Controllers\ERP\SupplierOrderMonitoringController;
 use App\Http\Controllers\ERP\UploadInventoryController;
 use App\Http\Controllers\ERP\SupplierController;
 use App\Http\Controllers\ERP\SupplierOrderController;
+use App\Http\Controllers\ERP\StockRequestApprovalController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -100,6 +101,18 @@ Route::middleware([
     Route::get('/supplier-orders-monitoring', [SupplierOrderMonitoringController::class, 'index'])->name('inventory.monitoring.index');
     Route::get('/supplier-orders-monitoring/metrics', [SupplierOrderMonitoringController::class, 'getMetrics'])->name('inventory.monitoring.metrics');
     Route::get('/supplier-orders-monitoring/{id}', [SupplierOrderMonitoringController::class, 'show'])->name('inventory.monitoring.show');
+
+    // =====================================
+    // Repair Material Approval Queue (Inventory)
+    // =====================================
+    Route::prefix('request-material-approvals')->group(function () {
+        Route::get('/', [StockRequestApprovalController::class, 'index'])->name('inventory.request-material-approvals.index');
+        Route::get('/metrics', [StockRequestApprovalController::class, 'getMetrics'])->name('inventory.request-material-approvals.metrics');
+        Route::get('/{id}', [StockRequestApprovalController::class, 'show'])->name('inventory.request-material-approvals.show');
+        Route::post('/{id}/approve', [StockRequestApprovalController::class, 'approve'])->name('inventory.request-material-approvals.approve');
+        Route::post('/{id}/reject', [StockRequestApprovalController::class, 'reject'])->name('inventory.request-material-approvals.reject');
+        Route::post('/{id}/request-details', [StockRequestApprovalController::class, 'requestDetails'])->name('inventory.request-material-approvals.request-details');
+    });
     
     // =====================================
     // Inventory Alerts (Future Implementation)

@@ -865,9 +865,16 @@ export default function ManagerDashboard() {
     const [lunchBreakTime, setLunchBreakTime] = useState<string | null>(null);
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
 
+    const formatAttendanceTime = (date: Date) =>
+        date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        });
+
     const handleClockIn = () => {
         const now = new Date();
-        const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const timeString = formatAttendanceTime(now);
         setLoginTime(timeString);
         setClockedIn(true);
         setLogoutTime(null);
@@ -877,13 +884,13 @@ export default function ManagerDashboard() {
     const handleLunchBreak = () => {
         if (!clockedIn) return;
         const now = new Date();
-        const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const timeString = formatAttendanceTime(now);
         setLunchBreakTime(timeString);
     };
 
     const handleClockOut = () => {
         const now = new Date();
-        const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const timeString = formatAttendanceTime(now);
         setLogoutTime(timeString);
         setClockedIn(false);
     };
@@ -1009,7 +1016,7 @@ export default function ManagerDashboard() {
                             </div>
                             {statsData?.lastUpdated && (
                                 <p className="text-xs mt-1">
-                                    Last updated: {new Date(statsData.lastUpdated).toLocaleTimeString()}
+                                    Last updated: {new Date(statsData.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
                                 </p>
                             )}
                         </div>
@@ -1145,9 +1152,9 @@ export default function ManagerDashboard() {
                                             {/* Previous records can go here */}
                                             <tr>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">Feb 3, 2026</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">08:00:00 AM</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">12:00:00 PM</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">05:00:00 PM</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">8:00 AM</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">12:00 PM</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">5:00 PM</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">9h 0m</td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
@@ -1165,7 +1172,7 @@ export default function ManagerDashboard() {
                                 <button
                                     onClick={() => {
                                         // Export functionality
-                                        const data = `Date,Time In,Lunch Break,Time Out,Total Hours,Status\nFeb 4, 2026,${loginTime || '--'},${lunchBreakTime || '--'},${logoutTime || '--'},${computeTotalHours(loginTime, logoutTime)},${clockedIn ? 'Active' : logoutTime ? 'Completed' : 'Pending'}\nFeb 3, 2026,08:00:00 AM,12:00:00 PM,05:00:00 PM,9h 0m,Completed`;
+                                        const data = `Date,Time In,Lunch Break,Time Out,Total Hours,Status\nFeb 4, 2026,${loginTime || '--'},${lunchBreakTime || '--'},${logoutTime || '--'},${computeTotalHours(loginTime, logoutTime)},${clockedIn ? 'Active' : logoutTime ? 'Completed' : 'Pending'}\nFeb 3, 2026,8:00 AM,12:00 PM,5:00 PM,9h 0m,Completed`;
                                         const blob = new Blob([data], { type: 'text/csv' });
                                         const url = window.URL.createObjectURL(blob);
                                         const a = document.createElement('a');

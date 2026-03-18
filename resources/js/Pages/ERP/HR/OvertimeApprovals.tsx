@@ -145,6 +145,35 @@ const MetricCard: React.FC<MetricCardProps> = ({
   );
 };
 
+const formatTimeTo12Hour = (timeValue?: string | null): string => {
+  if (!timeValue) return "-";
+
+  const trimmed = String(timeValue).trim();
+
+  const hhmmOrHhmmss = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (hhmmOrHhmmss) {
+    const hour = Number(hhmmOrHhmmss[1]);
+    const minute = hhmmOrHhmmss[2];
+
+    if (hour >= 0 && hour <= 23) {
+      const period = hour >= 12 ? "PM" : "AM";
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minute} ${period}`;
+    }
+  }
+
+  const parsedDate = new Date(trimmed);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return parsedDate.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+
+  return trimmed;
+};
+
 // Transform function to convert snake_case API response to camelCase
 const transformOvertimeFromApi = (apiOvertime: any): OvertimeRequest => {
   // Build employee name from employee relationship
@@ -721,11 +750,11 @@ export function OvertimeRequests() {
                   </td>
                   <td className="px-6 py-4">
                     <p className="text-sm text-gray-900 dark:text-white">
-                      {request.startTime} - {request.endTime}
+                      {formatTimeTo12Hour(request.startTime)} - {formatTimeTo12Hour(request.endTime)}
                     </p>
                     {request.actualStartTime && request.actualEndTime && (
                       <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                        Actual: {request.actualStartTime} - {request.actualEndTime}
+                        Actual: {formatTimeTo12Hour(request.actualStartTime)} - {formatTimeTo12Hour(request.actualEndTime)}
                       </p>
                     )}
                   </td>
@@ -918,11 +947,11 @@ export function OvertimeRequests() {
                       </div>
                       <div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Start Time</p>
-                        <p className="text-base font-medium text-gray-900 dark:text-white">{selectedRequest.startTime}</p>
+                        <p className="text-base font-medium text-gray-900 dark:text-white">{formatTimeTo12Hour(selectedRequest.startTime)}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">End Time</p>
-                        <p className="text-base font-medium text-gray-900 dark:text-white">{selectedRequest.endTime}</p>
+                        <p className="text-base font-medium text-gray-900 dark:text-white">{formatTimeTo12Hour(selectedRequest.endTime)}</p>
                       </div>
                     </div>
                   </div>

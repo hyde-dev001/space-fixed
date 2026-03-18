@@ -171,7 +171,10 @@ export default function FinancePage() {
           return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} requests={purchaseRequests || []} />;
 
         case "payslip-approvals":
-          if (!hasAnyPermission(auth, ['access-payslip-approval', 'access-approval-workflow'])) {
+          if (!hasAnyPermission(auth, ['access-payslip-approval', 'access-approval-workflow'])
+            && auth?.user?.role !== 'Shop Owner'
+            && !(Array.isArray(auth?.user?.roles) && auth.user.roles.includes('Shop Owner'))
+          ) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">

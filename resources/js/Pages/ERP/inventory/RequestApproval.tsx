@@ -1,90 +1,50 @@
 import { Head } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
+import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import requestMaterialApprovalApi from "../../../services/requestMaterialApprovalApi";
+import type { StockRequestApproval } from "../../../types/procurement";
 
-type RequestStatus = "Pending" | "Approved" | "Rejected" | "Needs Details";
-type Priority = "High" | "Medium" | "Low";
+type RequestStatus = "pending" | "accepted" | "rejected" | "needs_details";
+type Priority = "high" | "medium" | "low";
 type MetricColor = "success" | "warning" | "info";
 
-interface MaterialApprovalRequest {
-	id: number;
-	requestNumber: string;
-	requestedBy: string;
-	role: string;
-	materialName: string;
-	sku: string;
-	quantity: number;
-	availableStock: number;
-	size: string;
-	priority: Priority;
-	status: RequestStatus;
-	notes: string;
-	requestedAt: string;
-	reviewedAt?: string;
-}
-
-const initialRequests: MaterialApprovalRequest[] = [
-	{
-		id: 1,
-		requestNumber: "RM-2026-0313-001",
-		requestedBy: "Thomas Rodriguez",
-		role: "Repairer",
-		materialName: "Leather Sole Sheet",
-		sku: "MAT-LTH-001",
-		quantity: 6,
-		availableStock: 68,
-		size: "EU 41",
-		priority: "High",
-		status: "Pending",
-		notes: "For outsole replacement of 3 incoming repair jobs.",
-		requestedAt: "2026-03-13 09:12 AM",
-	},
-	{
-		id: 2,
-		requestNumber: "RM-2026-0312-014",
-		requestedBy: "Patricia Reyes",
-		role: "Repairer",
-		materialName: "Contact Adhesive",
-		sku: "MAT-ADH-021",
-		quantity: 3,
-		availableStock: 40,
-		size: "N/A",
-		priority: "Medium",
-		status: "Approved",
-		notes: "Daily adhesive consumption for patching and resealing.",
-		requestedAt: "2026-03-12 04:42 PM",
-		reviewedAt: "2026-03-12 05:00 PM",
-	},
-	{
-		id: 3,
-		requestNumber: "RM-2026-0311-009",
-		requestedBy: "John Cruz",
-		role: "Repairer",
-		materialName: "Insole Foam",
-		sku: "MAT-INS-031",
-		quantity: 24,
-		availableStock: 15,
-		size: "Cut-to-fit",
-		priority: "Low",
-		status: "Needs Details",
-		notes: "Requested for comfort restoration jobs.",
-		requestedAt: "2026-03-11 02:05 PM",
-		reviewedAt: "2026-03-11 03:15 PM",
-	},
-];
-
 const priorityBadgeClass: Record<Priority, string> = {
-	High: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	Medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-	Low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+	high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+	low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
 const statusBadgeClass: Record<RequestStatus, string> = {
-	Pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-	Approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-	Rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-	"Needs Details": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+	pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+	accepted: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+	needs_details: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+};
+
+const statusLabel: Record<RequestStatus, string> = {
+	pending: "Pending",
+	accepted: "Approved",
+	rejected: "Rejected",
+	needs_details: "Needs Details",
+};
+
+const formatPriority = (priority: Priority): string => {
+	return priority.charAt(0).toUpperCase() + priority.slice(1);
+};
+
+const formatDateTime = (value?: string): string => {
+	if (!value) {
+		return "N/A";
+	}
+
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) {
+		return value;
+	}
+
+	return date.toLocaleString();
 };
 
 const ClipboardIcon = ({ className }: { className?: string }) => (
@@ -170,30 +130,57 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function RequestApproval() {
-	const [requests, setRequests] = useState<MaterialApprovalRequest[]>(initialRequests);
+	const [requests, setRequests] = useState<StockRequestApproval[]>([]);
+	const [loading, setLoading] = useState(false);
+	const [actionLoading, setActionLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [statusFilter, setStatusFilter] = useState<"All" | RequestStatus>("All");
+	const [statusFilter, setStatusFilter] = useState<"all" | RequestStatus>("all");
 	const [currentPage, setCurrentPage] = useState(1);
-	const [selectedRequest, setSelectedRequest] = useState<MaterialApprovalRequest | null>(null);
+	const [selectedRequest, setSelectedRequest] = useState<StockRequestApproval | null>(null);
+
+	const loadRequests = async () => {
+		try {
+			setLoading(true);
+			const response = await requestMaterialApprovalApi.getAll({
+				per_page: 200,
+				request_source: "repair",
+			});
+			setRequests(response.data ?? []);
+		} catch (error) {
+			console.error("Failed to load repair material approvals", error);
+			await Swal.fire({
+				icon: "error",
+				title: "Load failed",
+				text: "Failed to load repair material requests.",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		loadRequests();
+	}, []);
 
 	const filteredRequests = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 		return requests.filter((request) => {
 			const matchesQuery = !query ||
-				request.requestNumber.toLowerCase().includes(query) ||
-				request.materialName.toLowerCase().includes(query) ||
-				request.sku.toLowerCase().includes(query) ||
-				request.requestedBy.toLowerCase().includes(query) ||
-				request.status.toLowerCase().includes(query);
+				request.request_number.toLowerCase().includes(query) ||
+				request.product_name.toLowerCase().includes(query) ||
+				request.sku_code.toLowerCase().includes(query) ||
+				(request.requester?.name ?? "repairer").toLowerCase().includes(query) ||
+				statusLabel[request.status].toLowerCase().includes(query);
 
-			const matchesStatus = statusFilter === "All" || request.status === statusFilter;
+			const matchesStatus = statusFilter === "all" || request.status === statusFilter;
 			return matchesQuery && matchesStatus;
 		});
 	}, [requests, searchQuery, statusFilter]);
 
 	const totalRequests = requests.length;
-	const pendingRequests = requests.filter((request) => request.status === "Pending").length;
-	const approvedRequests = requests.filter((request) => request.status === "Approved").length;
+	const pendingRequests = requests.filter((request) => request.status === "pending").length;
+	const approvedRequests = requests.filter((request) => request.status === "accepted").length;
 
 	const itemsPerPage = 7;
 	const totalPages = Math.max(1, Math.ceil(filteredRequests.length / itemsPerPage));
@@ -201,12 +188,82 @@ export default function RequestApproval() {
 	const startIndex = (currentSafePage - 1) * itemsPerPage;
 	const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
 
-	const updateStatus = (id: number, status: RequestStatus) => {
+	const upsertRequest = (updatedRequest: StockRequestApproval) => {
 		setRequests((prev) => prev.map((request) => (
-			request.id === id
-				? { ...request, status, reviewedAt: "2026-03-13 10:25 PM" }
-				: request
+			request.id === updatedRequest.id ? updatedRequest : request
 		)));
+	};
+
+	const handleApprove = async (request: StockRequestApproval) => {
+		try {
+			setActionLoading(true);
+			const updated = await requestMaterialApprovalApi.approve(request.id, {
+				approval_notes: "Approved by inventory.",
+			});
+			upsertRequest(updated);
+			setSelectedRequest(null);
+			await Swal.fire({
+				icon: "success",
+				title: "Request approved",
+				text: `${request.request_number} has been approved.`,
+				confirmButtonColor: "#16a34a",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: "error",
+				title: "Approve failed",
+				text: error?.response?.data?.message || "Failed to approve request.",
+				confirmButtonColor: "#dc2626",
+			});
+		} finally {
+			setActionLoading(false);
+		}
+	};
+
+	const handleReject = async (request: StockRequestApproval) => {
+		const result = await Swal.fire({
+			title: "Reject request",
+			input: "textarea",
+			inputLabel: "Reason for rejection",
+			inputPlaceholder: "State why this request is rejected...",
+			showCancelButton: true,
+			confirmButtonText: "Reject",
+			confirmButtonColor: "#dc2626",
+			inputValidator: (value) => {
+				if (!value || value.trim().length < 10) {
+					return "Please provide at least 10 characters.";
+				}
+				return null;
+			},
+		});
+
+		if (!result.isConfirmed || !result.value) {
+			return;
+		}
+
+		try {
+			setActionLoading(true);
+			const updated = await requestMaterialApprovalApi.reject(request.id, {
+				rejection_reason: result.value,
+			});
+			upsertRequest(updated);
+			setSelectedRequest(null);
+			await Swal.fire({
+				icon: "success",
+				title: "Request rejected",
+				text: `${request.request_number} has been rejected.`,
+				confirmButtonColor: "#2563eb",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: "error",
+				title: "Reject failed",
+				text: error?.response?.data?.message || "Failed to reject request.",
+				confirmButtonColor: "#dc2626",
+			});
+		} finally {
+			setActionLoading(false);
+		}
 	};
 
 	const isReviewModalOpen = Boolean(selectedRequest);
@@ -259,16 +316,16 @@ export default function RequestApproval() {
 								aria-label="Filter by status"
 								value={statusFilter}
 								onChange={(event) => {
-									setStatusFilter(event.target.value as "All" | RequestStatus);
+									setStatusFilter(event.target.value as "all" | RequestStatus);
 									setCurrentPage(1);
 								}}
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							>
-								<option value="All">All Status</option>
-								<option value="Pending">Pending</option>
-								<option value="Approved">Approved</option>
-								<option value="Rejected">Rejected</option>
-								<option value="Needs Details">Needs Details</option>
+								<option value="all">All Status</option>
+								<option value="pending">Pending</option>
+								<option value="accepted">Approved</option>
+								<option value="rejected">Rejected</option>
+								<option value="needs_details">Needs Details</option>
 							</select>
 						</div>
 					</div>
@@ -277,7 +334,6 @@ export default function RequestApproval() {
 						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 							<thead className="bg-gray-50 dark:bg-gray-800/50">
 								<tr>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Request no</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Material</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
@@ -287,27 +343,32 @@ export default function RequestApproval() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{paginatedRequests.length > 0 ? (
+								{loading ? (
+									<tr>
+										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+											Loading requests...
+										</td>
+									</tr>
+								) : paginatedRequests.length > 0 ? (
 									paginatedRequests.map((request) => (
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.requestNumber}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-												<p className="font-medium text-gray-900 dark:text-white">{request.materialName}</p>
-												<p className="text-xs text-gray-500 dark:text-gray-400">{request.sku}</p>
+													<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
+													<p className="text-xs text-gray-500 dark:text-gray-400">{request.sku_code}</p>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity}</td>
+												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity_needed}</td>
 											<td className="px-4 py-3">
 												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>
-													{request.priority}
+														{formatPriority(request.priority)}
 												</span>
 											</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-												<p className="font-medium text-gray-900 dark:text-white">{request.requestedBy}</p>
-												<p className="text-xs text-gray-500 dark:text-gray-400">{request.role}</p>
+													<p className="font-medium text-gray-900 dark:text-white">{request.requester?.name || "Repairer"}</p>
+													<p className="text-xs text-gray-500 dark:text-gray-400">Repairer</p>
 											</td>
 											<td className="px-4 py-3">
 												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>
-													{request.status}
+														{statusLabel[request.status]}
 												</span>
 											</td>
 											<td className="px-4 py-3 text-center">
@@ -324,7 +385,7 @@ export default function RequestApproval() {
 									))
 								) : (
 									<tr>
-										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
 											No requests found for the selected filters.
 										</td>
 									</tr>
@@ -374,74 +435,85 @@ export default function RequestApproval() {
 						<div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
 							<div>
 								<p className="text-gray-500">Request no</p>
-								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.requestNumber}</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.request_number}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">Requested by</p>
-								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.requestedBy}</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.requester?.name || "Repairer"}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">Material</p>
-								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.materialName}</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.product_name}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">SKU</p>
-								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.sku}</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.sku_code}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">Requested quantity</p>
-								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.quantity}</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.quantity_needed}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">Available stock</p>
-								<p className={`font-semibold ${selectedRequest.availableStock < selectedRequest.quantity ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"}`}>
-									{selectedRequest.availableStock}
+								<p className={`font-semibold ${(selectedRequest.inventory_item?.stock_quantity ?? 0) < selectedRequest.quantity_needed ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"}`}>
+									{selectedRequest.inventory_item?.stock_quantity ?? 0}
 								</p>
+							</div>
+							<div>
+								<p className="text-gray-500">Requested size</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.requested_size || "N/A"}</p>
+							</div>
+							<div>
+								<p className="text-gray-500">Requested at</p>
+								<p className="font-semibold text-gray-900 dark:text-white">{formatDateTime(selectedRequest.requested_date)}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">Priority</p>
 								<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[selectedRequest.priority]}`}>
-									{selectedRequest.priority}
+									{formatPriority(selectedRequest.priority)}
 								</span>
 							</div>
 							<div>
 								<p className="text-gray-500">Status</p>
 								<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[selectedRequest.status]}`}>
-									{selectedRequest.status}
+									{statusLabel[selectedRequest.status]}
 								</span>
 							</div>
+							{selectedRequest.approved_date && (
+								<div>
+									<p className="text-gray-500">Reviewed at</p>
+									<p className="font-semibold text-gray-900 dark:text-white">{formatDateTime(selectedRequest.approved_date)}</p>
+								</div>
+							)}
 							<div className="md:col-span-2">
 								<p className="text-gray-500 mb-1">Repair notes</p>
 								<p className="text-gray-800 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
-									{selectedRequest.notes}
+									{selectedRequest.notes || "No notes provided."}
 								</p>
 							</div>
 						</div>
 
 						<div className="mt-6 flex items-center justify-end gap-3">
 							<button
-								onClick={() => setSelectedRequest(null)}
+								onClick={() => !actionLoading && setSelectedRequest(null)}
+								disabled={actionLoading}
 								className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300"
 							>
 								Close
 							</button>
 							<button
-								onClick={() => {
-									updateStatus(selectedRequest.id, "Rejected");
-									setSelectedRequest(null);
-								}}
+								onClick={() => handleReject(selectedRequest)}
+								disabled={actionLoading}
 								className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
 							>
-								Reject
+								{actionLoading ? "Processing..." : "Reject"}
 							</button>
 							<button
-								onClick={() => {
-									updateStatus(selectedRequest.id, "Approved");
-									setSelectedRequest(null);
-								}}
+								onClick={() => handleApprove(selectedRequest)}
+								disabled={actionLoading}
 								className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium"
 							>
-								Approve
+								{actionLoading ? "Processing..." : "Approve"}
 							</button>
 						</div>
 					</div>

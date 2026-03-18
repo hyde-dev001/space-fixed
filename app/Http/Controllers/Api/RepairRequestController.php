@@ -260,6 +260,8 @@ class RepairRequestController extends Controller
                         : $requestTotal,
                     'package_price' => $packageTotal,
                     'add_ons_total' => $addOnsTotal,
+                    'base_total' => $requestTotal,
+                    'materials_total' => 0.0,
                     'final_total' => $requestTotal,
                     'add_on_count' => count($addOnServiceIds),
                 ],
@@ -487,7 +489,7 @@ class RepairRequestController extends Controller
             ], 401);
         }
 
-        $query = RepairRequest::with(['services', 'shopOwner', 'repairer'])
+        $query = RepairRequest::with(['services', 'shopOwner', 'repairer', 'materialUsages.inventoryItem:id,price'])
             ->forCustomer($user->id);
 
         // Filter by status if provided
@@ -499,16 +501,18 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function ($repair) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
+                $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
+
                 return [
                     'id' => $repair->id,
                     'order_number' => $repair->request_id,
                     'repair_type' => $repair->services->pluck('name')->join(', '),
                     'description' => $repair->description,
                     'status' => $repair->status,
-                    'total_amount' => $repair->total,
+                    'total_amount' => $pricingSnapshot['final_total'],
                     'created_at' => $repair->created_at->toISOString(),
                     'estimated_completion' => $repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null,
                     'completed_at' => $repair->completed_at ? $repair->completed_at->format('M d, Y') : null,
@@ -539,10 +543,11 @@ class RepairRequestController extends Controller
                     'repair_package_id' => $repair->repair_package_id,
                     'package_price' => $repair->package_price,
                     'add_ons_total' => $repair->add_ons_total,
-                    'final_total' => $repair->final_total ?? $repair->total,
+                    'materials_total' => $pricingSnapshot['materials_total'],
+                    'final_total' => $pricingSnapshot['final_total'],
                     'included_services_snapshot' => $repair->included_services_snapshot,
                     'add_on_services_snapshot' => $repair->add_on_services_snapshot,
-                    'pricing_breakdown' => $repair->pricing_breakdown,
+                    'pricing_breakdown' => $pricingSnapshot['pricing_breakdown'],
                 ];
             })
         ]);
@@ -562,7 +567,7 @@ class RepairRequestController extends Controller
             ], 401);
         }
 
-        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'conversation', 'repairPackage'])
+        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'conversation', 'repairPackage', 'materialUsages.inventoryItem:id,price'])
             ->where('id', $id)
             ->forCustomer($user->id)
             ->first();
@@ -576,6 +581,7 @@ class RepairRequestController extends Controller
 
         // Images are already cast as array, so handle both formats
         $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
+        $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
         
         return response()->json([
             'success' => true,
@@ -591,7 +597,8 @@ class RepairRequestController extends Controller
                 'total' => $repair->total,
                 'package_price' => $repair->package_price,
                 'add_ons_total' => $repair->add_ons_total,
-                'final_total' => $repair->final_total ?? $repair->total,
+                'materials_total' => $pricingSnapshot['materials_total'],
+                'final_total' => $pricingSnapshot['final_total'],
                 'status' => $repair->status,
                 'delivery_method' => $repair->delivery_method,
                 'pickup_address' => $repair->pickup_address,
@@ -626,7 +633,7 @@ class RepairRequestController extends Controller
                 ] : null,
                 'included_services_snapshot' => $repair->included_services_snapshot,
                 'add_on_services_snapshot' => $repair->add_on_services_snapshot,
-                'pricing_breakdown' => $repair->pricing_breakdown,
+                'pricing_breakdown' => $pricingSnapshot['pricing_breakdown'],
                 'shop' => $repair->shopOwner ? [
                     'id' => $repair->shopOwner->id,
                     'name' => $repair->shopOwner->business_name,
@@ -1348,8 +1355,7 @@ class RepairRequestController extends Controller
         }
 
         // Use the shop's own PayMongo key (same key that created the checkout session)
-        $apiKey = $repair->shopOwner?->paymongo_secret_key
-            ?: config('services.paymongo.secret_key');
+        $apiKey = $repair->shopOwner?->paymongo_secret_key;
 
         if (!$apiKey) {
             return response()->json([
@@ -1457,5 +1463,37 @@ class RepairRequestController extends Controller
             'limit'        => $limit,
             'is_full'      => $activeCount >= $limit,
         ]);
+    }
+
+    private function calculateRepairPricingSnapshot(RepairRequest $repair): array
+    {
+        $repair->loadMissing(['materialUsages.inventoryItem:id,price']);
+
+        $materialsTotal = round((float) $repair->materialUsages->sum(function ($usage) {
+            $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
+            return ((int) $usage->quantity_used) * $unitPrice;
+        }), 2);
+
+        $packagePrice = round((float) ($repair->package_price ?? 0), 2);
+        $addOnsTotal = round((float) ($repair->add_ons_total ?? 0), 2);
+        $baseTotal = !is_null($repair->repair_package_id)
+            ? round($packagePrice + $addOnsTotal, 2)
+            : round((float) ($repair->total ?? 0), 2);
+        $finalTotal = round($baseTotal + $materialsTotal, 2);
+
+        $pricingBreakdown = is_array($repair->pricing_breakdown)
+            ? $repair->pricing_breakdown
+            : [];
+
+        $pricingBreakdown['base_total'] = $baseTotal;
+        $pricingBreakdown['materials_total'] = $materialsTotal;
+        $pricingBreakdown['final_total'] = $finalTotal;
+
+        return [
+            'base_total' => $baseTotal,
+            'materials_total' => $materialsTotal,
+            'final_total' => $finalTotal,
+            'pricing_breakdown' => $pricingBreakdown,
+        ];
     }
 }

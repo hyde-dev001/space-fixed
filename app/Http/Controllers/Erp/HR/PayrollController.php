@@ -8,6 +8,7 @@ use App\Models\HR\PayrollComponent;
 use App\Models\HR\BranchPayrollSetting;
 use App\Models\Finance\Expense;
 use App\Models\Employee;
+use App\Models\ShopOwner;
 use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
 use App\Services\NotificationService;
@@ -16,6 +17,7 @@ use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
@@ -194,45 +196,12 @@ class PayrollController extends Controller
             ], 422);
         }
 
-        // Map optional allowance inputs to the custom-component format the service expects.
-        // Each entry is appended to (not replacing) the standard component pipeline.
-        $customComponents = [];
-
-        if (($request->salesCommission ?? 0) > 0) {
-            $customComponents[] = [
-                'type'        => PayrollComponent::TYPE_EARNING,
-                'name'        => 'Sales Commission',
-                'base_amount' => (float) $request->salesCommission,
-                'method'      => PayrollComponent::METHOD_COMMISSION,
-                'taxable'     => true,
-                'recurring'   => false,
-                'description' => 'Sales commission – ' . $request->payrollPeriod,
-            ];
-        }
-
-        if (($request->performanceBonus ?? 0) > 0) {
-            $customComponents[] = [
-                'type'        => PayrollComponent::TYPE_EARNING,
-                'name'        => 'Performance Bonus',
-                'base_amount' => (float) $request->performanceBonus,
-                'method'      => PayrollComponent::METHOD_CUSTOM,
-                'taxable'     => true,
-                'recurring'   => false,
-                'description' => 'Performance bonus – ' . $request->payrollPeriod,
-            ];
-        }
-
-        if (($request->otherAllowances ?? 0) > 0) {
-            $customComponents[] = [
-                'type'        => PayrollComponent::TYPE_EARNING,
-                'name'        => 'Other Allowances',
-                'base_amount' => (float) $request->otherAllowances,
-                'method'      => PayrollComponent::METHOD_ALLOWANCE,
-                'taxable'     => false,
-                'recurring'   => false,
-                'description' => 'Additional allowances – ' . $request->payrollPeriod,
-            ];
-        }
+        $extraEarnings = $this->payrollService->resolveAdditionalEarnings($employee, $request->payrollPeriod, [
+            'sales_commission' => (float) ($request->salesCommission ?? 0),
+            'performance_bonus' => (float) ($request->performanceBonus ?? 0),
+            'other_allowances' => (float) ($request->otherAllowances ?? 0),
+        ]);
+        $customComponents = $extraEarnings['components'];
 
         // Build overrides for the service (attendance, leave, overtime, payment method).
         $overrides = ['payment_method' => $request->paymentMethod];
@@ -275,14 +244,22 @@ class PayrollController extends Controller
 
             $this->auditCustom(
                 AuditLog::MODULE_PAYROLL,
-                AuditLog::ACTION_GENERATED,
+                AuditLog::ACTION_CREATED,
                 "Payroll generated: {$employee->first_name} {$employee->last_name} – Period {$request->payrollPeriod} – Net: {$payroll->net_salary}",
                 [
-                    'severity'    => AuditLog::SEVERITY_WARNING,
+                    'severity'    => AuditLog::SEVERITY_INFO,
                     'tags'        => ['financial', 'payroll', 'sensitive'],
                     'employee_id' => $employee->id,
                     'entity_type' => Payroll::class,
                     'entity_id'   => $payroll->id,
+                    'new_values'  => [
+                        'status' => (string) $payroll->status,
+                        'approval_status' => (string) $payroll->approval_status,
+                        'payroll_period' => (string) $payroll->payroll_period,
+                        'gross_salary' => (float) $payroll->gross_salary,
+                        'net_salary' => (float) $payroll->net_salary,
+                        'payment_method' => (string) $payroll->payment_method,
+                    ],
                 ]
             );
 
@@ -322,7 +299,10 @@ class PayrollController extends Controller
     }
 
     /**
-     * Update a pending payroll.
+     * Update editable metadata on a pending payroll.
+     *
+     * Salary figures and deduction totals are system-derived and cannot be
+     * overridden here.
      */
     public function update(Request $request, $id): JsonResponse
     {
@@ -337,10 +317,26 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Cannot update payroll that is not pending'], 422);
         }
 
+        $forbiddenFields = ['baseSalary', 'allowances', 'deductions', 'netSalary', 'grossSalary'];
+        $providedForbiddenFields = [];
+        $input = $request->all();
+
+        foreach ($forbiddenFields as $field) {
+            if (array_key_exists($field, $input)) {
+                $providedForbiddenFields[] = $field;
+            }
+        }
+
+        if (! empty($providedForbiddenFields)) {
+            $errors = [];
+            foreach ($providedForbiddenFields as $field) {
+                $errors[$field] = ['Manual salary and deduction overrides are not allowed. Regenerate payroll to apply calculation changes.'];
+            }
+
+            return response()->json(['errors' => $errors], 422);
+        }
+
         $validator = Validator::make($request->all(), [
-            'baseSalary'    => 'sometimes|required|numeric|min:0',
-            'allowances'    => 'sometimes|nullable|numeric|min:0',
-            'deductions'    => 'sometimes|nullable|numeric|min:0',
             'paymentMethod' => 'sometimes|required|in:bank-transfer,check,cash',
             'notes'         => 'nullable|string|max:1000',
         ]);
@@ -351,13 +347,24 @@ class PayrollController extends Controller
 
         $data = $validator->validated();
 
-        if (isset($data['baseSalary']) || isset($data['allowances']) || isset($data['deductions'])) {
-            $data['netSalary'] = ($data['baseSalary'] ?? $payroll->base_salary)
-                + ($data['allowances'] ?? $payroll->allowances)
-                - ($data['deductions'] ?? $payroll->deductions);
+        $updates = [];
+
+        if (array_key_exists('paymentMethod', $data)) {
+            $updates['payment_method'] = str_replace('-', '_', (string) $data['paymentMethod']);
         }
 
-        $payroll->update($data);
+        if (array_key_exists('notes', $data)) {
+            $updates['approval_notes'] = $data['notes'];
+        }
+
+        if ($updates === []) {
+            return response()->json([
+                'message' => 'No editable payroll fields were provided',
+                'payroll' => $payroll->load('employee'),
+            ]);
+        }
+
+        $payroll->update($updates);
 
         return response()->json([
             'message' => 'Payroll updated successfully',
@@ -394,11 +401,50 @@ class PayrollController extends Controller
      * Deprecated HR approval endpoint kept for backward compatibility.
      * Finance checker approval and owner final approval now live in the
      * Finance approval workflow.
+     *
+     * @deprecated Use /api/finance/payslip-approvals/{id}/approve (Finance checker)
+     *             or /api/finance/payslip-approvals/{id}/final-approve (Final approver) instead.
      */
     public function approve(Request $request, $id): JsonResponse
     {
+        $user = Auth::guard('user')->user();
+        
+        // Log deprecation warning for monitoring
+        \Log::warning('Deprecated PayrollController::approve() endpoint called', [
+            'payroll_id' => $id,
+            'user_id' => $user?->id ?? 'unknown',
+            'timestamp' => now(),
+            'ip' => $request->ip(),
+        ]);
+
         return response()->json([
-            'error' => 'Payroll approval moved to the Finance approval workflow. HR can prepare payroll, but Finance and the final approver must approve it there.',
+            'error' => 'Payroll approval endpoint deprecated and moved to Finance workflow',
+            'message' => 'HR can prepare payroll, but approval must now happen in the Finance module.',
+            'migration_guide' => [
+                'for_finance_checker' => [
+                    'endpoint' => 'POST /api/finance/payslip-approvals/{id}/approve',
+                    'description' => 'Finance checker review and approval',
+                    'required_permission' => 'access-payslip-approval or approve-payroll',
+                ],
+                'for_final_approver' => [
+                    'endpoint' => 'POST /api/finance/payslip-approvals/{id}/final-approve',
+                    'description' => 'Shop owner final approval (owner-only)',
+                    'required_permission' => 'Shop Owner role or auth:shop_owner',
+                ],
+                'for_disbursement' => [
+                    'endpoint' => 'POST /api/finance/payslip-approvals/disburse',
+                    'description' => 'Mark final-approved payslips as paid',
+                    'required_fields' => [
+                        'payrollIds' => 'array of payroll IDs',
+                        'paymentDate' => 'YYYY-MM-DD format',
+                        'paymentMethod' => 'bank_transfer|check|cash',
+                        'payoutReference' => 'transaction reference',
+                        'payoutProofType' => 'bank_reference|receipt_number|check_number|other',
+                        'payoutProofReference' => 'proof identifier',
+                    ],
+                ],
+            ],
+            'documentation' => '/docs/api/finance-payslip-approval',
         ], 410);
     }
 
@@ -437,49 +483,77 @@ class PayrollController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        $payrollIds = array_values(array_unique(array_map('intval', (array) $request->payrollIds)));
+        if (count($payrollIds) !== count((array) $request->payrollIds)) {
+            return response()->json([
+                'errors' => [
+                    'payrollIds' => ['Duplicate payroll IDs are not allowed in a single disbursement request.'],
+                ],
+            ], 422);
+        }
+
         $processedCount = 0;
         $errors = [];
+        $idempotencyConflicts = 0;
 
-        foreach ($request->payrollIds as $payrollId) {
+        foreach ($payrollIds as $payrollId) {
             try {
-                $payroll = Payroll::forShopOwner($user->shop_owner_id)
-                    ->with('employee')
-                    ->findOrFail($payrollId);
+                DB::transaction(function () use ($user, $payrollId, $request) {
+                    $payroll = Payroll::forShopOwner($user->shop_owner_id)
+                        ->with('employee')
+                        ->whereKey($payrollId)
+                        ->lockForUpdate()
+                        ->firstOrFail();
 
-                if ($payroll->status === 'paid') {
-                    $errors[] = "Payroll for {$payroll->employee->fullName} is already paid";
-                    continue;
-                }
+                    if ($payroll->status === 'paid') {
+                        throw new \RuntimeException("Payroll ID {$payrollId} is already marked as paid");
+                    }
 
-                if ($payroll->approval_status !== 'approved' || empty($payroll->approved_by)) {
-                    $errors[] = "Payroll ID {$payrollId} requires Finance checker approval before disbursement";
-                    continue;
-                }
+                    if ($payroll->approval_status !== 'approved' || empty($payroll->approved_by)) {
+                        throw new \RuntimeException("Payroll ID {$payrollId} requires Finance checker approval before disbursement");
+                    }
 
-                if ($payroll->status !== 'approved' || empty($payroll->final_approved_by)) {
-                    $errors[] = "Payroll ID {$payrollId} requires final owner approval before disbursement";
-                    continue;
-                }
+                    if ($payroll->status !== 'approved' || empty($payroll->final_approved_by)) {
+                        throw new \RuntimeException("Payroll ID {$payrollId} requires final owner approval before disbursement");
+                    }
 
-                if ((int) $payroll->approved_by === (int) $payroll->final_approved_by) {
-                    $errors[] = "Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.";
-                    continue;
-                }
+                    if ((int) $payroll->approved_by === (int) $payroll->final_approved_by) {
+                        throw new \RuntimeException("Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.");
+                    }
 
-                $payroll->markAsPaid((string) $request->paymentDate, [
-                    'payment_method' => (string) $request->paymentMethod,
-                    'payout_reference' => (string) $request->payoutReference,
-                    'payout_proof_type' => (string) $request->payoutProofType,
-                    'payout_proof_reference' => (string) $request->payoutProofReference,
-                    'payout_proof_notes' => $request->input('payoutProofNotes'),
-                    'disbursed_by' => (int) $user->id,
-                ]);
+                    $payroll->markAsPaid((string) $request->paymentDate, [
+                        'payment_method' => (string) $request->paymentMethod,
+                        'payout_reference' => (string) $request->payoutReference,
+                        'payout_proof_type' => (string) $request->payoutProofType,
+                        'payout_proof_reference' => (string) $request->payoutProofReference,
+                        'payout_proof_notes' => $request->input('payoutProofNotes'),
+                        'disbursed_by' => (int) $user->id,
+                    ]);
 
-                $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, (string) $request->paymentDate);
+                    $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, (string) $request->paymentDate);
+                });
+
                 $processedCount++;
+            } catch (\RuntimeException $e) {
+                if (str_contains($e->getMessage(), 'already marked as paid')) {
+                    $idempotencyConflicts++;
+                }
+                $errors[] = $e->getMessage();
             } catch (\Exception $e) {
                 $errors[] = "Error processing payroll ID {$payrollId}: " . $e->getMessage();
             }
+        }
+
+        if ($processedCount === 0 && ! empty($errors)) {
+            $allErrorsAreIdempotencyConflicts = $idempotencyConflicts === count($errors);
+
+            return response()->json([
+                'message' => $allErrorsAreIdempotencyConflicts
+                    ? 'Disbursement conflict: payroll is already marked as paid'
+                    : 'Payroll disbursement failed',
+                'processed' => $processedCount,
+                'errors' => $errors,
+            ], $allErrorsAreIdempotencyConflicts ? 409 : 422);
         }
 
         return response()->json([
@@ -502,7 +576,8 @@ class PayrollController extends Controller
         $template = config('finance_expense_templates.payroll', []);
 
         $category = (string) ($template['category'] ?? 'Payroll');
-        $status = (string) ($template['status'] ?? 'submitted');
+        // Auto-approved since the payroll is already disbursed (paid)
+        $status = 'approved';
         $referencePrefix = (string) ($template['reference_prefix'] ?? 'PAY-EXP-');
         $descriptionTemplate = (string) ($template['description_template'] ?? 'Auto-generated from Payroll: :employee_name (:payroll_period)');
         $metaSource = (string) ($template['meta_source'] ?? 'payroll');
@@ -844,6 +919,8 @@ class PayrollController extends Controller
             'start_date'     => 'required|date',
             'end_date'       => 'required|date|after_or_equal:start_date',
             'regular_hours'  => 'required|numeric|min:0',
+            'attendance_days' => 'nullable|integer|min:0|max:31',
+            'leave_days'     => 'nullable|integer|min:0|max:31',
             'overtime_hours' => 'nullable|numeric|min:0',
             'rest_day_hours' => 'nullable|numeric|min:0',
             'special_holiday_hours' => 'nullable|numeric|min:0',
@@ -863,7 +940,10 @@ class PayrollController extends Controller
         $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($request->employee_id);
 
         $regularHours = (float) $request->regular_hours;
-        $attendanceDays = (int) floor($regularHours / 8);
+        $attendanceDays = $request->filled('attendance_days')
+            ? (int) $request->attendance_days
+            : (int) floor($regularHours / 8);
+        $leaveDays = (int) ($request->leave_days ?? 0);
         $overtimeHours = (float) ($request->overtime_hours ?? 0);
         $restDayHours = (float) ($request->rest_day_hours ?? 0);
         $specialHolidayHours = (float) ($request->special_holiday_hours ?? 0);
@@ -872,65 +952,53 @@ class PayrollController extends Controller
         $undertimeHours = (float) ($request->undertime_hours ?? 0);
         $absentDays = (int) ($request->absent_days ?? 0);
 
-        $salesCommission = (float) ($request->sales_commission ?? 0);
-        $performanceBonus = (float) ($request->performance_bonus ?? 0);
-        $otherAllowances = (float) ($request->other_allowances ?? 0);
-
-        $ruleEngine = $this->payrollService->computeRuleEngineAmounts($employee, [
-            'attendance_days' => $attendanceDays,
-            'overtime_hours' => $overtimeHours,
-            'rest_day_hours' => $restDayHours,
-            'special_holiday_hours' => $specialHolidayHours,
-            'regular_holiday_hours' => $regularHolidayHours,
-            'night_differential_hours' => $nightDifferentialHours,
-            'undertime_hours' => $undertimeHours,
-            'absent_days' => $absentDays,
-        ]);
-
-        $basicPay = (float) ($employee->salary ?? 0);
-        $monthlySalary = $basicPay;
-        $overtimePay = (float) ($ruleEngine['overtime_pay'] ?? 0);
-        $restDayPay = (float) ($ruleEngine['rest_day_pay'] ?? 0);
-        $specialHolidayPay = (float) ($ruleEngine['special_holiday_pay'] ?? 0);
-        $regularHolidayPay = (float) ($ruleEngine['regular_holiday_pay'] ?? 0);
-        $nightDifferentialPay = (float) ($ruleEngine['night_differential_pay'] ?? 0);
-
-        $grossPay = $basicPay
-            + $overtimePay
-            + $restDayPay
-            + $specialHolidayPay
-            + $regularHolidayPay
-            + $nightDifferentialPay
-            + $salesCommission
-            + $performanceBonus
-            + $otherAllowances;
-
-        $taxableIncome = $basicPay
-            + $overtimePay
-            + $restDayPay
-            + $specialHolidayPay
-            + $regularHolidayPay
-            + $nightDifferentialPay
-            + $salesCommission
-            + $performanceBonus;
-
-        $runDate = Carbon::parse($request->end_date)->startOfDay();
-        $statutory = $this->payrollService->calculateStatutoryDeductions(
-            (int) $user->shop_owner_id,
-            (float) $taxableIncome,
-            $runDate
+        $preview = $this->payrollService->previewPayroll(
+            $employee,
+            Carbon::parse((string) $request->start_date)->toDateString() . ' to ' . Carbon::parse((string) $request->end_date)->toDateString(),
+            [
+                'sales_commission' => (float) ($request->sales_commission ?? 0),
+                'performance_bonus' => (float) ($request->performance_bonus ?? 0),
+                'other_allowances' => (float) ($request->other_allowances ?? 0),
+            ],
+            [
+                'attendance_days' => $attendanceDays,
+                'leave_days' => $leaveDays,
+                'overtime_hours' => $overtimeHours,
+                'rest_day_hours' => $restDayHours,
+                'special_holiday_hours' => $specialHolidayHours,
+                'regular_holiday_hours' => $regularHolidayHours,
+                'night_differential_hours' => $nightDifferentialHours,
+                'undertime_hours' => $undertimeHours,
+                'absent_days' => $absentDays,
+            ]
         );
 
+        $resolvedAdditionalEarnings = $preview['resolved_additional_earnings'] ?? [];
+        $salesCommission = (float) ($resolvedAdditionalEarnings['sales_commission'] ?? 0);
+        $performanceBonus = (float) ($resolvedAdditionalEarnings['performance_bonus'] ?? 0);
+        $otherAllowances = (float) ($resolvedAdditionalEarnings['other_allowances'] ?? 0);
+        $calculation = $preview['calculation'] ?? [];
+
+        $ruleEngine = $calculation['rules'] ?? [];
+        $breakdown = $calculation['breakdown'] ?? [];
+        $statutory = $calculation['statutory'] ?? [];
+
+        $basicPay = (float) ($breakdown['basic_pay'] ?? 0);
+        $monthlySalary = (float) ($employee->salary ?? 0);
+        $overtimePay = (float) ($breakdown['overtime_pay'] ?? 0);
+        $restDayPay = (float) ($breakdown['rest_day_pay'] ?? 0);
+        $specialHolidayPay = (float) ($breakdown['special_holiday_pay'] ?? 0);
+        $regularHolidayPay = (float) ($breakdown['regular_holiday_pay'] ?? 0);
+        $nightDifferentialPay = (float) ($breakdown['night_differential_pay'] ?? 0);
         $tax = (float) ($statutory['withholding_tax'] ?? 0);
         $sss = (float) ($statutory['sss_contribution'] ?? 0);
         $philhealth = (float) ($statutory['philhealth_contribution'] ?? 0);
         $pagibig = (float) ($statutory['pagibig_contribution'] ?? 0);
-        $absentDeductions = (float) ($ruleEngine['absent_deduction'] ?? 0);
-        $undertimeDeductions = (float) ($ruleEngine['undertime_deduction'] ?? 0);
-
-        $totalDeductions = $tax + $sss + $philhealth + $pagibig + $absentDeductions + $undertimeDeductions;
-        $totalEarnings = $grossPay;
-        $netPay = $totalEarnings - $totalDeductions;
+        $absentDeductions = (float) ($breakdown['absent_deductions'] ?? 0);
+        $undertimeDeductions = (float) ($breakdown['undertime_deductions'] ?? 0);
+        $totalDeductions = (float) ($calculation['total_deductions'] ?? 0);
+        $totalEarnings = (float) ($calculation['gross_salary'] ?? 0);
+        $netPay = (float) ($calculation['net_salary'] ?? 0);
 
         return response()->json([
             'calculation' => [
@@ -940,6 +1008,8 @@ class PayrollController extends Controller
                     'monthly_salary' => $monthlySalary,
                 ],
                 'hours' => [
+                    'attendance_days' => $attendanceDays,
+                    'leave_days' => $leaveDays,
                     'regular_hours'  => round($regularHours, 2),
                     'overtime_hours' => round($overtimeHours, 2),
                     'rest_day_hours' => round($restDayHours, 2),
@@ -971,63 +1041,9 @@ class PayrollController extends Controller
                     'total_deductions'        => round($totalDeductions, 2),
                 ],
                 'net_pay'   => round($netPay, 2),
-                'gross_pay' => round($grossPay, 2),
+                'gross_pay' => round($totalEarnings, 2),
             ],
         ]);
-    }
-
-    // ============================================================
-    // PRIVATE: STATUTORY CONTRIBUTION HELPERS
-    // ============================================================
-
-    private function calculateSSSContribution(float $salary): float
-    {
-        $table = [
-            4250  => 180,    4750  => 202.50, 5250  => 225,    5750  => 247.50,
-            6250  => 270,    6750  => 292.50, 7250  => 315,    7750  => 337.50,
-            8250  => 360,    8750  => 382.50, 9250  => 405,    9750  => 427.50,
-            10250 => 450,   10750  => 472.50, 11250 => 495,   11750  => 517.50,
-            12250 => 540,   12750  => 562.50, 13250 => 585,   13750  => 607.50,
-            14250 => 630,   14750  => 652.50, 15250 => 675,   15750  => 697.50,
-            16250 => 720,   16750  => 742.50, 17250 => 765,   17750  => 787.50,
-            18250 => 810,   18750  => 832.50, 19250 => 855,   19750  => 877.50,
-        ];
-
-        if ($salary >= 30000) return 1350;
-
-        foreach ($table as $ceiling => $contribution) {
-            if ($salary < $ceiling) return $contribution;
-        }
-
-        return 900;
-    }
-
-    private function calculatePhilHealthContribution(float $salary): float
-    {
-        return round(min(max($salary, 10000), 100000) * 0.025, 2);
-    }
-
-    private function calculatePagIbigContribution(float $salary): float
-    {
-        return $salary <= 1500
-            ? round($salary * 0.01, 2)
-            : min(round($salary * 0.02, 2), 100);
-    }
-
-    private function calculateWithholdingTax(float $taxableIncome): float
-    {
-        if ($taxableIncome <= 250000)  return 0;
-        if ($taxableIncome <= 400000)  return ($taxableIncome - 250000) * 0.15;
-        if ($taxableIncome <= 800000)  return 22500 + ($taxableIncome - 400000) * 0.20;
-        if ($taxableIncome <= 2000000) return 102500 + ($taxableIncome - 800000) * 0.25;
-        if ($taxableIncome <= 8000000) return 402500 + ($taxableIncome - 2000000) * 0.30;
-        return 2202500 + ($taxableIncome - 8000000) * 0.35;
-    }
-
-    private function calculateMonthlyTax(float $monthlyGross, float $monthlyStatutory): float
-    {
-        $annual = ($monthlyGross - $monthlyStatutory) * 12;
-        return round($this->calculateWithholdingTax($annual) / 12, 2);
     }
 
     // ============================================================
@@ -1035,9 +1051,11 @@ class PayrollController extends Controller
     // ============================================================
 
     /**
-     * Return the last 12 months + current month as selectable payroll periods.
-     * Each entry includes working-day count (Mon–Fri) and whether attendance
-     * for that month is considered finalized (month has fully ended).
+    * Return the last 12 months + current month as selectable payroll periods.
+    * Each entry includes:
+    * - working-day count (Mon–Fri)
+    * - expected regular hours derived from configured shop operating schedule
+    * - whether attendance for that month is considered finalized
      */
     public function payrollPeriods(Request $request): JsonResponse
     {
@@ -1051,6 +1069,7 @@ class PayrollController extends Controller
 
         $payCycle = 'monthly';
         $payDayFirst = 15;
+        $shopOwner = ShopOwner::find((int) $user->shop_owner_id);
 
         if (Schema::hasTable('hr_branch_payroll_settings')) {
             $setting = BranchPayrollSetting::query()
@@ -1060,7 +1079,15 @@ class PayrollController extends Controller
                 ->first();
 
             if ($setting) {
-                $payCycle = $setting->pay_cycle ?: 'monthly';
+                $rawPayCycle = (string) ($setting->pay_cycle ?: 'monthly');
+                if (! in_array($rawPayCycle, ['monthly', 'semi_monthly'], true)) {
+                    \Log::warning('Unexpected pay_cycle detected in hr_branch_payroll_settings; defaulting to monthly', [
+                        'shop_owner_id' => (int) $user->shop_owner_id,
+                        'raw_pay_cycle' => $rawPayCycle,
+                    ]);
+                    $rawPayCycle = 'monthly';
+                }
+                $payCycle = $rawPayCycle;
                 $payDayFirst = (int) ($setting->pay_day_first ?: 15);
             }
         }
@@ -1097,11 +1124,24 @@ class PayrollController extends Controller
 
                 foreach ($segments as $segment) {
                     $workingDays = 0;
+                    $expectedAttendanceDays = 0;
+                    $expectedRegularHours = 0.0;
+                    $hasConfiguredOperatingHours = false;
                     $cursor = $segment['start']->copy();
                     while ($cursor->lte($segment['end'])) {
                         if ($cursor->isWeekday()) {
                             $workingDays++;
                         }
+
+                        $dailyConfiguredHours = $this->resolveConfiguredDailyOperatingHours($shopOwner, $cursor);
+                        if ($dailyConfiguredHours !== null) {
+                            $expectedRegularHours += $dailyConfiguredHours;
+                            if ($dailyConfiguredHours > 0) {
+                                $expectedAttendanceDays++;
+                            }
+                            $hasConfiguredOperatingHours = true;
+                        }
+
                         $cursor->addDay();
                     }
 
@@ -1119,6 +1159,9 @@ class PayrollController extends Controller
                         'endDate'          => $segment['end']->format('Y-m-d'),
                         'attendanceStatus' => $attendanceStatus,
                         'workingDays'      => $workingDays,
+                        'expectedAttendanceDays' => $expectedAttendanceDays,
+                        'expectedRegularHours' => round($expectedRegularHours, 2),
+                        'hasConfiguredOperatingHours' => $hasConfiguredOperatingHours,
                         'payCycle'         => 'semi_monthly',
                     ];
                 }
@@ -1127,11 +1170,24 @@ class PayrollController extends Controller
             }
 
             $workingDays = 0;
+            $expectedAttendanceDays = 0;
+            $expectedRegularHours = 0.0;
+            $hasConfiguredOperatingHours = false;
             $cursor = $monthStart->copy();
             while ($cursor->lte($monthEnd)) {
                 if ($cursor->isWeekday()) {
                     $workingDays++;
                 }
+
+                $dailyConfiguredHours = $this->resolveConfiguredDailyOperatingHours($shopOwner, $cursor);
+                if ($dailyConfiguredHours !== null) {
+                    $expectedRegularHours += $dailyConfiguredHours;
+                    if ($dailyConfiguredHours > 0) {
+                        $expectedAttendanceDays++;
+                    }
+                    $hasConfiguredOperatingHours = true;
+                }
+
                 $cursor->addDay();
             }
 
@@ -1144,6 +1200,9 @@ class PayrollController extends Controller
                 'endDate'          => $monthEnd->format('Y-m-d'),
                 'attendanceStatus' => $attendanceStatus,
                 'workingDays'      => $workingDays,
+                'expectedAttendanceDays' => $expectedAttendanceDays,
+                'expectedRegularHours' => round($expectedRegularHours, 2),
+                'hasConfiguredOperatingHours' => $hasConfiguredOperatingHours,
                 'payCycle'         => 'monthly',
             ];
         }
@@ -1153,6 +1212,92 @@ class PayrollController extends Controller
         });
 
         return response()->json($periods);
+    }
+
+    private function resolveConfiguredDailyOperatingHours(?ShopOwner $shopOwner, Carbon $date): ?float
+    {
+        if (! $shopOwner) {
+            return null;
+        }
+
+        $dayName = strtolower($date->format('l'));
+        $openColumn = $dayName . '_open';
+        $closeColumn = $dayName . '_close';
+
+        $legacyOpen = $shopOwner->{$openColumn} ?? null;
+        $legacyClose = $shopOwner->{$closeColumn} ?? null;
+
+        if (! empty($legacyOpen) || ! empty($legacyClose)) {
+            if (empty($legacyOpen) || empty($legacyClose)) {
+                return 0.0;
+            }
+
+            return $this->computeDailyOperatingHours((string) $legacyOpen, (string) $legacyClose);
+        }
+
+        $operatingHours = $shopOwner->operating_hours;
+        if (is_string($operatingHours)) {
+            $rawOperatingHours = $operatingHours;
+            $decoded = json_decode($rawOperatingHours, true);
+
+            static $operatingHoursWarningLogged = [];
+            $warningKey = (int) ($shopOwner->id ?? 0);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                if (! isset($operatingHoursWarningLogged[$warningKey])) {
+                    \Log::warning('Malformed operating_hours JSON detected', [
+                        'shop_owner_id' => $shopOwner->id,
+                        'json_error' => json_last_error_msg(),
+                    ]);
+                    $operatingHoursWarningLogged[$warningKey] = true;
+                }
+            } elseif ($decoded !== null && ! is_array($decoded)) {
+                if (! isset($operatingHoursWarningLogged[$warningKey])) {
+                    \Log::warning('Unexpected operating_hours JSON type; expected object/array', [
+                        'shop_owner_id' => $shopOwner->id,
+                        'decoded_type' => gettype($decoded),
+                    ]);
+                    $operatingHoursWarningLogged[$warningKey] = true;
+                }
+            }
+
+            $operatingHours = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($operatingHours) || ! array_key_exists($dayName, $operatingHours)) {
+            return null;
+        }
+
+        $dayConfig = $operatingHours[$dayName];
+        if (! is_array($dayConfig)) {
+            return 0.0;
+        }
+
+        $isClosed = filter_var($dayConfig['is_closed'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $open = $dayConfig['open'] ?? null;
+        $close = $dayConfig['close'] ?? null;
+
+        if ($isClosed || empty($open) || empty($close)) {
+            return 0.0;
+        }
+
+        return $this->computeDailyOperatingHours((string) $open, (string) $close);
+    }
+
+    private function computeDailyOperatingHours(string $openTime, string $closeTime): float
+    {
+        try {
+            $open = Carbon::parse('2000-01-01 ' . substr($openTime, 0, 8));
+            $close = Carbon::parse('2000-01-01 ' . substr($closeTime, 0, 8));
+
+            if ($close->lte($open)) {
+                $close->addDay();
+            }
+
+            return round($open->diffInMinutes($close) / 60, 2);
+        } catch (\Throwable $e) {
+            return 0.0;
+        }
     }
 
     // ============================================================
@@ -1188,12 +1333,70 @@ class PayrollController extends Controller
             })
             ->with([
                 'components' => fn ($q) => $q->orderBy('component_type')->orderBy('display_order'),
+                'disburser:id,name',
             ]);
 
-        if ($request->filled('period')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('payroll_period', 'like', "%{$request->period}%")
-                  ->orWhere('pay_period_start', 'like', "%{$request->period}%");
+        $periodFilter = trim((string) $request->input('period', ''));
+        if ($periodFilter !== '') {
+            $query->where(function ($q) use ($periodFilter) {
+                // Exact semi-monthly range key, e.g. "2026-03-01 to 2026-03-15"
+                if (preg_match('/^\d{4}-\d{2}-\d{2}\s+to\s+\d{4}-\d{2}-\d{2}$/i', $periodFilter) === 1) {
+                    [$startRaw, $endRaw] = preg_split('/\s+to\s+/i', $periodFilter, 2);
+                    $startDate = Carbon::parse((string) $startRaw)->toDateString();
+                    $endDate = Carbon::parse((string) $endRaw)->toDateString();
+
+                    if ($startDate > $endDate) {
+                        [$startDate, $endDate] = [$endDate, $startDate];
+                    }
+
+                    $q->whereDate('pay_period_start', $startDate)
+                        ->whereDate('pay_period_end', $endDate);
+
+                    return;
+                }
+
+                // Month filter, e.g. "2026-03" or "March 2026"
+                if (preg_match('/^\d{4}-\d{2}$/', $periodFilter) === 1 || preg_match('/^[A-Za-z]{3,9}\s+\d{4}$/', $periodFilter) === 1) {
+                    try {
+                        if (preg_match('/^\d{4}-\d{2}$/', $periodFilter) === 1) {
+                            $monthDate = Carbon::createFromFormat('Y-m', $periodFilter);
+                        } else {
+                            try {
+                                $monthDate = Carbon::createFromFormat('F Y', $periodFilter);
+                            } catch (\Throwable $e) {
+                                $monthDate = Carbon::createFromFormat('M Y', $periodFilter);
+                            }
+                        }
+
+                        $monthStart = $monthDate->copy()->startOfMonth()->toDateString();
+                        $monthEnd = $monthDate->copy()->endOfMonth()->toDateString();
+
+                        $q->where(function ($monthQuery) use ($monthStart, $monthEnd) {
+                            $monthQuery->whereBetween('pay_period_start', [$monthStart, $monthEnd])
+                                ->orWhereBetween('pay_period_end', [$monthStart, $monthEnd])
+                                ->orWhere(function ($overlapQuery) use ($monthStart, $monthEnd) {
+                                    $overlapQuery->whereDate('pay_period_start', '<=', $monthStart)
+                                        ->whereDate('pay_period_end', '>=', $monthEnd);
+                                });
+                        });
+
+                        return;
+                    } catch (\Throwable $e) {
+                        // Fall back to exact payroll_period match below.
+                    }
+                }
+
+                // Single date filter, e.g. "2026-03-15" (match payslip containing that date)
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $periodFilter) === 1) {
+                    $targetDate = Carbon::parse($periodFilter)->toDateString();
+                    $q->whereDate('pay_period_start', '<=', $targetDate)
+                        ->whereDate('pay_period_end', '>=', $targetDate);
+
+                    return;
+                }
+
+                // Strict fallback: exact payroll_period text match only.
+                $q->where('payroll_period', $periodFilter);
             });
         }
 

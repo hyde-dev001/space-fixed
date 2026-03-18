@@ -26,6 +26,102 @@ class CheckoutController extends Controller
     {
         $this->notificationService = $notificationService;
     }
+
+    private function normalizeSizeSystem(?string $rawSystem): string
+    {
+        $normalized = strtoupper(trim((string) $rawSystem));
+        return in_array($normalized, ['US', 'UK', 'EU', 'AU', 'CN'], true) ? $normalized : 'US';
+    }
+
+    private function parseSizeComponents(?string $rawSize): array
+    {
+        $normalizedRaw = trim((string) $rawSize);
+        if ($normalizedRaw === '') {
+            return ['system' => 'US', 'value' => '', 'explicit_system' => false];
+        }
+
+        if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $normalizedRaw, $matches)) {
+            return [
+                'system' => $this->normalizeSizeSystem($matches[1] ?? null),
+                'value' => trim((string) ($matches[2] ?? '')),
+                'explicit_system' => true,
+            ];
+        }
+
+        return ['system' => 'US', 'value' => $normalizedRaw, 'explicit_system' => false];
+    }
+
+    private function buildVariantSizeCandidates(?string $rawSize): array
+    {
+        $parsed = $this->parseSizeComponents($rawSize);
+        $value = (string) ($parsed['value'] ?? '');
+        $system = (string) ($parsed['system'] ?? 'US');
+        $explicitSystem = (bool) ($parsed['explicit_system'] ?? false);
+        $normalizedRaw = trim((string) $rawSize);
+
+        if ($value === '') {
+            return [];
+        }
+
+        $candidates = [];
+
+        if ($explicitSystem) {
+            $candidates[] = $system === 'US' ? $value : "{$system} {$value}";
+            if ($system === 'US') {
+                $candidates[] = "US {$value}";
+            }
+            $candidates[] = $normalizedRaw;
+        } else {
+            $candidates[] = $value;
+            $candidates[] = "US {$value}";
+            $candidates[] = $normalizedRaw;
+        }
+
+        $filtered = array_values(array_filter(array_map(fn ($item) => trim((string) $item), $candidates)));
+        return array_values(array_unique($filtered));
+    }
+
+    private function resolveVariant(Product $product, ?string $size, ?string $color): ?ProductVariant
+    {
+        $normalizedColor = strtolower(trim((string) $color));
+        $sizeCandidates = $this->buildVariantSizeCandidates($size);
+
+        if ($normalizedColor === '' || empty($sizeCandidates)) {
+            return null;
+        }
+
+        $matchingVariants = ProductVariant::where('product_id', $product->id)
+            ->whereRaw('LOWER(color) = ?', [$normalizedColor])
+            ->whereIn('size', $sizeCandidates)
+            ->get();
+
+        foreach ($sizeCandidates as $candidate) {
+            $matched = $matchingVariants->first(fn ($variant) => (string) $variant->size === (string) $candidate);
+            if ($matched) {
+                return $matched;
+            }
+        }
+
+        $requestedValue = strtolower((string) ($this->parseSizeComponents($size)['value'] ?? ''));
+        if ($requestedValue === '') {
+            return null;
+        }
+
+        $sameValueCandidates = ProductVariant::where('product_id', $product->id)
+            ->whereRaw('LOWER(color) = ?', [$normalizedColor])
+            ->get()
+            ->filter(function ($variant) use ($requestedValue) {
+                $variantValue = strtolower((string) ($this->parseSizeComponents($variant->size)['value'] ?? ''));
+                return $variantValue !== '' && $variantValue === $requestedValue;
+            })
+            ->values();
+
+        if ($sameValueCandidates->count() === 1) {
+            return $sameValueCandidates->first();
+        }
+
+        return null;
+    }
     /**
      * Create order from cart items
      */
@@ -115,10 +211,7 @@ class CheckoutController extends Controller
 
                 // Check variant-specific stock availability
                 if ($itemSize && $itemColor) {
-                    $variant = ProductVariant::where('product_id', $product->id)
-                        ->where('size', $itemSize)
-                        ->where('color', $itemColor)
-                        ->first();
+                    $variant = $this->resolveVariant($product, (string) $itemSize, (string) $itemColor);
 
                     if (!$variant) {
                         return response()->json([
@@ -228,6 +321,13 @@ class CheckoutController extends Controller
                         $itemSize = $item['size'] ?? null;
                         // Try to get color from direct field first, then from options
                         $itemColor = $item['color'] ?? $options['color'] ?? null;
+                        $resolvedVariant = null;
+
+                        if ($itemSize && $itemColor) {
+                            $resolvedVariant = $this->resolveVariant($product, (string) $itemSize, (string) $itemColor);
+                        }
+
+                        $itemSizeToSave = $resolvedVariant ? (string) $resolvedVariant->size : $itemSize;
                         $itemImage = $options['image'] ?? $item['image'] ?? $product->main_image;
 
                         Log::info('Processing order item', [
@@ -244,7 +344,7 @@ class CheckoutController extends Controller
                         Log::info('Checkout - Creating order_item', [
                             'order_id' => $order->id,
                             'product_id' => $product->id,
-                            'size_to_save' => $itemSize,
+                            'size_to_save' => $itemSizeToSave,
                             'color_to_save' => $itemColor,
                             'image_to_save' => $itemImage,
                         ]);
@@ -257,7 +357,7 @@ class CheckoutController extends Controller
                             'price' => $item['price'],
                             'quantity' => $item['qty'],
                             'subtotal' => $subtotal,
-                            'size' => $itemSize,
+                            'size' => $itemSizeToSave,
                             'color' => $itemColor,
                             'product_image' => $itemImage,
                         ]);
@@ -271,30 +371,25 @@ class CheckoutController extends Controller
                                 'qty_to_reduce' => $item['qty']
                             ]);
 
-                            $variant = ProductVariant::where('product_id', $product->id)
-                                ->where('size', $itemSize)
-                                ->where('color', $itemColor)
-                                ->first();
-
-                            if ($variant) {
+                            if ($resolvedVariant) {
                                 Log::info('Checkout - Variant FOUND, decrementing now', [
-                                    'variant_id' => $variant->id,
-                                    'before_quantity' => $variant->quantity,
+                                    'variant_id' => $resolvedVariant->id,
+                                    'before_quantity' => $resolvedVariant->quantity,
                                     'reducing_by' => $item['qty']
                                 ]);
 
-                                $variant->decrement('quantity', $item['qty']);
+                                $resolvedVariant->decrement('quantity', $item['qty']);
 
                                 // Refresh to get updated value
-                                $variant->refresh();
+                                $resolvedVariant->refresh();
 
                                 Log::info('Variant stock decremented', [
                                     'product_id' => $product->id,
-                                    'variant_id' => $variant->id,
-                                    'size' => $itemSize,
+                                    'variant_id' => $resolvedVariant->id,
+                                    'size' => $resolvedVariant->size,
                                     'color' => $itemColor,
                                     'quantity_reduced' => $item['qty'],
-                                    'remaining' => $variant->quantity,
+                                    'remaining' => $resolvedVariant->quantity,
                                 ]);
                             } else {
                                 Log::warning('Variant NOT FOUND for stock deduction', [
@@ -615,11 +710,21 @@ class CheckoutController extends Controller
     public function updatePaymentLink(Request $request, $orderId)
     {
         try {
+            $user = Auth::guard('user')->user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
             $validated = $request->validate([
-                'paymongo_link_id' => 'required|string',
+                'paymongo_link_id' => 'required|string|max:255',
             ]);
 
-            $order = Order::findOrFail($orderId);
+            $order = Order::where('id', $orderId)
+                ->where('customer_id', $user->id)
+                ->firstOrFail();
 
             $order->update([
                 'paymongo_link_id' => $validated['paymongo_link_id'],
@@ -652,7 +757,15 @@ class CheckoutController extends Controller
     public function verifyPayment(Request $request, $orderId)
     {
         try {
-            $order = Order::find($orderId);
+            $user = Auth::guard('user')->user();
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $order = Order::with('shopOwner')
+                ->where('id', $orderId)
+                ->where('customer_id', $user->id)
+                ->first();
 
             if (!$order) {
                 return response()->json(['success' => false, 'message' => 'Order not found'], 404);
@@ -677,7 +790,15 @@ class CheckoutController extends Controller
             }
 
             // Ask PayMongo for the current checkout session status
-            $apiKey   = config('services.paymongo.secret_key');
+            $apiKey = $order->shopOwner?->paymongo_secret_key;
+            if (!$apiKey) {
+                return response()->json([
+                    'success' => false,
+                    'payment_verified' => false,
+                    'message' => 'Payment gateway not configured for this shop',
+                ], 503);
+            }
+
             $response = \Illuminate\Support\Facades\Http::withHeaders([
                 'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
             ])->get("https://api.paymongo.com/v1/checkout_sessions/{$order->paymongo_link_id}");
@@ -761,7 +882,17 @@ class CheckoutController extends Controller
     public function getOrderDetails($orderId)
     {
         try {
-            $order = Order::find($orderId);
+            $user = Auth::guard('user')->user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
+            $order = Order::where('id', $orderId)
+                ->where('customer_id', $user->id)
+                ->first();
 
             if (!$order) {
                 return response()->json([

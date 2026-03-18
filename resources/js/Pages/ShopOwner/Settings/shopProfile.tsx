@@ -51,6 +51,25 @@ type OperatingHours = {
   sunday_close?: string;
 };
 
+const formatTimeTo12Hour = (timeValue?: string | null): string => {
+  if (!timeValue) return "Not set";
+
+  const trimmed = String(timeValue).trim();
+  const hhmmOrHhmmss = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+
+  if (!hhmmOrHhmmss) return trimmed;
+
+  const hour = Number(hhmmOrHhmmss[1]);
+  const minute = hhmmOrHhmmss[2];
+
+  if (hour < 0 || hour > 23) return trimmed;
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+
+  return `${hour12}:${minute} ${period}`;
+};
+
 const InfoField: React.FC<{ label: string; value?: string | number | null; icon?: React.ReactNode }> = ({
   label,
   value,
@@ -785,12 +804,12 @@ const ShopProfile: React.FC = () => {
                           </td>
                           <td className="py-4 px-4">
                             <span className="text-gray-700 dark:text-gray-300">
-                              {openTime || <span className="text-gray-400 italic">Not set</span>}
+                              {openTime ? formatTimeTo12Hour(openTime) : <span className="text-gray-400 italic">Not set</span>}
                             </span>
                           </td>
                           <td className="py-4 px-4">
                             <span className="text-gray-700 dark:text-gray-300">
-                              {closeTime || <span className="text-gray-400 italic">Not set</span>}
+                              {closeTime ? formatTimeTo12Hour(closeTime) : <span className="text-gray-400 italic">Not set</span>}
                             </span>
                           </td>
                           <td className="py-4 px-4">

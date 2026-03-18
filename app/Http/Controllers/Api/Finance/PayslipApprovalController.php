@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
 use App\Notifications\HR\PayslipGenerated;
@@ -40,36 +41,101 @@ class PayslipApprovalController extends Controller
     // AUTH HELPER
     // ============================================================
 
-    private function authorizeWorkflowViewer(): ?\Illuminate\Contracts\Auth\Authenticatable
+    private function resolveShopOwnerActorUserId(int $shopOwnerId): ?int
+    {
+        $mappedByRoleColumn = User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereIn('role', ['Shop Owner', 'SHOP_OWNER', 'shop_owner'])
+            ->orderByDesc('id')
+            ->value('id');
+
+        if ($mappedByRoleColumn) {
+            return (int) $mappedByRoleColumn;
+        }
+
+        $fallbackUserId = User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderByDesc('id')
+            ->value('id');
+
+        return $fallbackUserId ? (int) $fallbackUserId : null;
+    }
+
+    private function authorizeWorkflowViewer(): ?array
     {
         $user = Auth::guard('user')->user();
 
-        return ($user && (
+        if ($user && (
             $user->hasRole('Shop Owner')
             || $user->can('approve-payroll')
             || $user->can('access-payslip-approval')
             || $user->can('access-approval-workflow')
-        )) ? $user : null;
+        )) {
+            return [
+                'shop_owner_id' => (int) $user->shop_owner_id,
+                'actor_user_id' => (int) $user->id,
+                'name' => (string) ($user->name ?? 'User'),
+                'guard' => 'user',
+            ];
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return [
+                'shop_owner_id' => (int) $shopOwner->id,
+                'actor_user_id' => $this->resolveShopOwnerActorUserId((int) $shopOwner->id),
+                'name' => trim((string) ($shopOwner->full_name ?? $shopOwner->business_name ?? 'Shop Owner')),
+                'guard' => 'shop_owner',
+            ];
+        }
+
+        return null;
     }
 
-    private function authorizeChecker(): ?\Illuminate\Contracts\Auth\Authenticatable
+    private function authorizeChecker(): ?array
     {
         $user = Auth::guard('user')->user();
 
         return ($user && (
             $user->can('approve-payroll')
             || $user->can('access-payslip-approval')
-        )) ? $user : null;
+        )) ? [
+            'shop_owner_id' => (int) $user->shop_owner_id,
+            'actor_user_id' => (int) $user->id,
+            'name' => (string) ($user->name ?? 'User'),
+            'guard' => 'user',
+        ] : null;
     }
 
-    private function authorizeFinalApprover(): ?\Illuminate\Contracts\Auth\Authenticatable
+    private function authorizeFinalApprover(): ?array
     {
         $user = Auth::guard('user')->user();
 
-        return ($user && (
+        $userRole = (string) ($user->role ?? '');
+
+        if ($user && (
             $user->hasRole('Shop Owner')
-            || $user->can('access-approval-workflow')
-        )) ? $user : null;
+            || in_array($userRole, ['Shop Owner', 'SHOP_OWNER', 'shop_owner'], true)
+        )) {
+            return [
+                'shop_owner_id' => (int) $user->shop_owner_id,
+                'actor_user_id' => (int) $user->id,
+                'name' => (string) ($user->name ?? 'User'),
+                'guard' => 'user',
+            ];
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return [
+                'shop_owner_id' => (int) $shopOwner->id,
+                'actor_user_id' => $this->resolveShopOwnerActorUserId((int) $shopOwner->id),
+                'name' => trim((string) ($shopOwner->full_name ?? $shopOwner->business_name ?? 'Shop Owner')),
+                'guard' => 'shop_owner',
+            ];
+        }
+
+        return null;
     }
 
     // ============================================================
@@ -81,16 +147,16 @@ class PayslipApprovalController extends Controller
      */
     public function getPayslipsForApproval(Request $request): JsonResponse
     {
-        $user = $this->authorizeWorkflowViewer();
-        if (! $user) {
+        $actor = $this->authorizeWorkflowViewer();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $baseQuery = Payroll::forShopOwner($user->shop_owner_id);
+        $baseQuery = Payroll::forShopOwner($actor['shop_owner_id']);
 
         $query = (clone $baseQuery)
             ->with([
-                'employee:id,employee_id,first_name,last_name,department,position',
+                'employee:id,first_name,last_name,department,position',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -139,14 +205,14 @@ class PayslipApprovalController extends Controller
      */
     public function getPayslipForApproval(Request $request, $id): JsonResponse
     {
-        $user = $this->authorizeWorkflowViewer();
-        if (! $user) {
+        $actor = $this->authorizeWorkflowViewer();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $payslip = Payroll::forShopOwner($user->shop_owner_id)
+        $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
             ->with([
-                'employee:id,employee_id,first_name,last_name,department,position',
+                'employee:id,first_name,last_name,department,position',
                 'components',
                 'checker:id,name',
                 'finalApprover:id,name',
@@ -166,13 +232,13 @@ class PayslipApprovalController extends Controller
      */
     public function approvePayslip(Request $request, $id): JsonResponse
     {
-        $user = $this->authorizeChecker();
-        if (! $user) {
+        $actor = $this->authorizeChecker();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $payslip = Payroll::forShopOwner($user->shop_owner_id)
-            ->with(['employee:id,employee_id,first_name,last_name,department,position'])
+        $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
+            ->with(['employee:id,first_name,last_name,department,position'])
             ->find($id);
         if (! $payslip) {
             return response()->json(['error' => 'Payslip not found'], 404);
@@ -182,7 +248,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip already checker-approved'], 400);
         }
 
-        if ((int) ($payslip->generated_by ?? 0) === (int) $user->id) {
+        if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
             return response()->json([
                 'error' => 'Maker-checker violation. The payroll generator cannot act as the Finance checker.',
             ], 403);
@@ -192,7 +258,7 @@ class PayslipApprovalController extends Controller
             $payslip->update([
                 'status' => 'pending',
                 'approval_status' => 'approved',
-                'approved_by' => $user->id,
+                'approved_by' => $actor['actor_user_id'],
                 'approved_at' => now(),
                 'approval_notes' => $request->notes ?? '',
                 'final_approved_by' => null,
@@ -207,17 +273,17 @@ class PayslipApprovalController extends Controller
             ]);
 
             $this->logHRActivity(
-                $user->shop_owner_id,
+                $actor['shop_owner_id'],
                 'payslip_checker_approved',
                 'Payslip Checker Approved',
-                "Payslip #{$payslip->id} checker-approved by {$user->name} (Finance)",
+                "Payslip #{$payslip->id} checker-approved by {$actor['name']} (Finance)",
                 $payslip
             );
 
             return response()->json([
                 'message' => 'Payslip checker-approved successfully',
                 'payslip' => $this->transformPayslip($payslip->fresh([
-                    'employee:id,employee_id,first_name,last_name,department,position',
+                    'employee:id,first_name,last_name,department,position',
                     'checker:id,name',
                     'finalApprover:id,name',
                     'disburser:id,name',
@@ -233,8 +299,8 @@ class PayslipApprovalController extends Controller
      */
     public function rejectPayslip(Request $request, $id): JsonResponse
     {
-        $user = $this->authorizeChecker();
-        if (! $user) {
+        $actor = $this->authorizeChecker();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -246,8 +312,8 @@ class PayslipApprovalController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $payslip = Payroll::forShopOwner($user->shop_owner_id)
-            ->with(['employee:id,employee_id,first_name,last_name,department,position'])
+        $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
+            ->with(['employee:id,first_name,last_name,department,position'])
             ->find($id);
         if (! $payslip) {
             return response()->json(['error' => 'Payslip not found'], 404);
@@ -265,7 +331,7 @@ class PayslipApprovalController extends Controller
             $payslip->update([
                 'status' => 'pending',
                 'approval_status' => 'rejected',
-                'approved_by' => $user->id,
+                'approved_by' => $actor['actor_user_id'],
                 'approved_at' => now(),
                 'approval_notes' => $request->notes,
                 'final_approved_by' => null,
@@ -280,17 +346,17 @@ class PayslipApprovalController extends Controller
             ]);
 
             $this->logHRActivity(
-                $user->shop_owner_id,
+                $actor['shop_owner_id'],
                 'payslip_rejected',
                 'Payslip Rejected',
-                "Payslip #{$payslip->id} rejected by {$user->name} (Finance): {$request->notes}",
+                "Payslip #{$payslip->id} rejected by {$actor['name']} (Finance): {$request->notes}",
                 $payslip
             );
 
             return response()->json([
                 'message' => 'Payslip rejected and sent back to HR for correction',
                 'payslip' => $this->transformPayslip($payslip->fresh([
-                    'employee:id,employee_id,first_name,last_name,department,position',
+                    'employee:id,first_name,last_name,department,position',
                     'checker:id,name',
                     'finalApprover:id,name',
                     'disburser:id,name',
@@ -306,9 +372,15 @@ class PayslipApprovalController extends Controller
      */
     public function finalApprovePayslip(Request $request, $id): JsonResponse
     {
-        $user = $this->authorizeFinalApprover();
-        if (! $user) {
+        $actor = $this->authorizeFinalApprover();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (empty($actor['actor_user_id'])) {
+            return response()->json([
+                'error' => 'No linked ERP user was found for this shop owner. Please contact support to map the account before final approval.',
+            ], 422);
         }
 
         $validator = Validator::make($request->all(), [
@@ -319,9 +391,9 @@ class PayslipApprovalController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $payslip = Payroll::forShopOwner($user->shop_owner_id)
+        $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
             ->with([
-                'employee:id,employee_id,first_name,last_name,department,position',
+                'employee:id,first_name,last_name,department,position',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -344,29 +416,29 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payroll already has final approval'], 400);
         }
 
-        if ((int) ($payslip->generated_by ?? 0) === (int) $user->id) {
+        if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
             return response()->json(['error' => 'Maker-checker violation. The payroll generator cannot be the final approver.'], 403);
         }
 
-        if ((int) ($payslip->approved_by ?? 0) === (int) $user->id) {
+        if ((int) ($payslip->approved_by ?? 0) === (int) $actor['actor_user_id']) {
             return response()->json(['error' => 'Maker-checker violation. The Finance checker cannot also be the final approver.'], 403);
         }
 
         try {
-            $payslip->markAsFinalApproved((int) $user->id, $request->input('notes'));
+            $payslip->markAsFinalApproved((int) $actor['actor_user_id'], $request->input('notes'));
 
             $this->logHRActivity(
-                $user->shop_owner_id,
+                $actor['shop_owner_id'],
                 'payslip_final_approved',
                 'Payslip Final Approved',
-                "Payslip #{$payslip->id} final-approved by {$user->name}",
+                "Payslip #{$payslip->id} final-approved by {$actor['name']}",
                 $payslip
             );
 
             try {
                 if ($payslip->employee && $payslip->employee->user) {
                     if ($payslip->employee->user_id) {
-                        $this->notificationService->notifyPayslipReady($payslip->employee->user_id, $user->shop_owner_id, [
+                        $this->notificationService->notifyPayslipReady($payslip->employee->user_id, $actor['shop_owner_id'], [
                             'payroll_id' => $payslip->id,
                             'period' => $payslip->payroll_period,
                             'net_salary' => number_format((float) $payslip->net_salary, 2),
@@ -385,7 +457,7 @@ class PayslipApprovalController extends Controller
             return response()->json([
                 'message' => 'Payroll final-approved and ready for disbursement',
                 'payslip' => $this->transformPayslip($payslip->fresh([
-                    'employee:id,employee_id,first_name,last_name,department,position',
+                    'employee:id,first_name,last_name,department,position',
                     'checker:id,name',
                     'finalApprover:id,name',
                     'disburser:id,name',
@@ -401,13 +473,13 @@ class PayslipApprovalController extends Controller
      */
     public function batchApprovalPreview(Request $request): JsonResponse
     {
-        $user = $this->authorizeChecker();
-        if (! $user) {
+        $actor = $this->authorizeChecker();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         try {
-            $payslips = Payroll::forShopOwner($user->shop_owner_id)
+            $payslips = Payroll::forShopOwner($actor['shop_owner_id'])
                 ->where('approval_status', 'pending')
                 ->with(['employee'])
                 ->get();
@@ -441,8 +513,8 @@ class PayslipApprovalController extends Controller
      */
     public function batchApprove(Request $request): JsonResponse
     {
-        $user = $this->authorizeChecker();
-        if (! $user) {
+        $actor = $this->authorizeChecker();
+        if (! $actor) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -462,7 +534,7 @@ class PayslipApprovalController extends Controller
 
         foreach ($request->payslip_ids as $payslipId) {
             try {
-                $payslip = Payroll::forShopOwner($user->shop_owner_id)->find($payslipId);
+                $payslip = Payroll::forShopOwner($actor['shop_owner_id'])->find($payslipId);
 
                 if (! $payslip) {
                     $errors[] = "Payslip #{$payslipId} not found";
@@ -479,7 +551,7 @@ class PayslipApprovalController extends Controller
                 $payslip->update([
                     'status' => 'pending',
                     'approval_status' => 'approved',
-                    'approved_by' => $user->id,
+                    'approved_by' => $actor['actor_user_id'],
                     'approved_at' => now(),
                     'approval_notes' => $request->notes ?? 'Batch approved by Finance',
                     'final_approved_by' => null,
@@ -494,10 +566,10 @@ class PayslipApprovalController extends Controller
                 ]);
 
                 $this->logHRActivity(
-                    $user->shop_owner_id,
+                    $actor['shop_owner_id'],
                     'payslip_approved',
                     'Payslip Batch Approved',
-                    "Payslip #{$payslip->id} approved by {$user->name} (Finance, batch)",
+                    "Payslip #{$payslip->id} approved by {$actor['name']} (Finance, batch)",
                     $payslip
                 );
 
@@ -556,6 +628,71 @@ class PayslipApprovalController extends Controller
     {
         $employee = $payslip->employee;
         $components = $includeLineItems ? $payslip->components : collect();
+        $grossPay = (float) ($payslip->gross_salary ?? 0);
+        $netPay = (float) ($payslip->net_salary ?? 0);
+        $taxAmount = (float) ($payslip->tax_amount ?? $payslip->tax_deductions ?? 0);
+        $sssContribution = (float) ($payslip->sss_contributions ?? 0);
+        $philhealthContribution = (float) ($payslip->philhealth ?? 0);
+        $pagibigContribution = (float) ($payslip->pag_ibig ?? 0);
+        $componentOrStoredDeductions = (float) ($payslip->total_deductions ?? 0);
+        $legacyDeductions = (float) ($payslip->deductions ?? 0);
+        $computedFromParts = $componentOrStoredDeductions + $taxAmount + $sssContribution + $philhealthContribution + $pagibigContribution;
+        $derivedFromGrossNet = round(max(0, $grossPay - $netPay), 2);
+
+        $effectiveDeductions = $legacyDeductions > 0
+            ? $legacyDeductions
+            : ($derivedFromGrossNet > 0
+                ? $derivedFromGrossNet
+                : $computedFromParts);
+
+        $lineItems = $components->map(fn ($component) => [
+            'label' => $component->component_name,
+            'amount' => (float) ($component->calculated_amount ?? $component->amount ?? 0),
+            'type' => $component->component_type,
+        ]);
+
+        if ($includeLineItems) {
+            $existingLabels = $lineItems
+                ->pluck('label')
+                ->map(fn ($label) => strtolower(trim((string) $label)))
+                ->values();
+
+            $hasLabel = fn (array $labels): bool => collect($labels)
+                ->map(fn ($label) => strtolower(trim($label)))
+                ->contains(fn ($needle) => $existingLabels->contains($needle));
+
+            if ($taxAmount > 0 && ! $hasLabel(['Income Tax', 'Withholding Tax'])) {
+                $lineItems->push([
+                    'label' => 'Withholding Tax',
+                    'amount' => $taxAmount,
+                    'type' => PayrollComponent::TYPE_DEDUCTION,
+                ]);
+            }
+
+            if ($sssContribution > 0 && ! $hasLabel(['SSS Contribution'])) {
+                $lineItems->push([
+                    'label' => 'SSS Contribution',
+                    'amount' => $sssContribution,
+                    'type' => PayrollComponent::TYPE_DEDUCTION,
+                ]);
+            }
+
+            if ($philhealthContribution > 0 && ! $hasLabel(['PhilHealth Contribution'])) {
+                $lineItems->push([
+                    'label' => 'PhilHealth Contribution',
+                    'amount' => $philhealthContribution,
+                    'type' => PayrollComponent::TYPE_DEDUCTION,
+                ]);
+            }
+
+            if ($pagibigContribution > 0 && ! $hasLabel(['Pag-IBIG Contribution', 'Pagibig Contribution'])) {
+                $lineItems->push([
+                    'label' => 'Pag-IBIG Contribution',
+                    'amount' => $pagibigContribution,
+                    'type' => PayrollComponent::TYPE_DEDUCTION,
+                ]);
+            }
+        }
 
         return [
             'id' => $payslip->id,
@@ -566,10 +703,10 @@ class PayslipApprovalController extends Controller
             'pay_period' => $payslip->payroll_period,
             'generated_date' => $payslip->created_at?->format('Y-m-d') ?? '',
             'generated_by' => 'HR Payroll',
-            'gross_pay' => (float) ($payslip->gross_salary ?? 0),
-            'deductions' => (float) ($payslip->total_deductions ?? $payslip->deductions ?? 0),
-            'net_pay' => (float) ($payslip->net_salary ?? 0),
-            'tax_amount' => (float) ($payslip->tax_amount ?? $payslip->tax_deductions ?? 0),
+            'gross_pay' => $grossPay,
+            'deductions' => round($effectiveDeductions, 2),
+            'net_pay' => $netPay,
+            'tax_amount' => $taxAmount,
             'status' => $payslip->approval_status ?? 'pending',
             'workflow_status' => $payslip->workflow_status,
             'final_approval_status' => $payslip->final_approved_by ? 'approved' : 'pending',
@@ -589,11 +726,7 @@ class PayslipApprovalController extends Controller
             'payout_proof_notes' => $payslip->payout_proof_notes ?? '',
             'disbursed_by_name' => $payslip->disburser?->name,
             'disbursed_at' => $payslip->disbursed_at?->format('Y-m-d H:i:s'),
-            'line_items' => $components->map(fn ($component) => [
-                'label' => $component->component_name,
-                'amount' => (float) ($component->calculated_amount ?? $component->amount ?? 0),
-                'type' => $component->component_type,
-            ])->values()->toArray(),
+            'line_items' => $lineItems->values()->toArray(),
         ];
     }
 }

@@ -34,6 +34,29 @@ class UserAccessControlController extends Controller
         $this->accessControl = $accessControl;
     }
 
+    protected function isFinancePermission(string $permission): bool
+    {
+        if (str_starts_with($permission, 'access-finance-')) {
+            return true;
+        }
+
+        $financePermissions = [
+            'access-approval-workflow',
+            'access-payslip-approval',
+            'access-refund-approval',
+            'access-repair-price-approval',
+            'access-shoe-price-approval',
+            'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
+            'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
+            'approve-payroll', 'process-payroll',
+            'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
+            'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
+            'approve-repair-pricing', 'approve-shoe-pricing', 'manage-service-pricing', 'edit-pricing',
+        ];
+
+        return in_array($permission, $financePermissions, true);
+    }
+
     /**
      * Display the user access control page.
      */
@@ -522,18 +545,7 @@ class UserAccessControlController extends Controller
                 'permission' => 'required|string|exists:permissions,name',
             ]);
 
-            // SECURITY: Prevent managers from being assigned finance permissions
-            // Only shop owners can access finance - as per tech lead requirements
-            $financePermissions = [
-                'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
-                'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
-                'approve-payroll', 'process-payroll', // Managers can view payroll but not approve/process
-                'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
-                'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
-                'approve-repair-pricing', 'approve-shoe-pricing', 'manage-service-pricing', 'edit-pricing',
-            ];
-            
-            if ($validated['action'] === 'give' && $user->hasRole('Manager') && in_array($validated['permission'], $financePermissions)) {
+            if ($validated['action'] === 'give' && $user->hasRole('Manager') && $this->isFinancePermission($validated['permission'])) {
                 return response()->json([
                     'error' => 'Finance permissions cannot be assigned to managers. Only shop owners can access finance.',
                     'forbidden_permission' => $validated['permission']
@@ -634,23 +646,16 @@ class UserAccessControlController extends Controller
                 'permissions.*' => 'string|exists:permissions,name',
             ]);
 
-            // SECURITY: Prevent managers from being assigned finance permissions
-            // Only shop owners can access finance - as per tech lead requirements
-            $financePermissions = [
-                'view-expenses', 'create-expenses', 'edit-expenses', 'delete-expenses', 'approve-expenses',
-                'view-invoices', 'create-invoices', 'edit-invoices', 'delete-invoices', 'send-invoices',
-                'approve-payroll', 'process-payroll', // Managers can view payroll but not approve/process
-                'view-finance-reports', 'export-finance-reports', 'view-finance-audit-logs',
-                'manage-cost-centers', 'view-revenue-accounts', 'reconcile-accounts',
-                'approve-repair-pricing', 'approve-shoe-pricing', 'manage-service-pricing', 'edit-pricing',
-            ];
-            
             if ($user->hasRole('Manager')) {
-                $requestedFinancePerms = array_intersect($validated['permissions'], $financePermissions);
+                $requestedFinancePerms = array_values(array_filter(
+                    $validated['permissions'],
+                    fn (string $permission): bool => $this->isFinancePermission($permission)
+                ));
+
                 if (!empty($requestedFinancePerms)) {
                     return response()->json([
                         'error' => 'Finance permissions cannot be assigned to managers. Only shop owners can access finance.',
-                        'forbidden_permissions' => array_values($requestedFinancePerms)
+                        'forbidden_permissions' => $requestedFinancePerms
                     ], 403);
                 }
             }

@@ -456,7 +456,7 @@ const managerInventoryItems: NavItem[] = [
     <path d="M11 9v6"></path>
       </svg>
     ),
-    name: "Stock Request",
+    name: "Purchase Request",
     route: "erp.inventory.stock-request",
   },
   {
@@ -668,7 +668,7 @@ const repairItems: NavItem[] = [
 ];
 
 const AppSidebar_ERP: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu, setOpenSubmenu } = useSidebar();
   const { url, props } = usePage();
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
@@ -986,9 +986,9 @@ const AppSidebar_ERP: React.FC = () => {
     });
 
     if (activeSubmenuKey && openSubmenu !== activeSubmenuKey) {
-      toggleSubmenu(activeSubmenuKey);
+      setOpenSubmenu(activeSubmenuKey);
     }
-  }, [url, isActive, openSubmenu, toggleSubmenu, role, roles, permissions]);
+  }, [url, isActive, role, roles, permissions, setOpenSubmenu]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -1055,7 +1055,7 @@ const AppSidebar_ERP: React.FC = () => {
       
       // Payslip Approvals - checker and final approver both need access
       if (item.route === "finance.index" && item.params?.section === "payslip-approvals") {
-        return permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
+        return roles.includes('Shop Owner') || role === 'Shop Owner' || permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
       }
       
       // Don't show items without matching permissions
@@ -1065,6 +1065,10 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has any finance permissions
   const hasFinanceAccess = () => {
+    if (roles.includes('Shop Owner') || role === 'Shop Owner') {
+      return true;
+    }
+
     const financePermissions = [
       'access-finance-dashboard',
       'access-finance-expenses',

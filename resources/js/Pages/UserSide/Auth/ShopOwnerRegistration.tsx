@@ -72,6 +72,7 @@ export default function ShopOwnerRegistration() {
     phone: "",
     businessName: "",
     businessAddress: "",
+    postalCode: "",
     businessType: "",
     registrationType: "individual",
   });
@@ -117,6 +118,10 @@ export default function ShopOwnerRegistration() {
     // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+
+    if (name === 'postalCode' && errors.postal_code) {
+      setErrors(prev => ({ ...prev, postal_code: '' }));
     }
   };
 
@@ -437,6 +442,7 @@ export default function ShopOwnerRegistration() {
         submitData.append('phone', formData.phone);
         submitData.append('business_name', formData.businessName);
         submitData.append('business_address', formData.businessAddress);
+        submitData.append('postal_code', formData.postalCode);
         submitData.append('business_type', formData.businessType);
         submitData.append('registration_type', formData.registrationType);
         // Only enable attendance geofence for company accounts (they have staff to clock in)
@@ -679,6 +685,19 @@ export default function ShopOwnerRegistration() {
                         </button>
                       </div>
                       {errors.business_address && <p className="mt-1 text-sm text-red-600">{errors.business_address}</p>}
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label htmlFor="postalCode">Postal Code / ZIP Code</Label>
+                      <Input
+                        type="text"
+                        id="postalCode"
+                        name="postalCode"
+                        value={formData.postalCode}
+                        onChange={handleInputChange}
+                        placeholder="Enter postal or ZIP code"
+                        className={errors.postal_code ? 'border-red-500' : ''}
+                      />
+                      {errors.postal_code && <p className="mt-1 text-sm text-red-600">{errors.postal_code}</p>}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">

@@ -38,6 +38,7 @@ use App\Http\Controllers\ERP\HR\NotificationController;
 use App\Http\Controllers\ERP\HR\HRAnalyticsController;
 use App\Http\Controllers\ERP\HR\SuspensionRequestController;
 use App\Http\Controllers\ERP\HR\SalaryChangeController;
+use App\Http\Controllers\ERP\HR\HolidayCalendarController;
 
 /**
  * ERP Notification Routes (All ERP users)
@@ -108,6 +109,17 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::post('/{id}/reject', [SalaryChangeController::class, 'reject'])->name('hr.salary_changes.reject');
         Route::post('/{id}/apply', [SalaryChangeController::class, 'apply'])->name('hr.salary_changes.apply');
         Route::post('/{id}/cancel', [SalaryChangeController::class, 'cancel'])->name('hr.salary_changes.cancel');
+    });
+
+    // ============================================
+    // HOLIDAY CALENDAR
+    // ============================================
+    Route::prefix('holidays')->group(function () {
+        Route::get('/', [HolidayCalendarController::class, 'index'])->name('hr.holidays.index');
+        Route::post('/', [HolidayCalendarController::class, 'store'])->name('hr.holidays.store');
+        Route::put('/{id}', [HolidayCalendarController::class, 'update'])->name('hr.holidays.update');
+        Route::delete('/{id}', [HolidayCalendarController::class, 'destroy'])->name('hr.holidays.destroy');
+        Route::post('/sync-ph/{year}', [HolidayCalendarController::class, 'syncPhilippineHolidays'])->name('hr.holidays.sync_ph');
     });
 
     // ============================================

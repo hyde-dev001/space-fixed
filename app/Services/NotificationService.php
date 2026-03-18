@@ -667,6 +667,45 @@ class NotificationService
         );
     }
 
+    /** Notify Procurement when repair auto-reorder creates a stock request */
+    public function notifyProcurementAutoReorderTriggered(int $shopId, array $reorderData): void
+    {
+        $priority = ($reorderData['remaining_quantity'] ?? 0) <= 0 ? 'high' : 'medium';
+        $title = 'Auto-Reorder Triggered';
+        $message = "Auto-reorder created stock request {$reorderData['request_number']} for {$reorderData['product_name']} (Qty: {$reorderData['quantity_needed']}).";
+
+        $procurementUsers = User::where('shop_owner_id', $shopId)
+            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->get();
+
+        if ($procurementUsers->isEmpty()) {
+            $procurementUsers = User::where('shop_owner_id', $shopId)
+                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->get();
+        }
+
+        foreach ($procurementUsers as $user) {
+            try {
+                $this->sendToUser(
+                    $user->id,
+                    NotificationType::PURCHASE_REQUEST_SUBMITTED,
+                    $title,
+                    $message,
+                    $reorderData,
+                    '/erp/procurement/stock-request-approval',
+                    $shopId,
+                    $priority
+                );
+            } catch (\Exception $e) {
+                Log::error("Failed to send auto-reorder procurement notification to user #{$user->id}", [
+                    'shop_id' => $shopId,
+                    'request_number' => $reorderData['request_number'] ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
     /** Notify employee their overtime request was approved */
     public function notifyOvertimeApproved(int $userId, int $shopId, array $otData): void
     {

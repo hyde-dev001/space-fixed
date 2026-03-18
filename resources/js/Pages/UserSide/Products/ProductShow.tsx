@@ -21,7 +21,49 @@ type ColorVariant = {
   color_name: string;
   color_code: string;
   images: ColorVariantImage[];
+  sizes?: Array<{
+    id?: number;
+    size: string;
+    size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN';
+    quantity: number;
+  }>;
 };
+
+type StaticVoucherCampaign = {
+  id: string;
+  name: string;
+  code: string;
+  value: string;
+  minSpend: string;
+  schedule: string;
+};
+
+const staticVoucherCampaigns: StaticVoucherCampaign[] = [
+  {
+    id: 'voucher-weekend10',
+    name: 'Weekend Drop',
+    code: 'WEEKEND10',
+    value: '10% off',
+    minSpend: 'PHP 2,000 min spend',
+    schedule: 'Valid Mar 18 - Mar 31, 2026',
+  },
+  {
+    id: 'voucher-fastship',
+    name: 'Fast Checkout Perk',
+    code: 'FASTSHIP',
+    value: '8% off',
+    minSpend: 'PHP 1,500 min spend',
+    schedule: 'Valid Mar 18 - Apr 10, 2026',
+  },
+  {
+    id: 'voucher-loyal15',
+    name: 'Loyal Buyer Bonus',
+    code: 'LOYAL15',
+    value: '15% off',
+    minSpend: 'PHP 3,000 min spend',
+    schedule: 'Valid Mar 18 - Apr 15, 2026',
+  },
+];
 
 const ProductShow: React.FC = () => {
   const { product, auth, cartIconCount: cartCountProp } = usePage().props as any;
@@ -41,6 +83,69 @@ const ProductShow: React.FC = () => {
   
   // Check if product has color variants (new Adidas-style system)
   const hasColorVariants = product.colorVariants && Array.isArray(product.colorVariants) && product.colorVariants.length > 0;
+
+  type SizeSystem = 'US' | 'UK' | 'EU' | 'AU' | 'CN';
+  type SizeOption = {
+    key: string;
+    value: string;
+    label: string;
+    token: string;
+  };
+  const legacySizeMap: Record<string, string> = { XS: '6', S: '7', M: '8', L: '9', XL: '10', XXL: '11' };
+  const sizeSystems: SizeSystem[] = ['US', 'UK', 'EU', 'AU', 'CN'];
+
+  const normalizeSizeSystem = (rawSystem?: string | null): SizeSystem => {
+    const normalized = String(rawSystem || '').trim().toUpperCase();
+    return sizeSystems.includes(normalized as SizeSystem) ? (normalized as SizeSystem) : 'US';
+  };
+
+  const parseSizeDetails = (rawSize: unknown): { system: SizeSystem; value: string } => {
+    const normalizedRaw = String(rawSize ?? '').trim();
+    const prefixed = normalizedRaw.match(/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i);
+
+    if (prefixed) {
+      const rawValue = String(prefixed[2] || '').trim();
+      const mapped = legacySizeMap[rawValue.toUpperCase()] ?? rawValue;
+
+      return {
+        system: normalizeSizeSystem(prefixed[1]),
+        value: String(mapped).trim(),
+      };
+    }
+
+    const mapped = legacySizeMap[normalizedRaw.toUpperCase()] ?? normalizedRaw;
+
+    return {
+      system: 'US',
+      value: String(mapped).trim(),
+    };
+  };
+
+  const toSelectableSizeValue = (rawSize: unknown): string => {
+    const parsed = parseSizeDetails(rawSize);
+    if (!parsed.value) return '';
+    return parsed.system === 'US' ? parsed.value : `${parsed.system} ${parsed.value}`;
+  };
+
+  const toSizeLabel = (rawSize: unknown): string => {
+    const parsed = parseSizeDetails(rawSize);
+    if (!parsed.value) return '-';
+    return `${parsed.system} ${parsed.value}`;
+  };
+
+  const toSizeToken = (rawSize: unknown): string => {
+    const parsed = parseSizeDetails(rawSize);
+    if (!parsed.value) return '';
+    return `${parsed.system}::${parsed.value.toLowerCase()}`;
+  };
+
+  const isSameSize = (left: unknown, right: unknown): boolean => {
+    const leftToken = toSizeToken(left);
+    const rightToken = toSizeToken(right);
+
+    if (!leftToken || !rightToken) return false;
+    return leftToken === rightToken;
+  };
   
   // Initialize with first color variant or legacy system
   const initialColor = hasColorVariants 
@@ -70,15 +175,104 @@ const ProductShow: React.FC = () => {
   const [slideTransition, setSlideTransition] = useState<{ from: string; to: string; direction: 'next' | 'prev' } | null>(null);
   const [slidePhase, setSlidePhase] = useState<'prep' | 'run'>('prep');
   const [isSlideRunning, setIsSlideRunning] = useState(false);
-  const [selectedSize, setSelectedSize] = useState<string | null>(() => {
-    const sizes = product.sizes || [];
-    const map: Record<string, number> = { XS: 6, S: 7, M: 8, L: 9, XL: 10, XXL: 11 };
-    if (!sizes.length) return null;
-    const first = sizes[0];
-    if (/^\d+(?:\.\d+)?$/.test(String(first))) return String(first);
-    return map[first] ? String(map[first]) : String(first);
-  });
   const [selectedColor, setSelectedColor] = useState<string | null>(initialColor);
+
+  const buildSizeOptions = (rawSizes: unknown[]): SizeOption[] => {
+    const seenTokens = new Set<string>();
+
+    return rawSizes
+      .map((rawSize: unknown) => {
+        const value = toSelectableSizeValue(rawSize);
+        const label = toSizeLabel(rawSize);
+        const token = toSizeToken(rawSize);
+
+        return {
+          key: token || value || String(rawSize),
+          value,
+          label,
+          token,
+        };
+      })
+      .filter((option: SizeOption) => !!option.value)
+      .filter((option: SizeOption) => {
+        if (!option.token) return true;
+        if (seenTokens.has(option.token)) return false;
+        seenTokens.add(option.token);
+        return true;
+      });
+  };
+
+  const getRawSizesForColor = (color: string | null): unknown[] => {
+    if (!color) return [];
+
+    if (hasColorVariants) {
+      const colorVariant = (product.colorVariants || []).find(
+        (cv: ColorVariant) => String(cv.color_name ?? '').trim().toLowerCase() === String(color).trim().toLowerCase(),
+      );
+
+      const scopedSizes = (colorVariant?.sizes || [])
+        .filter((size) => Number(size.quantity ?? 0) > 0)
+        .map((size) => `${(size.size_system || 'US').toUpperCase()} ${String(size.size).trim()}`)
+        .filter((size) => size.trim() !== '');
+
+      if (scopedSizes.length > 0) {
+        return scopedSizes;
+      }
+    }
+
+    if (!Array.isArray(product.variants)) return [];
+
+    return product.variants
+      .filter((variant: any) =>
+        String(variant.color ?? '').trim().toLowerCase() === String(color).trim().toLowerCase() &&
+        Number(variant.quantity ?? 0) > 0
+      )
+      .map((variant: any) => variant.size)
+      .filter((size: unknown) => size !== null && size !== undefined && String(size).trim() !== '');
+  };
+
+  const getScopedQuantity = (size: string | null, color: string | null): number => {
+    if (!size || !color) return 0;
+
+    if (hasColorVariants) {
+      const colorVariant = (product.colorVariants || []).find(
+        (cv: ColorVariant) => String(cv.color_name ?? '').trim().toLowerCase() === String(color).trim().toLowerCase(),
+      );
+
+      const scopedSizes = colorVariant?.sizes || [];
+      if (scopedSizes.length > 0) {
+        const matchedSize = scopedSizes.find((entry) =>
+          isSameSize(`${(entry.size_system || 'US').toUpperCase()} ${String(entry.size).trim()}`, size),
+        );
+
+        return matchedSize ? Number(matchedSize.quantity || 0) : 0;
+      }
+    }
+
+    if (product.variants && Array.isArray(product.variants)) {
+      const variant = product.variants.find((v: any) =>
+        isSameSize(v.size, size) &&
+        String(v.color).trim().toLowerCase() === String(color).trim().toLowerCase()
+      );
+      return variant ? Number(variant.quantity || 0) : 0;
+    }
+
+    return Number(product.stock_quantity || 0);
+  };
+
+  const [selectedSize, setSelectedSize] = useState<string | null>(() => {
+    const colorScopedSizes = getRawSizesForColor(initialColor);
+    const fallbackSizes = Array.isArray(product.sizes) ? product.sizes : [];
+    const options = buildSizeOptions(colorScopedSizes.length > 0 ? colorScopedSizes : fallbackSizes);
+    return options[0]?.value ?? null;
+  });
+
+  const sizeOptions = React.useMemo<SizeOption[]>(() => {
+    const colorScopedSizes = getRawSizesForColor(selectedColor);
+    const fallbackSizes = Array.isArray(product.sizes) ? product.sizes : [];
+
+    return buildSizeOptions(colorScopedSizes.length > 0 ? colorScopedSizes : fallbackSizes);
+  }, [selectedColor, product.variants, product.sizes]);
   
   // Update images when color variant changes
   useEffect(() => {
@@ -97,6 +291,22 @@ const ProductShow: React.FC = () => {
       }
     }
   }, [selectedColor, hasColorVariants]);
+
+  useEffect(() => {
+    if (sizeOptions.length === 0) {
+      setSelectedSize(null);
+      return;
+    }
+
+    const stillValid = selectedSize
+      ? sizeOptions.some((option) => isSameSize(option.value, selectedSize))
+      : false;
+
+    if (!stillValid) {
+      setSelectedSize(sizeOptions[0].value);
+    }
+  }, [sizeOptions]);
+
   const [showSizeChart, setShowSizeChart] = useState(false);
   const [qty, setQty] = useState(1);
   const [showAddedModal, setShowAddedModal] = useState(false);
@@ -119,15 +329,52 @@ const ProductShow: React.FC = () => {
   const [userExistingReview, setUserExistingReview] = useState<any>(null);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [showMyReview, setShowMyReview] = useState(false);
+  const [claimedPromoIds, setClaimedPromoIds] = useState<string[]>([]);
 
   const [show3DShowroom, setShow3DShowroom] = useState(false);
+
+  const modalSizeOptions = React.useMemo<SizeOption[]>(() => {
+    const colorScopedSizes = getRawSizesForColor(modalSelectedColor);
+    if (colorScopedSizes.length > 0) {
+      return buildSizeOptions(colorScopedSizes);
+    }
+
+    const fallbackSizes = Array.isArray(product.sizes) ? product.sizes : [];
+    return buildSizeOptions(fallbackSizes);
+  }, [modalSelectedColor, product.variants, product.sizes]);
+
+  useEffect(() => {
+    if (modalSizeOptions.length === 0) {
+      setModalSelectedSize(null);
+      return;
+    }
+
+    const stillValid = modalSelectedSize
+      ? modalSizeOptions.some((option) => isSameSize(option.value, modalSelectedSize))
+      : false;
+
+    if (!stillValid) {
+      setModalSelectedSize(modalSizeOptions[0].value);
+    }
+  }, [modalSizeOptions]);
+
+  const showroomFrameUrls: string[] = Array.isArray(product?.showroom_360_frames)
+    ? product.showroom_360_frames
+        .filter((frame: unknown): frame is string => typeof frame === 'string' && frame.trim().length > 0)
+        .map((frame: string) => {
+          if (/^https?:\/\//i.test(frame) || frame.startsWith('/')) {
+            return frame;
+          }
+          return `/${frame}`;
+        })
+    : [];
 
   // Filter images based on selected size and color in modal
   const getFilteredImages = () => {
     // If we have variants with images, filter by selected size and color
     if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
       const filtered = product.variants.filter((v: any) => {
-        const sizeMatch = !modalSelectedSize || String(v.size) === String(modalSelectedSize);
+        const sizeMatch = !modalSelectedSize || isSameSize(v.size, modalSelectedSize);
         const colorMatch = !modalSelectedColor || String(v.color).toLowerCase() === String(modalSelectedColor).toLowerCase();
         return sizeMatch && colorMatch && v.image;
       }).map((v: any) => v.image);
@@ -142,26 +389,12 @@ const ProductShow: React.FC = () => {
 
   // Get variant-specific quantity for modal
   const getVariantQuantity = () => {
-    if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
-      const variant = product.variants.find((v: any) => 
-        String(v.size) === String(modalSelectedSize) && 
-        String(v.color).toLowerCase() === String(modalSelectedColor).toLowerCase()
-      );
-      return variant ? variant.quantity : 0;
-    }
-    return product.stock_quantity || 0;
+    return getScopedQuantity(modalSelectedSize, modalSelectedColor);
   };
 
   // Get variant-specific quantity for main page
   const getMainPageVariantQuantity = () => {
-    if (product.variants && Array.isArray(product.variants) && product.variants.length > 0 && selectedSize && selectedColor) {
-      const variant = product.variants.find((v: any) => 
-        String(v.size) === String(selectedSize) && 
-        String(v.color).toLowerCase() === String(selectedColor).toLowerCase()
-      );
-      return variant ? variant.quantity : 0;
-    }
-    return product.stock_quantity || 0;
+    return getScopedQuantity(selectedSize, selectedColor);
   };
 
   const variantQuantity = getVariantQuantity();
@@ -220,6 +453,36 @@ const ProductShow: React.FC = () => {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleClaimPromo = async (campaign: StaticVoucherCampaign) => {
+    if (!isAuthenticated) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Login required',
+        text: 'Please log in to claim vouchers and coupons.',
+        confirmButtonText: 'OK',
+      });
+      return;
+    }
+
+    if (claimedPromoIds.includes(campaign.id)) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Already claimed',
+        text: `${campaign.code} is already in your wallet.`,
+        confirmButtonText: 'OK',
+      });
+      return;
+    }
+
+    setClaimedPromoIds((prev) => [...prev, campaign.id]);
+    await Swal.fire({
+      icon: 'success',
+      title: 'Voucher claimed',
+      text: `${campaign.code} has been added to your wallet.`,
+      confirmButtonText: 'Nice',
+    });
   };
 
   const addImageUploadBox = () => {
@@ -852,16 +1115,15 @@ const ProductShow: React.FC = () => {
                   <button onClick={() => setShowSizeChart(true)} className="text-sm text-black underline" type="button">Size Chart</button>
                 </div>
                 <div className="flex gap-2">
-                  {product.sizes && product.sizes.map((s: string) => {
-                    const map: Record<string, number> = { XS: 6, S: 7, M: 8, L: 9, XL: 10, XXL: 11 };
-                    const numeric = /^\d+(?:\.\d+)?$/.test(String(s)) ? String(s) : (map[s] ? String(map[s]) : String(s));
-
-                    return (
-                      <button key={s} onClick={() => setSelectedSize(numeric)} className={`px-3 py-2 border rounded ${String(selectedSize) === String(numeric) ? 'bg-black text-white' : 'bg-white text-black'}`}>
-                        {numeric}
-                      </button>
-                    );
-                  })}
+                  {sizeOptions.map((option: SizeOption) => (
+                    <button
+                      key={option.key}
+                      onClick={() => setSelectedSize(option.value)}
+                      className={`px-3 py-2 border rounded ${isSameSize(selectedSize, option.value) ? 'bg-black text-white' : 'bg-white text-black'}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -880,7 +1142,9 @@ const ProductShow: React.FC = () => {
                           <tr className="text-left">
                             <th className="pb-2">US</th>
                             <th className="pb-2">UK</th>
+                            <th className="pb-2">AU</th>
                             <th className="pb-2">EU</th>
+                            <th className="pb-2">CN</th>
                             <th className="pb-2">Foot Length (cm)</th>
                           </tr>
                         </thead>
@@ -888,55 +1152,73 @@ const ProductShow: React.FC = () => {
                           <tr className="border-t">
                             <td className="py-2 text-black">5</td>
                             <td className="py-2 text-black">4.5</td>
+                            <td className="py-2 text-black">4.5</td>
                             <td className="py-2 text-black">37</td>
+                            <td className="py-2 text-black">235</td>
                             <td className="py-2 text-black">23.1</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">6</td>
                             <td className="py-2">5.5</td>
+                            <td className="py-2">5.5</td>
                             <td className="py-2">38</td>
+                            <td className="py-2">240</td>
                             <td className="py-2">24.1</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">7</td>
                             <td className="py-2">6.5</td>
+                            <td className="py-2">6.5</td>
                             <td className="py-2">40</td>
+                            <td className="py-2">255</td>
                             <td className="py-2">25.4</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">8</td>
                             <td className="py-2">7.5</td>
+                            <td className="py-2">7.5</td>
                             <td className="py-2">41</td>
+                            <td className="py-2">260</td>
                             <td className="py-2">26.0</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">9</td>
                             <td className="py-2">8.5</td>
+                            <td className="py-2">8.5</td>
                             <td className="py-2">42</td>
+                            <td className="py-2">270</td>
                             <td className="py-2">27.0</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">10</td>
                             <td className="py-2">9.5</td>
+                            <td className="py-2">9.5</td>
                             <td className="py-2">44</td>
+                            <td className="py-2">280</td>
                             <td className="py-2">28.0</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">11</td>
                             <td className="py-2">10.5</td>
+                            <td className="py-2">10.5</td>
                             <td className="py-2">45</td>
+                            <td className="py-2">285</td>
                             <td className="py-2">28.7</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">12</td>
                             <td className="py-2">11.5</td>
+                            <td className="py-2">11.5</td>
                             <td className="py-2">46</td>
+                            <td className="py-2">294</td>
                             <td className="py-2">29.4</td>
                           </tr>
                           <tr className="border-t">
                             <td className="py-2">13</td>
                             <td className="py-2">12.5</td>
+                            <td className="py-2">12.5</td>
                             <td className="py-2">47</td>
+                            <td className="py-2">302</td>
                             <td className="py-2">30.2</td>
                           </tr>
                         </tbody>
@@ -1194,7 +1476,7 @@ const ProductShow: React.FC = () => {
                           )}
 
                           {/* Size Selection Grid */}
-                          {product.sizes && product.sizes.length > 0 && (
+                          {modalSizeOptions.length > 0 && (
                             <div className="mb-6">
                               <div className="flex items-center justify-between mb-3">
                                 <label className="text-sm font-semibold text-gray-900">Size</label>
@@ -1207,14 +1489,11 @@ const ProductShow: React.FC = () => {
                                 </button>
                               </div>
                               <div className="grid grid-cols-5 gap-2">
-                                {product.sizes.map((s: string) => {
-                                  const map: Record<string, number> = { XS: 6, S: 7, M: 8, L: 9, XL: 10, XXL: 11 };
-                                  const numeric = /^\d+(?:\.\d+)?$/.test(String(s)) ? String(s) : (map[s] ? String(map[s]) : String(s));
-                                  
+                                {modalSizeOptions.map((option: SizeOption) => {
                                   // Check if this size is available for the selected color
                                   const isAvailable = modalSelectedColor 
                                     ? product.variants?.some((v: any) => 
-                                        String(v.size) === String(numeric) && 
+                                        isSameSize(v.size, option.value) && 
                                         String(v.color).toLowerCase() === String(modalSelectedColor).toLowerCase() &&
                                         v.quantity > 0
                                       )
@@ -1222,18 +1501,18 @@ const ProductShow: React.FC = () => {
 
                                   return (
                                     <button
-                                      key={s}
-                                      onClick={() => setModalSelectedSize(numeric)}
+                                      key={option.key}
+                                      onClick={() => setModalSelectedSize(option.value)}
                                       disabled={!isAvailable}
                                       className={`px-3 py-2.5 border-2 rounded-lg text-sm font-medium transition-all ${
-                                        String(modalSelectedSize) === String(numeric)
+                                        isSameSize(modalSelectedSize, option.value)
                                           ? 'border-black bg-black text-white'
                                           : isAvailable
                                           ? 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
                                           : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed line-through'
                                       }`}
                                     >
-                                      {numeric}
+                                      {option.label}
                                     </button>
                                   );
                                 })}
@@ -1361,6 +1640,56 @@ const ProductShow: React.FC = () => {
                     </div>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Voucher claim strip (horizontal) */}
+          <div className="mt-8 xl:mt-12 px-4 sm:px-6 xl:px-0">
+            <div className="mx-auto max-w-260 overflow-hidden rounded-[26px] border border-gray-200 bg-white p-4 shadow-[0_16px_36px_-24px_rgba(15,23,42,0.35)] sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vouchers</p>
+                  <h2 className="mt-1 text-sm font-bold text-slate-900 sm:text-base">Claim Available Vouchers</h2>
+                </div>
+              </div>
+
+              <div className="mt-4 flex gap-3 overflow-x-auto pb-1 lg:justify-center">
+                {staticVoucherCampaigns.map((campaign) => {
+                  const isClaimed = claimedPromoIds.includes(campaign.id);
+
+                  return (
+                    <div
+                      key={campaign.id}
+                      className="min-w-70 shrink-0 rounded-2xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:min-w-80"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700 ring-1 ring-inset ring-blue-200">
+                          Voucher
+                        </span>
+                        <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500">{campaign.code}</span>
+                      </div>
+
+                      <p className="mt-3 text-sm font-semibold text-slate-900">{campaign.name}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-700">{campaign.value}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{campaign.minSpend}</p>
+                      <p className="mt-1 text-[11px] text-slate-400">{campaign.schedule}</p>
+
+                      <button
+                        type="button"
+                        onClick={() => handleClaimPromo(campaign)}
+                        disabled={isClaimed}
+                        className={`mt-4 inline-flex w-full items-center justify-center rounded-xl px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all ${
+                          isClaimed
+                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                            : 'bg-slate-900 text-white shadow-sm hover:-translate-y-0.5 hover:bg-slate-800'
+                        }`}
+                      >
+                        {isClaimed ? 'Claimed' : 'Claim Voucher'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1582,6 +1911,7 @@ const ProductShow: React.FC = () => {
       {show3DShowroom && (
         <Virtual3DShowroom
           productName={product.name}
+          frameUrls={showroomFrameUrls}
           onClose={() => setShow3DShowroom(false)}
         />
       )}

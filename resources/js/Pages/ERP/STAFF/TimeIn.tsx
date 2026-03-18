@@ -409,7 +409,8 @@ export default function TimeIn() {
         return date.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit'
+            second: '2-digit',
+            hour12: true,
         });
     };
 
@@ -417,7 +418,8 @@ export default function TimeIn() {
         if (!date) return '--:--';
         return date.toLocaleTimeString('en-US', {
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            hour12: true,
         });
     };
 
@@ -578,7 +580,7 @@ export default function TimeIn() {
                         title: `Early Check-In`,
                         html: `<div class="text-left">
                             <p class="mb-2">You are <strong class="text-blue-600">${data.attendance.minutes_early} minutes early</strong></p>
-                            <p class="text-sm text-gray-600">Expected: ${formatTimeFromString(data.attendance.expected_check_in)}</p>
+                            <p class="text-sm text-gray-600">Expected In: ${formatTimeFromString(data.attendance.expected_check_in)}</p>
                             <p class="text-sm text-gray-600">Actual: ${formatTimeFromString(data.attendance.check_in_time)}</p>
                             <p class="text-sm text-amber-600 mt-2">⏰ This is within the allowed grace period (30 minutes before opening)</p>
                         </div>`,
@@ -609,8 +611,8 @@ export default function TimeIn() {
                         title: `Late Check-In`,
                         html: `<div class="text-left">
                             <p class="mb-2">You are <strong class="text-red-600">${data.attendance.minutes_late} minutes late</strong></p>
-                            <p class="text-sm text-gray-600">Expected: ${data.attendance.expected_check_in}</p>
-                            <p class="text-sm text-gray-600">Actual: ${data.attendance.check_in_time}</p>
+                            <p class="text-sm text-gray-600">Expected In: ${formatTimeFromString(data.attendance.expected_check_in)}</p>
+                            <p class="text-sm text-gray-600">Actual: ${formatTimeFromString(data.attendance.check_in_time)}</p>
                         </div>`,
                         input: 'textarea',
                         inputLabel: 'Please provide a reason (optional)',
@@ -1216,7 +1218,7 @@ export default function TimeIn() {
                         {todayAttendance && todayAttendance.check_in_time ? (
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-600 dark:text-gray-400">Expected:</span>
+                                    <span className="text-gray-600 dark:text-gray-400">Expected In:</span>
                                     <span className="font-mono font-semibold text-gray-900 dark:text-white">{formatTimeFromString(todayAttendance.expected_check_in) || '--:--'}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
@@ -1341,7 +1343,7 @@ export default function TimeIn() {
                                 <tr>
                                     <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Date</th>
                                     <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Clock In</th>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Expected</th>
+                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Expected In</th>
                                     <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Clock Out</th>
                                     <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Total Hours</th>
                                     <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>

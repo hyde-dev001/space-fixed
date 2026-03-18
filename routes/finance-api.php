@@ -104,9 +104,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Finance Payslip Approval Routes
  * Finance reviews HR-generated payslips before employee release.
  * Separated from the HR module intentionally: Finance approves, HR generates.
- * Permission required: approve-payroll
+ * Access: Shop Owner role OR Finance approval permissions
  */
-Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'permission:approve-payroll|access-payslip-approval|access-approval-workflow', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'role_or_permission:Shop Owner|approve-payroll|access-payslip-approval|access-approval-workflow', 'shop.isolation'])->group(function () {
     Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
     Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->name('finance.payslip_approval.show');
     Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->name('finance.payslip_approval.approve');

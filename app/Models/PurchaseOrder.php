@@ -312,8 +312,18 @@ class PurchaseOrder extends Model
 
         // If a specific size was requested, also increment that size's quantity
         if ($this->requested_size) {
+            $requestedSizeRaw = trim((string) $this->requested_size);
+            $requestedSizeSystem = 'US';
+            $requestedSizeValue = $requestedSizeRaw;
+
+            if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $requestedSizeRaw, $matches)) {
+                $requestedSizeSystem = strtoupper($matches[1]);
+                $requestedSizeValue = trim((string) $matches[2]);
+            }
+
             $sizeRow = $inventoryItem->sizes()
-                ->where('size', $this->requested_size)
+                ->where('size', $requestedSizeValue)
+                ->where('size_system', $requestedSizeSystem)
                 ->first();
 
             if ($sizeRow) {
@@ -322,8 +332,9 @@ class PurchaseOrder extends Model
             } else {
                 // Size didn't exist yet — create it
                 $inventoryItem->sizes()->create([
-                    'size'     => $this->requested_size,
-                    'quantity' => $netAccepted,
+                    'size'        => $requestedSizeValue,
+                    'size_system' => $requestedSizeSystem,
+                    'quantity'    => $netAccepted,
                 ]);
             }
         }
