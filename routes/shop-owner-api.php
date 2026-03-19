@@ -218,5 +218,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/subscription', [PremiumCheckoutController::class, 'currentSubscription'])->name('shop_owner.premium.subscription');
         // Initiate PayMongo checkout for a premium plan
         Route::post('/checkout', [PremiumCheckoutController::class, 'checkout'])->name('shop_owner.premium.checkout');
+        // Cancel pending or active subscription (used for manual stop)
+        Route::post('/cancel', [PremiumCheckoutController::class, 'cancel'])->name('shop_owner.premium.cancel');
     });
 });

@@ -146,7 +146,7 @@ class EmployeeSeeder extends Seeder
                     'last_name' => $employeeData['last_name'],
                     'name' => $employeeData['first_name'] . ' ' . $employeeData['last_name'],
                     'email' => $employeeData['email'],
-                    'password' => Hash::make('password123'),
+                    'password' => Hash::make($employeeData['email']),
                     'phone' => $employeeData['phone'],
                     'address' => $shopOwner->business_address,
                     'city' => $shopOwner->city_state,
@@ -183,7 +183,7 @@ class EmployeeSeeder extends Seeder
                     'email' => $employeeData['email'],
                     'phone' => $employeeData['phone'],
                     'address' => $shopOwner->business_address,
-                    'password' => Hash::make('password123'),
+                    'password' => Hash::make($employeeData['email']),
                     'shop_owner_id' => $shopOwner->id, // Link user to shop owner
                     'role' => $mappedRole['role'], // Set role column (MANAGER, FINANCE, etc.)
                     'position' => $employeeData['position'],

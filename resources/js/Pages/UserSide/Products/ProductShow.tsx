@@ -368,6 +368,7 @@ const ProductShow: React.FC = () => {
           return `/${frame}`;
         })
     : [];
+  const hasShowroomFrames = showroomFrameUrls.length > 0;
 
   // Filter images based on selected size and color in modal
   const getFilteredImages = () => {
@@ -889,17 +890,19 @@ const ProductShow: React.FC = () => {
                   {/* 3D & 360 Virtual Showroom Buttons */}
                   <div className="absolute top-4 right-4 flex flex-col gap-2 transition-opacity xl:opacity-0 xl:group-hover:opacity-100">
                     {/* 360 Viewer Button */}
-                    <button
-                      onClick={() => setShow3DShowroom(true)}
-                      className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-white/35 bg-black/80 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                      title="View 360 Interactive"
-                      aria-label="View 360 interactive"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        <circle cx="12" cy="12" r="3" strokeWidth={1.8} />
-                      </svg>
-                    </button>
+                    {hasShowroomFrames && (
+                      <button
+                        onClick={() => setShow3DShowroom(true)}
+                        className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-white/35 bg-black/80 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                        title="View 360 Interactive"
+                        aria-label="View 360 interactive"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          <circle cx="12" cy="12" r="3" strokeWidth={1.8} />
+                        </svg>
+                      </button>
+                    )}
 
                   </div>
                   
@@ -1908,7 +1911,7 @@ const ProductShow: React.FC = () => {
 
 
       {/* Virtual 3D Showroom Modal */}
-      {show3DShowroom && (
+      {show3DShowroom && hasShowroomFrames && (
         <Virtual3DShowroom
           productName={product.name}
           frameUrls={showroomFrameUrls}

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
-import { AlertTriangle, Building2, Check, CheckCircle2, Eye, EyeOff, FileText, MapPin, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, FileText, MapPin, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
 
 type ApprovalSetting = {
 	enabled: boolean;
@@ -165,6 +165,7 @@ const ShopSetting: React.FC = () => {
 	const initialPayDaySecond = Math.min(Math.max(shop_settings.pay_day_second ?? 30, initialPayDayFirst + 1), 31);
 	const [payDayFirst, setPayDayFirst] = useState<number>(initialPayDayFirst);
 	const [payDaySecond, setPayDaySecond] = useState<number>(initialPayDaySecond);
+	const [activePayoutPicker, setActivePayoutPicker] = useState<'first' | 'second' | null>(null);
 	const [savingPayrollCutoff, setSavingPayrollCutoff] = useState(false);
 	const [payrollCutoffSuccess, setPayrollCutoffSuccess] = useState(false);
 	const [payrollCutoffError, setPayrollCutoffError] = useState<string | null>(null);
@@ -178,6 +179,9 @@ const ShopSetting: React.FC = () => {
 	const [keyError, setKeyError] = useState<string | null>(null);
 	const [removingKey, setRemovingKey] = useState(false);
 	const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+	const showWideRepairPaymentPolicy = isIndividual
+		&& (shop_settings.business_type === 'repair' || shop_settings.business_type === 'both');
+	const showWideApprovalLimits = !isIndividual && shop_settings.business_type === 'retail';
 
 	// Repair workload limit state — server prop is source of truth, localStorage is a cache
 	const serverLimit = shop_settings.repair_workload_limit ?? 20;
@@ -282,22 +286,39 @@ const ShopSetting: React.FC = () => {
 			day: 'numeric',
 		});
 	};
+	const formatNextBillingDate = (startValue: string | null) => {
+		if (!startValue) return null;
+		const start = new Date(startValue);
+		if (Number.isNaN(start.getTime())) return null;
+
+		const nextBilling = new Date(start);
+		const now = new Date();
+		while (nextBilling <= now) {
+			nextBilling.setMonth(nextBilling.getMonth() + 1);
+		}
+
+		return nextBilling.toLocaleDateString(undefined, {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric',
+		});
+	};
 	const premiumEndsAt = formatPremiumDate(shop_settings.premium?.ends_at ?? null);
 	const premiumStartsAt = formatPremiumDate(shop_settings.premium?.starts_at ?? null);
+	const premiumNextBillingAt = premiumIsActive
+		? (premiumEndsAt || formatNextBillingDate(shop_settings.premium?.starts_at ?? null))
+		: null;
 	const premiumBadgeClass = premiumIsActive
 		? 'border-green-200 bg-green-50 text-green-700'
-		: premiumStatus === 'pending'
-			? 'border-amber-200 bg-amber-50 text-amber-700'
-			: premiumIsEligible
+		: premiumIsEligible
 				? 'border-gray-300 bg-gray-100 text-gray-700'
 				: 'border-red-200 bg-red-50 text-red-700';
 	const premiumBadgeLabel = premiumIsActive
 		? 'Premium Active'
-		: premiumStatus === 'pending'
-			? 'Premium Pending'
-			: premiumIsEligible
+		: premiumIsEligible
 				? 'Premium Inactive'
 				: 'Not Eligible';
+	const showPremiumBadge = premiumIsActive || premiumIsEligible;
 
 	const accountFeatures: Array<{ label: string; enabled: boolean }> = [
 		{ label: 'Staff Management', enabled: shop_settings.can_manage_staff },
@@ -543,6 +564,39 @@ const ShopSetting: React.FC = () => {
 		);
 	};
 
+	const closePayoutDayPicker = () => {
+		setActivePayoutPicker(null);
+	};
+
+	const openPayoutDayPicker = (target: 'first' | 'second') => {
+		setActivePayoutPicker(target);
+		if (payrollCutoffError) setPayrollCutoffError(null);
+	};
+
+	const isSelectingFirstPayoutDay = activePayoutPicker === 'first';
+	const payoutPickerOptions = isSelectingFirstPayoutDay
+		? FIRST_PAYOUT_DAY_OPTIONS
+		: SECOND_PAYOUT_DAY_OPTIONS.filter((day) => day > payDayFirst);
+	const payoutPickerSelectedDay = isSelectingFirstPayoutDay ? payDayFirst : payDaySecond;
+	const payoutPickerTitle = isSelectingFirstPayoutDay ? 'Select first payout day' : 'Select second payout day';
+	const payoutPickerHint = isSelectingFirstPayoutDay
+		? 'Choose the day when your first semi-monthly payout is released.'
+		: `Second payout must be after ${formatOrdinalDay(payDayFirst)}.`;
+
+	const handleSelectPayoutDay = (day: number) => {
+		if (isSelectingFirstPayoutDay) {
+			setPayDayFirst(day);
+			if (payDaySecond <= day) {
+				setPayDaySecond(Math.min(day + 1, 31));
+			}
+		} else {
+			setPayDaySecond(day);
+		}
+
+		if (payrollCutoffError) setPayrollCutoffError(null);
+		closePayoutDayPicker();
+	};
+
 	const saveGeofence = async () => {
 		setSavingGeo(true);
 		setGeoError(null);
@@ -661,6 +715,32 @@ const ShopSetting: React.FC = () => {
 		}
 	}, []);
 
+	useEffect(() => {
+		if (!activePayoutPicker || typeof document === 'undefined') return;
+
+		const previousOverflow = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				closePayoutDayPicker();
+			}
+		};
+
+		window.addEventListener('keydown', handleKeyDown);
+
+		return () => {
+			document.body.style.overflow = previousOverflow;
+			window.removeEventListener('keydown', handleKeyDown);
+		};
+	}, [activePayoutPicker]);
+
+	useEffect(() => {
+		if (payCycle !== 'semi_monthly' && activePayoutPicker) {
+			setActivePayoutPicker(null);
+		}
+	}, [payCycle, activePayoutPicker]);
+
 	const handleBackFromSettings = () => {
 		if (typeof window === 'undefined') {
 			router.get('/shop-owner/dashboard');
@@ -723,38 +803,35 @@ const ShopSetting: React.FC = () => {
 										{shop_settings.business_type === 'repair' ? <Wrench size={12} /> : <Store size={12} />}
 										{businessTypeLabel}
 									</span>
-									<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
-										{premiumBadgeLabel}
-									</span>
-								</div>
-								<p className="truncate text-sm text-gray-700">{shop_settings.business_name || 'Business'}</p>
-								
-								<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
-									{premiumIsEligible ? (
-										<>
-											<p className="font-semibold text-gray-900">
-												{shop_settings.premium.plan_name || 'No active premium plan'}
-											</p>
-											<p className="mt-1 text-xs text-gray-600">
-												{premiumIsActive && premiumEndsAt
-													? `Expires on ${premiumEndsAt}`
-													: premiumStatus === 'pending'
-														? 'Your premium payment is pending activation.'
-														: 'Upgrade to unlock the virtual showroom and image-sequence uploads.'}
-											</p>
-											{shop_settings.premium.showroom_slot_limit ? (
-												<p className="mt-1 text-xs text-gray-600">
-													Showroom slots: {shop_settings.premium.showroom_slot_limit}
-													{premiumStartsAt ? ` • Started ${premiumStartsAt}` : ''}
-												</p>
-											) : null}
-										</>
-									) : (
-										<p className="text-xs text-gray-600">
-											Premium showroom entitlements are only available to retail and retail-repair shops.
-										</p>
+									{showPremiumBadge && (
+										<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
+											{premiumBadgeLabel}
+										</span>
 									)}
 								</div>
+								<p className="truncate text-sm text-gray-700">{shop_settings.business_name || 'Business'}</p>
+
+								{premiumIsEligible && (
+									<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+										<p className="font-semibold text-gray-900">
+											{shop_settings.premium.plan_name || 'No active premium plan'}
+										</p>
+										<p className="mt-1 text-xs text-gray-600">
+											{premiumIsActive
+												? (premiumNextBillingAt
+													? `Next billing on ${premiumNextBillingAt}`
+													: 'Your subscription will automatically renew until cancelled.')
+												: 'Upgrade to unlock the virtual showroom and image-sequence uploads.'}
+										</p>
+										{shop_settings.premium.showroom_slot_limit ? (
+											<p className="mt-1 text-xs text-gray-600">
+												Showroom slots: {shop_settings.premium.showroom_slot_limit}
+												{premiumStartsAt ? ` • Started ${premiumStartsAt}` : ''}
+												{premiumNextBillingAt ? ` • Next billing ${premiumNextBillingAt}` : ''}
+											</p>
+										) : null}
+									</div>
+								)}
 
 								<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 									{accountFeatures.map((feature) => (
@@ -764,17 +841,19 @@ const ShopSetting: React.FC = () => {
 										</div>
 									))}
 								</div>
-								{premiumIsEligible && !premiumIsActive && (
+								{premiumIsEligible && (
 										<div className="mt-4 border-t border-gray-200 pt-4">
-											<p className="mb-3 text-center text-sm text-gray-600">
-												Unlock premium benefits: virtual showroom access, more display slots, horizontal product viewing, and image-sequence uploads.
-											</p>
+											{!premiumIsActive ? (
+												<p className="mb-3 text-center text-sm text-gray-600">
+													Unlock premium benefits: virtual showroom access, more display slots, horizontal product viewing, and image-sequence uploads.
+												</p>
+											) : null}
 											<button
 												type="button"
 												onClick={() => router.get('/shop-owner/premium-benefits')}
 												className="inline-flex w-full items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
 											>
-												{premiumStatus === 'pending' ? 'View Premium Status' : 'Upgrade Premium Benefits'}
+												{premiumIsActive ? 'View Premium Benefits' : 'Upgrade Premium Benefits'}
 											</button>
 										</div>
 									)}
@@ -851,7 +930,7 @@ const ShopSetting: React.FC = () => {
 
 					{/* Repair Payment Policy */}
 					{(shop_settings.business_type === 'repair' || shop_settings.business_type === 'both') && (
-						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-5 lg:order-3">
+						<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-3 ${showWideRepairPaymentPolicy ? 'lg:col-span-12' : 'lg:col-span-5'}`}>
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">Repair Payment Policy</h2>
 								<p className="mt-1 text-sm text-gray-600">
@@ -982,43 +1061,35 @@ const ShopSetting: React.FC = () => {
 									<>
 										<div>
 											<label className="mb-1.5 block text-sm font-medium text-gray-700">First Payout Day</label>
-											<select
-												value={payDayFirst}
-												title="First payroll payout day"
-												onChange={(e) => {
-													const nextFirstDay = Number(e.target.value);
-													setPayDayFirst(nextFirstDay);
-													if (payDaySecond <= nextFirstDay) {
-														setPayDaySecond(Math.min(nextFirstDay + 1, 31));
-													}
-													if (payrollCutoffError) setPayrollCutoffError(null);
-												}}
-												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+											<button
+												type="button"
+												onClick={() => openPayoutDayPicker('first')}
+												className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+												title="Open first payroll payout day picker"
 											>
-												{FIRST_PAYOUT_DAY_OPTIONS.map((day) => (
-													<option key={`first-day-${day}`} value={day}>
-														{formatOrdinalDay(day)}
-													</option>
-												))}
-											</select>
+												<span className="inline-flex items-center gap-2">
+													<CalendarDays size={15} className="text-gray-400" />
+													{formatOrdinalDay(payDayFirst)}
+												</span>
+												<ChevronDown size={16} className="text-gray-500" />
+											</button>
+											<p className="mt-1.5 text-xs text-gray-500">Tap to browse days in a focused modal picker.</p>
 										</div>
 										<div>
 											<label className="mb-1.5 block text-sm font-medium text-gray-700">Second Payout Day</label>
-											<select
-												value={payDaySecond}
-												title="Second payroll payout day"
-												onChange={(e) => {
-													setPayDaySecond(Number(e.target.value));
-													if (payrollCutoffError) setPayrollCutoffError(null);
-												}}
-												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+											<button
+												type="button"
+												onClick={() => openPayoutDayPicker('second')}
+												className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+												title="Open second payroll payout day picker"
 											>
-												{SECOND_PAYOUT_DAY_OPTIONS.filter((day) => day > payDayFirst).map((day) => (
-													<option key={`second-day-${day}`} value={day}>
-														{formatOrdinalDay(day)}
-													</option>
-												))}
-											</select>
+												<span className="inline-flex items-center gap-2">
+													<CalendarDays size={15} className="text-gray-400" />
+													{formatOrdinalDay(payDaySecond)}
+												</span>
+												<ChevronDown size={16} className="text-gray-500" />
+											</button>
+											<p className="mt-1.5 text-xs text-gray-500">Only days after the first payout are available.</p>
 										</div>
 									</>
 								)}
@@ -1349,7 +1420,7 @@ const ShopSetting: React.FC = () => {
 					</div>
 
 					{!isIndividual && (
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-7 lg:order-2">
+					<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-2 ${showWideApprovalLimits ? 'lg:col-span-12' : 'lg:col-span-7'}`}>
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Approval Limits</h2>
 							<p className="mt-1 text-sm text-gray-600">Enable approvals per workflow and define the minimum amount that requires owner action.</p>
@@ -1413,6 +1484,61 @@ const ShopSetting: React.FC = () => {
 					)}
 				</div>
 				</div>
+
+				{activePayoutPicker && (
+					<div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/50 p-4 sm:items-center">
+						<button
+							type="button"
+							onClick={closePayoutDayPicker}
+							className="absolute inset-0"
+							aria-label="Close payout day picker"
+						/>
+						<div
+							role="dialog"
+							aria-modal="true"
+							aria-label={payoutPickerTitle}
+							className="relative w-full max-w-xl rounded-2xl border border-gray-200 bg-white p-5 shadow-xl"
+						>
+							<div className="mb-4 flex items-start justify-between gap-3">
+								<div>
+									<p className="text-base font-semibold text-gray-900">{payoutPickerTitle}</p>
+									<p className="mt-1 text-sm text-gray-600">{payoutPickerHint}</p>
+								</div>
+								<button
+									type="button"
+									onClick={closePayoutDayPicker}
+									className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:bg-gray-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+								{payoutPickerOptions.map((day) => {
+									const isActive = payoutPickerSelectedDay === day;
+
+									return (
+										<button
+											key={`payout-day-${activePayoutPicker}-${day}`}
+											type="button"
+											onClick={() => handleSelectPayoutDay(day)}
+											className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
+												isActive
+													? 'border-blue-600 bg-blue-50 text-blue-700'
+													: 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50/40'
+											}`}
+										>
+											<div className="flex items-center justify-between gap-2">
+												<span>{formatOrdinalDay(day)}</span>
+												{isActive && <Check size={14} />}
+											</div>
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 		</>
 	);

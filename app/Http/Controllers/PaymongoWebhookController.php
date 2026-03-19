@@ -372,17 +372,13 @@ class PaymongoWebhookController extends Controller
                 return false;
             }
 
-            $plan         = $locked->premiumPlan
-                ?? \App\Models\PremiumPlan::where('plan_code', $locked->plan_code)->first();
-            $durationDays = $plan?->duration_days ?? 30;
             $startsAt     = now();
-            $endsAt       = now()->addDays($durationDays);
 
             $locked->update([
                 'status'                => 'active',
                 'paymongo_payment_id'   => $paymentId,
                 'starts_at'             => $startsAt,
-                'ends_at'               => $endsAt,
+                'ends_at'               => null,
             ]);
 
             activity()
@@ -392,7 +388,7 @@ class PaymongoWebhookController extends Controller
                     'shop_owner_id'   => $locked->shop_owner_id,
                     'plan_code'       => $locked->plan_code,
                     'starts_at'       => $startsAt->toDateTimeString(),
-                    'ends_at'         => $endsAt->toDateTimeString(),
+                    'ends_at'         => null,
                     'payment_id'      => $paymentId,
                     'session_id'      => $sessionId,
                     'payment_method'  => 'PayMongo',
@@ -403,7 +399,7 @@ class PaymongoWebhookController extends Controller
                 'subscription_id' => $locked->id,
                 'shop_owner_id'   => $locked->shop_owner_id,
                 'plan_code'       => $locked->plan_code,
-                'ends_at'         => $endsAt->toDateTimeString(),
+                'ends_at'         => null,
                 'payment_id'      => $paymentId,
                 'session_id'      => $sessionId,
             ]);
@@ -417,13 +413,12 @@ class PaymongoWebhookController extends Controller
             try {
                 $appUrl    = rtrim(config('app.url'), '/');
                 $planLabel = ucfirst($activated->plan_code);
-                $endsAt    = $activated->ends_at?->format('F j, Y');
 
                 app(NotificationService::class)->sendToShopOwner(
                     $activated->shop_owner_id,
                     NotificationType::PAYMENT_RECEIVED,
                     'Premium Subscription Activated',
-                    "Your SoleSpace {$planLabel} subscription is now active until {$endsAt}.",
+                    "Your SoleSpace {$planLabel} subscription is now active and will continue until you cancel it.",
                     [
                         'subscription_id' => $activated->id,
                         'plan_code'       => $activated->plan_code,

@@ -220,7 +220,6 @@ export default function ProductManagement() {
     name: '',
     description: '',
     price: '',
-    compare_at_price: '',
     brand: '',
     category: 'shoes',
   });
@@ -348,7 +347,6 @@ export default function ProductManagement() {
         name: product.name,
         description: product.description || '',
         price: product.price.toString(),
-        compare_at_price: product.compare_at_price?.toString() || '',
         brand: product.brand || '',
         category: product.category,
       });
@@ -435,7 +433,6 @@ export default function ProductManagement() {
         name: '',
         description: '',
         price: '',
-        compare_at_price: '',
         brand: '',
         category: 'shoes',
       });
@@ -1091,7 +1088,6 @@ export default function ProductManagement() {
         additional_images: null,
         variants: variantData,
         price: parseFloat(formData.price),
-        compare_at_price: formData.compare_at_price ? parseFloat(formData.compare_at_price) : null,
       };
 
       productData = baseProductData;
@@ -1594,20 +1590,6 @@ export default function ProductManagement() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                       placeholder="0.00"
                       required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Compare at Price
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.compare_at_price}
-                      onChange={(e) => setFormData({ ...formData, compare_at_price: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                      placeholder="Original price (optional)"
                     />
                   </div>
 

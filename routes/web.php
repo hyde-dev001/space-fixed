@@ -572,6 +572,20 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         return redirect()->route('shop-owner.premium-benefits');
     })->name('premium-benefits-legacy');
 
+    Route::get('/premium/cancel', function (Request $request) {
+        $subscriptionId = (int) $request->query('subscription_id');
+        $shopOwner = \Illuminate\Support\Facades\Auth::guard('shop_owner')->user();
+
+        if ($shopOwner && $subscriptionId > 0) {
+            \App\Models\ShopOwnerSubscription::where('id', $subscriptionId)
+                ->where('shop_owner_id', (int) $shopOwner->id)
+                ->where('status', 'pending')
+                ->update(['status' => 'cancelled']);
+        }
+
+        return redirect()->route('shop-owner.premium-benefits');
+    })->name('premium-cancel');
+
     Route::get('/premium/success', function (Request $request) {
         $subscriptionId = $request->query('subscription_id');
 
@@ -600,16 +614,14 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
                             $hasPaidSignal = $paymentStatus === 'paid' || count($payments) > 0;
 
                             if ($hasPaidSignal) {
-                                $durationDays = (int) ($subscription->premiumPlan?->duration_days ?? 30);
                                 $startsAt = now();
-                                $endsAt = now()->addDays(max($durationDays, 1));
                                 $paymentId = $payments[0]['id'] ?? null;
 
                                 $subscription->update([
                                     'status' => 'active',
                                     'paymongo_payment_id' => $paymentId,
                                     'starts_at' => $startsAt,
-                                    'ends_at' => $endsAt,
+                                    'ends_at' => null,
                                 ]);
 
                                 return redirect()

@@ -32,14 +32,9 @@ class HasActiveRetailPremium
         }
 
         $subscription = ShopOwnerSubscription::where('shop_owner_id', $shopOwner->id)
-            ->where('status', 'active')
-            ->where(function ($q) {
-                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-            })
-            ->where(function ($q) {
-                $q->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-            })
-            ->latest('ends_at')
+            ->active()
+            ->latest('starts_at')
+            ->latest('id')
             ->first();
 
         if (!$subscription) {

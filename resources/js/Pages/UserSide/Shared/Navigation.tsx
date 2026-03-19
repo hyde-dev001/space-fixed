@@ -24,7 +24,30 @@ type SearchSuggestionShop = {
   location?: string | null;
   image?: string | null;
   url: string;
-  virtual_showroom_url: string;
+  virtual_showroom_url?: string | null;
+};
+
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  men: ['men', 'male', 'man', 'mens'],
+  women: ['women', 'woman', 'female', 'ladies', 'womens'],
+  kids: ['kids', 'kid', 'child', 'children', 'youth'],
+  sports: ['sports', 'sport', 'athletic', 'athletics'],
+};
+
+const resolveCategoryFromSearchQuery = (value: string): string | null => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    for (const keyword of keywords) {
+      const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+      if (regex.test(normalized)) {
+        return category;
+      }
+    }
+  }
+
+  return null;
 };
 
 const Navigation: React.FC = () => {
@@ -85,8 +108,16 @@ const Navigation: React.FC = () => {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      router.visit(route('products', { search: searchQuery.trim() }));
+    const trimmedQuery = searchQuery.trim();
+
+    if (trimmedQuery) {
+      const categoryFromKeyword = resolveCategoryFromSearchQuery(trimmedQuery);
+
+      if (categoryFromKeyword) {
+        router.visit(route('products', { category: categoryFromKeyword }));
+      } else {
+        router.visit(route('products', { search: trimmedQuery }));
+      }
       setIsSearchFocused(false);
     }
   };
@@ -337,6 +368,17 @@ const Navigation: React.FC = () => {
     isSearchFocused &&
     searchQuery.trim().length >= 2 &&
     (isSearchingSuggestions || searchProducts.length > 0 || searchShops.length > 0);
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const isShowroomSearch = normalizedSearchQuery.includes('showroom');
+  const isRepairSearch = /\brepair(?:er|ers)?\b/.test(normalizedSearchQuery);
+  const isRetailSearch = /\bretail\b/.test(normalizedSearchQuery);
+  const shopSuggestionLabel = isShowroomSearch
+    ? 'Premium Showroom Shops'
+    : isRepairSearch
+      ? 'Repair Shops'
+      : isRetailSearch
+        ? 'Retail Shops'
+        : 'Shop Profiles';
 
   const handleNavAreaMouseLeave = () => {
     setIsHovering(false);
@@ -705,103 +747,100 @@ const Navigation: React.FC = () => {
                     <div className="border-b border-gray-200 px-5 py-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Suggestions</p>
                     </div>
-
-                    {searchProducts.length > 0 && (
-                      <div className="border-b border-gray-200 px-4 py-3">
-                        <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Products</p>
-                        {searchProducts.map((product) => (
-                          <Link
-                            key={`search-product-${product.id}`}
-                            href={product.url}
-                            className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-white hover:shadow-sm"
-                            onClick={() => setIsSearchFocused(false)}
-                          >
-                            <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-100">
-                              {product.main_image ? (
-                                <img src={product.main_image} alt={product.name} className="h-full w-full object-cover" />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">P</div>
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                                {product.shop_name && <span className="truncate">{product.shop_name}</span>}
-                                {product.category && (
-                                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                                    {product.category}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-
-                    {searchShops.length > 0 && (() => {
-                      const isShowroomSearch = searchQuery.trim().toLowerCase().includes('showroom');
-                      return (
-                      <div className="px-4 py-3">
-                        <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                          {isShowroomSearch ? 'Shop Profiles (with Showroom)' : 'Shop Profiles'}
-                        </p>
-                        {searchShops.map((shop) => (
-                          <div
-                            key={`search-shop-${shop.id}`}
-                            className="rounded-xl px-3 py-2.5 transition hover:bg-white hover:shadow-sm cursor-pointer"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => handleSuggestionClick(shop.url)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault();
-                                handleSuggestionClick(shop.url);
-                              }
-                            }}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full border border-gray-100 bg-gray-100">
-                                {shop.image ? (
-                                  <img src={shop.image} alt={shop.name} className="h-full w-full object-cover" />
+                    <div className="max-h-96 overflow-y-auto">
+                      {searchProducts.length > 0 && (
+                        <div className="border-b border-gray-200 px-4 py-3">
+                          <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Products</p>
+                          {searchProducts.map((product) => (
+                            <Link
+                              key={`search-product-${product.id}`}
+                              href={product.url}
+                              className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-white hover:shadow-sm"
+                              onClick={() => setIsSearchFocused(false)}
+                            >
+                              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-100">
+                                {product.main_image ? (
+                                  <img src={product.main_image} alt={product.name} className="h-full w-full object-cover" />
                                 ) : (
-                                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">S</div>
+                                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">P</div>
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-gray-900">{shop.name}</p>
-                                {shop.location && <p className="truncate text-xs text-gray-500">{shop.location}</p>}
+                                <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                                  {product.shop_name && <span className="truncate">{product.shop_name}</span>}
+                                </div>
                               </div>
-                            </div>
-                            <div className="mt-2.5 flex flex-wrap gap-2 pl-14 text-[11px] font-semibold uppercase tracking-wide">
-                              <Link
-                                href={shop.url}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setIsSearchFocused(false);
-                                }}
-                                className={`${suggestionActionBaseClass} ${suggestionActionLightClass}`}
-                              >
-                                Profile
-                              </Link>
-                              {isShowroomSearch && (
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+
+                      {searchShops.length > 0 && (
+                        <div className="px-4 py-3">
+                          <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+                            {shopSuggestionLabel}
+                          </p>
+                          {searchShops.map((shop) => (
+                            <div
+                              key={`search-shop-${shop.id}`}
+                              className="rounded-xl px-3 py-2.5 transition hover:bg-white hover:shadow-sm cursor-pointer"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleSuggestionClick(shop.url)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  handleSuggestionClick(shop.url);
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full border border-gray-100 bg-gray-100">
+                                  {shop.image ? (
+                                    <img src={shop.image} alt={shop.name} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">S</div>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-gray-900">{shop.name}</p>
+                                  {shop.location && <p className="truncate text-xs text-gray-500">{shop.location}</p>}
+                                </div>
+                              </div>
+                              <div className="mt-2.5 flex flex-wrap gap-2 pl-14 text-[11px] font-semibold uppercase tracking-wide">
                                 <Link
-                                  href={shop.virtual_showroom_url}
+                                  href={shop.url}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     setIsSearchFocused(false);
                                   }}
-                                  className={`${suggestionActionBaseClass} ${suggestionActionDarkClass}`}
+                                  className={`${suggestionActionBaseClass} ${suggestionActionLightClass}`}
                                 >
-                                  Virtual Showroom
+                                  Profile
                                 </Link>
-                              )}
+                                {isShowroomSearch && shop.virtual_showroom_url && (
+                                  <Link
+                                    href={shop.virtual_showroom_url}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setIsSearchFocused(false);
+                                    }}
+                                    className={`${suggestionActionBaseClass} ${suggestionActionDarkClass}`}
+                                  >
+                                    Virtual Showroom
+                                  </Link>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                      );
-                    })()}
+                          ))}
+                        </div>
+                      )}
+
+                      {searchProducts.length === 0 && searchShops.length === 0 && (
+                        <div className="px-5 py-4 text-sm text-gray-500">No suggestions found.</div>
+                      )}
+                    </div>
                   </>
                 )}
               </div>

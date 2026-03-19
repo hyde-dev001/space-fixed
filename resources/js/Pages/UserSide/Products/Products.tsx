@@ -30,7 +30,7 @@ type ShopSearchResult = {
   location?: string | null;
   image?: string | null;
   url: string;
-  virtual_showroom_url: string;
+  virtual_showroom_url?: string | null;
 };
 
 interface Props {
@@ -595,12 +595,14 @@ const Products: React.FC<Props> = () => {
                         >
                           View profile
                         </Link>
-                        <Link
-                          href={shop.virtual_showroom_url}
-                          className={`${buttonBaseClass} ${buttonDarkClass}`}
-                        >
-                          Virtual showroom
-                        </Link>
+                        {shop.virtual_showroom_url && (
+                          <Link
+                            href={shop.virtual_showroom_url}
+                            className={`${buttonBaseClass} ${buttonDarkClass}`}
+                          >
+                            Virtual showroom
+                          </Link>
+                        )}
                       </div>
                     </div>
                   ))}

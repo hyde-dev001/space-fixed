@@ -7,7 +7,7 @@ interface Product {
 	slug?: string;
 	brand?: string;
 	stock_quantity: number;
-	main_image: string;
+	main_image?: string | null;
 	hover_image?: string | null;
 	gallery_images?: string[];
 	showroom_360_frames?: string[];
@@ -17,6 +17,9 @@ interface VirtualShowroomProps {
 	products: Product[];
 	isStandalonePage?: boolean;
 	onFocusModeChange?: (isFocusMode: boolean) => void;
+	showroomSlotLimit?: number | null;
+	showroomPlanCode?: string | null;
+	showroomPlanName?: string | null;
 }
 
 interface ShoeViewSet {
@@ -48,6 +51,7 @@ const getUniqueFrames = (frames: Array<string | null | undefined>): string[] => 
 		),
 	);
 };
+
 const buildProductFrames = (product: Product): string[] => {
 	const showroomFrames = getUniqueFrames(product.showroom_360_frames ?? []);
 	if (showroomFrames.length > 0) {
@@ -61,7 +65,16 @@ const buildProductFrames = (product: Product): string[] => {
 	]);
 };
 
-const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalonePage = false, onFocusModeChange }) => {
+const MAX_SHOWROOM_SLOTS = 84;
+
+const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
+	products,
+	isStandalonePage = false,
+	onFocusModeChange,
+	showroomSlotLimit,
+	showroomPlanCode,
+	showroomPlanName,
+}) => {
 	const mountRef = useRef<HTMLDivElement | null>(null);
 	const currentIndexRef = useRef(0);
 	const dragStartXRef = useRef(0);
@@ -94,6 +107,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const pickupAnimationRef = useRef<ShoePickupAnimation | null>(null);
 	const isPickupAnimatingRef = useRef(false);
 	const pendingFocusOpenRef = useRef<PendingFocusOpen | null>(null);
+	const hiddenShelfShoeIndicesRef = useRef(new Set<number>());
 	const loadedFocusedFramesRef = useRef(new Set<string>());
 	const focusedFramePromiseCacheRef = useRef(new Map<string, Promise<void>>());
 	const [currentIndex, setCurrentIndex] = useState(0);
@@ -108,6 +122,21 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	const [focusedFrameSrc, setFocusedFrameSrc] = useState<string | null>(null);
 	const [isFocusedImageVisible, setIsFocusedImageVisible] = useState(false);
 	const lightsOn = isNightMode;
+	const normalizedPlanCode = String(showroomPlanCode ?? '').trim().toLowerCase();
+	const normalizedPlanName = String(showroomPlanName ?? '').trim().toLowerCase();
+	const mappedPlanCapacity = normalizedPlanCode.includes('basic') || normalizedPlanName.includes('basic')
+		? 48
+		: normalizedPlanCode.includes('premium') || normalizedPlanName.includes('premium')
+			? 84
+			: normalizedPlanCode.includes('pro') || normalizedPlanName.includes('pro')
+				? 60
+				: null;
+	const parsedSlotLimit = Number(showroomSlotLimit);
+	const showroomDisplayCapacity = mappedPlanCapacity !== null
+		? mappedPlanCapacity
+		: Number.isFinite(parsedSlotLimit)
+		? Math.max(0, Math.min(Math.floor(parsedSlotLimit), MAX_SHOWROOM_SLOTS))
+		: 60;
 
 	const shoes = useMemo<ShoeViewSet[]>(() => {
 		return products
@@ -181,6 +210,20 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		}
 		setShowFocusedHint(true);
 	}, [focusedShoeIndex]);
+
+	const setShelfShoeHidden = (shoeIdx: number, hidden: boolean) => {
+		if (hidden) {
+			hiddenShelfShoeIndicesRef.current.add(shoeIdx);
+		} else {
+			hiddenShelfShoeIndicesRef.current.delete(shoeIdx);
+		}
+
+		shelfCardPickablesRef.current.forEach((card) => {
+			if ((card.userData.shoeIdx as number) === shoeIdx) {
+				card.visible = !hidden;
+			}
+		});
+	};
 
 	useEffect(() => {
 		if (focusedShoeIndex === null) return;
@@ -264,6 +307,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 	}, [focusedShoeIndex, focusedFrameSrc]);
 
 	const closeFocusedModal = () => {
+		const currentFocusedShoeIdx = focusedShoeIndexRef.current;
+		if (currentFocusedShoeIdx !== null) {
+			setShelfShoeHidden(currentFocusedShoeIdx, false);
+		}
 		setFocusedShoeIndex(null);
 		setFocusedFrameSrc(null);
 		setIsFocusedImageVisible(false);
@@ -425,7 +472,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 	useEffect(() => {
 		const container = mountRef.current;
-		if (!container || shoes.length === 0) return;
+		if (!container) return;
 		setIsSceneLoading(true);
 		let isDisposed = false;
 		const sceneColor = isNightMode ? '#0b1020' : '#e2e8f0';
@@ -445,17 +492,46 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color(sceneColor);
 		scene.fog = new THREE.Fog(sceneColor, 25, fogFar);
+		const compactRoom = showroomDisplayCapacity <= 48;
+		const premiumRoom = showroomDisplayCapacity >= 84;
+		const roomHalfWidth = compactRoom ? 9.8 : (premiumRoom ? 15.5 : 12);
+		const roomBackZ = compactRoom ? -13.8 : (premiumRoom ? -23.5 : -18);
+		const roomFrontZ = compactRoom ? 7.8 : (premiumRoom ? 17.5 : 12);
+		const roomCenterZ = (roomBackZ + roomFrontZ) / 2;
+		const wallWidth = compactRoom ? 34 : (premiumRoom ? 54 : 42);
+		const sideWallWidth = compactRoom ? 30 : (premiumRoom ? 48 : 38);
+		const wallHeight = compactRoom ? 13.2 : (premiumRoom ? 16.5 : 15);
+		const wallCenterY = compactRoom ? 6.4 : (premiumRoom ? 7.8 : 7.2);
+		const ceilingY = compactRoom ? 12.8 : (premiumRoom ? 15.8 : 14.6);
+		const ceilingDepth = compactRoom ? 22 : (premiumRoom ? 42 : 30);
 
 		const camera = new THREE.PerspectiveCamera(66, container.clientWidth / container.clientHeight, 0.1, 200);
-		camera.position.set(0, 3.2, -3);
+		camera.position.set(0, compactRoom ? 2.9 : (premiumRoom ? 3.45 : 3.2), compactRoom ? -2.3 : (premiumRoom ? -5.2 : -3));
 		cameraRef.current = camera;
+		const cameraBaseY = camera.position.y;
+		const cameraPosition = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
+		const keyState = {
+			forward: false,
+			backward: false,
+			left: false,
+			right: false,
+		};
+		const movementDirection = new THREE.Vector3();
+		const movementForward = new THREE.Vector3();
+		const movementRight = new THREE.Vector3();
+		const walkSpeed = compactRoom ? 6.0 : (premiumRoom ? 7.2 : 6.6);
+		const movementPadding = compactRoom ? 2.1 : (premiumRoom ? 2.7 : 2.35);
+		const minWalkX = -roomHalfWidth + movementPadding;
+		const maxWalkX = roomHalfWidth - movementPadding;
+		const minWalkZ = roomBackZ + movementPadding;
+		const maxWalkZ = roomFrontZ - movementPadding;
 
-		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
+		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
 		renderer.setSize(container.clientWidth, container.clientHeight);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		renderer.toneMappingExposure = 1.15;
+		renderer.toneMappingExposure = 1.22;
 		renderer.shadowMap.enabled = false;
 		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		container.innerHTML = '';
@@ -464,11 +540,24 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		const ambientLight = new THREE.AmbientLight('#ffffff', ambientIntensity);
 		scene.add(ambientLight);
 
+		const fillLight = new THREE.HemisphereLight(
+			isNightMode ? '#9fb8ff' : '#fff8e6',
+			isNightMode ? '#2b3038' : '#d7dce4',
+			isNightMode ? 0.42 : 0.58,
+		);
+		scene.add(fillLight);
+
 		const keyLight = new THREE.DirectionalLight('#ffffff', keyLightIntensity);
 		keyLight.position.set(5, 9, 10);
 		keyLight.castShadow = false;
 		keyLight.shadow.mapSize.width = 2048;
 		keyLight.shadow.mapSize.height = 2048;
+		keyLight.shadow.camera.near = 0.5;
+		keyLight.shadow.camera.far = 48;
+		keyLight.shadow.camera.left = -22;
+		keyLight.shadow.camera.right = 22;
+		keyLight.shadow.camera.top = 22;
+		keyLight.shadow.camera.bottom = -22;
 		keyLight.shadow.bias = -0.0002;
 		keyLight.shadow.normalBias = 0.02;
 		scene.add(keyLight);
@@ -487,71 +576,157 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		scene.add(floor);
 
 		const backWall = new THREE.Mesh(
-			new THREE.PlaneGeometry(42, 15),
+			new THREE.PlaneGeometry(wallWidth, wallHeight),
 			new THREE.MeshStandardMaterial({ color: wallMainColor, roughness: 0.95, metalness: 0.05 }),
 		);
-		backWall.position.set(0, 7.2, -18);
+		backWall.position.set(0, wallCenterY, roomBackZ);
+		backWall.receiveShadow = false;
 		scene.add(backWall);
 
 		const frontWall = new THREE.Mesh(
-			new THREE.PlaneGeometry(42, 15),
+			new THREE.PlaneGeometry(wallWidth, wallHeight),
 			new THREE.MeshStandardMaterial({ color: wallMainColor, roughness: 0.95, metalness: 0.05 }),
 		);
-		frontWall.position.set(0, 7.2, 12);
+		frontWall.position.set(0, wallCenterY, roomFrontZ);
 		frontWall.rotation.y = Math.PI;
+		frontWall.receiveShadow = false;
 		scene.add(frontWall);
 
 		const leftWall = new THREE.Mesh(
-			new THREE.PlaneGeometry(38, 15),
+			new THREE.PlaneGeometry(sideWallWidth, wallHeight),
 			new THREE.MeshStandardMaterial({ color: wallSideColor, roughness: 0.95, metalness: 0.05 }),
 		);
-		leftWall.position.set(-12, 7.2, -1.5);
+		leftWall.position.set(-roomHalfWidth, wallCenterY, roomCenterZ);
 		leftWall.rotation.y = Math.PI / 2;
+		leftWall.receiveShadow = false;
 		scene.add(leftWall);
 
 		const rightWall = leftWall.clone();
-		rightWall.position.x = 12;
+		rightWall.position.x = roomHalfWidth;
 		rightWall.rotation.y = -Math.PI / 2;
+		rightWall.receiveShadow = false;
 		scene.add(rightWall);
 
 		const ceiling = new THREE.Mesh(
-			new THREE.PlaneGeometry(42, 30),
+			new THREE.PlaneGeometry(wallWidth, ceilingDepth),
 			new THREE.MeshStandardMaterial({ color: ceilingColor, roughness: 0.9, metalness: 0.03, side: THREE.DoubleSide }),
 		);
 		ceiling.rotation.x = Math.PI / 2;
-		ceiling.position.set(0, 14.6, -3);
+		ceiling.position.set(0, ceilingY, roomCenterZ);
+		ceiling.receiveShadow = false;
 		scene.add(ceiling);
 
-		const shelfMaterial = new THREE.MeshStandardMaterial({ color: shelfColor, roughness: 0.9, metalness: 0.04 });
+		const shelfMaterial = new THREE.MeshPhysicalMaterial({
+			color: '#8f6745',
+			roughness: 0.58,
+			metalness: 0.06,
+			clearcoat: 0.3,
+			clearcoatRoughness: 0.42,
+		});
+		const shelfEdgeMaterial = new THREE.MeshStandardMaterial({ color: '#b88758', roughness: 0.35, metalness: 0.16 });
 		const shelfMeshes: THREE.Mesh[] = [];
-		const sideShelfStartZ = -14.25;
-		const sideShelfGapZ = 4.5;
+		const isBasicLayout = compactRoom;
+		const isPremiumLayout = showroomDisplayCapacity >= 84;
+		const sideSlotsPerWall = isBasicLayout ? 4 : (isPremiumLayout ? 10 : 6);
+		const depthSlotsPerWall = 4;
+		const includeCenterSlots = false;
+		const spacingOnWall = (index: number, total: number, min: number, max: number) => {
+			if (total <= 1) return (min + max) / 2;
+			return min + (index / (total - 1)) * (max - min);
+		};
+		const wallSlotGap = compactRoom ? 3.95 : (premiumRoom ? 4.15 : 4.05);
+		const centeredWallOffset = (index: number, total: number, gap: number) => {
+			if (total <= 1) return 0;
+			const start = -((total - 1) * gap) / 2;
+			return start + index * gap;
+		};
+		const sideInset = compactRoom ? 2.2 : (premiumRoom ? 3.2 : 2.6);
+		const depthInset = compactRoom ? 2.35 : (premiumRoom ? 3.4 : 2.6);
+		const depthWallInsetZ = compactRoom ? 1.35 : (premiumRoom ? 2.1 : 1.6);
+		const sideShelfX = roomHalfWidth - sideInset;
+		const sideCardX = sideShelfX - (premiumRoom ? 0.28 : 0.35);
+		const sideWallCenterZ = roomCenterZ;
+		const sideWallZMin = sideWallCenterZ + centeredWallOffset(0, sideSlotsPerWall, wallSlotGap);
+		const sideWallZMax = sideWallCenterZ + centeredWallOffset(sideSlotsPerWall - 1, sideSlotsPerWall, wallSlotGap);
+		const depthWallCenterX = 0;
+		const depthShelfBackZ = roomBackZ + depthWallInsetZ;
+		const depthShelfFrontZ = roomFrontZ - depthWallInsetZ;
+		const depthCardBackZ = depthShelfBackZ + 0.55;
+		const depthCardFrontZ = depthShelfFrontZ - 0.55;
+		const shelfDefinitions: Array<{
+			position: THREE.Vector3;
+			width: number;
+		}> = [];
+
 		for (const side of [-1, 1]) {
 			for (let level = 0; level < 3; level += 1) {
-				for (let i = 0; i < 6; i += 1) {
-					const shelf = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.16, 1.25), shelfMaterial);
-					const shelfZ = sideShelfStartZ + i * sideShelfGapZ;
-					shelf.position.set(side * 9.4, 1.2 + level * 1.85, shelfZ);
-					shelf.castShadow = true;
-					shelf.receiveShadow = true;
-					scene.add(shelf);
-					shelfMeshes.push(shelf);
+				for (let i = 0; i < sideSlotsPerWall; i += 1) {
+					shelfDefinitions.push({
+						position: new THREE.Vector3(
+							side * sideShelfX,
+							1.2 + level * 1.85,
+							sideWallCenterZ + centeredWallOffset(i, sideSlotsPerWall, wallSlotGap),
+						),
+						width: 3.2,
+					});
 				}
 			}
 		}
 
 		for (const depthSide of [-1, 1]) {
 			for (let level = 0; level < 3; level += 1) {
-				for (let i = 0; i < 4; i += 1) {
-					const shelf = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.16, 1.25), shelfMaterial);
-					shelf.position.set(-6 + i * 4, 1.2 + level * 1.85, depthSide === -1 ? -16.4 : 10.4);
-					shelf.castShadow = true;
-					shelf.receiveShadow = true;
-					scene.add(shelf);
-					shelfMeshes.push(shelf);
+				for (let i = 0; i < depthSlotsPerWall; i += 1) {
+					shelfDefinitions.push({
+						position: new THREE.Vector3(
+							depthWallCenterX + centeredWallOffset(i, depthSlotsPerWall, wallSlotGap),
+							1.2 + level * 1.85,
+							depthSide === -1 ? depthShelfBackZ : depthShelfFrontZ,
+						),
+						width: 2.8,
+					});
 				}
 			}
 		}
+
+		if (includeCenterSlots) {
+			const centerZMin = sideWallZMin + 0.35;
+			const centerZMax = sideWallZMax - 0.35;
+			for (const centerSide of [-1, 1]) {
+				for (let level = 0; level < 3; level += 1) {
+					for (let i = 0; i < 4; i += 1) {
+						shelfDefinitions.push({
+							position: new THREE.Vector3(
+								centerSide * 1.85,
+								1.2 + level * 1.85,
+								spacingOnWall(i, 4, centerZMin, centerZMax),
+							),
+							width: 2.45,
+						});
+					}
+				}
+			}
+		}
+
+		shelfDefinitions.slice(0, showroomDisplayCapacity).forEach((definition) => {
+			const shelf = new THREE.Mesh(new THREE.BoxGeometry(definition.width, 0.16, 1.25), shelfMaterial);
+			shelf.position.copy(definition.position);
+			shelf.castShadow = false;
+			shelf.receiveShadow = false;
+			scene.add(shelf);
+			shelfMeshes.push(shelf);
+
+			const frontTrim = new THREE.Mesh(new THREE.BoxGeometry(definition.width, 0.07, 0.08), shelfEdgeMaterial);
+			frontTrim.position.copy(definition.position);
+			frontTrim.position.y += 0.03;
+			frontTrim.position.z += 0.58;
+			scene.add(frontTrim);
+			shelfMeshes.push(frontTrim);
+
+			const backTrim = frontTrim.clone();
+			backTrim.position.z = definition.position.z - 0.58;
+			scene.add(backTrim);
+			shelfMeshes.push(backTrim);
+		});
 
 		const swipeGuideGroup = new THREE.Group();
 		swipeGuideGroup.visible = false;
@@ -635,10 +810,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		const cameraForward = new THREE.Vector3();
 
 		const runway = new THREE.Mesh(
-			new THREE.BoxGeometry(10, 0.25, 8),
+			new THREE.BoxGeometry(compactRoom ? 7.8 : (premiumRoom ? 14.2 : 10), 0.25, compactRoom ? 5.8 : (premiumRoom ? 11.2 : 8)),
 			new THREE.MeshStandardMaterial({ color: isNightMode ? '#7d8695' : '#f8fafc', roughness: 0.4, metalness: 0.2 }),
 		);
-		runway.position.set(0, 0.13, -3);
+		runway.position.set(0, 0.13, roomCenterZ);
 		runway.receiveShadow = true;
 		runway.castShadow = true;
 		scene.add(runway);
@@ -714,7 +889,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			decorMeshes.push(panel);
 		};
 
-		createPoster(new THREE.Vector3(0, 8.9, -17.7), 0, posterPanelMaterialBack);
+		createPoster(new THREE.Vector3(0, compactRoom ? 7.6 : (premiumRoom ? 9.2 : 8.9), roomBackZ + 0.3), 0, posterPanelMaterialBack);
 
 		const fixtureMaterial = new THREE.MeshStandardMaterial({
 			color: lightsOn ? '#2f343b' : '#7b818a',
@@ -777,19 +952,30 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			fixtureSpotLights.push(spot);
 		};
 
-		createWallFixture(new THREE.Vector3(-11.55, 10.7, -10.2), -Math.PI / 2, new THREE.Vector3(-6.4, 4.2, -10.2));
-		createWallFixture(new THREE.Vector3(-11.55, 10.7, -2.2), -Math.PI / 2, new THREE.Vector3(-6.4, 4.2, -2.2));
-		createWallFixture(new THREE.Vector3(-11.55, 10.7, 5.8), -Math.PI / 2, new THREE.Vector3(-6.4, 4.2, 5.8));
-		createWallFixture(new THREE.Vector3(11.55, 10.7, -10.2), Math.PI / 2, new THREE.Vector3(6.4, 4.2, -10.2));
-		createWallFixture(new THREE.Vector3(11.55, 10.7, -2.2), Math.PI / 2, new THREE.Vector3(6.4, 4.2, -2.2));
-		createWallFixture(new THREE.Vector3(11.55, 10.7, 5.8), Math.PI / 2, new THREE.Vector3(6.4, 4.2, 5.8));
-		createWallFixture(new THREE.Vector3(-4.4, 10.8, -17.55), 0, new THREE.Vector3(-4.2, 4.3, -11.0));
-		createWallFixture(new THREE.Vector3(4.4, 10.8, -17.55), 0, new THREE.Vector3(4.2, 4.3, -11.0));
-		createWallFixture(new THREE.Vector3(-4.4, 10.8, 11.55), Math.PI, new THREE.Vector3(-4.2, 4.3, 4.6));
-		createWallFixture(new THREE.Vector3(4.4, 10.8, 11.55), Math.PI, new THREE.Vector3(4.2, 4.3, 4.6));
+		const sideFixtureX = roomHalfWidth - 0.45;
+		const sideFixtureTargetX = compactRoom ? 4.9 : (premiumRoom ? 8.6 : 6.4);
+		const sideFixtureZ = [
+			spacingOnWall(0, 3, sideWallZMin, sideWallZMax),
+			spacingOnWall(1, 3, sideWallZMin, sideWallZMax),
+			spacingOnWall(2, 3, sideWallZMin, sideWallZMax),
+		];
+		sideFixtureZ.forEach((z) => {
+			createWallFixture(new THREE.Vector3(-sideFixtureX, 10.7, z), -Math.PI / 2, new THREE.Vector3(-sideFixtureTargetX, 4.2, z));
+			createWallFixture(new THREE.Vector3(sideFixtureX, 10.7, z), Math.PI / 2, new THREE.Vector3(sideFixtureTargetX, 4.2, z));
+		});
+		const backFixtureZ = roomBackZ + 0.45;
+		const frontFixtureZ = roomFrontZ - 0.45;
+		const frontBackFixtureX = compactRoom ? 3.9 : (premiumRoom ? 5.8 : 4.4);
+		const backTargetZ = compactRoom ? roomBackZ + 2.9 : (premiumRoom ? roomBackZ + 3.8 : -11.0);
+		const frontTargetZ = compactRoom ? roomFrontZ - 2.9 : (premiumRoom ? roomFrontZ - 3.8 : 4.6);
+		const frontBackTargetX = premiumRoom ? 5.6 : 4.2;
+		createWallFixture(new THREE.Vector3(-frontBackFixtureX, 10.8, backFixtureZ), 0, new THREE.Vector3(-frontBackTargetX, 4.3, backTargetZ));
+		createWallFixture(new THREE.Vector3(frontBackFixtureX, 10.8, backFixtureZ), 0, new THREE.Vector3(frontBackTargetX, 4.3, backTargetZ));
+		createWallFixture(new THREE.Vector3(-frontBackFixtureX, 10.8, frontFixtureZ), Math.PI, new THREE.Vector3(-frontBackTargetX, 4.3, frontTargetZ));
+		createWallFixture(new THREE.Vector3(frontBackFixtureX, 10.8, frontFixtureZ), Math.PI, new THREE.Vector3(frontBackTargetX, 4.3, frontTargetZ));
 
 		const ceilingFixture = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.55), fixtureMaterial);
-		ceilingFixture.position.set(0, 14.15, -2.8);
+		ceilingFixture.position.set(0, compactRoom ? 12.35 : (premiumRoom ? 15.35 : 14.15), compactRoom ? roomCenterZ + 0.2 : (premiumRoom ? roomCenterZ + 0.4 : -2.8));
 		scene.add(ceilingFixture);
 		fixtureMeshes.push(ceilingFixture);
 
@@ -809,17 +995,17 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		fixtureMeshes.push(ceilingLens);
 
 		const ceilingTarget = new THREE.Object3D();
-		ceilingTarget.position.set(0, 3.6, -3.0);
+		ceilingTarget.position.set(0, 3.6, roomCenterZ);
 		scene.add(ceilingTarget);
 		fixtureTargets.push(ceilingTarget);
 
-		const ceilingLight = new THREE.PointLight('#ffe8b3', lightsOn ? 1.05 : 0, 15, 2);
-		ceilingLight.position.set(0, 13.75, -2.8);
+		const ceilingLight = new THREE.PointLight('#ffe8b3', lightsOn ? 1.05 : 0, compactRoom ? 12 : (premiumRoom ? 18 : 15), 2);
+		ceilingLight.position.set(0, compactRoom ? 11.95 : (premiumRoom ? 14.95 : 13.75), compactRoom ? roomCenterZ + 0.2 : (premiumRoom ? roomCenterZ + 0.4 : -2.8));
 		scene.add(ceilingLight);
 		fixturePointLights.push(ceilingLight);
 
-		const ceilingSpot = new THREE.SpotLight('#ffe8b3', lightsOn ? 2.7 : 0, 26, Math.PI / 8, 0.42, 1.35);
-		ceilingSpot.position.set(0, 13.75, -2.8);
+		const ceilingSpot = new THREE.SpotLight('#ffe8b3', lightsOn ? 2.7 : 0, compactRoom ? 20 : (premiumRoom ? 30 : 26), Math.PI / 8, 0.42, 1.35);
+		ceilingSpot.position.set(0, compactRoom ? 11.95 : (premiumRoom ? 14.95 : 13.75), compactRoom ? roomCenterZ + 0.2 : (premiumRoom ? roomCenterZ + 0.4 : -2.8));
 		ceilingSpot.target = ceilingTarget;
 		scene.add(ceilingSpot);
 		fixtureSpotLights.push(ceilingSpot);
@@ -863,10 +1049,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 				markFrameReady(url);
 			});
 			texture.colorSpace = THREE.SRGBColorSpace;
-			texture.minFilter = THREE.LinearFilter;
+			texture.minFilter = THREE.LinearMipmapLinearFilter;
 			texture.magFilter = THREE.LinearFilter;
 			texture.anisotropy = Math.min(maxAnisotropy, 16);
-			texture.generateMipmaps = false;
+			texture.generateMipmaps = true;
 			textureCache.set(url, texture);
 			return texture;
 		};
@@ -898,9 +1084,13 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 		for (const side of [-1, 1]) {
 			for (let level = 0; level < 3; level += 1) {
-				for (let i = 0; i < 6; i += 1) {
+				for (let i = 0; i < sideSlotsPerWall; i += 1) {
 					slotDefinitions.push({
-						position: new THREE.Vector3(side * 9.05, 1.95 + level * 1.85, sideShelfStartZ + i * sideShelfGapZ),
+						position: new THREE.Vector3(
+							side * sideCardX,
+							1.95 + level * 1.85,
+							sideWallCenterZ + centeredWallOffset(i, sideSlotsPerWall, wallSlotGap),
+						),
 						rotationY: side === -1 ? Math.PI / 2 : -Math.PI / 2,
 						cardWidth: 2.0,
 						cardHeight: 1.25,
@@ -912,9 +1102,13 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 
 		for (const depthSide of [-1, 1]) {
 			for (let level = 0; level < 3; level += 1) {
-				for (let i = 0; i < 4; i += 1) {
+				for (let i = 0; i < depthSlotsPerWall; i += 1) {
 					slotDefinitions.push({
-						position: new THREE.Vector3(-6 + i * 4, 1.95 + level * 1.85, depthSide === -1 ? -15.85 : 9.85),
+						position: new THREE.Vector3(
+							depthWallCenterX + centeredWallOffset(i, depthSlotsPerWall, wallSlotGap),
+							1.95 + level * 1.85,
+							depthSide === -1 ? depthCardBackZ : depthCardFrontZ,
+						),
 						rotationY: depthSide === -1 ? 0 : Math.PI,
 						cardWidth: 1.85,
 						cardHeight: 1.12,
@@ -924,7 +1118,31 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			}
 		}
 
-		slotDefinitions.slice(0, shoes.length).forEach((slot, shoeIdx) => {
+		if (includeCenterSlots) {
+			const centerZMin = sideWallZMin + 0.35;
+			const centerZMax = sideWallZMax - 0.35;
+			for (const centerSide of [-1, 1]) {
+				for (let level = 0; level < 3; level += 1) {
+					for (let i = 0; i < 4; i += 1) {
+						slotDefinitions.push({
+							position: new THREE.Vector3(
+								centerSide * 1.85,
+								1.95 + level * 1.85,
+								spacingOnWall(i, 4, centerZMin, centerZMax),
+							),
+							rotationY: centerSide === -1 ? Math.PI / 2 : -Math.PI / 2,
+							cardWidth: 1.75,
+							cardHeight: 1.08,
+							frameOffsetSeed: i * 11 + level * 19 + (centerSide === -1 ? 23 : 41),
+						});
+					}
+				}
+			}
+		}
+
+		const renderableSlotCount = Math.min(shoes.length, showroomDisplayCapacity, slotDefinitions.length);
+
+		slotDefinitions.slice(0, renderableSlotCount).forEach((slot, shoeIdx) => {
 			const frameIdx = 0;
 			const frames = shoes[shoeIdx]?.frames ?? [];
 			if (frames.length === 0) {
@@ -957,6 +1175,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			card.userData.shoeIdx = shoeIdx;
 			card.castShadow = false;
 			scene.add(card);
+			card.visible = !hiddenShelfShoeIndicesRef.current.has(shoeIdx);
 
 			shelfCardMaterials.push(material);
 			shelfCards.push(card);
@@ -1001,10 +1220,12 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		let rafId = 0;
 
 		const animate = () => {
-			const elapsed = clock.getElapsedTime();
+			const delta = Math.min(clock.getDelta(), 0.05);
+			const elapsed = clock.elapsedTime;
 			const isModalOpen = focusedShoeIndexRef.current !== null;
 
 			if (isModalOpen) {
+				clearMovementKeys();
 				swipeGuideGroup.visible = false;
 				focusGroup.visible = false;
 				renderer.render(scene, camera);
@@ -1012,14 +1233,36 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 				return;
 			}
 
-			camera.position.x = 0;
-			camera.position.z = -3;
-			camera.position.y = 3.2;
+			if (!document.hasFocus()) {
+				clearMovementKeys();
+			}
 
 			cameraYawRef.current += (targetCameraYawRef.current - cameraYawRef.current) * 0.18;
 			cameraPitchRef.current += (targetCameraPitchRef.current - cameraPitchRef.current) * 0.18;
+
+			movementDirection.set(0, 0, 0);
+			const movementYaw = cameraYawRef.current;
+			movementForward.set(Math.sin(movementYaw), 0, -Math.cos(movementYaw));
+			movementRight.set(Math.cos(movementYaw), 0, Math.sin(movementYaw));
+
+			if (keyState.forward) movementDirection.add(movementForward);
+			if (keyState.backward) movementDirection.sub(movementForward);
+			if (keyState.right) movementDirection.add(movementRight);
+			if (keyState.left) movementDirection.sub(movementRight);
+
+			if (movementDirection.lengthSq() > 0) {
+				movementDirection.normalize();
+				cameraPosition.x += movementDirection.x * walkSpeed * delta;
+				cameraPosition.z += movementDirection.z * walkSpeed * delta;
+			}
+
+			cameraPosition.x = Math.max(minWalkX, Math.min(maxWalkX, cameraPosition.x));
+			cameraPosition.z = Math.max(minWalkZ, Math.min(maxWalkZ, cameraPosition.z));
+			cameraPosition.y = cameraBaseY;
+			camera.position.copy(cameraPosition);
+
 			const lookDistance = 14;
-			const lookX = Math.sin(cameraYawRef.current) * Math.cos(cameraPitchRef.current) * lookDistance;
+			const lookX = camera.position.x + Math.sin(cameraYawRef.current) * Math.cos(cameraPitchRef.current) * lookDistance;
 			const lookY = camera.position.y + Math.sin(cameraPitchRef.current) * lookDistance;
 			const lookZ = camera.position.z - Math.cos(cameraYawRef.current) * Math.cos(cameraPitchRef.current) * lookDistance;
 			camera.lookAt(lookX, lookY, lookZ);
@@ -1126,6 +1369,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 					}
 
 					const readyFocusState = pendingFocusOpenRef.current;
+					setShelfShoeHidden(pickupAnimation.shoeIdx, true);
 					pickupAnimationRef.current = null;
 					pendingFocusOpenRef.current = null;
 					isPickupAnimatingRef.current = false;
@@ -1203,10 +1447,78 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			renderer.setSize(width, height);
 		};
 
+		const isTypingTarget = (target: EventTarget | null) => {
+			if (!(target instanceof HTMLElement)) return false;
+			const tagName = target.tagName;
+			return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable;
+		};
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (focusedShoeIndexRef.current !== null || isTypingTarget(event.target)) {
+				return;
+			}
+
+			switch (event.key.toLowerCase()) {
+				case 'w':
+					keyState.forward = true;
+					event.preventDefault();
+					break;
+				case 'a':
+					keyState.left = true;
+					event.preventDefault();
+					break;
+				case 's':
+					keyState.backward = true;
+					event.preventDefault();
+					break;
+				case 'd':
+					keyState.right = true;
+					event.preventDefault();
+					break;
+				default:
+					break;
+			}
+
+			if (showSwipeHintRef.current && (keyState.forward || keyState.backward || keyState.left || keyState.right)) {
+				setShowSwipeHint(false);
+			}
+		};
+
+		const handleKeyUp = (event: KeyboardEvent) => {
+			switch (event.key.toLowerCase()) {
+				case 'w':
+					keyState.forward = false;
+					break;
+				case 'a':
+					keyState.left = false;
+					break;
+				case 's':
+					keyState.backward = false;
+					break;
+				case 'd':
+					keyState.right = false;
+					break;
+				default:
+					break;
+			}
+		};
+
+		const clearMovementKeys = () => {
+			keyState.forward = false;
+			keyState.backward = false;
+			keyState.left = false;
+			keyState.right = false;
+		};
+
 		window.addEventListener('resize', handleResize);
+		window.addEventListener('keydown', handleKeyDown);
+		window.addEventListener('keyup', handleKeyUp);
+		window.addEventListener('blur', clearMovementKeys);
+		document.addEventListener('visibilitychange', clearMovementKeys);
 
 		return () => {
 			isDisposed = true;
+			hiddenShelfShoeIndicesRef.current.clear();
 			pickupAnimationRef.current = null;
 			pendingFocusOpenRef.current = null;
 			isPickupAnimatingRef.current = false;
@@ -1217,6 +1529,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			cameraRef.current = null;
 			shelfCardPickablesRef.current = [];
 			window.removeEventListener('resize', handleResize);
+			window.removeEventListener('keydown', handleKeyDown);
+			window.removeEventListener('keyup', handleKeyUp);
+			window.removeEventListener('blur', clearMovementKeys);
+			document.removeEventListener('visibilitychange', clearMovementKeys);
 			cancelAnimationFrame(rafId);
 
 			floor.geometry.dispose();
@@ -1234,6 +1550,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 			runway.geometry.dispose();
 			(runway.material as THREE.Material).dispose();
 			shelfMaterial.dispose();
+			shelfEdgeMaterial.dispose();
 			shelfMeshes.forEach((mesh) => mesh.geometry.dispose());
 			fixtureMeshes.forEach((mesh) => mesh.geometry.dispose());
 			fixtureMaterial.dispose();
@@ -1265,7 +1582,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 				container.removeChild(renderer.domElement);
 			}
 		};
-	}, [shoes, isNightMode, lightsOn]);
+	}, [shoes, isNightMode, lightsOn, showroomDisplayCapacity]);
 
 	const goToPreviousShoe = () => {
 		if (shoes.length === 0) return;
@@ -1348,15 +1665,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 		pointerMoveDistanceRef.current = 0;
 	};
 
-	if (shoes.length === 0) {
-		return (
-			<div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-				<p className="text-sm text-gray-600">No product images are available for the virtual showroom yet.</p>
-			</div>
-		);
-	}
-
-	const activeShoe = shoes[currentIndex];
+	const activeShoe = shoes[currentIndex] ?? null;
 	const focusedShoe = focusedShoeIndex !== null ? shoes[focusedShoeIndex] : null;
 
 	return (
@@ -1387,7 +1696,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 				<div className="mb-4 flex flex-col gap-2 px-4 md:flex-row md:items-center md:justify-between md:px-8">
 					<div>
 						<h3 className="text-xl font-semibold text-gray-900">Virtual Showroom</h3>
-						<p className="text-sm text-gray-500">Swipe to orbit 360° and view top or bottom angles.</p>
+						<p className="text-sm text-gray-500">Click and drag to orbit 360° and view top or bottom angles.</p>
+						<p className="text-xs text-gray-500">Walk controls: W forward, A left, S backward, D right.</p>
+						<p className="text-xs text-gray-500">Display capacity: {showroomDisplayCapacity} shoe slots</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<button
@@ -1572,19 +1883,21 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 				)}
 
 				{isStandalonePage && (
-					<button
-						type="button"
-						onPointerDown={(event) => event.stopPropagation()}
-						onPointerMove={(event) => event.stopPropagation()}
-						onPointerUp={(event) => event.stopPropagation()}
-						onClick={(event) => {
-							event.stopPropagation();
-							setIsNightMode((prev) => !prev);
-						}}
-						className="pointer-events-auto absolute right-3 top-3 z-20 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-					>
-						{isNightMode ? 'Day Mode' : 'Night Mode'}
-					</button>
+					<>
+						<button
+							type="button"
+							onPointerDown={(event) => event.stopPropagation()}
+							onPointerMove={(event) => event.stopPropagation()}
+							onPointerUp={(event) => event.stopPropagation()}
+							onClick={(event) => {
+								event.stopPropagation();
+								setIsNightMode((prev) => !prev);
+							}}
+							className="pointer-events-auto absolute right-3 top-3 z-20 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+						>
+							{isNightMode ? 'Day Mode' : 'Night Mode'}
+						</button>
+					</>
 				)}
 
 				{isSceneLoading && (
@@ -1593,11 +1906,20 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({ products, isStandalon
 					</div>
 				)}
 
-				{!isStandalonePage && (
+				{!isStandalonePage && activeShoe && (
 					<div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/85 px-3 py-2 text-xs text-gray-700 shadow-sm">
 						<p className="font-semibold text-gray-900">{activeShoe.name}</p>
 						<p>{activeShoe.brand || 'SoleSpace'} • {activeShoe.stock > 0 ? `${activeShoe.stock} in stock` : 'Out of stock'}</p>
+						<p className="text-[10px] text-gray-500">{showroomDisplayCapacity} display slots</p>
 						<p className="text-[10px] text-gray-500">Using this shop&apos;s uploaded showroom and product images.</p>
+					</div>
+				)}
+
+				{!isStandalonePage && shoes.length === 0 && (
+					<div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/90 px-3 py-2 text-xs text-gray-700 shadow-sm">
+						<p className="font-semibold text-gray-900">Virtual showroom is active</p>
+						<p className="text-[10px] text-gray-500">{showroomDisplayCapacity} display slots</p>
+						<p>Upload product images to display items on shelves.</p>
 					</div>
 				)}
 			</div>

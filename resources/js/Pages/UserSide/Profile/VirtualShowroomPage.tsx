@@ -20,6 +20,9 @@ interface Product {
 interface Shop {
   id: number;
   name: string;
+  showroom_slot_limit?: number | null;
+  showroom_plan_code?: string | null;
+  showroom_plan_name?: string | null;
 }
 
 interface Props {
@@ -46,7 +49,14 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
           </div>
         )}
 
-        <VirtualShowroom products={products} isStandalonePage onFocusModeChange={setIsFocusMode} />
+        <VirtualShowroom
+          products={products}
+          isStandalonePage
+          onFocusModeChange={setIsFocusMode}
+          showroomSlotLimit={shop.showroom_slot_limit}
+          showroomPlanCode={shop.showroom_plan_code}
+          showroomPlanName={shop.showroom_plan_name}
+        />
       </main>
     </div>
   );

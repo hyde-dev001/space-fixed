@@ -41,6 +41,7 @@ interface Shop {
   id: number;
   name: string;
   business_type?: string;
+  has_active_premium?: boolean;
   cover_image: string;
   profile_photo?: string | null;
   description: string;
@@ -115,7 +116,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
     : isRetailAndRepairShop
       ? ['Shoes', 'Men', 'Women', 'Kids', 'Sports', 'Services']
       : ['Shoes', 'Men', 'Women', 'Kids', 'Sports'];
-  const showVirtualShowroom = !isRepairOnlyShop;
+  const showVirtualShowroom = !isRepairOnlyShop && Boolean(shop.has_active_premium);
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);

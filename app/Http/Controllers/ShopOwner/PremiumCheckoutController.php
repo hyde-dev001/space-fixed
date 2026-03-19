@@ -31,10 +31,10 @@ class PremiumCheckoutController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
 
-        // Guard: block if there is already an active (non-expired) subscription
+        // Guard: block if there is already an active subscription.
+        // Active scope accepts open-ended subscriptions (ends_at = null).
         $existing = ShopOwnerSubscription::where('shop_owner_id', $shopOwner->id)
-            ->where('status', 'active')
-            ->where('ends_at', '>=', now())
+            ->active()
             ->first();
 
         if ($existing) {
@@ -62,7 +62,9 @@ class PremiumCheckoutController extends Controller
         $successUrl  = route('shop-owner.premium-success', [
             'subscription_id' => $subscription->id,
         ]);
-        $cancelUrl   = route('shop-owner.premium-benefits');
+        $cancelUrl   = route('shop-owner.premium-cancel', [
+            'subscription_id' => $subscription->id,
+        ]);
         $description = 'SoleSpace ' . $plan->name . ' – ' . $plan->duration_days . '-day subscription';
 
         // Platform key: this charge is paid TO SoleSpace, so we use our own key
@@ -151,6 +153,48 @@ class PremiumCheckoutController extends Controller
             'checkout_url'    => $checkoutUrl,
             'subscription_id' => $subscription->id,
             'session_id'      => $sessionId,
+        ]);
+    }
+
+    /**
+     * Cancel a pending or active premium subscription for the current shop owner.
+     *
+     * POST /api/shop-owner/premium/cancel
+     * Body (optional): { "subscription_id": 123 }
+     */
+    public function cancel(Request $request)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $validated = $request->validate([
+            'subscription_id' => 'nullable|integer',
+        ]);
+
+        $subscriptionQuery = ShopOwnerSubscription::where('shop_owner_id', $shopOwner->id)
+            ->whereIn('status', ['pending', 'active']);
+
+        if (!empty($validated['subscription_id'])) {
+            $subscriptionQuery->where('id', (int) $validated['subscription_id']);
+        }
+
+        $subscription = $subscriptionQuery->latest('updated_at')->first();
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No pending or active premium subscription was found to cancel.',
+            ], 404);
+        }
+
+        $subscription->update([
+            'status'  => 'cancelled',
+            'ends_at' => $subscription->status === 'active' ? now() : $subscription->ends_at,
+        ]);
+
+        return response()->json([
+            'success'      => true,
+            'message'      => 'Premium subscription cancelled successfully.',
+            'subscription' => $subscription->fresh('premiumPlan'),
         ]);
     }
 

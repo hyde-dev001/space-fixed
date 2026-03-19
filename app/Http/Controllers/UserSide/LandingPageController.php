@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerSubscription;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -107,26 +108,36 @@ class LandingPageController extends Controller
     {
         $query = trim((string) $request->query('query', ''));
         $normalizedQuery = strtolower($query);
-        $isShowroomQuery = str_contains($normalizedQuery, 'showroom');
+        $matchedCategoryFromKeyword = $this->resolveStorefrontCategoryFromQuery($normalizedQuery);
+        $isShowroomQuery = preg_match('/\b(?:virtual\s+)?showroom\b/i', $query) === 1;
+        $isRepairQuery = preg_match('/\brepair(?:er|ers)?\b/i', $query) === 1;
+        $isRetailQuery = preg_match('/\bretail\b/i', $query) === 1;
         $isAllShopsQuery = preg_match('/\bshops?\b/i', $query) === 1
             || preg_match('/\bshop\s+profiles?\b/i', $query) === 1;
-        $showroomQualifier = trim((string) preg_replace('/\bshowroom\b/i', '', $query));
+        $showroomQualifier = trim((string) preg_replace('/\bvirtual\s+showroom\b|\bshowroom\b/i', '', $query));
+        $repairQualifier = trim((string) preg_replace('/\brepair(?:er|ers)?\b/i', '', $query));
+        $retailQualifier = trim((string) preg_replace('/\bretail\b/i', '', $query));
 
         if ($query === '') {
             return response()->json([
                 'query' => $query,
                 'products' => [],
                 'shops' => [],
+                'categories' => [],
             ]);
         }
 
         $products = Product::query()
             ->where('is_active', true)
-            ->where(function ($q) use ($query) {
+            ->where(function ($q) use ($query, $matchedCategoryFromKeyword) {
                 $q->where('name', 'like', "%{$query}%")
                     ->orWhere('brand', 'like', "%{$query}%")
                     ->orWhere('description', 'like', "%{$query}%")
                     ->orWhere('category', 'like', "%{$query}%");
+
+                if ($matchedCategoryFromKeyword !== null) {
+                    $q->orWhereRaw('LOWER(category) = ?', [$matchedCategoryFromKeyword]);
+                }
             })
             ->whereHas('shopOwner', function ($q) {
                 $q->where('status', 'approved');
@@ -148,17 +159,37 @@ class LandingPageController extends Controller
             })
             ->values();
 
+        $searchableCategories = $this->getSearchableStorefrontCategories();
+
+        $categories = collect($searchableCategories)
+            ->filter(function (string $category) use ($normalizedQuery, $matchedCategoryFromKeyword) {
+                return str_contains($category, $normalizedQuery)
+                    || str_contains($normalizedQuery, $category)
+                    || ($matchedCategoryFromKeyword !== null && $category === $matchedCategoryFromKeyword);
+            })
+            ->map(function (string $category) {
+                return [
+                    'slug' => $category,
+                    'label' => ucfirst($category),
+                    'url' => route('products', ['category' => $category]),
+                ];
+            })
+            ->values();
+
         $shopsQuery = ShopOwner::query()
-            ->where('status', 'approved');
+            ->where('status', 'approved')
+            ->withExists([
+                'premiumSubscriptions as has_active_premium' => function ($q) {
+                    $q->active();
+                },
+            ]);
 
         if ($isShowroomQuery) {
-            // Showroom search returns only shops that can actually showcase products.
+            // Showroom search should surface all premium-active shops, even without showroom items yet.
             $shopsQuery
-                ->whereIn('business_type', ['retail', 'both'])
-                ->whereIn('id', Product::query()
-                    ->where('is_active', true)
-                    ->select('shop_owner_id')
-                    ->distinct());
+                ->whereHas('premiumSubscriptions', function ($q) {
+                    $q->active();
+                });
 
             if ($showroomQualifier !== '') {
                 $shopsQuery->where(function ($q) use ($showroomQualifier) {
@@ -167,6 +198,32 @@ class LandingPageController extends Controller
                         ->orWhere('last_name', 'like', "%{$showroomQualifier}%")
                         ->orWhere('business_address', 'like', "%{$showroomQualifier}%")
                         ->orWhere('city_state', 'like', "%{$showroomQualifier}%");
+                });
+            }
+        } elseif ($isRepairQuery) {
+            // Repair query should include both pure repair and retail+repair shops.
+            $shopsQuery->whereIn('business_type', ['repair', 'both']);
+
+            if ($repairQualifier !== '') {
+                $shopsQuery->where(function ($q) use ($repairQualifier) {
+                    $q->where('business_name', 'like', "%{$repairQualifier}%")
+                        ->orWhere('first_name', 'like', "%{$repairQualifier}%")
+                        ->orWhere('last_name', 'like', "%{$repairQualifier}%")
+                        ->orWhere('business_address', 'like', "%{$repairQualifier}%")
+                        ->orWhere('city_state', 'like', "%{$repairQualifier}%");
+                });
+            }
+        } elseif ($isRetailQuery) {
+            // Retail query should include both pure retail and retail+repair shops.
+            $shopsQuery->whereIn('business_type', ['retail', 'both']);
+
+            if ($retailQualifier !== '') {
+                $shopsQuery->where(function ($q) use ($retailQualifier) {
+                    $q->where('business_name', 'like', "%{$retailQualifier}%")
+                        ->orWhere('first_name', 'like', "%{$retailQualifier}%")
+                        ->orWhere('last_name', 'like', "%{$retailQualifier}%")
+                        ->orWhere('business_address', 'like', "%{$retailQualifier}%")
+                        ->orWhere('city_state', 'like', "%{$retailQualifier}%");
                 });
             }
         } elseif ($isAllShopsQuery) {
@@ -184,8 +241,8 @@ class LandingPageController extends Controller
 
         $shops = $shopsQuery
             ->orderBy('business_name')
-            ->when(!$isAllShopsQuery, function ($q) use ($isShowroomQuery) {
-                $q->limit($isShowroomQuery ? 24 : 6);
+            ->when(!($isAllShopsQuery || $isShowroomQuery || $isRepairQuery || $isRetailQuery), function ($q) {
+                $q->limit(6);
             })
             ->get()
             ->map(function ($shop) {
@@ -205,7 +262,9 @@ class LandingPageController extends Controller
                     'location' => trim((string) $shop->city_state),
                     'image' => $image,
                     'url' => route('shop-profile', ['id' => $shop->id]),
-                    'virtual_showroom_url' => route('shop-profile.virtual-showroom', ['id' => $shop->id]),
+                    'virtual_showroom_url' => $shop->has_active_premium
+                        ? route('shop-profile.virtual-showroom', ['id' => $shop->id])
+                        : null,
                 ];
             })
             ->values();
@@ -214,6 +273,7 @@ class LandingPageController extends Controller
             'query' => $query,
             'products' => $products,
             'shops' => $shops,
+            'categories' => $categories,
         ]);
     }
 
@@ -505,9 +565,14 @@ class LandingPageController extends Controller
     /**
      * Display full-screen virtual showroom page
      */
-    public function virtualShowroom(string $id): Response
+    public function virtualShowroom(Request $request, string $id): Response
     {
-        [$shop, $products] = $this->buildShopProfileData($id, true);
+        $resolvedSubscription = $request->attributes->get('active_premium_subscription');
+        $activeSubscription = $resolvedSubscription instanceof ShopOwnerSubscription
+            ? $resolvedSubscription
+            : null;
+
+        [$shop, $products] = $this->buildShopProfileData($id, true, $activeSubscription);
 
         return Inertia::render('UserSide/Profile/VirtualShowroomPage', [
             'shop' => $shop,
@@ -518,7 +583,11 @@ class LandingPageController extends Controller
     /**
      * Shared payload builder for shop profile and virtual showroom pages.
      */
-    private function buildShopProfileData(string $id, bool $forVirtualShowroom = false): array
+    private function buildShopProfileData(
+        string $id,
+        bool $forVirtualShowroom = false,
+        ?ShopOwnerSubscription $activeSubscriptionOverride = null
+    ): array
     {
         if ($id === 'null' || !is_numeric($id)) {
             abort(404, 'Shop not found');
@@ -532,29 +601,27 @@ class LandingPageController extends Controller
         $activePremiumSubscription = null;
         $showroomSlotLimit = 60;
 
-        if ($forVirtualShowroom) {
+        if ($activeSubscriptionOverride && (int) $activeSubscriptionOverride->shop_owner_id === (int) $shopOwner->id) {
+            $activePremiumSubscription = $forVirtualShowroom
+                ? $activeSubscriptionOverride->loadMissing('premiumPlan')
+                : $activeSubscriptionOverride;
+        } else {
             $activePremiumSubscription = $shopOwner->premiumSubscriptions()
-                ->where('status', 'active')
-                ->where(function ($query) {
-                    $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+                ->when($forVirtualShowroom, function ($query) {
+                    $query->with('premiumPlan');
                 })
-                ->where(function ($query) {
-                    $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-                })
-                ->latest('ends_at')
+                ->active()
+                ->latest('starts_at')
+                ->latest('id')
                 ->first();
-
-            $showroomSlotLimit = max((int) ($activePremiumSubscription?->showroom_slot_limit ?? 60), 0);
         }
 
-        $products = Product::where('shop_owner_id', $id)
+        if ($forVirtualShowroom) {
+            $showroomSlotLimit = $this->resolveShowroomSlotLimit($activePremiumSubscription);
+        }
+
+        $baseProductsQuery = Product::where('shop_owner_id', $id)
             ->where('is_active', true)
-            ->when($forVirtualShowroom, function ($query) {
-                $query->where('is_featured', true);
-            })
-            ->when($forVirtualShowroom && $showroomSlotLimit > 0, function ($query) use ($showroomSlotLimit) {
-                $query->take($showroomSlotLimit);
-            })
             ->with([
                 'colorVariants' => function ($query) {
                     $query->active()->orderBy('sort_order');
@@ -564,8 +631,30 @@ class LandingPageController extends Controller
                 }
             ])
             ->orderByDesc('is_featured')
-            ->orderBy('created_at', 'desc')
-            ->get()
+            ->orderBy('created_at', 'desc');
+
+        if ($forVirtualShowroom) {
+            $featuredProductsQuery = (clone $baseProductsQuery)
+                ->where('is_featured', true)
+                ->when($showroomSlotLimit > 0, function ($query) use ($showroomSlotLimit) {
+                    $query->take($showroomSlotLimit);
+                });
+
+            $productsCollection = $featuredProductsQuery->get();
+
+            // Keep showroom populated for premium-active shops even if no items are marked featured yet.
+            if ($productsCollection->isEmpty()) {
+                $productsCollection = (clone $baseProductsQuery)
+                    ->when($showroomSlotLimit > 0, function ($query) use ($showroomSlotLimit) {
+                        $query->take($showroomSlotLimit);
+                    })
+                    ->get();
+            }
+        } else {
+            $productsCollection = $baseProductsQuery->get();
+        }
+
+        $products = $productsCollection
             ->map(function ($product) {
                 $mainImage = $product->main_image_url;
 
@@ -678,7 +767,10 @@ class LandingPageController extends Controller
             'saturday_close' => $shopOwner->saturday_close,
             'sunday_open' => $shopOwner->sunday_open,
             'sunday_close' => $shopOwner->sunday_close,
+            'has_active_premium' => (bool) $activePremiumSubscription,
             'showroom_slot_limit' => $forVirtualShowroom ? $showroomSlotLimit : null,
+            'showroom_plan_code' => $forVirtualShowroom ? ($activePremiumSubscription?->plan_code ?? null) : null,
+            'showroom_plan_name' => $forVirtualShowroom ? ($activePremiumSubscription?->premiumPlan?->name ?? null) : null,
         ];
 
         $isRepairCapableShop = in_array($normalizedBusinessType, ['repair', 'both'], true);
@@ -908,5 +1000,95 @@ class LandingPageController extends Controller
         $normalized = strtolower(trim((string) $value));
 
         return in_array($normalized, ['showroom_360', 'virtual_showroom', 'showroom', '360'], true);
+    }
+
+    /**
+     * Resolve showroom capacity for an active subscription with defensive fallbacks.
+     */
+    private function resolveShowroomSlotLimit(?ShopOwnerSubscription $subscription): int
+    {
+        if (!$subscription) {
+            return 60;
+        }
+
+        $planCode = strtolower(trim((string) $subscription->plan_code));
+        if (str_contains($planCode, 'basic')) {
+            return 48;
+        }
+        if (str_contains($planCode, 'premium')) {
+            return 84;
+        }
+        if (str_contains($planCode, 'pro')) {
+            return 60;
+        }
+
+        $planName = strtolower(trim((string) ($subscription->premiumPlan?->name ?? '')));
+        if (str_contains($planName, 'basic')) {
+            return 48;
+        }
+        if (str_contains($planName, 'premium')) {
+            return 84;
+        }
+        if (str_contains($planName, 'pro')) {
+            return 60;
+        }
+
+        $planLimit = (int) ($subscription->premiumPlan?->showroom_slot_limit ?? 0);
+        if ($planLimit > 0) {
+            return $planLimit;
+        }
+
+        $subscriptionLimit = (int) ($subscription->showroom_slot_limit ?? 0);
+        if ($subscriptionLimit > 0) {
+            return $subscriptionLimit;
+        }
+
+        return 60;
+    }
+
+    /**
+     * Supported storefront categories that should always be searchable.
+     *
+     * @return array<int, string>
+     */
+    private function getSearchableStorefrontCategories(): array
+    {
+        $fixedCategories = ['men', 'women', 'kids', 'sports'];
+
+        $databaseCategories = Product::query()
+            ->where('is_active', true)
+            ->whereNotNull('category')
+            ->where('category', '<>', '')
+            ->select('category')
+            ->distinct()
+            ->pluck('category')
+            ->map(fn ($value) => strtolower(trim((string) $value)))
+            ->filter(fn ($value) => $value !== '')
+            ->all();
+
+        $merged = array_values(array_unique(array_merge($fixedCategories, $databaseCategories)));
+        sort($merged);
+
+        return $merged;
+    }
+
+    private function resolveStorefrontCategoryFromQuery(string $normalizedQuery): ?string
+    {
+        $aliases = [
+            'men' => ['men', 'male', 'man', 'mens'],
+            'women' => ['women', 'woman', 'female', 'ladies', 'womens'],
+            'kids' => ['kids', 'kid', 'child', 'children', 'youth'],
+            'sports' => ['sports', 'sport', 'athletic', 'athletics'],
+        ];
+
+        foreach ($aliases as $category => $tokens) {
+            foreach ($tokens as $token) {
+                if (preg_match('/\\b' . preg_quote($token, '/') . '\\b/i', $normalizedQuery) === 1) {
+                    return $category;
+                }
+            }
+        }
+
+        return null;
     }
 }

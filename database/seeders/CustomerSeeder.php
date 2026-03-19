@@ -22,7 +22,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639124567801',
                 'age' => 28,
                 'address' => '124 P. Burgos Street, Makati City',
-                'password' => bcrypt('Password123'), // Valid: uppercase, lowercase, number, 8+ chars
+                'password' => bcrypt('miguel.rosa@example.com'), // Valid: uppercase, lowercase, number, 8+ chars
                 'status' => 'active',
                 'role' => null, // Regular customer (not staff)
                 'shop_owner_id' => null,
@@ -41,7 +41,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639171234567',
                 'age' => 25,
                 'address' => '789 Retail Plaza, Quezon City',
-                'password' => bcrypt('SecurePass2024'), // Valid password
+                'password' => bcrypt('maria.santos@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -60,7 +60,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639189876543',
                 'age' => 32,
                 'address' => '321 Mall of Asia Complex, Pasay City',
-                'password' => bcrypt('MyPass789'), // Valid password
+                'password' => bcrypt('john.tan@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -79,7 +79,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639195551234',
                 'age' => 45,
                 'address' => '555 Service Street, Taguig City',
-                'password' => bcrypt('Roberto2024!'), // Valid password
+                'password' => bcrypt('roberto.cruz@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -98,7 +98,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639176667890',
                 'age' => 29,
                 'address' => '888 Industrial Park, Mandaluyong City',
-                'password' => bcrypt('Patricia123'), // Valid password
+                'password' => bcrypt('patricia.reyes@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -117,7 +117,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639123456789',
                 'age' => 35,
                 'address' => '456 Commerce Ave, Metro Manila',
-                'password' => bcrypt('Carlos2024Pass'), // Valid password
+                'password' => bcrypt('carlos.mendoza@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -136,7 +136,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639987654321',
                 'age' => 22,
                 'address' => '101 University Ave, Manila',
-                'password' => bcrypt('AnnaGarcia99'), // Valid password
+                'password' => bcrypt('anna.garcia@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -155,7 +155,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639156781234',
                 'age' => 58,
                 'address' => '234 Retirement Village, Las Piñas',
-                'password' => bcrypt('Eduardo1965'), // Valid password
+                'password' => bcrypt('eduardo.lopez@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -174,7 +174,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639111222333',
                 'age' => 30,
                 'address' => '999 Test Street, Pasig City',
-                'password' => bcrypt('SuspendTest123'), // Valid password
+                'password' => bcrypt('suspended.customer@example.com'), // Valid password
                 'status' => 'suspended',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -193,7 +193,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639222333444',
                 'age' => 27,
                 'address' => '777 Test Avenue, Muntinlupa',
-                'password' => bcrypt('InactiveTest456'), // Valid password
+                'password' => bcrypt('inactive.customer@example.com'), // Valid password
                 'status' => 'inactive',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -212,7 +212,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639333444555',
                 'age' => 21,
                 'address' => '888 Startup Street, BGC Taguig',
-                'password' => bcrypt('Newbie2024Pass'), // Valid password
+                'password' => bcrypt('newbie.customer@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
@@ -233,7 +233,7 @@ class CustomerSeeder extends Seeder
                 'phone' => '+639444555666',
                 'age' => 38,
                 'address' => '555 Shopping District, Ortigas',
-                'password' => bcrypt('FrequentBuy99'), // Valid password
+                'password' => bcrypt('frequent.customer@example.com'), // Valid password
                 'status' => 'active',
                 'role' => null,
                 'shop_owner_id' => null,
