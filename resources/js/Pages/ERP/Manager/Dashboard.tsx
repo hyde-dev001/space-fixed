@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useManagerStats } from '../../../hooks/useManagerApi';
@@ -11,6 +11,36 @@ interface ManagerDashboardStats {
     totalSales: number;
     totalRepairs: number;
     pendingJobOrders: number;
+    dateRange?: {
+        key: string;
+        label: string;
+        start: string;
+        end: string;
+        previous_start: string;
+        previous_end: string;
+        timezone: string;
+    };
+    kpiBreakdown?: {
+        retail: {
+            completed_orders: number;
+            pending_orders: number;
+            period_revenue: number;
+        };
+        repair: {
+            completed_jobs: number;
+            pending_jobs: number;
+            closed_rejected: number;
+        };
+        combined: {
+            completed_work_items_in_period: number;
+            pending_work_queue: number;
+        };
+    };
+    kpiSemantics?: {
+        totalSales: string;
+        totalRepairs: string;
+        pendingJobOrders: string;
+    };
     salesChange?: number;
     activeStaff?: number;
     pendingApprovals?: number;
@@ -65,6 +95,24 @@ interface PendingLeave {
     reason: string;
     created_at: string;
     days_pending: number;
+}
+
+interface DashboardDrilldownSnapshot {
+    inventory: {
+        total_quantity: number;
+        low_stock_count: number;
+        out_of_stock_count: number;
+    };
+    products: {
+        total: number;
+        active: number;
+        inactive: number;
+    };
+    reports: {
+        reports_generated: number;
+        pending_issues: number;
+        reports_sent: number;
+    };
 }
 
 type MetricColor = 'success' | 'error' | 'warning' | 'info';
@@ -197,12 +245,30 @@ const MetricCard = ({
     );
 };
 
-// Daily/Monthly Performance Chart Component
-const PerformanceChart: React.FC = () => {
-    const [chartView, setChartView] = useState<'daily' | 'monthly'>('daily');
+interface PerformanceChartProps {
+    monthlyRevenue?: Array<{
+        month: string;
+        revenue: number;
+    }>;
+}
 
-    const dailyOptions: ApexOptions = {
-        colors: ["#3170c4", "#f59e0b"],
+const PerformanceChart: React.FC<PerformanceChartProps> = ({ monthlyRevenue = [] }) => {
+    const chartPoints = useMemo(() => {
+        return monthlyRevenue.map((entry) => {
+            const parsedMonth = new Date(`${entry.month}-01T00:00:00`);
+            const label = Number.isNaN(parsedMonth.getTime())
+                ? entry.month
+                : parsedMonth.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+            return {
+                label,
+                revenue: Number(entry.revenue || 0),
+            };
+        });
+    }, [monthlyRevenue]);
+
+    const options: ApexOptions = {
+        colors: ["#3170c4"],
         chart: {
             fontFamily: "Outfit, sans-serif",
             type: "bar",
@@ -221,20 +287,6 @@ const PerformanceChart: React.FC = () => {
                 borderRadius: 6,
             },
         },
-        states: {
-            hover: {
-                filter: {
-                    type: "darken",
-                    value: 0.15,
-                },
-            },
-            active: {
-                filter: {
-                    type: "darken",
-                    value: 0.15,
-                },
-            },
-        },
         xaxis: {
             axisBorder: {
                 show: false,
@@ -249,7 +301,7 @@ const PerformanceChart: React.FC = () => {
                     fontWeight: 500,
                 },
             },
-            categories: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            categories: chartPoints.map((point) => point.label),
         },
         yaxis: {
             labels: {
@@ -258,6 +310,7 @@ const PerformanceChart: React.FC = () => {
                     fontSize: "13px",
                     fontWeight: 500,
                 },
+                formatter: (value: number) => `₱${value.toLocaleString()}`,
             },
         },
         grid: {
@@ -276,165 +329,41 @@ const PerformanceChart: React.FC = () => {
             fontSize: 13,
         },
         tooltip: {
-            x: {
-                show: true,
-            },
             y: {
-                formatter: (val: number) => `$${val}k`,
+                formatter: (val: number) => `₱${val.toLocaleString()}`,
             },
         },
     };
 
-    const monthlOptions: ApexOptions = {
-        colors: ["#3170c4", "#f59e0b"],
-        chart: {
-            fontFamily: "Outfit, sans-serif",
-            type: "bar",
-            height: 350,
-            toolbar: {
-                show: false,
-            },
-            sparkline: {
-                enabled: false,
-            },
-        },
-        plotOptions: {
-            bar: {
-                columnWidth: "50%",
-                borderRadiusApplication: "end",
-                borderRadius: 6,
-            },
-        },
-        states: {
-            hover: {
-                filter: {
-                    type: "darken",
-                    value: 0.15,
-                },
-            },
-            active: {
-                filter: {
-                    type: "darken",
-                    value: 0.15,
-                },
-            },
-        },
-        xaxis: {
-            axisBorder: {
-                show: false,
-            },
-            axisTicks: {
-                show: false,
-            },
-            labels: {
-                style: {
-                    colors: "#6B7280",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                },
-            },
-            categories: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
-        },
-        yaxis: {
-            labels: {
-                style: {
-                    colors: "#6B7280",
-                    fontSize: "13px",
-                    fontWeight: 500,
-                },
-            },
-        },
-        grid: {
-            yaxis: {
-                lines: {
-                    show: true,
-                },
-            },
-        },
-        fill: {
-            opacity: 1,
-        },
-        legend: {
-            show: true,
-            position: "top",
-            fontSize: 13,
-        },
-        tooltip: {
-            x: {
-                show: true,
-            },
-            y: {
-                formatter: (val: number) => `$${val}k`,
-            },
-        },
-    };
-
-    const dailySeries = [
+    const series = [
         {
-            name: "Sales",
-            data: [12, 18, 15, 22, 28, 25, 30],
-        },
-        {
-            name: "Repairs",
-            data: [8, 12, 10, 14, 16, 14, 18],
-        },
-    ];
-
-    const monthlySeries = [
-        {
-            name: "Sales",
-            data: [65, 72, 78, 85, 92, 88, 95, 102, 98, 108, 115, 120],
-        },
-        {
-            name: "Repairs",
-            data: [45, 52, 48, 58, 65, 62, 70, 78, 75, 85, 92, 100],
+            name: "Revenue",
+            data: chartPoints.map((point) => point.revenue),
         },
     ];
 
     return (
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-                        Daily / Monthly Performance
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Sales and repairs performance overview
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setChartView('daily')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                            chartView === 'daily'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                        }`}
-                    >
-                        Daily
-                    </button>
-                    <button
-                        onClick={() => setChartView('monthly')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                            chartView === 'monthly'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                        }`}
-                    >
-                        Monthly
-                    </button>
-                </div>
+            <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+                    Monthly Revenue Performance
+                </h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Posted invoice revenue trend (API-backed)
+                </p>
             </div>
 
-            <div className="max-w-full overflow-x-auto custom-scrollbar">
-                <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2">
-                    {chartView === 'daily' ? (
-                        <Chart options={dailyOptions} series={dailySeries} type="bar" height={350} />
-                    ) : (
-                        <Chart options={monthlOptions} series={monthlySeries} type="bar" height={350} />
-                    )}
+            {chartPoints.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                    No revenue data available for the selected period.
                 </div>
-            </div>
+            ) : (
+                <div className="max-w-full overflow-x-auto custom-scrollbar">
+                    <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2">
+                        <Chart options={options} series={series} type="bar" height={350} />
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -859,11 +788,104 @@ const RecentActivitiesWidget = ({ activities }: RecentActivitiesProps) => {
 export default function ManagerDashboard() {
     const { auth } = usePage().props as any;
     const { data: statsData, isLoading, error, isError } = useManagerStats();
+    const [drilldown, setDrilldown] = useState<DashboardDrilldownSnapshot | null>(null);
+    const [drilldownLoading, setDrilldownLoading] = useState(true);
     const [clockedIn, setClockedIn] = useState(false);
     const [loginTime, setLoginTime] = useState<string | null>(null);
     const [logoutTime, setLogoutTime] = useState<string | null>(null);
     const [lunchBreakTime, setLunchBreakTime] = useState<string | null>(null);
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const fetchDrilldownSnapshot = async () => {
+            try {
+                setDrilldownLoading(true);
+
+                const [inventoryResult, productsResult, reportsResult] = await Promise.allSettled([
+                    fetch('/api/manager/inventory-overview?per_page=1', {
+                        credentials: 'include',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }),
+                    fetch('/api/manager/products?per_page=1', {
+                        credentials: 'include',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }),
+                    fetch('/api/manager/reports', {
+                        credentials: 'include',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }),
+                ]);
+
+                const parsePayload = async (result: PromiseSettledResult<Response>, source: string) => {
+                    if (result.status === 'rejected') {
+                        console.error(`Failed to fetch manager ${source} snapshot`, result.reason);
+                        return null;
+                    }
+
+                    if (!result.value.ok) {
+                        console.error(`Manager ${source} snapshot returned ${result.value.status}`);
+                        return null;
+                    }
+
+                    try {
+                        return await result.value.json();
+                    } catch (payloadError) {
+                        console.error(`Failed to parse manager ${source} snapshot payload`, payloadError);
+                        return null;
+                    }
+                };
+
+                const inventoryPayload = await parsePayload(inventoryResult, 'inventory');
+                const productsPayload = await parsePayload(productsResult, 'products');
+                const reportsPayload = await parsePayload(reportsResult, 'reports');
+
+                if (!isMounted) {
+                    return;
+                }
+
+                setDrilldown({
+                    inventory: {
+                        total_quantity: Number(inventoryPayload?.metrics?.total_quantity || 0),
+                        low_stock_count: Number(inventoryPayload?.metrics?.low_stock_count || 0),
+                        out_of_stock_count: Number(inventoryPayload?.metrics?.out_of_stock_count || 0),
+                    },
+                    products: {
+                        total: Number(productsPayload?.summary?.total || 0),
+                        active: Number(productsPayload?.summary?.active || 0),
+                        inactive: Number(productsPayload?.summary?.inactive || 0),
+                    },
+                    reports: {
+                        reports_generated: Number(reportsPayload?.metrics?.reports_generated || 0),
+                        pending_issues: Number(reportsPayload?.metrics?.pending_issues || 0),
+                        reports_sent: Number(reportsPayload?.metrics?.reports_sent || 0),
+                    },
+                });
+            } catch (drilldownError) {
+                console.error('Failed to load manager drilldown snapshot', drilldownError);
+            } finally {
+                if (isMounted) {
+                    setDrilldownLoading(false);
+                }
+            }
+        };
+
+        fetchDrilldownSnapshot();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const formatAttendanceTime = (date: Date) =>
         date.toLocaleTimeString('en-US', {
@@ -971,7 +993,7 @@ export default function ManagerDashboard() {
             changeType: (stats.salesChange || 0) >= 0 ? 'increase' : 'decrease',
             icon: DollarIconSvg,
             color: 'success',
-            description: 'Total posted sales revenue',
+            description: statsData.kpiSemantics?.totalSales || 'Posted invoice revenue for selected period',
         },
         {
             title: 'Total Repairs',
@@ -980,7 +1002,7 @@ export default function ManagerDashboard() {
             changeType: 'increase',
             icon: TaskIconSvg,
             color: 'info',
-            description: 'Completed repair jobs',
+            description: statsData.kpiSemantics?.totalRepairs || 'Completed repair jobs in selected period',
         },
         {
             title: 'Pending Job Orders',
@@ -989,9 +1011,13 @@ export default function ManagerDashboard() {
             changeType: stats.pendingJobOrders > 50 ? 'increase' : 'decrease',
             icon: AlertIconSvg,
             color: 'warning',
-            description: 'Jobs awaiting action',
+            description: statsData.kpiSemantics?.pendingJobOrders || 'Current open retail + repair queue',
         },
     ];
+
+    const completionRate = stats.totalRepairs > 0
+        ? `${((stats.totalRepairs / (stats.totalRepairs + stats.pendingJobOrders)) * 100).toFixed(1)}%`
+        : '0%';
 
     return (
         <AppLayoutERP>
@@ -1014,6 +1040,11 @@ export default function ManagerDashboard() {
                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                                 <span>Live data • Auto-refresh every 30s</span>
                             </div>
+                            {statsData?.dateRange?.label && (
+                                <p className="text-xs mt-1">
+                                    KPI period: {statsData.dateRange.label}
+                                </p>
+                            )}
                             {statsData?.lastUpdated && (
                                 <p className="text-xs mt-1">
                                     Last updated: {new Date(statsData.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
@@ -1041,7 +1072,64 @@ export default function ManagerDashboard() {
 
                 {/* Performance Chart */}
                 <div className="mb-8">
-                    <PerformanceChart />
+                    <PerformanceChart monthlyRevenue={statsData.monthlyRevenue || []} />
+                </div>
+
+                {/* Drilldown Convergence */}
+                <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+                    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Inventory Drilldown</h2>
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Jump to stock-focused API-backed views</p>
+                        {drilldownLoading ? (
+                            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading inventory snapshot...</p>
+                        ) : (
+                            <div className="mt-4 space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                                <p>Total Quantity: <span className="font-semibold">{drilldown?.inventory.total_quantity ?? 0}</span></p>
+                                <p>Low Stock: <span className="font-semibold">{drilldown?.inventory.low_stock_count ?? 0}</span></p>
+                                <p>Out of Stock: <span className="font-semibold">{drilldown?.inventory.out_of_stock_count ?? 0}</span></p>
+                            </div>
+                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            <Link href="/erp/manager/inventory-overview" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Open Inventory</Link>
+                            <Link href="/erp/manager/inventory-overview?status=Low%20Stock" className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Low Stock</Link>
+                        </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Products Drilldown</h2>
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Navigate directly into product lifecycle states</p>
+                        {drilldownLoading ? (
+                            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading product snapshot...</p>
+                        ) : (
+                            <div className="mt-4 space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                                <p>Total Products: <span className="font-semibold">{drilldown?.products.total ?? 0}</span></p>
+                                <p>Active: <span className="font-semibold">{drilldown?.products.active ?? 0}</span></p>
+                                <p>Inactive: <span className="font-semibold">{drilldown?.products.inactive ?? 0}</span></p>
+                            </div>
+                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            <Link href="/erp/manager/products" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Open Products</Link>
+                            <Link href="/erp/manager/products?status=Inactive" className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Inactive</Link>
+                        </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Reports Drilldown</h2>
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Open reports with generation context presets</p>
+                        {drilldownLoading ? (
+                            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading reports snapshot...</p>
+                        ) : (
+                            <div className="mt-4 space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                                <p>Generated: <span className="font-semibold">{drilldown?.reports.reports_generated ?? 0}</span></p>
+                                <p>Pending Issues: <span className="font-semibold">{drilldown?.reports.pending_issues ?? 0}</span></p>
+                                <p>Sent: <span className="font-semibold">{drilldown?.reports.reports_sent ?? 0}</span></p>
+                            </div>
+                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            <Link href="/erp/manager/reports" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Open Reports</Link>
+                            <Link href="/erp/manager/reports?report=sales&range=month&openGenerate=1" className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Generate Sales</Link>
+                        </div>
+                    </div>
                 </div>
 
                 {/* (Removed) Pending Leave Requests, Approval Summary, and Recent Activities */}
@@ -1082,10 +1170,7 @@ export default function ManagerDashboard() {
                         <div className="flex items-center justify-between">
                             <span className="text-gray-600 dark:text-gray-400">Completion Rate</span>
                             <span className="text-lg font-bold text-green-600">
-                                {stats.totalRepairs > 0 
-                                    ? `${((stats.totalRepairs / (stats.totalRepairs + stats.pendingJobOrders)) * 100).toFixed(1)}%`
-                                    : '0%'
-                                }
+                                {completionRate}
                             </span>
                         </div>
                     </div>
@@ -1095,7 +1180,6 @@ export default function ManagerDashboard() {
                 {showAttendanceModal && (
                     <div 
                         className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center p-4 z-[99999]"
-                        style={{ backdropFilter: 'blur(10px)' }}
                         onClick={() => setShowAttendanceModal(false)}
                     >
                         <div 
@@ -1108,6 +1192,8 @@ export default function ManagerDashboard() {
                                 <button
                                     onClick={() => setShowAttendanceModal(false)}
                                     className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                    title="Close attendance history"
+                                    aria-label="Close attendance history"
                                 >
                                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

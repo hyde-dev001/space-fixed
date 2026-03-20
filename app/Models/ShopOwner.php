@@ -62,7 +62,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'registration_type',    // Individual or company registration
         'high_value_threshold', // Approval threshold for high value repairs
         'require_two_way_approval', // Require owner approval on high value repairs
-        'repair_payment_policy', // deposit_50 | full_upfront | pay_after
+        'repair_payment_policy', // deposit_50 | full_upfront
         'repair_workload_limit', // Max concurrent active repairs (default 20)
         'paymongo_secret_key',  // Encrypted PayMongo secret key for this shop
         'operating_hours',      // JSON field storing weekly schedule

@@ -90,32 +90,6 @@ export interface PurchaseOrder {
     updated_at: string;
 }
 
-export interface ReplenishmentRequest {
-    id: number;
-    request_number: string;
-    shop_owner_id: number;
-    inventory_item_id: number;
-    inventory_item?: InventoryItem;
-    product_name: string;
-    sku_code: string;
-    quantity_needed: number;
-    priority: 'high' | 'medium' | 'low';
-    priority_label?: string;
-    status: 'pending' | 'accepted' | 'rejected' | 'needs_details';
-    status_label?: string;
-    requested_by: number;
-    requester?: User;
-    requested_date: string;
-    reviewed_by?: number;
-    reviewer?: User;
-    reviewed_date?: string;
-    notes?: string;
-    response_notes?: string;
-    days_pending?: number;
-    created_at: string;
-    updated_at: string;
-}
-
 export interface StockRequestApproval {
     id: number;
     request_number: string;
@@ -246,14 +220,6 @@ export interface PurchaseOrderFilters {
     per_page?: number;
 }
 
-export interface ReplenishmentRequestFilters {
-    search?: string;
-    status?: string;
-    priority?: string;
-    page?: number;
-    per_page?: number;
-}
-
 export interface StockRequestFilters {
     search?: string;
     status?: string;
@@ -323,27 +289,6 @@ export interface CancelPurchaseOrderPayload {
     cancellation_reason: string;
 }
 
-export interface CreateReplenishmentRequestPayload {
-    inventory_item_id: number;
-    product_name: string;
-    sku_code: string;
-    quantity_needed: number;
-    priority: 'high' | 'medium' | 'low';
-    notes: string;
-}
-
-export interface AcceptReplenishmentRequestPayload {
-    response_notes?: string;
-}
-
-export interface RejectReplenishmentRequestPayload {
-    response_notes: string;
-}
-
-export interface RequestReplenishmentDetailsPayload {
-    response_notes: string;
-}
-
 export interface ApproveStockRequestPayload {
     approval_notes?: string;
     auto_create_pr?: boolean;
@@ -354,7 +299,7 @@ export interface RejectStockRequestPayload {
 }
 
 export interface RequestStockDetailsPayload {
-    response_notes: string;
+    approval_notes: string;
 }
 
 export interface CreateSupplierPayload {

@@ -266,6 +266,52 @@ export default function RequestApproval() {
 		}
 	};
 
+	const handleRequestDetails = async (request: StockRequestApproval) => {
+		const result = await Swal.fire({
+			title: "Request more details",
+			input: "textarea",
+			inputLabel: "Message to requester",
+			inputPlaceholder: "Specify what information is still needed...",
+			showCancelButton: true,
+			confirmButtonText: "Send request",
+			confirmButtonColor: "#d97706",
+			inputValidator: (value) => {
+				if (!value || value.trim().length < 10) {
+					return "Please provide at least 10 characters.";
+				}
+				return null;
+			},
+		});
+
+		if (!result.isConfirmed || !result.value) {
+			return;
+		}
+
+		try {
+			setActionLoading(true);
+			const updated = await requestMaterialApprovalApi.requestDetails(request.id, {
+				approval_notes: result.value,
+			});
+			upsertRequest(updated);
+			setSelectedRequest(null);
+			await Swal.fire({
+				icon: "success",
+				title: "Details requested",
+				text: `${request.request_number} is marked as Needs Details.`,
+				confirmButtonColor: "#2563eb",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: "error",
+				title: "Request failed",
+				text: error?.response?.data?.message || "Failed to request additional details.",
+				confirmButtonColor: "#dc2626",
+			});
+		} finally {
+			setActionLoading(false);
+		}
+	};
+
 	const isReviewModalOpen = Boolean(selectedRequest);
 
 	return (
@@ -500,6 +546,13 @@ export default function RequestApproval() {
 								className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300"
 							>
 								Close
+							</button>
+							<button
+								onClick={() => handleRequestDetails(selectedRequest)}
+								disabled={actionLoading || selectedRequest.status !== "pending"}
+								className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+							>
+								{actionLoading ? "Processing..." : "Request Details"}
 							</button>
 							<button
 								onClick={() => handleReject(selectedRequest)}

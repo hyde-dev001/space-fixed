@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\ERP\PurchaseRequestController;
 use App\Http\Controllers\ERP\PurchaseOrderController;
-use App\Http\Controllers\ERP\ReplenishmentRequestController;
 use App\Http\Controllers\ERP\StockRequestApprovalController;
 use App\Http\Controllers\ERP\SupplierController;
 use App\Http\Controllers\ERP\ProcurementSettingsController;
@@ -54,16 +53,21 @@ Route::middleware([
         Route::post('/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->name('procurement.purchase-orders.cancel');
     });
     
-    // Replenishment Requests Routes
+    // Replenishment Requests Routes (deprecated alias -> stock requests)
     Route::prefix('replenishment-requests')->group(function () {
-        Route::get('/', [ReplenishmentRequestController::class, 'index'])->name('procurement.replenishment-requests.index');
-        Route::post('/', [ReplenishmentRequestController::class, 'store'])->name('procurement.replenishment-requests.store');
-        Route::get('/{id}', [ReplenishmentRequestController::class, 'show'])->name('procurement.replenishment-requests.show');
-        Route::put('/{id}', [ReplenishmentRequestController::class, 'update'])->name('procurement.replenishment-requests.update');
-        Route::delete('/{id}', [ReplenishmentRequestController::class, 'destroy'])->name('procurement.replenishment-requests.destroy');
-        Route::post('/{id}/accept', [ReplenishmentRequestController::class, 'accept'])->name('procurement.replenishment-requests.accept');
-        Route::post('/{id}/reject', [ReplenishmentRequestController::class, 'reject'])->name('procurement.replenishment-requests.reject');
-        Route::post('/{id}/request-details', [ReplenishmentRequestController::class, 'requestDetails'])->name('procurement.replenishment-requests.request-details');
+        Route::get('/', [StockRequestApprovalController::class, 'index'])->name('procurement.replenishment-requests.index');
+        Route::get('/metrics', [StockRequestApprovalController::class, 'getMetrics'])->name('procurement.replenishment-requests.metrics');
+        Route::post('/', [StockRequestApprovalController::class, 'store'])->name('procurement.replenishment-requests.store');
+        Route::get('/{id}', [StockRequestApprovalController::class, 'show'])->name('procurement.replenishment-requests.show');
+        Route::put('/{id}', fn () => response()->json([
+            'message' => 'Replenishment update endpoint is deprecated. Use stock requests instead.',
+        ], 410))->name('procurement.replenishment-requests.update');
+        Route::delete('/{id}', fn () => response()->json([
+            'message' => 'Replenishment delete endpoint is deprecated. Use stock requests instead.',
+        ], 410))->name('procurement.replenishment-requests.destroy');
+        Route::post('/{id}/accept', [StockRequestApprovalController::class, 'approve'])->name('procurement.replenishment-requests.accept');
+        Route::post('/{id}/reject', [StockRequestApprovalController::class, 'reject'])->name('procurement.replenishment-requests.reject');
+        Route::post('/{id}/request-details', [StockRequestApprovalController::class, 'requestDetails'])->name('procurement.replenishment-requests.request-details');
     });
     
     // Stock Request Approvals Routes

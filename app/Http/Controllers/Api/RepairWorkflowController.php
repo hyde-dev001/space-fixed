@@ -1677,7 +1677,6 @@ class RepairWorkflowController extends Controller
     {
         return match ($repairRequest->payment_policy ?? 'deposit_50') {
             'deposit_50' => 'Customer must pay the remaining 50% balance before receive confirmation can be activated.',
-            'pay_after' => 'Customer must complete the pay-after payment before receive confirmation can be activated.',
             'full_upfront' => 'Customer payment must be completed before receive confirmation can be activated.',
             default => 'Customer payment must be completed before receive confirmation can be activated.',
         };
@@ -2010,10 +2009,13 @@ class RepairWorkflowController extends Controller
             $repairRequest = $query->whereIn('status', ['ready_for_pickup', 'ready-for-pickup'])
                 ->firstOrFail();
 
-            if (($repairRequest->delivery_method ?? null) !== 'pickup') {
+            $effectiveReturnMethod = $repairRequest->return_delivery_method
+                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
+
+            if ($effectiveReturnMethod === 'walk_in') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Walk-in repairs cannot be marked as shipped. Use the receive/pickup confirmation flow instead.',
+                    'message' => 'Customer pick-up orders cannot be marked as shipped. Use the receive/pickup confirmation flow instead.',
                 ], 422);
             }
 
@@ -2076,11 +2078,19 @@ class RepairWorkflowController extends Controller
                 'ready-for-pickup', 'picked_up', 'cancelled', 'rejected',
             ])->firstOrFail();
 
-            $repairRequest->update(['delivery_method' => $validated['delivery_method']]);
+            $repairRequest->update([
+                'delivery_method' => $validated['delivery_method'],
+                'intake_delivery_method' => $validated['delivery_method'] === 'walk_in' ? 'walk_in' : 'customer_delivery',
+                'intake_address' => $validated['delivery_method'] === 'walk_in'
+                    ? null
+                    : ($repairRequest->intake_address ?? $repairRequest->pickup_address),
+                'pickup_address' => $validated['delivery_method'] === 'walk_in' ? null : $repairRequest->pickup_address,
+            ]);
 
             return response()->json([
                 'success'         => true,
                 'delivery_method' => $repairRequest->delivery_method,
+                'intake_delivery_method' => $repairRequest->intake_delivery_method,
                 'message'         => 'Delivery method updated successfully.',
             ]);
 

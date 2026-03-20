@@ -1131,98 +1131,113 @@ const ProductShow: React.FC = () => {
               </div>
 
               {showSizeChart && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowSizeChart(false)}>
-                  <div className="bg-white rounded-lg max-w-2xl w-[90%] p-6 text-black" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-start justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-black">Size Chart</h3>
-                      <button onClick={() => setShowSizeChart(false)} className="text-black hover:text-gray-600 text-xl" title="Close" aria-label="Close">×</button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4" onClick={() => setShowSizeChart(false)}>
+                  <div
+                    className="w-[94vw] max-h-[86vh] overflow-hidden rounded-2xl bg-white text-black shadow-2xl sm:max-h-[90vh] sm:w-[90%] sm:max-w-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="sticky top-0 z-10 border-b border-gray-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-black sm:text-lg">Size Chart</h3>
+                          <p className="mt-0.5 text-[11px] text-gray-500 sm:text-xs">Choose the closest foot length for a better fit.</p>
+                        </div>
+                        <button
+                          onClick={() => setShowSizeChart(false)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-black transition-colors hover:bg-gray-100 hover:text-gray-600"
+                          title="Close"
+                          aria-label="Close"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
 
                     {/* Shoe size chart (approximate conversions). Replace with product-specific chart if available. */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border-collapse text-black">
-                        <thead>
+                    <div className="max-h-[calc(86vh-86px)] overflow-auto px-2 pb-4 sm:max-h-[calc(90vh-88px)] sm:px-4 sm:pb-5">
+                      <table className="w-full min-w-[520px] border-collapse text-[12px] text-black sm:text-sm">
+                        <thead className="sticky top-0 z-[1] bg-white">
                           <tr className="text-left">
-                            <th className="pb-2">US</th>
-                            <th className="pb-2">UK</th>
-                            <th className="pb-2">AU</th>
-                            <th className="pb-2">EU</th>
-                            <th className="pb-2">CN</th>
-                            <th className="pb-2">Foot Length (cm)</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold sm:px-3">US</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold sm:px-3">UK</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold sm:px-3">AU</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold sm:px-3">EU</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold sm:px-3">CN</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold sm:px-3">Foot Length (cm)</th>
                           </tr>
                         </thead>
                         <tbody>
-                          <tr className="border-t">
-                            <td className="py-2 text-black">5</td>
-                            <td className="py-2 text-black">4.5</td>
-                            <td className="py-2 text-black">4.5</td>
-                            <td className="py-2 text-black">37</td>
-                            <td className="py-2 text-black">235</td>
-                            <td className="py-2 text-black">23.1</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 text-black sm:px-3">5</td>
+                            <td className="px-2 py-2 text-black sm:px-3">4.5</td>
+                            <td className="px-2 py-2 text-black sm:px-3">4.5</td>
+                            <td className="px-2 py-2 text-black sm:px-3">37</td>
+                            <td className="px-2 py-2 text-black sm:px-3">235</td>
+                            <td className="px-2 py-2 text-black sm:px-3">23.1</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">6</td>
-                            <td className="py-2">5.5</td>
-                            <td className="py-2">5.5</td>
-                            <td className="py-2">38</td>
-                            <td className="py-2">240</td>
-                            <td className="py-2">24.1</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">6</td>
+                            <td className="px-2 py-2 sm:px-3">5.5</td>
+                            <td className="px-2 py-2 sm:px-3">5.5</td>
+                            <td className="px-2 py-2 sm:px-3">38</td>
+                            <td className="px-2 py-2 sm:px-3">240</td>
+                            <td className="px-2 py-2 sm:px-3">24.1</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">7</td>
-                            <td className="py-2">6.5</td>
-                            <td className="py-2">6.5</td>
-                            <td className="py-2">40</td>
-                            <td className="py-2">255</td>
-                            <td className="py-2">25.4</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">7</td>
+                            <td className="px-2 py-2 sm:px-3">6.5</td>
+                            <td className="px-2 py-2 sm:px-3">6.5</td>
+                            <td className="px-2 py-2 sm:px-3">40</td>
+                            <td className="px-2 py-2 sm:px-3">255</td>
+                            <td className="px-2 py-2 sm:px-3">25.4</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">8</td>
-                            <td className="py-2">7.5</td>
-                            <td className="py-2">7.5</td>
-                            <td className="py-2">41</td>
-                            <td className="py-2">260</td>
-                            <td className="py-2">26.0</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">8</td>
+                            <td className="px-2 py-2 sm:px-3">7.5</td>
+                            <td className="px-2 py-2 sm:px-3">7.5</td>
+                            <td className="px-2 py-2 sm:px-3">41</td>
+                            <td className="px-2 py-2 sm:px-3">260</td>
+                            <td className="px-2 py-2 sm:px-3">26.0</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">9</td>
-                            <td className="py-2">8.5</td>
-                            <td className="py-2">8.5</td>
-                            <td className="py-2">42</td>
-                            <td className="py-2">270</td>
-                            <td className="py-2">27.0</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">9</td>
+                            <td className="px-2 py-2 sm:px-3">8.5</td>
+                            <td className="px-2 py-2 sm:px-3">8.5</td>
+                            <td className="px-2 py-2 sm:px-3">42</td>
+                            <td className="px-2 py-2 sm:px-3">270</td>
+                            <td className="px-2 py-2 sm:px-3">27.0</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">10</td>
-                            <td className="py-2">9.5</td>
-                            <td className="py-2">9.5</td>
-                            <td className="py-2">44</td>
-                            <td className="py-2">280</td>
-                            <td className="py-2">28.0</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">10</td>
+                            <td className="px-2 py-2 sm:px-3">9.5</td>
+                            <td className="px-2 py-2 sm:px-3">9.5</td>
+                            <td className="px-2 py-2 sm:px-3">44</td>
+                            <td className="px-2 py-2 sm:px-3">280</td>
+                            <td className="px-2 py-2 sm:px-3">28.0</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">11</td>
-                            <td className="py-2">10.5</td>
-                            <td className="py-2">10.5</td>
-                            <td className="py-2">45</td>
-                            <td className="py-2">285</td>
-                            <td className="py-2">28.7</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">11</td>
+                            <td className="px-2 py-2 sm:px-3">10.5</td>
+                            <td className="px-2 py-2 sm:px-3">10.5</td>
+                            <td className="px-2 py-2 sm:px-3">45</td>
+                            <td className="px-2 py-2 sm:px-3">285</td>
+                            <td className="px-2 py-2 sm:px-3">28.7</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">12</td>
-                            <td className="py-2">11.5</td>
-                            <td className="py-2">11.5</td>
-                            <td className="py-2">46</td>
-                            <td className="py-2">294</td>
-                            <td className="py-2">29.4</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">12</td>
+                            <td className="px-2 py-2 sm:px-3">11.5</td>
+                            <td className="px-2 py-2 sm:px-3">11.5</td>
+                            <td className="px-2 py-2 sm:px-3">46</td>
+                            <td className="px-2 py-2 sm:px-3">294</td>
+                            <td className="px-2 py-2 sm:px-3">29.4</td>
                           </tr>
-                          <tr className="border-t">
-                            <td className="py-2">13</td>
-                            <td className="py-2">12.5</td>
-                            <td className="py-2">12.5</td>
-                            <td className="py-2">47</td>
-                            <td className="py-2">302</td>
-                            <td className="py-2">30.2</td>
+                          <tr className="border-t border-gray-100">
+                            <td className="px-2 py-2 sm:px-3">13</td>
+                            <td className="px-2 py-2 sm:px-3">12.5</td>
+                            <td className="px-2 py-2 sm:px-3">12.5</td>
+                            <td className="px-2 py-2 sm:px-3">47</td>
+                            <td className="px-2 py-2 sm:px-3">302</td>
+                            <td className="px-2 py-2 sm:px-3">30.2</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1654,29 +1669,30 @@ const ProductShow: React.FC = () => {
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vouchers</p>
                   <h2 className="mt-1 text-sm font-bold text-slate-900 sm:text-base">Claim Available Vouchers</h2>
+                  <p className="mt-1 text-[11px] text-slate-500 lg:hidden">Swipe left to view more offers.</p>
                 </div>
               </div>
 
-              <div className="mt-4 flex gap-3 overflow-x-auto pb-1 lg:justify-center">
+              <div className="-mx-1 mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:justify-center lg:overflow-visible lg:px-0">
                 {staticVoucherCampaigns.map((campaign) => {
                   const isClaimed = claimedPromoIds.includes(campaign.id);
 
                   return (
                     <div
                       key={campaign.id}
-                      className="min-w-70 shrink-0 rounded-2xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:min-w-80"
+                      className="w-[82vw] max-w-[320px] shrink-0 snap-start rounded-2xl border border-white/80 bg-white/90 p-3.5 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:w-auto sm:min-w-80 sm:max-w-none sm:p-4"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700 ring-1 ring-inset ring-blue-200">
                           Voucher
                         </span>
-                        <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500">{campaign.code}</span>
+                        <span className="truncate text-[10px] font-semibold tracking-[0.12em] text-slate-500 sm:text-[11px]">{campaign.code}</span>
                       </div>
 
-                      <p className="mt-3 text-sm font-semibold text-slate-900">{campaign.name}</p>
+                      <p className="mt-2.5 text-sm font-semibold text-slate-900">{campaign.name}</p>
                       <p className="mt-1 text-xs font-medium text-slate-700">{campaign.value}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{campaign.minSpend}</p>
-                      <p className="mt-1 text-[11px] text-slate-400">{campaign.schedule}</p>
+                      <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{campaign.schedule}</p>
 
                       <button
                         type="button"

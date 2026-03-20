@@ -24,7 +24,6 @@ class Expense extends Model
         'amount',
         'tax_amount',
         'status',
-        'journal_entry_id',
         'expense_account_id',
         'payment_account_id',
         'approved_by',
@@ -46,11 +45,6 @@ class Expense extends Model
         'approved_at' => 'datetime',
         'meta' => 'array',
     ];
-
-    public function journalEntry()
-    {
-        return $this->belongsTo(JournalEntry::class, 'journal_entry_id');
-    }
 
     public function supplierOrder()
     {

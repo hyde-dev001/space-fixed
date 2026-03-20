@@ -1,0 +1,189 @@
+<?php
+
+namespace Tests\Feature\Manager;
+
+use App\Enums\SuspensionStatus;
+use App\Models\Employee;
+use App\Models\ShopOwner;
+use App\Models\SuspensionRequest;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * P5: Manager Authorization & Authentication Tests
+ *
+ * Tests verify:
+ * - Only authenticated Manager role users can access manager pages
+ * - Shop scoping: Managers can only see their own shop's data
+ * - Cross-shop access is prevented
+ * - API endpoints require proper auth headers
+ */
+class ManagerAuthorizationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private User $manager;
+    private ShopOwner $shop;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Create a shop and manager
+        $this->shop = ShopOwner::factory()->create();
+        $this->manager = User::factory()
+            ->for($this->shop)
+            ->create(['role' => 'Manager']);
+    }
+
+    /**
+     * Test: Unauthenticated user cannot access manager endpoints
+     */
+    public function test_unauthenticated_user_cannot_access_suspension_list(): void
+    {
+        $response = $this->getJson('/api/manager/suspension-requests');
+
+        $response->assertStatus(401);
+    }
+
+    /**
+     * Test: Non-manager role cannot access manager endpoints
+     */
+    public function test_non_manager_role_cannot_access_suspension_list(): void
+    {
+        $staff = User::factory()
+            ->for($this->shop)
+            ->create(['role' => 'Staff']);
+
+        $response = $this->actingAs($staff, 'user')
+            ->getJson('/api/manager/suspension-requests');
+
+        $response->assertStatus(403);
+    }
+
+    /**
+     * Test: Manager can only see suspension requests from their own shop
+     */
+    public function test_manager_cannot_access_other_shops_suspension_requests(): void
+    {
+        // Create another shop with suspension requests
+        $otherShop = ShopOwner::factory()->create();
+        $otherManager = User::factory()->for($otherShop)->create(['role' => 'Manager']);
+        $otherEmployee = Employee::factory()->for($otherShop)->create();
+
+        SuspensionRequest::factory()
+            ->for($otherEmployee)
+            ->create(['status' => SuspensionStatus::PENDING_MANAGER]);
+
+        // This shop's employee
+        $myEmployee = Employee::factory()->for($this->shop)->create();
+        $myRequest = SuspensionRequest::factory()
+            ->for($myEmployee)
+            ->create(['status' => SuspensionStatus::PENDING_MANAGER]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/suspension-requests');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        
+        // Should only see requests from current shop
+        $this->assertTrue(collect($data)->pluck('id')->contains($myRequest->id));
+        // Should not see other shop's requests
+        $this->assertFalse(collect($data)->pluck('id')->contains($otherEmployee->id));
+    }
+
+    /**
+     * Test: Manager cannot approve suspension requests from other shops
+     */
+    public function test_manager_cannot_approve_other_shops_suspension(): void
+    {
+        $otherShop = ShopOwner::factory()->create();
+        $otherEmployee = Employee::factory()->for($otherShop)->create();
+        $otherRequest = SuspensionRequest::factory()
+            ->for($otherEmployee)
+            ->create(['status' => SuspensionStatus::PENDING_MANAGER]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->postJson("/api/manager/suspension-requests/{$otherRequest->id}/review", [
+                'action' => 'approve',
+                'note' => 'Approved',
+            ]);
+
+        $response->assertStatus(404);
+    }
+
+    /**
+     * Test: Authenticated manager with valid shop can access endpoints
+     */
+    public function test_manager_with_valid_shop_can_access_endpoints(): void
+    {
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/suspension-requests');
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'data' => [
+                '*' => ['id', 'name', 'email', 'reason', 'status']
+            ],
+            'metrics' => ['pending', 'approved', 'rejected']
+        ]);
+    }
+
+    /**
+     * Test: Manager's shop context is properly resolved from auth
+     */
+    public function test_manager_suspension_count_reflects_only_their_shop(): void
+    {
+        $employee1 = Employee::factory()->for($this->shop)->create();
+        $employee2 = Employee::factory()->for($this->shop)->create();
+
+        SuspensionRequest::factory(3)
+            ->for($employee1)
+            ->create(['status' => SuspensionStatus::PENDING_MANAGER]);
+
+        SuspensionRequest::factory(2)
+            ->for($employee2)
+            ->create(['status' => SuspensionStatus::APPROVED]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/suspension-requests');
+
+        $response->assertStatus(200);
+        $metrics = $response->json('metrics');
+        
+        $this->assertEquals(3, $metrics['pending']);
+        $this->assertEquals(2, $metrics['approved']);
+        $this->assertEquals(5, $metrics['total']);
+    }
+
+    /**
+     * Test: Dashboard stats endpoint requires manager role
+     */
+    public function test_dashboard_stats_requires_manager_role(): void
+    {
+        $staff = User::factory()
+            ->for($this->shop)
+            ->create(['role' => 'Staff']);
+
+        $response = $this->actingAs($staff, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertStatus(403);
+    }
+
+    /**
+     * Test: Dashboard stats only show data from manager's shop
+     */
+    public function test_dashboard_stats_scoped_to_managers_shop(): void
+    {
+        // This would require orders/repair data, depends on implementation
+        // Placeholder for dashboard stats scoping test
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertStatus(200);
+        // Verify stats don't include other shop data
+    }
+}

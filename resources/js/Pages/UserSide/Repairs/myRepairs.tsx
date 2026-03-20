@@ -24,7 +24,29 @@ type RepairOrder = {
   image?: string;
   conversation_id?: number | null;
   delivery_method?: string;
-  pickup_address?: string;
+  intake_delivery_method?: 'walk_in' | 'customer_delivery' | string;
+  intake_address?: {
+    address_line?: string;
+    barangay?: string;
+    city?: string;
+    region?: string;
+    postal_code?: string;
+  } | null;
+  return_delivery_method?: 'walk_in' | 'customer_pickup' | 'shop_delivery' | string;
+  return_address?: {
+    address_line?: string;
+    barangay?: string;
+    city?: string;
+    region?: string;
+    postal_code?: string;
+  } | null;
+  pickup_address?: string | {
+    address_line?: string;
+    barangay?: string;
+    city?: string;
+    region?: string;
+    postal_code?: string;
+  } | null;
   payment_status?: string;
   payment_completed_at?: string | null;
   paymongo_link_id?: string | null;
@@ -40,7 +62,7 @@ type RepairOrder = {
   shipped_at?: string | null;
   assigned_repairer_id?: number | null;
   repairer_name?: string | null;
-  payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
+  payment_policy?: 'deposit_50' | 'full_upfront';
   shop_owner_id?: number | null;
   repair_package_id?: number | null;
   package_price?: number | null;
@@ -87,7 +109,7 @@ const getMonthKey = (date: Date): string => {
 
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
 
-const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walkin' | 'pickup') => {
+const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walk_in' | 'customer_pickup' | 'shop_delivery') => {
   try {
     const raw = localStorage.getItem(DELIVERY_METHOD_OVERRIDES_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
@@ -104,6 +126,46 @@ const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walkin' |
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
 const getOrderGrandTotal = (order: RepairOrder) => Number(order.final_total ?? order.total_amount ?? 0);
 const getOrderMaterialsTotal = (order: RepairOrder) => Number(order.materials_total ?? order.pricing_breakdown?.materials_total ?? 0);
+
+const getIntakeMethod = (order: RepairOrder): 'walk_in' | 'customer_delivery' => {
+  if (order.intake_delivery_method === 'walk_in' || order.intake_delivery_method === 'customer_delivery') {
+    return order.intake_delivery_method;
+  }
+
+  return order.delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery';
+};
+
+const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 'shop_delivery' => {
+  if (
+    order.return_delivery_method === 'walk_in' ||
+    order.return_delivery_method === 'customer_pickup' ||
+    order.return_delivery_method === 'shop_delivery'
+  ) {
+    return order.return_delivery_method;
+  }
+
+  return order.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup';
+};
+
+const getIntakeMethodLabel = (order: RepairOrder): string => {
+  return getIntakeMethod(order) === 'walk_in'
+    ? 'Walk-in Delivery to Shop'
+    : 'Customer Arranges Delivery to Shop';
+};
+
+const getReturnMethodLabel = (order: RepairOrder): string => {
+  const returnMethod = getReturnMethod(order);
+
+  if (returnMethod === 'walk_in') {
+    return 'Customer Pick-up at Shop';
+  }
+
+  if (returnMethod === 'shop_delivery') {
+    return 'Shop Delivery to Customer';
+  }
+
+  return 'Customer Arranges Courier Pickup';
+};
 
 // Static mock data for testing
 const getStaticRepairOrders = (): RepairOrder[] => {
@@ -1033,17 +1095,23 @@ const MyRepairs: React.FC = () => {
     return order.status === 'ready_for_pickup' && !order.pickup_enabled;
   };
 
-  const handleSwitchDeliveryMethod = async (order: RepairOrder, nextMethod: 'walk_in' | 'pickup') => {
+  const handleSwitchDeliveryMethod = async (order: RepairOrder, nextMethod: 'walk_in' | 'customer_pickup') => {
     const switchingToWalkIn = nextMethod === 'walk_in';
+    const currentMethod = getReturnMethod(order);
+
+    if (currentMethod === nextMethod) {
+      return;
+    }
+
     const result = await Swal.fire({
-      title: switchingToWalkIn ? 'Switch to Self Pick-up?' : 'Switch to Carrier Pickup?',
+      title: switchingToWalkIn ? 'Switch to Customer Pick-up at Shop?' : 'Switch to Customer Courier Pickup?',
       html: `
-        <p class="text-gray-700 mb-2">You are changing this order from <strong>${order.delivery_method === 'walk_in' ? 'shop pickup' : 'carrier pickup'}</strong> to <strong>${switchingToWalkIn ? 'shop pickup' : 'carrier pickup'}</strong>.</p>
-        <p class="text-gray-700">${switchingToWalkIn ? 'You will go to the shop yourself to receive the repaired shoes.' : 'The order will remain under carrier pickup handling.'}</p>
+        <p class="text-gray-700 mb-2">You are changing this order from <strong>${getReturnMethodLabel(order)}</strong> to <strong>${switchingToWalkIn ? 'Customer Pick-up at Shop' : 'Customer Arranges Courier Pickup'}</strong>.</p>
+        <p class="text-gray-700">${switchingToWalkIn ? 'You will pick up your repaired shoes from the shop.' : 'You will arrange Lalamove/courier to pick up your repaired shoes from the shop.'}</p>
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: switchingToWalkIn ? 'Yes, switch to shop pickup' : 'Yes, switch to carrier pickup',
+      confirmButtonText: switchingToWalkIn ? 'Yes, switch to shop pick-up' : 'Yes, switch to courier pick-up',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
@@ -1054,39 +1122,41 @@ const MyRepairs: React.FC = () => {
 
     try {
       const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
-        delivery_method: nextMethod,
+        return_delivery_method: nextMethod,
       });
 
-      const updatedMethod = response.data?.delivery_method ?? nextMethod;
-      const updatedPickupAddress = response.data?.pickup_address;
+      const updatedMethod = response.data?.return_delivery_method ?? nextMethod;
+      const updatedReturnAddress = response.data?.return_address;
 
       setOrders(prev =>
         prev.map(item =>
           item.id === order.id
             ? {
                 ...item,
-                delivery_method: updatedMethod,
-                pickup_address: updatedPickupAddress,
+                return_delivery_method: updatedMethod,
+                return_address: updatedReturnAddress,
               }
             : item
         )
       );
 
-      saveDeliveryMethodOverride(order.id, updatedMethod === 'walk_in' ? 'walkin' : 'pickup');
+      saveDeliveryMethodOverride(order.id, updatedMethod);
 
       await Swal.fire({
         icon: 'success',
-        title: 'Pickup Method Updated',
+        title: 'Return Method Updated',
         text: response.data?.message || (updatedMethod === 'walk_in'
-          ? 'Your order is now set to self pick-up at the shop.'
-          : 'Your order is now set to carrier pickup.'),
+          ? 'Your order is now set to customer pick-up at the shop.'
+          : updatedMethod === 'shop_delivery'
+            ? 'Your order is now set to shop delivery.'
+            : 'Your order is now set to customer-arranged courier pickup.'),
         confirmButtonColor: '#000000',
       });
     } catch (error: any) {
       await Swal.fire({
         icon: 'error',
-        title: 'Unable to Update Pickup Method',
-        text: error?.response?.data?.message || 'Failed to update the pickup method.',
+        title: 'Unable to Update Return Method',
+        text: error?.response?.data?.message || 'Failed to update the return method.',
         confirmButtonColor: '#000000',
       });
     }
@@ -1123,10 +1193,12 @@ const MyRepairs: React.FC = () => {
   };
 
   const getStatusText = (order: RepairOrder) => {
+    const isPaymentSettled = order.payment_status === 'paid' || order.payment_status === 'completed';
+
     if (
       order.status === 'repairer_accepted' &&
       Boolean(order.conversation_id) &&
-      order.delivery_method !== 'walk_in' &&
+      getIntakeMethod(order) !== 'walk_in' &&
       order.payment_status !== 'paid' &&
       order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
@@ -1145,7 +1217,7 @@ const MyRepairs: React.FC = () => {
       case 'waiting_customer_confirmation':
         return 'Confirmed - Work Starting';
       case 'owner_approval_pending':
-        return 'Payment Received - Pending Owner Approval';
+        return isPaymentSettled ? 'Payment Received - Pending Owner Approval' : 'Pending Owner Approval';
       case 'owner_approved':
         return 'Approved - Work Starting';
       case 'owner_rejected':
@@ -1163,7 +1235,7 @@ const MyRepairs: React.FC = () => {
       case 'picked_up':
         return '✅ Completed & Picked Up';
       case 'pending':
-        return 'Payment Received - Ready to Start';
+        return isPaymentSettled ? 'Payment Received - Ready to Start' : 'Pending - Ready to Start';
       case 'received':
         return 'Shoes Received - Work Starting Soon';
       case 'cancelled':
@@ -1548,9 +1620,15 @@ const MyRepairs: React.FC = () => {
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Method</p>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">To Shop (Intake)</p>
                             <p className="text-sm text-black font-medium">
-                              {order.delivery_method === 'walk_in' ? 'Self Pick-up at Shop' : 'Carrier Pickup'}
+                              {getIntakeMethodLabel(order)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">To Customer (Return)</p>
+                            <p className="text-sm text-black font-medium">
+                              {getReturnMethodLabel(order)}
                             </p>
                           </div>
                           {order.estimated_completion && (
@@ -1620,7 +1698,7 @@ const MyRepairs: React.FC = () => {
                       {/* Set Schedule — visible after repairer accepts/payment done and no drop-off date set yet */}
                       {/* Walk-in: show as soon as status allows. Delivery: require conversation to exist first */}
                       {(['repairer_accepted', 'pending'].includes(order.status)) &&
-                        (order.delivery_method === 'walk_in' || order.conversation_id) &&
+                        (getIntakeMethod(order) === 'walk_in' || order.conversation_id) &&
                         !order.estimated_completion && (
                         <button
                           onClick={() => {
@@ -1640,7 +1718,7 @@ const MyRepairs: React.FC = () => {
                         </button>
                       )}
                       {/* Chat with Repairer and Pay Now - For Pickup/Delivery Only (Not Walk-in) */}
-                      {order.status === 'repairer_accepted' && order.conversation_id && order.delivery_method !== 'walk_in' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (order.payment_policy ?? 'deposit_50') !== 'pay_after' && (
+                      {order.status === 'repairer_accepted' && order.conversation_id && getIntakeMethod(order) !== 'walk_in' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
                           <Link
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
@@ -1685,7 +1763,7 @@ const MyRepairs: React.FC = () => {
                       )}
                       
                       {/* Walk-in Repairs - Just chat, no need to confirm */}
-                      {order.status === 'received' && order.conversation_id && order.delivery_method === 'walk_in' && (
+                      {order.status === 'received' && order.conversation_id && getIntakeMethod(order) === 'walk_in' && (
                         <>
                           <Link
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}
@@ -1712,7 +1790,7 @@ const MyRepairs: React.FC = () => {
                         </>
                       )}
                       
-                      {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (order.payment_policy ?? 'deposit_50') !== 'pay_after' && (
+                      {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
                           <button
                             onClick={() => handlePayNow(order.id)}
@@ -1739,27 +1817,27 @@ const MyRepairs: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {canSwitchDeliveryMethod(order) && order.delivery_method !== 'walk_in' && (
+                      {canSwitchDeliveryMethod(order) && getReturnMethod(order) !== 'walk_in' && (
                         <button
                           onClick={() => handleSwitchDeliveryMethod(order, 'walk_in')}
                           disabled={processingPayment}
                           className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
                         >
-                          SWITCH TO SHOP PICKUP
+                          SWITCH TO SHOP PICK-UP
                         </button>
                       )}
-                      {canSwitchDeliveryMethod(order) && order.delivery_method === 'walk_in' && (
+                      {canSwitchDeliveryMethod(order) && getReturnMethod(order) === 'walk_in' && (
                         <button
-                          onClick={() => handleSwitchDeliveryMethod(order, 'pickup')}
+                          onClick={() => handleSwitchDeliveryMethod(order, 'customer_pickup')}
                           disabled={processingPayment}
                           className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
                         >
-                          SWITCH TO CARRIER PICKUP
+                          SWITCH TO COURIER PICK-UP
                         </button>
                       )}
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
-                          {/* For deposit_50 and pay_after only — full_upfront is already paid */}
+                          {/* For deposit_50 only — full_upfront is already paid */}
                           {order.status === 'ready_for_pickup' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}

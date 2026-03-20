@@ -264,8 +264,11 @@ export default function RepairRejectReview() {
 					requestedOn: new Date(item.created_at).toISOString().split('T')[0],
 					reason: item.description || 'No description',
 					rejectionReason: item.repairer_rejection_reason,
-					status: item.manager_decision === 'approve' ? 'Approved' : 
-							 item.manager_decision === 'override' ? 'Rejected' : 'Pending',
+					status: item.manager_decision === 'approve_rejection' || item.status === 'rejected'
+						? 'Approved'
+						: item.manager_decision === 'override_accept' || item.status === 'manager_rejected' || item.status === 'assigned_to_repairer'
+						? 'Rejected'
+						: 'Pending',
 					approvedBy: item.manager_reviewed_by?.name,
 					approvedAt: item.manager_reviewed_at,
 					rejectedBy: item.manager_reviewed_by?.name,
@@ -440,10 +443,10 @@ export default function RepairRejectReview() {
 					</div>
 					<div className="flex flex-wrap items-center justify-end gap-3">
 						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-							Finance Only
+							Manager Access
 						</span>
 						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
-							Approval Required
+							Repair/Both Shops
 						</span>
 					</div>
 				</div>

@@ -35,7 +35,7 @@ type ShopSettingsPayload = {
 		is_image: boolean;
 		file_url: string | null;
 	}>;
-	repair_payment_policy: 'deposit_50' | 'full_upfront' | 'pay_after';
+	repair_payment_policy: 'deposit_50' | 'full_upfront';
 	repair_workload_limit: number;
 	has_paymongo_key: boolean;
 	// Geofence
@@ -157,7 +157,7 @@ const ShopSetting: React.FC = () => {
 	const [processing, setProcessing] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [approvalPages, setApprovalPages] = useState<ApprovalPages>(shop_settings.approval_pages);
-	const [repairPaymentPolicy, setRepairPaymentPolicy] = useState<'deposit_50' | 'full_upfront' | 'pay_after'>(
+	const [repairPaymentPolicy, setRepairPaymentPolicy] = useState<'deposit_50' | 'full_upfront'>(
 		shop_settings.repair_payment_policy ?? 'deposit_50',
 	);
 	const [payCycle, setPayCycle] = useState<'monthly' | 'semi_monthly'>(shop_settings.pay_cycle ?? 'monthly');
@@ -642,7 +642,7 @@ const ShopSetting: React.FC = () => {
 	};
 	// ── End Geofence helpers ───────────────────────────────────────────────
 
-	const saveSettings = (nextApprovalPages: ApprovalPages, nextPolicy?: 'deposit_50' | 'full_upfront' | 'pay_after') => {
+	const saveSettings = (nextApprovalPages: ApprovalPages, nextPolicy?: 'deposit_50' | 'full_upfront') => {
 		setProcessing(true);
 		setErrors({});
 
@@ -949,11 +949,6 @@ const ShopSetting: React.FC = () => {
 										value: 'full_upfront' as const,
 										label: 'Full Payment Upfront',
 										description: 'Customer pays the full amount before the shoes are dropped off or collected.',
-									},
-									{
-										value: 'pay_after' as const,
-										label: 'Pay After Repair (COD / In-store)',
-										description: 'No online payment before the repair. The customer pays in full when picking up their shoes.',
 									},
 								] as const).map((option) => (
 									<label

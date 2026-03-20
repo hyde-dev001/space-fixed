@@ -106,13 +106,12 @@ const getCsrfToken = (): string =>
 
 const SalaryChanges: React.FC = () => {
   const { auth } = usePage().props as any;
-  const userRole: string = auth?.user?.role ?? "";
   const permissions: string[] = auth?.permissions ?? [];
   const currentUserId: number = auth?.user?.id ?? 0;
 
-  const canManage = userRole === "Manager" || permissions.includes("manage-salary-changes");
-  const canApprove = userRole === "Manager" || permissions.includes("approve-salary-change");
-  const canOverrideRetroactive = userRole === "Manager" || permissions.includes("override-salary-retroactive");
+  const canManage = permissions.includes("manage-salary-changes");
+  const canApprove = permissions.includes("approve-salary-change");
+  const canOverrideRetroactive = permissions.includes("override-salary-retroactive");
 
   // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -584,7 +583,7 @@ const SalaryChanges: React.FC = () => {
                   Apply Now
                 </button>
               )}
-              {change.status === "pending" && (change.proposed_by === currentUserId || userRole === "Manager") && (
+              {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                 <button
                   onClick={() => handleCancel(change)}
                   className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
@@ -770,7 +769,7 @@ const SalaryChanges: React.FC = () => {
                             Apply
                           </button>
                         )}
-                        {change.status === "pending" && (change.proposed_by === currentUserId || userRole === "Manager") && (
+                        {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                           <button
                             onClick={() => handleCancel(change)}
                             className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"

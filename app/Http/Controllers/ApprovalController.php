@@ -161,10 +161,10 @@ class ApprovalController extends Controller
             // Collect all approval history from different sources
             $approvals = collect();
 
-            // 1. Get expenses with 'approved', 'rejected', or 'posted' status
+            // Get expenses with 'approved' or 'rejected' status
             $expenses = DB::table('finance_expenses')
                 ->where('shop_id', $shopOwnerId)
-                ->whereIn('status', ['approved', 'rejected', 'posted'])
+                ->whereIn('status', ['approved', 'rejected'])
                 ->orderBy('updated_at', 'desc')
                 ->limit(100)
                 ->get()
@@ -177,7 +177,7 @@ class ApprovalController extends Controller
                         'amount' => (float) $expense->amount,
                         'requested_by' => 'Staff',
                         'requested_at' => $expense->created_at,
-                        'status' => $expense->status === 'posted' ? 'approved' : $expense->status,
+                        'status' => $expense->status,
                         'current_level' => 1,
                         'total_levels' => 1,
                         'reviewed_by' => $expense->approved_by ? 'Manager' : null,

@@ -24,14 +24,12 @@ class SalaryChangeController extends Controller
 
     private function authorizeHR(User $user): bool
     {
-        return $user->hasRole('Manager')
-            || $user->can('access-employee-directory')
-            || $user->can('manage-salary-changes');
+        return $user->can('manage-salary-changes');
     }
 
     private function authorizeApprover(User $user): bool
     {
-        return $user->hasRole('Manager')
+        return $user->hasRole('Shop Owner')
             || $user->can('approve-salary-change');
     }
 
@@ -428,7 +426,7 @@ class SalaryChangeController extends Controller
 
     /**
      * POST /api/hr/salary-changes/{id}/cancel
-     * Proposer or Manager can cancel while still pending.
+     * Proposer or authorized salary-change handler can cancel while still pending.
      */
     public function cancel(Request $request, int $id): JsonResponse
     {
@@ -438,9 +436,13 @@ class SalaryChangeController extends Controller
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
-        // Only the proposer or Manager can cancel
-        if ($change->proposed_by !== $user->id && !$user->hasRole('Manager')) {
-            return response()->json(['error' => 'Only the proposer or a Manager can cancel this request.'], 403);
+        // Only the proposer or authorized salary handlers can cancel
+        if (
+            $change->proposed_by !== $user->id
+            && !$this->authorizeHR($user)
+            && !$this->authorizeApprover($user)
+        ) {
+            return response()->json(['error' => 'Only the proposer or an authorized salary handler can cancel this request.'], 403);
         }
 
         $change->status = SalaryChange::STATUS_CANCELLED;

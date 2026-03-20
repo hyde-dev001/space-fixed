@@ -24,6 +24,7 @@ export default function UserLogin() {
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
+  const authInputClasses = 'h-12 rounded-xl border-gray-200 bg-[#f8fafc] text-[13px] text-gray-800 shadow-none focus:border-gray-300 focus:ring-gray-200/70';
 
   // Show flash success message (e.g. after accepting invitation)
   useEffect(() => {
@@ -115,43 +116,43 @@ export default function UserLogin() {
   return (
     <>
       <Head title="User Sign In" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
         <Navigation />
 
-      <div className="max-w-[1920px] mx-auto px-6 lg:px-12 pt-28 pb-24 lg:pt-32">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
+      <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-50 sm:pt-24 lg:pt-32 pb-16 sm:pb-24">
+        <div className="text-center mb-10 sm:mb-10 lg:mb-12">
+          <h1 className="text-[42px] leading-[1.02] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-5 tracking-tight">
             USER SIGN IN
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
+          <p className="text-[18px] sm:text-lg lg:text-xl text-gray-600 max-w-[320px] sm:max-w-2xl mx-auto leading-snug font-light">
             Glad to see you again. Sign in to continue.
           </p>
         </div>
 
-        <div className="max-w-lg mx-auto">
-          <div className="bg-white rounded-2xl shadow-xl p-8">
-            <Form onSubmit={handleSubmit} className="space-y-6">
+        <div className="max-w-92.5 sm:max-w-lg mx-auto mt-5 sm:mt-0">
+          <div className="bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
+            <Form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               <div className="relative">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-[12px] font-medium text-gray-700 mb-1.5">Email</Label>
                 <div className="relative">
-                  <MailIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <MailIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     type="email"
                     id="email"
                     name="email"
-                    placeholder="Enter your email address"
+                    placeholder="Enter your email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
+                    className={`pl-10 ${authInputClasses} ${errors.email ? 'border-red-500' : ''}`}
                   />
                 </div>
                 {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
               </div>
 
               <div className="relative">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className="text-[12px] font-medium text-gray-700 mb-1.5">Password</Label>
                 <div className="relative">
-                  <LockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     type="password"
                     id="password"
@@ -159,13 +160,13 @@ export default function UserLogin() {
                     placeholder="Enter your password"
                     value={formData.password}
                     onChange={handleInputChange}
-                    className={`pl-10 ${errors.password ? 'border-red-500' : ''}`}
+                    className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
                   />
                 </div>
                 {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center">
                   <input
                     type="checkbox"
@@ -173,13 +174,13 @@ export default function UserLogin() {
                     name="rememberMe"
                     checked={formData.rememberMe}
                     onChange={handleInputChange}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-black focus:ring-black/30 border-gray-300 rounded"
                   />
-                  <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900">
+                  <label htmlFor="rememberMe" className="ml-2 block text-[12px] text-gray-700">
                     Remember me
                   </label>
                 </div>
-                <Link href={route('password.request')} className="text-sm text-blue-600 hover:text-blue-500">
+                <Link href={route('password.request')} className="text-[12px] text-[#0e2f60] hover:text-[#133c7b] transition-colors">
                   Forgot password?
                 </Link>
               </div>
@@ -187,18 +188,18 @@ export default function UserLogin() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-xl px-10 py-3.5 bg-black text-white font-semibold uppercase tracking-[0.2em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? 'Signing In...' : 'Sign In'}
               </button>
             </Form>
 
             <div className="mt-6 text-center space-y-2">
-              <p className="text-gray-600">
+              <p className="text-[13px] text-gray-600">
                 Don't have an account?{' '}
                 <Link
                   href={route("register")}
-                  className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
+                  className="text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
                 >
                   Register here
                 </Link>

@@ -93,8 +93,11 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
             }
 
             $policy = strtolower((string) ($repair->payment_policy ?? 'deposit_50'));
+            if ($policy !== 'deposit_50') {
+                $policy = 'full_upfront';
+            }
             $isRemainingBalancePhase = (string) $repair->status === 'ready_for_pickup';
-            if ($policy === 'full_upfront' || $policy === 'pay_after') {
+            if ($policy === 'full_upfront') {
                 $amount = $chargeTotal;
                 $phase = 'full payment';
             } else {

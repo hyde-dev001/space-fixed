@@ -52,11 +52,16 @@ class PayrollController extends Controller
     {
         $user = Auth::guard('user')->user();
 
+        if (! $user) {
+            return null;
+        }
+
         if (
-            ! $user->hasRole('Manager')
-            && ! $user->can('access-employee-directory')
-            && ! $user->can('access-attendance-records')
-            && ! $user->can('access-payslip-generation') && !$user->can('access-view-payslip')
+            ! $user->hasRole('Shop Owner')
+            && ! $user->can('access-payslip-generation')
+            && ! $user->can('access-view-payslip')
+            && ! $user->can('access-payslip-approval')
+            && ! $user->can('access-approval-workflow')
         ) {
             return null;
         }
@@ -68,9 +73,7 @@ class PayrollController extends Controller
     {
         return $user
             && (
-                $user->hasRole('Manager')
-                || $user->hasRole('Shop Owner')
-                || $user->can('access-payslip-generation')
+                $user->hasRole('Shop Owner')
                 || $user->can('access-payslip-approval')
                 || $user->can('access-approval-workflow')
             );
@@ -673,17 +676,10 @@ class PayrollController extends Controller
      */
     public function exportPayslip(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-
-        if (
-            ! $user->hasRole('Manager')
-            && ! $user->can('access-employee-directory')
-            && ! $user->can('access-attendance-records')
-            && ! $user->can('access-payslip-generation') && !$user->can('access-view-payslip')
-        ) {
+        $user = $this->authorizeUser();
+        if (! $user) {
             \Log::warning('Unauthorized payroll export attempt', [
-                'user_id'    => $user->id,
-                'user_role'  => $user->getRoleNames()->first(),
+                'user_id'    => Auth::guard('user')->id(),
                 'payroll_id' => $id,
             ]);
             return response()->json([
@@ -806,7 +802,6 @@ class PayrollController extends Controller
 
         $hasReleasePermission =
             $user->hasRole('Shop Owner')
-            || $user->hasRole('Manager')
             || $user->can('access-approval-workflow')
             || $user->can('access-payslip-approval');
 

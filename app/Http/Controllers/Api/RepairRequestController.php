@@ -30,7 +30,7 @@ class RepairRequestController extends Controller
             'customer_name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
-            'shoe_type' => 'nullable|string|max:255',
+            'shoe_type' => 'required|string|max:255',
             'brand' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'shop_owner_id' => 'nullable|exists:shop_owners,id',
@@ -49,6 +49,12 @@ class RepairRequestController extends Controller
             'pickup_city' => 'required_if:service_type,pickup|string|max:255',
             'pickup_region' => 'required_if:service_type,pickup|string|max:255',
             'pickup_postal_code' => 'required_if:service_type,pickup|string|max:10',
+            'return_delivery_method' => 'nullable|in:walk_in,customer_pickup,shop_delivery',
+            'return_address_line' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
+            'return_barangay' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
+            'return_city' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
+            'return_region' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
+            'return_postal_code' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:10',
         ]);
 
         if ($validator->fails()) {
@@ -218,17 +224,38 @@ class RepairRequestController extends Controller
             $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
             $requiresOwnerApproval = $isHighValue && $shopOwner && $shopOwner->require_two_way_approval;
             
-            // Build pickup address if service type is pickup
+            // Determine intake delivery method and address
+            // 'walk_in' = customer brings shoes to shop
+            // 'customer_delivery' = customer arranges delivery (Lalamove, courier, etc)
+            $intakeDeliveryMethod = $request->service_type === 'pickup' ? 'customer_delivery' : 'walk_in';
+            $returnDeliveryMethod = $request->return_delivery_method
+                ?: ($intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'customer_pickup');
             $pickupAddress = null;
+            $intakeAddress = null;
+            $returnAddress = null;
             $deliveryMethod = $request->service_type === 'pickup' ? 'pickup' : 'walk_in';
             
+            // Build intake delivery address if customer is arranging delivery
             if ($request->service_type === 'pickup') {
-                $pickupAddress = [
+                $intakeAddress = [
                     'address_line' => $request->pickup_address_line,
                     'barangay' => $request->pickup_barangay,
                     'city' => $request->pickup_city,
                     'region' => $request->pickup_region,
                     'postal_code' => $request->pickup_postal_code,
+                ];
+                
+                // Keep pickup_address for backward compatibility
+                $pickupAddress = $intakeAddress;
+            }
+
+            if ($returnDeliveryMethod !== 'walk_in') {
+                $returnAddress = [
+                    'address_line' => $request->return_address_line,
+                    'barangay' => $request->return_barangay,
+                    'city' => $request->return_city,
+                    'region' => $request->return_region,
+                    'postal_code' => $request->return_postal_code,
                 ];
             }
             
@@ -268,10 +295,16 @@ class RepairRequestController extends Controller
                 'status' => 'new_request',
                 'delivery_method' => $deliveryMethod,
                 'pickup_address' => $pickupAddress,
+                'intake_delivery_method' => $intakeDeliveryMethod,
+                'intake_address' => $intakeAddress,
+                'return_delivery_method' => $returnDeliveryMethod,
+                'return_address' => $returnAddress,
                 'is_high_value' => $isHighValue,
                 'requires_owner_approval' => $requiresOwnerApproval,
                 'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
-                'payment_policy' => $shopOwner ? ($shopOwner->repair_payment_policy ?? 'deposit_50') : 'deposit_50',
+                'payment_policy' => $shopOwner
+                    ? $this->normalizeRepairPaymentPolicy($shopOwner->repair_payment_policy ?? 'deposit_50')
+                    : 'deposit_50',
             ]);
 
             // Attach services
@@ -523,6 +556,10 @@ class RepairRequestController extends Controller
                     'image' => !empty($images) ? Storage::url($images[0]) : null,
                     'delivery_method' => $repair->delivery_method,
                     'pickup_address' => $repair->pickup_address,
+                    'intake_delivery_method' => $repair->intake_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
+                    'intake_address' => $repair->intake_address ?? $repair->pickup_address,
+                    'return_delivery_method' => $repair->return_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
+                    'return_address' => $repair->return_address,
                     'conversation_id' => $repair->conversation_id,
                     'payment_status' => $repair->payment_status ?? 'pending',
                     'payment_completed_at' => $repair->payment_completed_at ? $repair->payment_completed_at->toISOString() : null,
@@ -602,6 +639,10 @@ class RepairRequestController extends Controller
                 'status' => $repair->status,
                 'delivery_method' => $repair->delivery_method,
                 'pickup_address' => $repair->pickup_address,
+                'intake_delivery_method' => $repair->intake_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
+                'intake_address' => $repair->intake_address ?? $repair->pickup_address,
+                'return_delivery_method' => $repair->return_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
+                'return_address' => $repair->return_address,
                 'scheduled_dropoff_date' => $repair->scheduled_dropoff_date,
                 'customer_confirmed_at' => $repair->customer_confirmed_at,
                 'is_high_value' => $repair->is_high_value,
@@ -776,8 +817,25 @@ class RepairRequestController extends Controller
         }
 
         $validated = $request->validate([
-            'delivery_method' => ['required', 'in:walk_in,pickup'],
+            'delivery_method' => ['nullable', 'in:walk_in,pickup,customer_pickup,shop_delivery'],
+            'return_delivery_method' => ['nullable', 'in:walk_in,pickup,customer_pickup,shop_delivery'],
+            'return_address_line' => ['nullable', 'string', 'max:255'],
+            'return_barangay' => ['nullable', 'string', 'max:255'],
+            'return_city' => ['nullable', 'string', 'max:255'],
+            'return_region' => ['nullable', 'string', 'max:255'],
+            'return_postal_code' => ['nullable', 'string', 'max:10'],
         ]);
+
+        $requestedMethod = $validated['return_delivery_method'] ?? $validated['delivery_method'] ?? null;
+
+        if (!$requestedMethod) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Return delivery method is required.',
+            ], 422);
+        }
+
+        $newMethod = $requestedMethod === 'pickup' ? 'customer_pickup' : $requestedMethod;
 
         $repair = RepairRequest::query()
             ->where('id', $id)
@@ -791,38 +849,54 @@ class RepairRequestController extends Controller
             ], 404);
         }
 
+        $existingMethod = $repair->return_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup');
+
         if ($repair->status !== 'ready_for_pickup') {
             return response()->json([
                 'success' => false,
-                'message' => 'Pickup method can only be changed when the repair is ready for pickup.',
+                'message' => 'Return method can only be changed when the repair is ready for pickup.',
             ], 422);
         }
 
         if ($repair->pickup_enabled) {
             return response()->json([
                 'success' => false,
-                'message' => 'Pickup method can no longer be changed after pickup confirmation has been activated.',
+                'message' => 'Return method can no longer be changed after receive confirmation has been activated.',
             ], 422);
         }
 
-        $newMethod = $validated['delivery_method'];
-        $previousMethod = $repair->delivery_method;
+        $previousMethod = $existingMethod;
 
-        if ($repair->delivery_method === $newMethod) {
+        if ($existingMethod === $newMethod) {
             return response()->json([
                 'success' => true,
                 'delivery_method' => $repair->delivery_method,
-                'pickup_address' => $repair->pickup_address,
-                'message' => 'Pickup method is already set to that option.',
+                'return_delivery_method' => $existingMethod,
+                'return_address' => $repair->return_address,
+                'message' => 'Return method is already set to that option.',
             ]);
         }
 
         $updatePayload = [
-            'delivery_method' => $newMethod,
+            'return_delivery_method' => $newMethod,
         ];
 
         if ($newMethod === 'walk_in') {
-            $updatePayload['pickup_address'] = null;
+            $updatePayload['return_address'] = null;
+        } elseif (
+            !empty($validated['return_address_line']) ||
+            !empty($validated['return_barangay']) ||
+            !empty($validated['return_city']) ||
+            !empty($validated['return_region']) ||
+            !empty($validated['return_postal_code'])
+        ) {
+            $updatePayload['return_address'] = [
+                'address_line' => $validated['return_address_line'] ?? null,
+                'barangay' => $validated['return_barangay'] ?? null,
+                'city' => $validated['return_city'] ?? null,
+                'region' => $validated['return_region'] ?? null,
+                'postal_code' => $validated['return_postal_code'] ?? null,
+            ];
         }
 
         $repair->update($updatePayload);
@@ -834,12 +908,12 @@ class RepairRequestController extends Controller
                 $notificationService->sendToUser(
                     userId: $repair->assigned_repairer_id,
                     type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
-                    title: 'Customer Changed Pickup Method',
+                    title: 'Customer Changed Return Method',
                     message: sprintf(
-                        'Customer changed the pickup method for repair %s from %s to %s.',
+                        'Customer changed the return method for repair %s from %s to %s.',
                         $repair->request_id,
-                        $previousMethod === 'walk_in' ? 'Walk-in' : 'Carrier Pickup',
-                        $newMethod === 'walk_in' ? 'Walk-in' : 'Carrier Pickup'
+                        $previousMethod === 'walk_in' ? 'Customer Pick-up at Shop' : ($previousMethod === 'shop_delivery' ? 'Shop Delivery to Customer' : 'Customer-arranged Courier Pickup'),
+                        $newMethod === 'walk_in' ? 'Customer Pick-up at Shop' : ($newMethod === 'shop_delivery' ? 'Shop Delivery to Customer' : 'Customer-arranged Courier Pickup')
                     ),
                     data: [
                         'repair_id' => $repair->id,
@@ -847,25 +921,28 @@ class RepairRequestController extends Controller
                         'request_id' => $repair->request_id,
                         'order_number' => $repair->request_id,
                         'customer_name' => $repair->customer_name,
-                        'previous_delivery_method' => $previousMethod,
-                        'delivery_method' => $newMethod,
+                        'previous_return_delivery_method' => $previousMethod,
+                        'return_delivery_method' => $newMethod,
                     ],
                     actionUrl: '/erp/staff/job-orders-repair',
                     priority: 'medium',
                     requiresAction: false
                 );
             } catch (\Exception $e) {
-                \Log::warning('Could not notify repairer of pickup method change: ' . $e->getMessage());
+                \Log::warning('Could not notify repairer of return method change: ' . $e->getMessage());
             }
         }
 
         return response()->json([
             'success' => true,
             'delivery_method' => $updatedRepair->delivery_method,
-            'pickup_address' => $updatedRepair->pickup_address,
+            'return_delivery_method' => $updatedRepair->return_delivery_method,
+            'return_address' => $updatedRepair->return_address,
             'message' => $newMethod === 'walk_in'
-                ? 'Your order is now set to self pick-up at the shop.'
-                : 'Your order is now set to carrier pickup.',
+                ? 'Your order is now set to customer pick-up at the shop.'
+                : ($newMethod === 'shop_delivery'
+                    ? 'Your order is now set to shop delivery.'
+                    : 'Your order is now set to customer-arranged courier pickup.'),
         ]);
     }
 
@@ -1267,11 +1344,10 @@ class RepairRequestController extends Controller
      * Policies:
      *   deposit_50  – two-phase: first payment → 'paid' (50% deposit), second → 'completed' (remaining 50%)
      *   full_upfront – single payment before drop-off → 'completed' immediately
-     *   pay_after    – single payment at pickup        → 'completed' immediately
      */
     private function applyPaymentCompletion(RepairRequest $repair, string $paymentId): void
     {
-        $policy = $repair->payment_policy ?? 'deposit_50';
+        $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
         $repair->update([
             'paymongo_payment_id'  => $paymentId,
@@ -1287,12 +1363,6 @@ class RepairRequestController extends Controller
                 $repair->update(['status' => 'pending']);
             }
             \Log::info('Full-upfront payment applied for repair: ' . $repair->request_id);
-
-        } elseif ($policy === 'pay_after') {
-            // Payment collected at pickup – mark fully paid, status stays ready_for_pickup
-            $repair->update(['payment_status' => 'completed']);
-            \Log::info('Pay-after payment applied for repair: ' . $repair->request_id);
-
         } else {
             // deposit_50 (default): two-phase logic
             $isDepositPhase = in_array($repair->payment_status ?? 'pending', ['pending', null]);
@@ -1333,9 +1403,10 @@ class RepairRequestController extends Controller
 
         // Idempotent: skip verification if truly fully paid.
         // For deposit_50: 'paid' = only the deposit was paid, 'completed' = both payments done.
-        // For other policies: a single 'paid' IS full payment.
+        // For full_upfront: a single 'paid' should be treated as fully paid.
+        $normalizedPolicy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
         $isFullyPaid = $repair->payment_status === 'completed' ||
-            ($repair->payment_policy !== 'deposit_50' && $repair->payment_status === 'paid');
+            ($normalizedPolicy === 'full_upfront' && $repair->payment_status === 'paid');
 
         if ($isFullyPaid) {
             return response()->json([
@@ -1422,7 +1493,7 @@ class RepairRequestController extends Controller
         $this->applyPaymentCompletion($repair, $paymentId);
 
         \Log::info('Payment verified via PayMongo API for repair: ' . $repair->request_id, [
-            'policy'     => $repair->payment_policy ?? 'deposit_50',
+            'policy'     => $normalizedPolicy,
             'link_id'    => $repair->paymongo_link_id,
             'payment_id' => $paymentId,
         ]);
@@ -1463,6 +1534,13 @@ class RepairRequestController extends Controller
             'limit'        => $limit,
             'is_full'      => $activeCount >= $limit,
         ]);
+    }
+
+    private function normalizeRepairPaymentPolicy(?string $policy): string
+    {
+        $normalized = strtolower(trim((string) $policy));
+
+        return $normalized === 'deposit_50' ? 'deposit_50' : 'full_upfront';
     }
 
     private function calculateRepairPricingSnapshot(RepairRequest $repair): array

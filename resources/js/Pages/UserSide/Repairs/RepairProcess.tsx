@@ -276,12 +276,18 @@ const RepairProcess: React.FC = () => {
     shoeType: '',
     brand: '',
     description: '',
-    serviceType: '', // 'pickup' or 'walkin'
+    serviceType: '', // intake: 'pickup' or 'walkin'
+    returnDeliveryMethod: '', // return: 'walk_in' | 'customer_pickup' | 'shop_delivery'
     pickupAddressLine: '',
     pickupBarangay: '',
     pickupCity: '',
     pickupRegion: '',
     pickupPostalCode: '',
+    returnAddressLine: '',
+    returnBarangay: '',
+    returnCity: '',
+    returnRegion: '',
+    returnPostalCode: '',
   });
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
@@ -360,6 +366,11 @@ const RepairProcess: React.FC = () => {
         pickupCity: parsed.pickupCity || '',
         pickupRegion: parsed.pickupRegion || '',
         pickupPostalCode: parsed.pickupPostalCode || '',
+        returnAddressLine: parsed.returnAddressLine || '',
+        returnBarangay: parsed.returnBarangay || '',
+        returnCity: parsed.returnCity || '',
+        returnRegion: parsed.returnRegion || '',
+        returnPostalCode: parsed.returnPostalCode || '',
       }));
       setSaveInfoForCheckout(true);
     } catch {
@@ -386,6 +397,11 @@ const RepairProcess: React.FC = () => {
         pickupCity: formData.pickupCity,
         pickupRegion: formData.pickupRegion,
         pickupPostalCode: formData.pickupPostalCode,
+        returnAddressLine: formData.returnAddressLine,
+        returnBarangay: formData.returnBarangay,
+        returnCity: formData.returnCity,
+        returnRegion: formData.returnRegion,
+        returnPostalCode: formData.returnPostalCode,
       })
     );
   }, [saveInfoForCheckout, formData]);
@@ -579,6 +595,16 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
+    if (!formData.shoeType) {
+      Swal.fire({
+        title: 'Shoe Type Required',
+        text: 'Please select your shoe type before submitting the repair request.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     if (!selectedPackageId && selectedServiceIds.length === 0) {
       Swal.fire({
         title: 'No Selection Yet',
@@ -591,8 +617,18 @@ const RepairProcess: React.FC = () => {
 
     if (!formData.serviceType) {
       Swal.fire({
-        title: 'Service Type Required',
-        text: 'Please select whether you prefer Pick up or Walk-in service',
+        title: 'Intake Method Required',
+        text: 'Please select how you will deliver your shoes to the shop',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (!formData.returnDeliveryMethod) {
+      Swal.fire({
+        title: 'Return Method Required',
+        text: 'Please select how you want to receive your repaired shoes.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -611,6 +647,25 @@ const RepairProcess: React.FC = () => {
         Swal.fire({
           title: 'Pickup Address Required',
           text: 'Please complete the pickup address details',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+    }
+
+    if (formData.returnDeliveryMethod !== 'walk_in') {
+      const missingReturnFields =
+        !formData.returnAddressLine ||
+        !formData.returnBarangay ||
+        !formData.returnCity ||
+        !formData.returnRegion ||
+        !formData.returnPostalCode;
+
+      if (missingReturnFields) {
+        Swal.fire({
+          title: 'Return Address Required',
+          text: 'Please complete the return address details.',
           icon: 'warning',
           confirmButtonColor: '#000000',
         });
@@ -637,7 +692,8 @@ const RepairProcess: React.FC = () => {
           <p><strong>Package:</strong> ${selectedPackage ? selectedPackage.name : 'None'}</p>
           <p><strong>Services:</strong> ${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</p>
           <p><strong>Add-ons:</strong> ${selectedPackage ? selectedAddOnServiceIds.length : 0}</p>
-          <p><strong>Service Type:</strong> ${formData.serviceType === 'pickup' ? 'Pick Up' : 'Walk In'}</p>
+          <p><strong>To Shop (Intake):</strong> ${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</p>
+          <p><strong>To Customer (Return):</strong> ${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : formData.returnDeliveryMethod === 'shop_delivery' ? 'Shop Delivery to Customer' : 'Customer Arranged Courier Pickup'}</p>
           <p><strong>Total:</strong> ₱${grandTotal.toLocaleString()}</p>
         </div>
       `,
@@ -667,6 +723,7 @@ const RepairProcess: React.FC = () => {
       submitFormData.append('brand', formData.brand);
       submitFormData.append('description', formData.description);
       submitFormData.append('service_type', formData.serviceType);
+      submitFormData.append('return_delivery_method', formData.returnDeliveryMethod);
       submitFormData.append('shop_owner_id', shopId || '');
       if (selectedPackageId) {
         submitFormData.append('repair_package_id', selectedPackageId.toString());
@@ -679,6 +736,14 @@ const RepairProcess: React.FC = () => {
         submitFormData.append('pickup_city', formData.pickupCity);
         submitFormData.append('pickup_region', formData.pickupRegion);
         submitFormData.append('pickup_postal_code', formData.pickupPostalCode);
+      }
+
+      if (formData.returnDeliveryMethod !== 'walk_in') {
+        submitFormData.append('return_address_line', formData.returnAddressLine);
+        submitFormData.append('return_barangay', formData.returnBarangay);
+        submitFormData.append('return_city', formData.returnCity);
+        submitFormData.append('return_region', formData.returnRegion);
+        submitFormData.append('return_postal_code', formData.returnPostalCode);
       }
       
       // Add selected service IDs
@@ -749,11 +814,17 @@ const RepairProcess: React.FC = () => {
             brand: '',
             description: '',
             serviceType: '',
+            returnDeliveryMethod: '',
             pickupAddressLine: '',
             pickupBarangay: '',
             pickupCity: '',
             pickupRegion: '',
             pickupPostalCode: '',
+            returnAddressLine: '',
+            returnBarangay: '',
+            returnCity: '',
+            returnRegion: '',
+            returnPostalCode: '',
           });
         }
         setSelectedServiceIds([]);
@@ -863,7 +934,7 @@ const RepairProcess: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label htmlFor="shoeType" className="block text-sm font-medium text-black mb-2">Shoe Type</label>
+                      <label htmlFor="shoeType" className="block text-sm font-medium text-black mb-2">Shoe Type *</label>
                       <div className="relative" ref={shoeTypeDropdownRef}>
                         <button
                           type="button"
@@ -941,7 +1012,8 @@ const RepairProcess: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">Service Type *</label>
+                      <label className="block text-sm font-medium text-black mb-2">How will you deliver your shoes to the shop? *</label>
+                      <p className="text-xs text-gray-600 mb-3">This determines how we'll receive your shoes for repair.</p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
                           <input
@@ -953,8 +1025,8 @@ const RepairProcess: React.FC = () => {
                             className="w-4 h-4 mt-1"
                           />
                           <div>
-                            <span className="text-sm font-medium text-black">Pick Up</span>
-                            <p className="text-xs text-gray-600">Shipping fee is shouldered by the customer.</p>
+                            <span className="text-sm font-medium text-black">I'll Arrange Delivery (e.g., Lalamove)</span>
+                            <p className="text-xs text-gray-600">I'll use a courier service to deliver my shoes to the shop.</p>
                           </div>
                         </label>
                         <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
@@ -967,11 +1039,11 @@ const RepairProcess: React.FC = () => {
                             className="w-4 h-4 mt-1"
                           />
                           <div>
-                            <span className="text-sm font-medium text-black">Walk In</span>
+                            <span className="text-sm font-medium text-black">I'll Visit the Shop</span>
                             <p className="text-xs text-gray-600">
                               {shopDetails
-                                ? `Bring to ${shopDetails.name} - ${shopDetails.address || shopDetails.location}`
-                                : 'I will bring my shoes to the shop'}
+                                ? `I'll bring my shoes to ${shopDetails.name}`
+                                : 'I will bring my shoes to the shop in person'}
                             </p>
                           </div>
                         </label>
@@ -980,7 +1052,7 @@ const RepairProcess: React.FC = () => {
 
                     {formData.serviceType === 'pickup' && (
                       <div className="space-y-4 border border-gray-300 rounded p-4">
-                        <p className="text-sm font-medium text-black">Pickup Address</p>
+                        <p className="text-sm font-medium text-black">Where should the courier deliver your shoes?</p>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2">Address line</label>
                           <input
@@ -1076,6 +1148,110 @@ const RepairProcess: React.FC = () => {
                             type="text"
                             name="pickupPostalCode"
                             value={formData.pickupPostalCode}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="Postal code"
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-black mb-2">How should we return your repaired shoes? *</label>
+                      <p className="text-xs text-gray-600 mb-3">This is separate from how you initially deliver the shoes to the shop.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                          <input
+                            type="radio"
+                            name="returnDeliveryMethod"
+                            value="walk_in"
+                            checked={formData.returnDeliveryMethod === 'walk_in'}
+                            onChange={handleInputChange}
+                            className="w-4 h-4 mt-1"
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-black">Customer Pick-up at Shop</span>
+                            <p className="text-xs text-gray-600">I will personally pick up my repaired shoes at the shop.</p>
+                          </div>
+                        </label>
+
+                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                          <input
+                            type="radio"
+                            name="returnDeliveryMethod"
+                            value="customer_pickup"
+                            checked={formData.returnDeliveryMethod === 'customer_pickup'}
+                            onChange={handleInputChange}
+                            className="w-4 h-4 mt-1"
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-black">Customer Arranged Courier Pickup</span>
+                            <p className="text-xs text-gray-600">I will arrange Lalamove/courier to pick up from the shop and deliver to me.</p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {formData.returnDeliveryMethod !== '' && formData.returnDeliveryMethod !== 'walk_in' && (
+                      <div className="space-y-4 border border-gray-300 rounded p-4">
+                        <p className="text-sm font-medium text-black">Return Address</p>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Address line</label>
+                          <input
+                            type="text"
+                            name="returnAddressLine"
+                            value={formData.returnAddressLine}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="House no., street, building"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Barangay</label>
+                          <input
+                            type="text"
+                            name="returnBarangay"
+                            value={formData.returnBarangay}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="Barangay"
+                            required
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-black mb-2">City</label>
+                            <input
+                              type="text"
+                              name="returnCity"
+                              value={formData.returnCity}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                              placeholder="City"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-black mb-2">Region</label>
+                            <input
+                              type="text"
+                              name="returnRegion"
+                              value={formData.returnRegion}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                              placeholder="Region"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                          <input
+                            type="text"
+                            name="returnPostalCode"
+                            value={formData.returnPostalCode}
                             onChange={handleInputChange}
                             className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                             placeholder="Postal code"

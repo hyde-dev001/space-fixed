@@ -16,7 +16,6 @@ const Placeholder: React.FC<{ title: string; description?: string }> = ({ title,
 export default function HRPage() {
   const [error, setError] = useState<string | null>(null);
   const { auth, url } = usePage().props as any;
-  const userRole = auth?.user?.role;
   const permissions = auth?.permissions || [];
 
   // Check if user has any HR permissions
@@ -33,15 +32,8 @@ export default function HRPage() {
       'approve-salary-change',
       'override-salary-retroactive',
     ];
-    const hasAccess = userRole === 'Manager' || hrPermissions.some(perm => permissions.includes(perm));
-    
-    // Debug: Log user info (remove this after testing)
-    console.log('HR Access Debug:', {
-      userRole,
-      permissions,
-      hasAccess,
-      matchingPermissions: hrPermissions.filter(perm => permissions.includes(perm))
-    });
+    const hasAccess = hrPermissions.some(perm => permissions.includes(perm));
+
     
     return hasAccess;
   };

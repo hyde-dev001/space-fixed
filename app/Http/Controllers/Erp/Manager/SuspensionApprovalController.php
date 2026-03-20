@@ -12,9 +12,19 @@ class SuspensionApprovalController extends Controller
 {
     public function index(Request $request)
     {
-        $statusFilter = $request->query('status');
+        $shopOwnerId = $this->resolveManagerShopOwnerId();
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'No shop association found.'], 403);
+        }
 
-        $query = SuspensionRequest::with(['employee', 'requester', 'manager']);
+        $statusFilter = (string) $request->query('status', 'all');
+        $search = trim((string) $request->query('search', ''));
+        $perPage = max(5, min((int) $request->query('per_page', 10), 100));
+
+        $query = SuspensionRequest::with(['employee', 'requester', 'manager'])
+            ->whereHas('employee', function ($employeeQuery) use ($shopOwnerId) {
+                $employeeQuery->where('shop_owner_id', $shopOwnerId);
+            });
 
         if ($statusFilter === 'pending') {
             $query->where('status', SuspensionStatus::PENDING_MANAGER);
@@ -24,7 +34,22 @@ class SuspensionApprovalController extends Controller
             $query->where('status', SuspensionStatus::REJECTED_MANAGER);
         }
 
-        $requests = $query->latest()->get()->map(function (SuspensionRequest $req) {
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search) {
+                $searchQuery->where('reason', 'like', "%{$search}%")
+                    ->orWhereHas('employee', function ($employeeQuery) use ($search) {
+                        $employeeQuery
+                            ->where('email', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('first_name', 'like', "%{$search}%")
+                            ->orWhere('last_name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $requests = $query->latest()->paginate($perPage);
+
+        $requests->getCollection()->transform(function (SuspensionRequest $req) {
             $status = $this->mapStatusForManager($req->status);
 
             return [
@@ -41,12 +66,46 @@ class SuspensionApprovalController extends Controller
             ];
         });
 
-        return response()->json(['data' => $requests]);
+        $metricsQuery = SuspensionRequest::query()
+            ->whereHas('employee', function ($employeeQuery) use ($shopOwnerId) {
+                $employeeQuery->where('shop_owner_id', $shopOwnerId);
+            });
+
+        $pending = (clone $metricsQuery)
+            ->where('status', SuspensionStatus::PENDING_MANAGER)
+            ->count();
+
+        $approved = (clone $metricsQuery)
+            ->whereIn('status', [SuspensionStatus::PENDING_OWNER, SuspensionStatus::APPROVED, SuspensionStatus::REJECTED_OWNER])
+            ->count();
+
+        $rejected = (clone $metricsQuery)
+            ->where('status', SuspensionStatus::REJECTED_MANAGER)
+            ->count();
+
+        return response()->json([
+            'data' => $requests,
+            'metrics' => [
+                'pending' => $pending,
+                'approved' => $approved,
+                'rejected' => $rejected,
+                'total' => $pending + $approved + $rejected,
+            ],
+        ]);
     }
 
     public function show($id)
     {
-        $req = SuspensionRequest::with(['employee', 'requester', 'manager'])->findOrFail($id);
+        $shopOwnerId = $this->resolveManagerShopOwnerId();
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'No shop association found.'], 403);
+        }
+
+        $req = SuspensionRequest::with(['employee', 'requester', 'manager'])
+            ->whereHas('employee', function ($employeeQuery) use ($shopOwnerId) {
+                $employeeQuery->where('shop_owner_id', $shopOwnerId);
+            })
+            ->findOrFail($id);
 
         return response()->json([
             'id' => $req->id,
@@ -69,13 +128,22 @@ class SuspensionApprovalController extends Controller
             'note' => 'nullable|string|min:3',
         ]);
 
-        $req = SuspensionRequest::with('employee')->findOrFail($id);
+        $shopOwnerId = $this->resolveManagerShopOwnerId();
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'No shop association found.'], 403);
+        }
+
+        $req = SuspensionRequest::with('employee')
+            ->whereHas('employee', function ($employeeQuery) use ($shopOwnerId) {
+                $employeeQuery->where('shop_owner_id', $shopOwnerId);
+            })
+            ->findOrFail($id);
 
         if ($req->status !== SuspensionStatus::PENDING_MANAGER) {
             return response()->json(['message' => 'This request is not pending manager review.'], 422);
         }
 
-        $req->manager_id = Auth::id();
+        $req->manager_id = Auth::guard('user')->id();
         $req->manager_note = $validated['note'] ?? null;
         $req->manager_reviewed_at = now();
 
@@ -103,6 +171,14 @@ class SuspensionApprovalController extends Controller
             SuspensionStatus::REJECTED_MANAGER => 'rejected',
             default => 'approved',
         };
+    }
+
+    private function resolveManagerShopOwnerId(): ?int
+    {
+        $manager = Auth::guard('user')->user();
+        $shopOwnerId = (int) ($manager?->shop_owner_id ?? 0);
+
+        return $shopOwnerId > 0 ? $shopOwnerId : null;
     }
 
     private function employeeName(SuspensionRequest $req): string

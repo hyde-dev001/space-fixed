@@ -178,7 +178,10 @@ class PaymongoWebhookController extends Controller
      */
     private function handleRepairPayment($repairRequest, $paymentId)
     {
-        $policy = $repairRequest->payment_policy ?? 'deposit_50';
+        $policy = strtolower((string) ($repairRequest->payment_policy ?? 'deposit_50'));
+        if ($policy !== 'deposit_50') {
+            $policy = 'full_upfront';
+        }
 
         $repairRequest->update([
             'paymongo_payment_id'  => $paymentId,
@@ -194,12 +197,6 @@ class PaymongoWebhookController extends Controller
                 $repairRequest->update(['status' => 'pending']);
             }
             $phaseLabel = 'full upfront payment';
-
-        } elseif ($policy === 'pay_after') {
-            // Payment at pickup → fully settled, status stays ready_for_pickup
-            $repairRequest->update(['payment_status' => 'completed']);
-            $phaseLabel = 'pay-after (at pickup) payment';
-
         } else {
             // deposit_50 (default): two-phase logic
             $isDepositPhase = in_array($repairRequest->payment_status ?? 'pending', ['pending', null]);

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Head } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -58,6 +58,26 @@ interface SuspensionRequest {
   approvalDate?: string;
   approvalNote?: string;
   rejectionReason?: string;
+}
+
+interface PaginationPayload<T> {
+  current_page: number;
+  data: T[];
+  last_page: number;
+  per_page: number;
+  total: number;
+}
+
+interface SuspensionMetrics {
+  pending: number;
+  approved: number;
+  rejected: number;
+  total: number;
+}
+
+interface SuspensionRequestsResponse {
+  data: PaginationPayload<SuspensionRequest>;
+  metrics: SuspensionMetrics;
 }
 
 interface MetricCardProps {
@@ -129,10 +149,19 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 const SuspendAccount: React.FC = () => {
   const [requests, setRequests] = useState<SuspensionRequest[]>([]);
-  const [filteredRequests, setFilteredRequests] = useState<SuspensionRequest[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
+  const [metrics, setMetrics] = useState<SuspensionMetrics>({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    total: 0,
+  });
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
@@ -146,8 +175,10 @@ const SuspendAccount: React.FC = () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.append('page', currentPage.toString());
+      params.append('per_page', '10');
       if (statusFilter !== 'all') params.append('status', statusFilter);
-      if (searchQuery) params.append('search', searchQuery);
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       const response = await fetch(`/api/manager/suspension-requests?${params.toString()}`, {
@@ -165,9 +196,26 @@ const SuspendAccount: React.FC = () => {
         throw new Error('Failed to fetch suspension requests');
       }
 
-      const data = await response.json();
-      setRequests(data.data || []);
-      setFilteredRequests(data.data || []);
+      const payload: SuspensionRequestsResponse = await response.json();
+      const pageData = payload.data;
+
+      if (pageData.current_page > pageData.last_page && pageData.last_page > 0) {
+        setCurrentPage(pageData.last_page);
+        return;
+      }
+
+      setRequests(pageData.data || []);
+      setCurrentPage(pageData.current_page || 1);
+      setLastPage(pageData.last_page || 1);
+      setPerPage(pageData.per_page || 10);
+      setTotalItems(pageData.total || 0);
+
+      setMetrics(payload.metrics || {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        total: 0,
+      });
     } catch (error) {
       console.error('Error fetching suspension requests:', error);
       Swal.fire({
@@ -183,24 +231,7 @@ const SuspendAccount: React.FC = () => {
 
   useEffect(() => {
     fetchRequests();
-  }, [statusFilter, searchQuery]);
-
-  // Calculate metrics
-  const metrics = useMemo(() => {
-    const total = requests.length;
-    const pending = requests.filter((r) => r.status === "pending").length;
-    const approved = requests.filter((r) => r.status === "approved").length;
-    const rejected = requests.filter((r) => r.status === "rejected").length;
-
-    return {
-      pending,
-      approved,
-      rejected,
-      pendingChange: pending > 0 ? 5 : -2,
-      approvedChange: approved > 0 ? 10 : 0,
-      rejectedChange: rejected > 0 ? 3 : 0,
-    };
-  }, [requests]);
+  }, [statusFilter, searchQuery, currentPage]);
 
   const handleApprove = (request: SuspensionRequest) => {
     // Open approval modal to capture an optional note
@@ -248,7 +279,7 @@ const SuspendAccount: React.FC = () => {
       setApprovalNote("");
       
       // Refresh the list
-      fetchRequests();
+      await fetchRequests();
 
     } catch (error) {
       console.error('Error approving suspension request:', error);
@@ -320,7 +351,7 @@ const SuspendAccount: React.FC = () => {
       setSelectedRequest(null);
       
       // Refresh the list
-      fetchRequests();
+      await fetchRequests();
 
     } catch (error) {
       console.error('Error rejecting suspension request:', error);
@@ -338,6 +369,9 @@ const SuspendAccount: React.FC = () => {
     approved: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
     rejected: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   };
+
+  const startItem = totalItems === 0 ? 0 : ((currentPage - 1) * perPage) + 1;
+  const endItem = totalItems === 0 ? 0 : Math.min(currentPage * perPage, totalItems);
 
   return (
     <AppLayoutERP>
@@ -359,8 +393,8 @@ const SuspendAccount: React.FC = () => {
           <MetricCard
             title="Pending Suspensions"
             value={metrics.pending}
-            change={metrics.pendingChange}
-            changeType={metrics.pendingChange > 0 ? "increase" : "decrease"}
+            change={metrics.pending > 0 ? 5 : 0}
+            changeType={metrics.pending > 0 ? "increase" : "decrease"}
             icon={ClockIcon}
             color="warning"
             description="Awaiting approval"
@@ -368,7 +402,7 @@ const SuspendAccount: React.FC = () => {
           <MetricCard
             title="Approved Suspensions"
             value={metrics.approved}
-            change={metrics.approvedChange}
+            change={metrics.approved > 0 ? 10 : 0}
             changeType="increase"
             icon={CheckIcon}
             color="success"
@@ -377,7 +411,7 @@ const SuspendAccount: React.FC = () => {
           <MetricCard
             title="Rejected Suspensions"
             value={metrics.rejected}
-            change={metrics.rejectedChange}
+            change={metrics.rejected > 0 ? 3 : 0}
             changeType="increase"
             icon={XIcon}
             color="info"
@@ -397,7 +431,10 @@ const SuspendAccount: React.FC = () => {
                 type="text"
                 placeholder="Search by name or email..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -409,7 +446,12 @@ const SuspendAccount: React.FC = () => {
               </label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as any);
+                  setCurrentPage(1);
+                }}
+                title="Filter suspension requests by status"
+                aria-label="Filter suspension requests by status"
                 className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500"
               >
                 <option value="all">All Requests</option>
@@ -448,8 +490,17 @@ const SuspendAccount: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.length > 0 ? (
-                  filteredRequests.map((request) => (
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-6 py-8 text-center text-gray-600 dark:text-gray-400"
+                    >
+                      Loading suspension requests...
+                    </td>
+                  </tr>
+                ) : requests.length > 0 ? (
+                  requests.map((request) => (
                     <tr
                       key={request.id}
                       className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
@@ -499,6 +550,40 @@ const SuspendAccount: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {!loading && totalItems > 0 && (
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  Showing <span className="font-medium">{startItem}</span> to <span className="font-medium">{endItem}</span> of <span className="font-medium">{totalItems}</span> requests
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Previous page"
+                    aria-label="Previous page"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, lastPage))}
+                    disabled={currentPage === lastPage}
+                    className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Next page"
+                    aria-label="Next page"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -516,6 +601,8 @@ const SuspendAccount: React.FC = () => {
                   setDetailsModalOpen(false);
                   setSelectedRequest(null);
                 }}
+                title="Close suspension request details"
+                aria-label="Close suspension request details"
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <XIcon className="size-6" />

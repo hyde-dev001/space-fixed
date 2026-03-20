@@ -8,6 +8,36 @@ interface ManagerDashboardStats {
   salesChange: number;
   totalRepairs: number;
   pendingJobOrders: number;
+  dateRange?: {
+    key: string;
+    label: string;
+    start: string;
+    end: string;
+    previous_start: string;
+    previous_end: string;
+    timezone: string;
+  };
+  kpiBreakdown?: {
+    retail: {
+      completed_orders: number;
+      pending_orders: number;
+      period_revenue: number;
+    };
+    repair: {
+      completed_jobs: number;
+      pending_jobs: number;
+      closed_rejected: number;
+    };
+    combined: {
+      completed_work_items_in_period: number;
+      pending_work_queue: number;
+    };
+  };
+  kpiSemantics?: {
+    totalSales: string;
+    totalRepairs: string;
+    pendingJobOrders: string;
+  };
   activeStaff: number;
   pendingApprovals: number;
   monthlyRevenue: Array<{

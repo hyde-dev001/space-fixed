@@ -161,7 +161,7 @@ export default function StockRequest() {
 	const formatStatus = (status: string) => {
 		const map: Record<string, string> = {
 			pending: "Pending",
-			accepted: "Accepted",
+			accepted: "Approved",
 			rejected: "Rejected",
 			needs_details: "Needs Details",
 		};
@@ -176,11 +176,11 @@ export default function StockRequest() {
 		if (request.status === "accepted") return;
 
 		const result = await Swal.fire({
-			title: "Accept request?",
+			title: "Approve request?",
 			text: `Proceed with supplier sourcing for ${request.product_name}?`,
 			icon: "question",
 			showCancelButton: true,
-			confirmButtonText: "Yes, accept",
+			confirmButtonText: "Yes, approve",
 			cancelButtonText: "Cancel",
 			confirmButtonColor: "#2563eb",
 			cancelButtonColor: "#6b7280",
@@ -191,8 +191,8 @@ export default function StockRequest() {
 		try {
 			await stockRequestApi.approve(request.id);
 			await Swal.fire({
-				title: "Accepted",
-				text: "Request has been accepted and is ready for supplier sourcing.",
+				title: "Approved",
+				text: "Request has been approved and is ready for supplier sourcing.",
 				icon: "success",
 				timer: 1500,
 				showConfirmButton: false,
@@ -270,7 +270,7 @@ export default function StockRequest() {
 		if (!result.isConfirmed || !result.value) return;
 
 		try {
-			await stockRequestApi.requestDetails(request.id, { response_notes: result.value });
+			await stockRequestApi.requestDetails(request.id, { approval_notes: result.value });
 			await Swal.fire({
 				title: "Sent",
 				text: "Request for details has been sent to Inventory.",
@@ -305,7 +305,7 @@ export default function StockRequest() {
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Total Requests" value={metrics.total} description="All stock requests received" icon={ClipboardIcon} color="info" />
 					<MetricCard title="Pending Review" value={metrics.pending} description="Requests awaiting procurement action" icon={ClockIcon} color="warning" />
-					<MetricCard title="Accepted Requests" value={metrics.accepted} description="Requests ready for supplier sourcing" icon={CheckCircleIcon} color="success" />
+					<MetricCard title="Approved Requests" value={metrics.accepted} description="Requests ready for supplier sourcing" icon={CheckCircleIcon} color="success" />
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
@@ -527,7 +527,7 @@ export default function StockRequest() {
 								disabled={viewingRequest.status === "accepted"}
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Accept
+								Approve
 							</button>
 							<button
 								onClick={() => handleAskDetails(viewingRequest)}

@@ -26,6 +26,7 @@ export default function Register() {
 
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const authInputClasses = 'h-12 rounded-xl border-gray-200 bg-[#f8fafc] text-[13px] text-gray-800 shadow-none focus:border-gray-300 focus:ring-gray-200/70';
 
   const validateStep = (step: number): boolean => {
     const newErrors: FormErrors = {};
@@ -253,28 +254,32 @@ export default function Register() {
   return (
     <>
       <Head title="Register" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
         <Navigation />
 
-      <div className="max-w-[1920px] mx-auto px-6 lg:px-12 py-24">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
+      <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-16 sm:pt-20 lg:pt-28 pb-16 sm:pb-24">
+        <div className="text-center mt-20 sm:mt-0 mb-7 sm:mb-10 lg:mb-12">
+          <h1 className="text-[34px] leading-[1.05] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 tracking-tight">
             REGISTER ACCOUNT
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
+          <p className="text-[15px] sm:text-lg lg:text-xl text-gray-600 max-w-sm sm:max-w-2xl mx-auto leading-relaxed font-light">
             Please fill in your details to create an account.
           </p>
         </div>
 
-        <div className="max-w-lg mx-auto">
-          <div className="bg-white rounded-2xl shadow-xl p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="max-w-92.5 sm:max-w-lg mx-auto">
+          <div className="bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
+            <div className="mb-4 text-center">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Step {currentStep} of 3</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               {currentStep === 1 && (
                 <>
                   <div className="relative">
-                    <Label htmlFor="firstName">First Name</Label>
+                    <Label htmlFor="firstName" className="text-[12px] font-medium text-gray-700 mb-1.5">First Name</Label>
                     <div className="relative">
-                      <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="text"
                         id="firstName"
@@ -282,16 +287,16 @@ export default function Register() {
                         placeholder="Enter your first name"
                         value={formData.firstName}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.firstName ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.firstName ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.firstName && <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>}
                   </div>
 
                   <div className="relative">
-                    <Label htmlFor="lastName">Last Name</Label>
+                    <Label htmlFor="lastName" className="text-[12px] font-medium text-gray-700 mb-1.5">Last Name</Label>
                     <div className="relative">
-                      <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="text"
                         id="lastName"
@@ -299,16 +304,16 @@ export default function Register() {
                         placeholder="Enter your last name"
                         value={formData.lastName}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.lastName ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.lastName ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
                   </div>
 
                   <div className="relative">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email" className="text-[12px] font-medium text-gray-700 mb-1.5">Email</Label>
                     <div className="relative">
-                      <MailIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <MailIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="email"
                         id="email"
@@ -316,16 +321,16 @@ export default function Register() {
                         placeholder="Enter your email address"
                         value={formData.email}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.email ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
                   </div>
 
                   <div className="relative">
-                    <Label htmlFor="phone">Phone Number</Label>
+                    <Label htmlFor="phone" className="text-[12px] font-medium text-gray-700 mb-1.5">Phone Number</Label>
                     <div className="relative">
-                      <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="tel"
                         id="phone"
@@ -333,7 +338,7 @@ export default function Register() {
                         placeholder="Enter your phone number"
                         value={formData.phone}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.phone ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.phone ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone}</p>}
@@ -344,9 +349,9 @@ export default function Register() {
               {currentStep === 2 && (
                 <>
                   <div className="relative">
-                    <Label htmlFor="age">Age</Label>
+                    <Label htmlFor="age" className="text-[12px] font-medium text-gray-700 mb-1.5">Age</Label>
                     <div className="relative">
-                      <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="number"
                         id="age"
@@ -354,16 +359,16 @@ export default function Register() {
                         placeholder="Enter your age"
                         value={formData.age}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.age ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.age ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.age && <p className="mt-1 text-sm text-red-600">{errors.age}</p>}
                   </div>
 
                   <div className="relative">
-                    <Label htmlFor="address">Address</Label>
+                    <Label htmlFor="address" className="text-[12px] font-medium text-gray-700 mb-1.5">Address</Label>
                     <div className="relative">
-                      <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="text"
                         id="address"
@@ -371,16 +376,16 @@ export default function Register() {
                         placeholder="Enter your address"
                         value={formData.address}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.address ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.address ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address}</p>}
                   </div>
 
                   <div className="relative">
-                    <Label htmlFor="password">Password</Label>
+                    <Label htmlFor="password" className="text-[12px] font-medium text-gray-700 mb-1.5">Password</Label>
                     <div className="relative">
-                      <LockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="password"
                         id="password"
@@ -388,16 +393,16 @@ export default function Register() {
                         placeholder="Enter your password"
                         value={formData.password}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.password ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
                   </div>
 
                   <div className="relative">
-                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                    <Label htmlFor="confirmPassword" className="text-[12px] font-medium text-gray-700 mb-1.5">Confirm Password</Label>
                     <div className="relative">
-                      <LockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="password"
                         id="confirmPassword"
@@ -405,7 +410,7 @@ export default function Register() {
                         placeholder="Confirm your password"
                         value={formData.confirmPassword}
                         onChange={handleInputChange}
-                        className={`pl-10 ${errors.confirmPassword ? 'border-red-500' : ''}`}
+                        className={`pl-10 ${authInputClasses} ${errors.confirmPassword ? 'border-red-500' : ''}`}
                       />
                     </div>
                     {errors.confirmPassword && <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>}
@@ -440,9 +445,9 @@ export default function Register() {
                       name="termsAccepted"
                       checked={formData.termsAccepted}
                       onChange={handleCheckboxChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-black focus:ring-black/30 border-gray-300 rounded"
                     />
-                    <label htmlFor="termsAccepted" className="ml-2 block text-sm text-gray-900">
+                    <label htmlFor="termsAccepted" className="ml-2 block text-[12px] text-gray-700">
                       Accept to the terms and conditions
                     </label>
                   </div>
@@ -450,12 +455,12 @@ export default function Register() {
                 </>
               )}
 
-              <div className="flex justify-between pt-4">
+              <div className="flex flex-col sm:flex-row justify-between gap-3 pt-2 sm:pt-4">
                 {currentStep > 1 && (
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
+                    className="w-full sm:w-auto rounded-xl px-6 py-3 bg-gray-100 text-gray-700 font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-gray-200 transition-colors"
                   >
                     Previous
                   </button>
@@ -464,7 +469,7 @@ export default function Register() {
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors ml-auto"
+                    className="w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors sm:ml-auto"
                   >
                     Next
                   </button>
@@ -473,7 +478,7 @@ export default function Register() {
                     type="button"
                     onClick={handleRegisterClick}
                     disabled={isLoading}
-                    className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+                    className="w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:ml-auto"
                   >
                     {isLoading ? 'Creating Account...' : 'Register'}
                   </button>
@@ -482,11 +487,11 @@ export default function Register() {
             </form>
 
             <div className="mt-6 text-center">
-              <p className="text-gray-600">
+              <p className="text-[13px] text-gray-600">
                 Already have an account?{' '}
                 <a
                   href={route("login")}
-                  className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
+                  className="text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
                 >
                   Sign in here
                 </a>

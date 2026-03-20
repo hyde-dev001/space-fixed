@@ -216,11 +216,20 @@ class ReplenishmentRequestController extends Controller
         }
 
         $validatedData = $request->validate([
-            'response_notes' => 'required|string|min:10',
+            'response_notes' => 'nullable|string|min:10|required_without:rejection_notes',
+            'rejection_notes' => 'nullable|string|min:10|required_without:response_notes',
         ]);
 
+        $responseNotes = $validatedData['response_notes'] ?? $validatedData['rejection_notes'] ?? null;
+
+        if (!$responseNotes) {
+            return response()->json([
+                'message' => 'Response notes are required.'
+            ], 422);
+        }
+
         try {
-            $replenishmentRequest->reject(Auth::id(), $validatedData['response_notes']);
+            $replenishmentRequest->reject(Auth::id(), $responseNotes);
 
             return response()->json([
                 'message' => 'Replenishment request rejected successfully.',
@@ -245,11 +254,20 @@ class ReplenishmentRequestController extends Controller
         $this->authorize('accept', $replenishmentRequest);
 
         $validatedData = $request->validate([
-            'response_notes' => 'required|string|min:10',
+            'response_notes' => 'nullable|string|min:10|required_without:notes',
+            'notes' => 'nullable|string|min:10|required_without:response_notes',
         ]);
 
+        $responseNotes = $validatedData['response_notes'] ?? $validatedData['notes'] ?? null;
+
+        if (!$responseNotes) {
+            return response()->json([
+                'message' => 'Response notes are required.'
+            ], 422);
+        }
+
         try {
-            $replenishmentRequest->requestDetails(Auth::id(), $validatedData['response_notes']);
+            $replenishmentRequest->requestDetails(Auth::id(), $responseNotes);
 
             return response()->json([
                 'message' => 'Additional details requested successfully.',

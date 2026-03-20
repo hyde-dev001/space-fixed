@@ -218,11 +218,20 @@ class StockRequestApprovalController extends Controller
         // $this->authorize('approve', $stockRequest);
 
         $validatedData = $request->validate([
-            'approval_notes' => 'required|string|min:10',
+            'approval_notes' => 'nullable|string|min:10|required_without:response_notes',
+            'response_notes' => 'nullable|string|min:10|required_without:approval_notes',
         ]);
 
+        $approvalNotes = $validatedData['approval_notes'] ?? $validatedData['response_notes'] ?? null;
+
+        if (!$approvalNotes) {
+            return response()->json([
+                'message' => 'Approval notes are required.'
+            ], 422);
+        }
+
         try {
-            $stockRequest->requestDetails(Auth::id(), $validatedData['approval_notes']);
+            $stockRequest->requestDetails(Auth::id(), $approvalNotes);
 
             return response()->json([
                 'message' => 'Additional details requested successfully.',

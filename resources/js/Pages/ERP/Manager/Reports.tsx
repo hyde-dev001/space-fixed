@@ -1,24 +1,7 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import type { ComponentType } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-
-type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
-
-// Icons
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const DocumentIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -56,52 +39,55 @@ const CloseIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+interface ReportRecord {
+  id: number;
+  report_type: string;
+  report_title: string;
+  description: string;
+  date_range: string;
+  status: "generated" | "sent";
+  notes: string | null;
+  generated_at: string | null;
+  sent_at: string | null;
+}
+
+interface ReportTypeCard {
+  id: string;
+  title: string;
+  description: string;
+  last_report: ReportRecord | null;
+}
+
+interface ReportsPayload {
+  metrics: {
+    reports_generated: number;
+    pending_issues: number;
+    reports_sent: number;
+  };
+  report_types: ReportTypeCard[];
+  recent_reports: ReportRecord[];
+}
+
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
-  icon: ComponentType<{ className?: string }>;
-  color: MetricColor;
+  icon: ({ className }: { className?: string }) => JSX.Element;
+  colorClass: string;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
-  const getColorClasses = () => {
-    switch (color) {
-      case "success":
-        return "from-green-500 to-emerald-600";
-      case "warning":
-        return "from-yellow-500 to-orange-600";
-      case "info":
-        return "from-blue-500 to-indigo-600";
-      default:
-        return "from-gray-500 to-gray-600";
-    }
-  };
-
+const MetricCard = ({ title, value, icon: Icon, colorClass, description }: MetricCardProps) => {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-lg dark:border-gray-800 dark:bg-white/3">
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
-            <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
+        <div className="mb-4 flex items-center justify-between">
+          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${colorClass}`}>
+            <Icon className="size-7 text-white" />
           </div>
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
-          <h3 className="text-3xl font-bold text-gray-900 dark:text-white transition-colors duration-300">{value}</h3>
+          <h3 className="text-3xl font-bold text-gray-900 dark:text-white">{value}</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
         </div>
       </div>
@@ -109,241 +95,393 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   );
 };
 
-interface ReportType {
-  id: string;
-  title: string;
-  description: string;
-  icon: ComponentType<{ className?: string }>;
-  color: string;
-  lastGenerated?: string;
-}
+const reportStyleMap: Record<string, { cardBg: string; iconColor: string }> = {
+  sales: {
+    cardBg: "bg-blue-50 dark:bg-blue-900/20",
+    iconColor: "text-blue-600 dark:text-blue-400",
+  },
+  stock: {
+    cardBg: "bg-emerald-50 dark:bg-emerald-900/20",
+    iconColor: "text-emerald-600 dark:text-emerald-400",
+  },
+  complaints: {
+    cardBg: "bg-amber-50 dark:bg-amber-900/20",
+    iconColor: "text-amber-600 dark:text-amber-400",
+  },
+  damaged: {
+    cardBg: "bg-red-50 dark:bg-red-900/20",
+    iconColor: "text-red-600 dark:text-red-400",
+  },
+  missing: {
+    cardBg: "bg-orange-50 dark:bg-orange-900/20",
+    iconColor: "text-orange-600 dark:text-orange-400",
+  },
+  performance: {
+    cardBg: "bg-purple-50 dark:bg-purple-900/20",
+    iconColor: "text-purple-600 dark:text-purple-400",
+  },
+};
 
-const reportTypes: ReportType[] = [
-  {
-    id: "sales",
-    title: "Sales Report",
-    description: "Comprehensive sales data and revenue analysis",
-    icon: ChartIcon,
-    color: "blue",
-    lastGenerated: "2026-02-01 14:30"
+const reportIconMap: Record<string, ({ className }: { className?: string }) => JSX.Element> = {
+  sales: ChartIcon,
+  stock: DocumentIcon,
+  complaints: AlertIcon,
+  damaged: AlertIcon,
+  missing: AlertIcon,
+  performance: ChartIcon,
+};
+
+const defaultPayload: ReportsPayload = {
+  metrics: {
+    reports_generated: 0,
+    pending_issues: 0,
+    reports_sent: 0,
   },
-  {
-    id: "stock",
-    title: "Stock Update Report",
-    description: "Current inventory levels and stock movements",
-    icon: DocumentIcon,
-    color: "emerald",
-    lastGenerated: "2026-02-02 09:15"
-  },
-  {
-    id: "complaints",
-    title: "Customer Complaints",
-    description: "Customer feedback and complaint tracking",
-    icon: AlertIcon,
-    color: "amber",
-    lastGenerated: "2026-01-31 16:45"
-  },
-  {
-    id: "damaged",
-    title: "Damaged Items Report",
-    description: "Items marked as damaged or defective",
-    icon: AlertIcon,
-    color: "red",
-    lastGenerated: "2026-01-30 11:20"
-  },
-  {
-    id: "missing",
-    title: "Missing Items Report",
-    description: "Unaccounted or lost inventory items",
-    icon: AlertIcon,
-    color: "orange",
-    lastGenerated: "2026-01-29 10:00"
-  },
-  {
-    id: "performance",
-    title: "Performance Summary",
-    description: "Overall business performance metrics",
-    icon: ChartIcon,
-    color: "purple",
-    lastGenerated: "2026-02-01 18:00"
-  },
-];
+  report_types: [],
+  recent_reports: [],
+};
 
 export default function ERPReports() {
-  const [selectedReport, setSelectedReport] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState("week");
-  const [generateModalOpen, setGenerateModalOpen] = useState(false);
+  const queryPreset = useMemo(() => {
+    if (typeof window === "undefined") {
+      return {
+        report: null as string | null,
+        range: "week",
+        openGenerate: false,
+      };
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const requestedReport = params.get("report");
+    const range = params.get("range") || "week";
+    const openGenerate = params.get("openGenerate") === "1";
+    const allowedRanges = ["week", "month", "quarter", "year"];
+    const allowedReports = ["sales", "stock", "complaints", "damaged", "missing", "performance"];
+    const report = requestedReport && allowedReports.includes(requestedReport) ? requestedReport : null;
+
+    return {
+      report,
+      range: allowedRanges.includes(range) ? range : "week",
+      openGenerate: openGenerate && Boolean(report),
+    };
+  }, []);
+
+  const [reportsData, setReportsData] = useState<ReportsPayload>(defaultPayload);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(queryPreset.openGenerate ? queryPreset.report : null);
+  const [dateRange, setDateRange] = useState(queryPreset.range);
+  const [generateModalOpen, setGenerateModalOpen] = useState(Boolean(queryPreset.openGenerate && queryPreset.report));
   const [reportNotes, setReportNotes] = useState("");
 
-  const handleGenerateReport = (reportId: string) => {
-    const report = reportTypes.find(r => r.id === reportId);
-    setSelectedReport(reportId);
+  const fetchReports = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/manager/reports", {
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload.message || errorPayload.error || "Failed to load manager reports");
+      }
+
+      const payload = await response.json();
+      setReportsData({
+        metrics: payload?.metrics ?? defaultPayload.metrics,
+        report_types: payload?.report_types ?? [],
+        recent_reports: payload?.recent_reports ?? [],
+      });
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Failed to load reports");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, []);
+
+  const formatDateTime = (dateTime: string | null) => {
+    if (!dateTime) return "—";
+
+    const date = new Date(dateTime);
+    if (Number.isNaN(date.getTime())) return dateTime;
+
+    return date.toLocaleString("en-PH", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const openGenerateModal = (reportId: string) => {
+    setSelectedReportId(reportId);
     setGenerateModalOpen(true);
   };
 
-  const handleSendReport = async () => {
+  const closeGenerateModal = () => {
+    setGenerateModalOpen(false);
+    setSelectedReportId(null);
+    setReportNotes("");
+    setDateRange("week");
+  };
+
+  const handleGenerateAndSend = async () => {
+    if (!selectedReportId) {
+      return;
+    }
+
     if (!reportNotes.trim()) {
       Swal.fire({
         title: "Notes Required",
-        text: "Please add notes or summary for the shop owner.",
+        text: "Please add notes for the shop owner before sending.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
       return;
     }
 
-    setGenerateModalOpen(false);
+    try {
+      setSubmitting(true);
 
-    const result = await Swal.fire({
-      title: "Send Report?",
-      html: `<div style="text-align: left;"><strong>Report Type:</strong> ${reportTypes.find(r => r.id === selectedReport)?.title}<br/><strong>Date Range:</strong> ${dateRange === 'week' ? 'Last 7 Days' : dateRange === 'month' ? 'Last 30 Days' : 'Custom Range'}<br/><strong>Notes:</strong> ${reportNotes}</div>`,
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#2563eb",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, Send to Shop Owner",
-      cancelButtonText: "Cancel",
-    });
+      const generateResponse = await fetch("/api/manager/reports/generate", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({
+          report_type: selectedReportId,
+          date_range: dateRange,
+          notes: reportNotes,
+        }),
+      });
 
-    if (result.isConfirmed) {
-      Swal.fire({
-        title: "Report Sent!",
-        text: "The report has been successfully sent to the shop owner.",
+      if (!generateResponse.ok) {
+        const errorPayload = await generateResponse.json().catch(() => ({}));
+        throw new Error(errorPayload.message || errorPayload.error || "Failed to generate report");
+      }
+
+      const generatedPayload = await generateResponse.json();
+      const generatedReportId = generatedPayload?.report?.id;
+
+      if (!generatedReportId) {
+        throw new Error("Generated report ID was not returned");
+      }
+
+      const sendResponse = await fetch(`/api/manager/reports/${generatedReportId}/send`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({
+          notes: reportNotes,
+        }),
+      });
+
+      if (!sendResponse.ok) {
+        const errorPayload = await sendResponse.json().catch(() => ({}));
+        throw new Error(errorPayload.message || errorPayload.error || "Failed to send report");
+      }
+
+      closeGenerateModal();
+      await fetchReports();
+
+      await Swal.fire({
+        title: "Report Sent",
+        text: "The report has been generated and marked as sent to the shop owner.",
         icon: "success",
         confirmButtonColor: "#2563eb",
       });
-      setReportNotes("");
-      setSelectedReport(null);
+    } catch (submitError) {
+      await Swal.fire({
+        title: "Action Failed",
+        text: submitError instanceof Error ? submitError.message : "Unable to process report action",
+        icon: "error",
+        confirmButtonColor: "#dc2626",
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDownloadReport = async (reportId: string) => {
-    const report = reportTypes.find(r => r.id === reportId);
-    
-    const result = await Swal.fire({
-      title: "Download Report?",
-      html: `<div style="text-align: left;"><strong>Report:</strong> ${report?.title}<br/><strong>Last Generated:</strong> ${report?.lastGenerated}</div>`,
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#2563eb",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, Download",
-      cancelButtonText: "Cancel",
-    });
+    const reportType = reportsData.report_types.find((entry) => entry.id === reportId);
+    const latestReportId = reportType?.last_report?.id;
 
-    if (result.isConfirmed) {
+    if (!latestReportId) {
       Swal.fire({
-        title: "Download Started",
-        text: `Downloading ${report?.title}...`,
-        icon: "success",
-        timer: 2000,
-        showConfirmButton: false,
+        title: "No Report Available",
+        text: "Generate this report first before downloading.",
+        icon: "info",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/manager/reports/${latestReportId}/download`, {
+        credentials: "include",
+        headers: {
+          Accept: "text/csv,application/octet-stream,application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload.message || errorPayload.error || "Failed to download report");
+      }
+
+      const disposition = response.headers.get("content-disposition") || "";
+      const fileNameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const fileName = fileNameMatch?.[1] || `${reportId}-report.csv`;
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+
+      await fetchReports();
+    } catch (downloadError) {
+      await Swal.fire({
+        title: "Download Failed",
+        text: downloadError instanceof Error ? downloadError.message : "Failed to download report",
+        icon: "error",
+        confirmButtonColor: "#dc2626",
       });
     }
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    if (status === "sent") {
+      return "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200";
+    }
+
+    return "bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200";
   };
 
   return (
     <AppLayoutERP>
       <Head title="Reports - Solespace" />
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
+      <div className="space-y-6 p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold mb-1">Reports & Analytics</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Generate and send detailed reports to shop owner
-            </p>
+            <h1 className="mb-1 text-2xl font-semibold">Reports & Analytics</h1>
+            <p className="text-gray-600 dark:text-gray-400">Generate and send detailed reports to shop owner</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
               Manager Access
             </span>
           </div>
         </div>
 
-        {/* Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           <MetricCard
             title="Reports Generated"
-            value={24}
-            change={8}
-            changeType="increase"
+            value={reportsData.metrics.reports_generated}
             icon={DocumentIcon}
-            color="info"
+            colorClass="bg-linear-to-br from-blue-500 to-indigo-600"
             description="This month"
           />
           <MetricCard
             title="Pending Issues"
-            value={7}
-            change={3}
-            changeType="decrease"
+            value={reportsData.metrics.pending_issues}
             icon={AlertIcon}
-            color="warning"
+            colorClass="bg-linear-to-br from-yellow-500 to-orange-600"
             description="Requires attention"
           />
           <MetricCard
             title="Reports Sent"
-            value={18}
-            change={12}
-            changeType="increase"
+            value={reportsData.metrics.reports_sent}
             icon={SendIcon}
-            color="success"
+            colorClass="bg-linear-to-br from-green-500 to-emerald-600"
             description="To shop owner"
           />
         </div>
 
-        {/* Report Types Grid */}
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="mb-6">
             <h2 className="text-lg font-semibold">Available Reports</h2>
             <p className="text-sm text-gray-500">Select a report type to generate and send to shop owner</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {reportTypes.map((report) => (
-              <div
-                key={report.id}
-                className="group border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-lg transition-all duration-300 cursor-pointer"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className={`p-3 rounded-lg bg-${report.color}-50 dark:bg-${report.color}-900/20`}>
-                    <report.icon className={`w-6 h-6 text-${report.color}-600 dark:text-${report.color}-400`} />
+          {loading ? (
+            <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">Loading reports...</div>
+          ) : error ? (
+            <div className="py-10 text-center text-sm text-red-600 dark:text-red-400">{error}</div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {reportsData.report_types.map((report) => {
+                const style = reportStyleMap[report.id] || reportStyleMap.sales;
+                const ReportIcon = reportIconMap[report.id] || DocumentIcon;
+
+                return (
+                  <div
+                    key={report.id}
+                    className="group cursor-pointer rounded-xl border border-gray-200 p-5 transition-all duration-300 hover:border-blue-500 hover:shadow-lg dark:border-gray-700 dark:hover:border-blue-400"
+                  >
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className={`rounded-lg p-3 ${style.cardBg}`}>
+                        <ReportIcon className={`h-6 w-6 ${style.iconColor}`} />
+                      </div>
+                    </div>
+
+                    <h3 className="mb-2 text-base font-semibold text-gray-900 dark:text-white">{report.title}</h3>
+                    <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">{report.description}</p>
+                    <p className="mb-4 text-xs text-gray-500 dark:text-gray-500">
+                      Last generated: {formatDateTime(report.last_report?.generated_at ?? null)}
+                    </p>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openGenerateModal(report.id)}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                        title="Generate and send report"
+                        aria-label={`Generate and send ${report.title}`}
+                      >
+                        <SendIcon className="h-4 w-4" />
+                        Generate & Send
+                      </button>
+                      <button
+                        onClick={() => handleDownloadReport(report.id)}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                        title={`Download latest ${report.title}`}
+                        aria-label={`Download latest ${report.title}`}
+                      >
+                        <DownloadIcon className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
-                  {report.title}
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  {report.description}
-                </p>
-                {report.lastGenerated && (
-                  <p className="text-xs text-gray-500 dark:text-gray-500 mb-4">
-                    Last generated: {report.lastGenerated}
-                  </p>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleGenerateReport(report.id)}
-                    className="flex-1 px-3 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <SendIcon className="w-4 h-4" />
-                    Generate & Send
-                  </button>
-                  <button
-                    onClick={() => handleDownloadReport(report.id)}
-                    className="px-3 py-2 text-sm font-semibold rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                    title="Download"
-                  >
-                    <DownloadIcon className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Recent Reports Table */}
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="mb-4">
             <h2 className="text-lg font-semibold">Recent Reports</h2>
             <p className="text-sm text-gray-500">Recently generated and sent reports</p>
@@ -351,82 +489,66 @@ export default function ERPReports() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-800">
+              <thead className="border-b border-gray-200 text-left text-gray-500 dark:border-gray-800">
                 <tr>
                   <th className="pb-2">Report Type</th>
                   <th className="pb-2">Generated</th>
-                  <th className="pb-2">Sent To</th>
+                  <th className="pb-2">Sent</th>
                   <th className="pb-2">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                <tr>
-                  <td className="py-3 font-medium text-gray-900 dark:text-gray-100">Sales Report</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">2026-02-01 14:30</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">Shop Owner</td>
-                  <td className="py-3">
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-                      Sent
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-3 font-medium text-gray-900 dark:text-gray-100">Stock Update Report</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">2026-02-02 09:15</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">Shop Owner</td>
-                  <td className="py-3">
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-                      Sent
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-3 font-medium text-gray-900 dark:text-gray-100">Customer Complaints</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">2026-01-31 16:45</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">Shop Owner</td>
-                  <td className="py-3">
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-                      Viewed
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-3 font-medium text-gray-900 dark:text-gray-100">Damaged Items Report</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">2026-01-30 11:20</td>
-                  <td className="py-3 text-gray-600 dark:text-gray-400">Shop Owner</td>
-                  <td className="py-3">
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-                      Sent
-                    </span>
-                  </td>
-                </tr>
+                {!loading && reportsData.recent_reports.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                      No reports generated yet.
+                    </td>
+                  </tr>
+                ) : (
+                  reportsData.recent_reports.map((report) => (
+                    <tr key={report.id}>
+                      <td className="py-3 font-medium text-gray-900 dark:text-gray-100">{report.report_title}</td>
+                      <td className="py-3 text-gray-600 dark:text-gray-400">{formatDateTime(report.generated_at)}</td>
+                      <td className="py-3 text-gray-600 dark:text-gray-400">{formatDateTime(report.sent_at)}</td>
+                      <td className="py-3">
+                        <span className={`rounded-full px-2 py-1 text-xs font-semibold capitalize ${getStatusBadgeClass(report.status)}`}>
+                          {report.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Generate Report Modal */}
-        {generateModalOpen && selectedReport && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+        {generateModalOpen && selectedReportId && (
+          <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl dark:bg-gray-800">
+              <div className="flex items-center justify-between border-b border-gray-200 p-6 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Generate {reportTypes.find(r => r.id === selectedReport)?.title}
+                  Generate {reportsData.report_types.find((report) => report.id === selectedReportId)?.title}
                 </h2>
                 <button
-                  onClick={() => setGenerateModalOpen(false)}
-                  className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  onClick={closeGenerateModal}
+                  className="rounded-lg p-2 text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Close generate report modal"
+                  aria-label="Close generate report modal"
                 >
-                  <CloseIcon className="w-5 h-5" />
+                  <CloseIcon className="h-5 w-5" />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
+
+              <div className="space-y-4 p-6">
                 <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Range</p>
+                  <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Date Range</p>
                   <select
                     value={dateRange}
-                    onChange={(e) => setDateRange(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                    onChange={(event) => setDateRange(event.target.value)}
+                    title="Select report date range"
+                    aria-label="Select report date range"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-blue-400"
                   >
                     <option value="week">Last 7 Days</option>
                     <option value="month">Last 30 Days</option>
@@ -434,30 +556,34 @@ export default function ERPReports() {
                     <option value="year">Last Year</option>
                   </select>
                 </div>
+
                 <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes for Shop Owner</p>
+                  <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Notes for Shop Owner</p>
                   <textarea
                     value={reportNotes}
-                    onChange={(e) => setReportNotes(e.target.value)}
+                    onChange={(event) => setReportNotes(event.target.value)}
                     rows={4}
                     placeholder="Add summary, highlights, or important notes about this report..."
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 resize-none"
+                    className="w-full resize-none rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-blue-400"
                   />
                 </div>
               </div>
-              <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+
+              <div className="flex gap-3 border-t border-gray-200 p-6 dark:border-gray-700">
                 <button
-                  onClick={() => setGenerateModalOpen(false)}
-                  className="flex-1 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  onClick={closeGenerateModal}
+                  disabled={submitting}
+                  className="flex-1 rounded-lg bg-gray-100 px-4 py-2 font-semibold text-gray-900 transition-colors hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSendReport}
-                  className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                  onClick={handleGenerateAndSend}
+                  disabled={submitting}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                 >
-                  <SendIcon className="w-4 h-4" />
-                  Send to Shop Owner
+                  <SendIcon className="h-4 w-4" />
+                  {submitting ? "Processing..." : "Generate & Send"}
                 </button>
               </div>
             </div>

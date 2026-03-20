@@ -1,23 +1,6 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import type { ComponentType } from "react";
+import { useEffect, useState } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-
-type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
-
-// Icons
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const BoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -25,15 +8,15 @@ const BoxIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const TrendUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </svg>
-);
-
 const AlertIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
     <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </svg>
+);
+
+const TrendUpIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+    <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
   </svg>
 );
 
@@ -56,34 +39,41 @@ interface InventoryItem {
   sku: string;
   category: string;
   quantity: number;
-  price: string;
-  image: string;
+  price: number;
+  image: string | null;
   status: "In Stock" | "Low Stock" | "Out of Stock";
-  lastRestocked?: string;
+  last_updated?: string;
 }
 
-const inventoryData: InventoryItem[] = [
-  { id: 1, name: "Nike Air Max 270", sku: "SKU-001", category: "Shoes", quantity: 45, price: "₱6,499", image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-01-28" },
-  { id: 2, name: "Adidas Ultraboost 22", sku: "SKU-002", category: "Shoes", quantity: 32, price: "₱8,999", image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-25" },
-  { id: 3, name: "New Balance 550", sku: "SKU-003", category: "Shoes", quantity: 8, price: "₱5,299", image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-20" },
-  { id: 4, name: "Puma RS-X", sku: "SKU-004", category: "Shoes", quantity: 28, price: "₱4,799", image: "/images/product/product-04.jpg", status: "In Stock", lastRestocked: "2026-01-30" },
-  { id: 5, name: "Adidas Samba", sku: "SKU-005", category: "Shoes", quantity: 0, price: "₱5,499", image: "/images/product/product-05.jpg", status: "Out of Stock", lastRestocked: "2026-01-15" },
-  { id: 6, name: "Premium Shoelaces", sku: "SKU-006", category: "Accessories", quantity: 120, price: "₱180", image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-02-01" },
-  { id: 7, name: "Cleaning Foam", sku: "SKU-007", category: "Care Products", quantity: 15, price: "₱220", image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-22" },
-  { id: 8, name: "Odor Eliminator Spray", sku: "SKU-008", category: "Care Products", quantity: 5, price: "₱260", image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-18" },
-];
+interface PaginationPayload<T> {
+  current_page: number;
+  data: T[];
+  last_page: number;
+  per_page: number;
+  total: number;
+}
+
+interface MetricsPayload {
+  total_quantity: number;
+  low_stock_count: number;
+  out_of_stock_count: number;
+}
+
+interface InventoryResponse {
+  items: PaginationPayload<InventoryItem>;
+  metrics: MetricsPayload;
+  categories: string[];
+}
 
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
-  icon: ComponentType<{ className?: string }>;
-  color: MetricColor;
+  icon: ({ className }: { className?: string }) => JSX.Element;
+  color: "success" | "warning" | "info";
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -98,22 +88,12 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
+      <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
+          <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -127,32 +107,85 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function ERPInventoryOverview() {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [categoryFilter, setCategoryFilter] = useState("All");
+  const initialQuery = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search)
+    : new URLSearchParams();
+
+  const initialPage = Number(initialQuery.get("page") || "1");
+  const requestedStatus = initialQuery.get("status") || "All";
+  const allowedStatuses = ["All", "In Stock", "Low Stock", "Out of Stock"];
+
+  const [currentPage, setCurrentPage] = useState(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1);
+  const [searchQuery, setSearchQuery] = useState(initialQuery.get("search") || "");
+  const [statusFilter, setStatusFilter] = useState(allowedStatuses.includes(requestedStatus) ? requestedStatus : "All");
+  const [categoryFilter, setCategoryFilter] = useState(initialQuery.get("category") || "All");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [metrics, setMetrics] = useState<MetricsPayload>({
+    total_quantity: 0,
+    low_stock_count: 0,
+    out_of_stock_count: 0,
+  });
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
-  // Filter data
-  const filteredData = inventoryData.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          item.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "All" || item.status === statusFilter;
-    const matchesCategory = categoryFilter === "All" || item.category === categoryFilter;
-    return matchesSearch && matchesStatus && matchesCategory;
-  });
+  useEffect(() => {
+    const fetchInventoryOverview = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-  // Pagination
-  const itemsPerPage = 7;
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+        const params = new URLSearchParams({
+          page: currentPage.toString(),
+          per_page: "10",
+        });
+
+        if (searchQuery.trim()) params.append("search", searchQuery.trim());
+        if (categoryFilter !== "All") params.append("category", categoryFilter);
+        if (statusFilter !== "All") params.append("status", statusFilter);
+
+        const response = await fetch(`/api/manager/inventory-overview?${params.toString()}`, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to load inventory overview");
+        }
+
+        const payload: InventoryResponse = await response.json();
+        setItems(payload.items.data);
+        setTotalItems(payload.items.total);
+        setItemsPerPage(payload.items.per_page);
+        setTotalPages(payload.items.last_page || 1);
+        setMetrics(payload.metrics);
+        setCategories(payload.categories || []);
+      } catch (fetchError) {
+        setError(fetchError instanceof Error ? fetchError.message : "Failed to load inventory overview");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInventoryOverview();
+  }, [currentPage, searchQuery, categoryFilter, statusFilter]);
+
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  // Calculate metrics
-  const totalItems = inventoryData.reduce((sum, item) => sum + item.quantity, 0);
-  const lowStockCount = inventoryData.filter(item => item.status === "Low Stock").length;
-  const outOfStockCount = inventoryData.filter(item => item.status === "Out of Stock").length;
+  const formatPrice = (value: number) =>
+    new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+    }).format(value || 0);
 
   const handleViewClick = (item: InventoryItem) => {
     setSelectedItem(item);
@@ -183,27 +216,21 @@ export default function ERPInventoryOverview() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <MetricCard
             title="Total Items in Stock"
-            value={totalItems}
-            change={12}
-            changeType="increase"
+            value={metrics.total_quantity.toLocaleString()}
             icon={BoxIcon}
             color="info"
             description="Across all categories"
           />
           <MetricCard
             title="Low Stock Items"
-            value={lowStockCount}
-            change={5}
-            changeType="decrease"
+            value={metrics.low_stock_count}
             icon={AlertIcon}
             color="warning"
             description="Need attention"
           />
           <MetricCard
             title="Out of Stock"
-            value={outOfStockCount}
-            change={2}
-            changeType="decrease"
+            value={metrics.out_of_stock_count}
             icon={TrendUpIcon}
             color="success"
             description="Awaiting restock"
@@ -238,12 +265,16 @@ export default function ERPInventoryOverview() {
                   setCategoryFilter(e.target.value);
                   setCurrentPage(1);
                 }}
+                title="Filter inventory by category"
+                aria-label="Filter inventory by category"
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 <option value="All">All Categories</option>
-                <option value="Shoes">Shoes</option>
-                <option value="Accessories">Accessories</option>
-                <option value="Care Products">Care Products</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="sm:w-48">
@@ -253,6 +284,8 @@ export default function ERPInventoryOverview() {
                   setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
+                title="Filter inventory by stock status"
+                aria-label="Filter inventory by stock status"
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 <option value="All">All Status</option>
@@ -278,12 +311,30 @@ export default function ERPInventoryOverview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {paginatedItems.map((item) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                      Loading inventory...
+                    </td>
+                  </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-sm text-red-600 dark:text-red-400">
+                      {error}
+                    </td>
+                  </tr>
+                ) : items.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                      No inventory items found.
+                    </td>
+                  </tr>
+                ) : items.map((item) => (
                   <tr key={item.id}>
                     <td className="py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
-                          <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                          <img src={item.image || "/images/product/product-01.jpg"} alt={item.name} className="h-full w-full object-cover" />
                         </div>
                         <div>
                           <p className="font-medium text-gray-900 dark:text-gray-100">{item.name}</p>
@@ -295,7 +346,7 @@ export default function ERPInventoryOverview() {
                     <td className="py-3">
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
                     </td>
-                    <td className="py-3 text-gray-900 dark:text-gray-100">{item.price}</td>
+                    <td className="py-3 text-gray-900 dark:text-gray-100">{formatPrice(item.price)}</td>
                     <td className="py-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -325,11 +376,11 @@ export default function ERPInventoryOverview() {
           </div>
 
           {/* Pagination */}
-          {filteredData.length > 0 && (
+          {!loading && !error && totalItems > 0 && (
             <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 mt-4">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> of <span className="font-medium">{filteredData.length}</span> items
+                  Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(currentPage * itemsPerPage, totalItems)}</span> of <span className="font-medium">{totalItems}</span> items
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -360,13 +411,15 @@ export default function ERPInventoryOverview() {
 
         {/* View Details Modal */}
         {viewModalOpen && selectedItem && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Inventory Item Details</h2>
                 <button
                   onClick={() => setViewModalOpen(false)}
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  title="Close details modal"
+                  aria-label="Close details modal"
                 >
                   <CloseIcon className="w-5 h-5" />
                 </button>
@@ -375,7 +428,7 @@ export default function ERPInventoryOverview() {
                 {/* Product Image */}
                 <div className="flex justify-center">
                   <div className="h-48 w-48 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-700">
-                    <img src={selectedItem.image} alt={selectedItem.name} className="h-full w-full object-cover" />
+                    <img src={selectedItem.image || "/images/product/product-01.jpg"} alt={selectedItem.name} className="h-full w-full object-cover" />
                   </div>
                 </div>
 
@@ -395,7 +448,7 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Price</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.price}</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(selectedItem.price)}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Quantity Available</p>
@@ -415,10 +468,10 @@ export default function ERPInventoryOverview() {
                       {selectedItem.status}
                     </span>
                   </div>
-                  {selectedItem.lastRestocked && (
+                  {selectedItem.last_updated && (
                     <div className="col-span-2">
-                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Restocked</p>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.lastRestocked}</p>
+                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Updated</p>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.last_updated}</p>
                     </div>
                   )}
                 </div>

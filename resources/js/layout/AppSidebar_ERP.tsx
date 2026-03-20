@@ -918,21 +918,47 @@ const AppSidebar_ERP: React.FC = () => {
     [isActive]
   );
 
+  type AttendanceSectionKey = "staff" | "repair" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
+
+  const getAttendanceSection = (): AttendanceSectionKey => {
+    if (hasStaffAccess()) return "staff";
+    if (hasRepairerAccess()) return "repair";
+    if (role === "MANAGER") return "manager";
+    if (hasInventoryAccess()) return "inventory";
+    if (hasProcurementAccess()) return "procurement";
+    if (hasHRAccess()) return "hr";
+    if (hasFinanceAccess()) return "finance";
+    if (hasCRMAccess()) return "crm";
+    return null;
+  };
+
+  const withAttendanceForSection = (section: Exclude<AttendanceSectionKey, null>, items: NavItem[]) => {
+    if (getAttendanceSection() !== section) {
+      return items;
+    }
+
+    const itemsWithoutAttendance = items.filter(
+      (item) => !(item.name === attendanceItem.name && item.route === attendanceItem.route)
+    );
+
+    return [attendanceItem, ...itemsWithoutAttendance];
+  };
+
   useEffect(() => {
     const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
 
     if (hasStaffAccess()) {
-      menuGroups.push({ menuType: "staff", items: [attendanceItem, ...getFilteredStaffItems(), myPayslipsItem] });
+      menuGroups.push({ menuType: "staff", items: withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem]) });
     }
 
     if (hasRepairerAccess()) {
-      menuGroups.push({ menuType: "repair", items: [attendanceItem, ...getFilteredRepairItems(), myPayslipsItem] });
+      menuGroups.push({ menuType: "repair", items: withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem]) });
     }
 
     if (role === "MANAGER") {
       menuGroups.push({
         menuType: "manager",
-        items: hasFinanceAccess() ? [...managerItems, myPayslipsItem] : [attendanceItem, ...managerItems, myPayslipsItem],
+        items: withAttendanceForSection("manager", [...managerItems, myPayslipsItem]),
       });
     }
 
@@ -940,30 +966,30 @@ const AppSidebar_ERP: React.FC = () => {
       const filteredHrItems = getFilteredHRItems();
       menuGroups.push({
         menuType: "hr",
-        items: hasFinanceAccess() ? [...filteredHrItems, myPayslipsItem] : [attendanceItem, ...filteredHrItems, myPayslipsItem],
+        items: withAttendanceForSection("hr", [...filteredHrItems, myPayslipsItem]),
       });
     }
 
     if (hasFinanceAccess()) {
-      menuGroups.push({ menuType: "finance", items: [attendanceItem, ...getFilteredFinanceItems(), myPayslipsItem] });
+      menuGroups.push({ menuType: "finance", items: withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem]) });
     }
 
     if (hasInventoryAccess()) {
       menuGroups.push({
         menuType: "manager",
-        items: hasFinanceAccess() ? [...managerInventoryItems, myPayslipsItem] : [attendanceItem, ...managerInventoryItems, myPayslipsItem],
+        items: withAttendanceForSection("inventory", [...managerInventoryItems, myPayslipsItem]),
       });
     }
 
     if (hasProcurementAccess()) {
       menuGroups.push({
         menuType: "manager",
-        items: hasFinanceAccess() ? [...procurementItems, myPayslipsItem] : [attendanceItem, ...procurementItems, myPayslipsItem],
+        items: withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem]),
       });
     }
 
     if (hasCRMAccess()) {
-      menuGroups.push({ menuType: "crm", items: [attendanceItem, ...crmItems, myPayslipsItem] });
+      menuGroups.push({ menuType: "crm", items: withAttendanceForSection("crm", [...crmItems, myPayslipsItem]) });
     }
 
     let activeSubmenuKey: string | null = null;
@@ -1096,9 +1122,6 @@ const AppSidebar_ERP: React.FC = () => {
       'access-overtime-approvals',
       'access-payslip-generation',
       'access-view-payslip',
-      'manage-salary-changes',
-      'approve-salary-change',
-      'override-salary-retroactive',
     ];
     return hrSpecificPermissions.some(perm => permissions.includes(perm));
   };
@@ -1200,12 +1223,9 @@ const AppSidebar_ERP: React.FC = () => {
       // Payroll - check simplified permissions and filter submenu
       if (item.name === "Payroll") {
         const canSeeSalaryChanges =
-          role === "MANAGER" ||
-          role === "Manager" ||
-          roles.includes('Manager') ||
-          permissions.includes('access-employee-directory') ||
           permissions.includes('manage-salary-changes') ||
-          permissions.includes('approve-salary-change');
+          permissions.includes('approve-salary-change') ||
+          permissions.includes('override-salary-retroactive');
 
         const hasAnyPayrollPermission =
           permissions.includes('access-payslip-generation') ||
@@ -1508,7 +1528,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems([attendanceItem, ...getFilteredStaffItems(), myPayslipsItem], "staff")}
+                {renderMenuItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem]), "staff")}
               </div>
             </div>
           </nav>
@@ -1531,7 +1551,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems([attendanceItem, ...getFilteredRepairItems(), myPayslipsItem], "repair")}
+                {renderMenuItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem]), "repair")}
               </div>
             </div>
           </nav>
@@ -1555,7 +1575,7 @@ const AppSidebar_ERP: React.FC = () => {
                     )}
                   </h2>
                   {renderMenuItems(
-                    hasFinanceAccess() ? [...managerItems, myPayslipsItem] : [attendanceItem, ...managerItems, myPayslipsItem],
+                      withAttendanceForSection("manager", [...managerItems, myPayslipsItem]),
                     "manager"
                   )}
                 </div>
@@ -1580,7 +1600,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(hasFinanceAccess() ? [...managerInventoryItems, myPayslipsItem] : [attendanceItem, ...managerInventoryItems, myPayslipsItem], "manager")}
+                  {renderMenuItems(withAttendanceForSection("inventory", [...managerInventoryItems, myPayslipsItem]), "manager")}
                 </div>
               </div>
             </nav>
@@ -1602,7 +1622,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(hasFinanceAccess() ? [...procurementItems, myPayslipsItem] : [attendanceItem, ...procurementItems, myPayslipsItem], "manager")}
+                  {renderMenuItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem]), "manager")}
                 </div>
               </div>
             </nav>
@@ -1625,7 +1645,7 @@ const AppSidebar_ERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  hasFinanceAccess() ? [...getFilteredHRItems(), myPayslipsItem] : [attendanceItem, ...getFilteredHRItems(), myPayslipsItem],
+                  withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem]),
                   "hr"
                 )}
               </div>
@@ -1649,7 +1669,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems([attendanceItem, ...getFilteredFinanceItems(), myPayslipsItem], "finance")}
+                {renderMenuItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem]), "finance")}
               </div>
             </div>
           </nav>
@@ -1671,7 +1691,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems([attendanceItem, ...crmItems, myPayslipsItem], "crm")}
+                {renderMenuItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem]), "crm")}
               </div>
             </div>
           </nav>

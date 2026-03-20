@@ -24,6 +24,10 @@ class ShopSettingsController extends Controller
     public function index(): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
+        $rawRepairPaymentPolicy = (string) ($shopOwner->repair_payment_policy ?? 'deposit_50');
+        $normalizedRepairPaymentPolicy = $rawRepairPaymentPolicy === 'deposit_50'
+            ? 'deposit_50'
+            : 'full_upfront';
         $shopOwner->load('documents');
         $latestPremiumSubscription = ShopOwnerSubscription::with('premiumPlan')
             ->where('shop_owner_id', $shopOwner->id)
@@ -90,7 +94,7 @@ class ShopSettingsController extends Controller
                 'business_name'          => $shopOwner->business_name,
                 'approval_pages'         => $approvalPages,
                 'required_documents'     => $requiredDocuments,
-                'repair_payment_policy'  => $shopOwner->repair_payment_policy ?? 'deposit_50',
+                'repair_payment_policy'  => $normalizedRepairPaymentPolicy,
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
                 'has_paymongo_key'       => !empty($shopOwner->paymongo_secret_key),
                 'pay_cycle'              => $branchPayrollSetting?->pay_cycle ?? 'monthly',
@@ -155,7 +159,7 @@ class ShopSettingsController extends Controller
             'approval_pages.purchase_request_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
-            'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront,pay_after'],
+            'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'pay_cycle' => ['sometimes', 'string', 'in:monthly,semi_monthly'],
             'pay_day_first' => ['sometimes', 'integer', 'min:1', 'max:31'],

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\Finance;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\Expense;
-use App\Models\Finance\JournalEntry;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Auth;
@@ -55,7 +54,6 @@ class ExpenseController extends Controller
         }
 
         $expense = Expense::where('shop_id', $shopId)
-            ->with('journalEntry.lines')
             ->findOrFail($id);
 
         return response()->json($expense);
@@ -295,56 +293,6 @@ class ExpenseController extends Controller
         return response()->json($expense);
     }
 
-    public function post(Request $request, $id)
-    {
-        $expense = Expense::findOrFail($id);
-
-        if ($expense->status === 'posted') {
-            return response()->json(['message' => 'Expense already posted'], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            if (!$expense->journal_entry_id) {
-                $entry = $this->createJournalEntry($expense);
-                $expense->update(['journal_entry_id' => $entry->id]);
-            }
-
-            $entry = $expense->journalEntry;
-            if ($entry) {
-                $entry->status = 'posted';
-                $entry->posted_at = now();
-                $entry->posted_by = (string) auth()->id();
-                $entry->save();
-            }
-
-            $expense->update(['status' => 'posted']);
-
-            // Activity log for posting with journal entry details
-            activity()
-                ->causedBy(Auth::user())
-                ->performedOn($expense)
-                ->withProperties([
-                    'reference' => $expense->reference,
-                    'category' => $expense->category,
-                    'amount' => $expense->amount,
-                    'journal_entry_id' => $entry->id,
-                    'posted_by_name' => Auth::user()->name,
-                ])
-                ->log('Expense posted to ledger');
-
-            $this->audit('post_expense', $expense->id, ['status' => 'posted']);
-
-            DB::commit();
-            return response()->json($expense->fresh());
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Expense posting failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to post expense', 'error' => $e->getMessage()], 500);
-        }
-    }
-
     public function destroy($id)
     {
         $shopId = auth()->user()?->shop_owner_id;
@@ -354,8 +302,8 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        if (!in_array($expense->status, ['draft', 'submitted', 'rejected'])) {
-            return response()->json(['message' => 'Only unposted expenses can be deleted'], 422);
+        if (!in_array($expense->status, ['draft', 'submitted', 'rejected', 'approved'])) {
+            return response()->json(['message' => 'Only unfinalized expenses can be deleted'], 422);
         }
 
         // Store expense details before deletion for logging
@@ -379,22 +327,6 @@ class ExpenseController extends Controller
         $this->audit('delete_expense', $expense->id, ['status' => $expense->status]);
 
         return response()->json(['message' => 'Expense deleted']);
-    }
-
-    private function createJournalEntry(Expense $expense): JournalEntry
-    {
-        $entry = JournalEntry::create([
-            'reference' => 'EXP-' . $expense->reference,
-            'date' => $expense->date,
-            'description' => "Expense {$expense->reference}: {$expense->category}",
-            'status' => 'draft',
-            'meta' => [
-                'source' => 'expense',
-                'expense_id' => $expense->id,
-            ],
-        ]);
-
-        return $entry;
     }
 
     private function audit(string $action, int $targetId, array $metadata = []): void

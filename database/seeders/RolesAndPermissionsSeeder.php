@@ -124,10 +124,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-product-upload-manager',
             'access-repair-reject-review',
             'access-suspend-account',
-            // Salary Change Governance
-            'manage-salary-changes',
-            'approve-salary-change',
-            'override-salary-retroactive',
             // Global Access
             'access-global-search',
             'access-notification-center',

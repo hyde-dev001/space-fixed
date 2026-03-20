@@ -191,7 +191,7 @@ class SearchController extends Controller
     private function getExpenseStatusColor($status)
     {
         return match (strtolower($status)) {
-            'approved', 'posted' => 'green',
+            'approved' => 'green',
             'submitted' => 'blue',
             'draft' => 'yellow',
             'rejected' => 'red',

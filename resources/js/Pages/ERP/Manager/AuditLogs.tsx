@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Head } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
+import { useFilteredPagination } from "../../../hooks/useFilteredPagination";
 
 interface ActivityLog {
   id: number;
@@ -9,11 +10,12 @@ interface ActivityLog {
   description: string;
   subject_type: string | null;
   subject_id: number | null;
+  subject_label?: string;
   causer_type: string | null;
   causer_id: number | null;
   event: string;
   properties: Record<string, any>;
-  changes: Record<string, { old: any; new: any }>;
+  changes: Record<string, { old: any; new: any; label?: string }>;
   created_at: string;
   updated_at: string;
   causer?: {
@@ -181,54 +183,52 @@ export default function ManagerAuditLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [pagination, setPagination] = useState<PaginationData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  
-  // Filters
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [eventFilter, setEventFilter] = useState("");
-  const [subjectTypeFilter, setSubjectTypeFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => {
-    fetchLogs(currentPage);
-  }, [currentPage, dateFrom, dateTo, eventFilter, subjectTypeFilter]);
+  // Unified filter + pagination state with URL persistence
+  const { page, perPage, filters, setFilter, setPersistentPage, resetFilters, loading, error, setLoading, setError } = useFilteredPagination({
+    perPage: 10,
+    defaultFilters: {
+      event: "",
+      subject_type: "",
+      date_from: "",
+      date_to: "",
+    },
+    pageParamName: 'page',
+    onFilterChange: (newFilters, newPage) => {
+      fetchLogs(newFilters, newPage);
+    },
+  });
 
-  const fetchLogs = async (page: number) => {
+  const fetchLogs = async (currentFilters: Record<string, any>, currentPage: number) => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
-      params.append('page', page.toString());
-      if (dateFrom) params.append('date_from', dateFrom);
-      if (dateTo) params.append('date_to', dateTo);
-      if (eventFilter) params.append('event', eventFilter);
-      if (subjectTypeFilter) params.append('subject_type', subjectTypeFilter);
+      params.append('page', currentPage.toString());
+      params.append('per_page', perPage.toString());
+      
+      if (currentFilters.date_from) params.append('date_from', String(currentFilters.date_from));
+      if (currentFilters.date_to) params.append('date_to', String(currentFilters.date_to));
+      if (currentFilters.event) params.append('event', String(currentFilters.event));
+      if (currentFilters.subject_type) params.append('subject_type', String(currentFilters.subject_type));
 
       const response = await fetch(`/api/activity-logs?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to fetch logs');
+      if (!response.ok) throw new Error(`HTTP ${response.status}: Failed to fetch logs`);
       
       const data = await response.json();
-      setLogs(data.logs.data);
+      setLogs(data.logs.data || []);
       setPagination(data.logs);
       setStats(data.stats);
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load activity logs';
       console.error('Error fetching logs:', error);
-      Swal.fire({
-        title: 'Error',
-        text: 'Failed to load activity logs',
-        icon: 'error',
-      });
+      setError(message);
+      setLogs([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }
-  };
-
-  const clearFilters = () => {
-    setDateFrom("");
-    setDateTo("");
-    setEventFilter("");
-    setSubjectTypeFilter("");
   };
 
   // Format value for display
@@ -241,6 +241,22 @@ export default function ManagerAuditLogs() {
       return `₱${parseFloat(value.toString()).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     return value.toString();
+  };
+
+  // Convert database enum values to human-readable labels
+  const humanizeValue = (value: any, fieldName: string = ''): string => {
+    if (value === null || value === undefined) return 'N/A';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'object') return JSON.stringify(value);
+    if (typeof value === 'number') return formatValue(value);
+    
+    const str = value.toString();
+    
+    // Convert database enum Convention: assigned_to_repairer → Assigned to Repairer
+    return str
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   };
 
   // Parse user agent to readable format
@@ -267,32 +283,83 @@ export default function ManagerAuditLogs() {
   // Format detailed description with context
   const formatDetailedDescription = (log: ActivityLog): string => {
     const causerName = log.causer?.name || 'Unknown User';
-    const subjectType = formatSubjectType(log.subject_type);
-    const subjectId = log.subject_id || '';
+    const subjectRef = getModalSubjectReference(log);
     
     const changes = log.changes || {};
     const changedFields = Object.keys(changes);
     
     switch (log.event) {
       case 'created':
-        return `${causerName} created ${subjectType} #${subjectId}`;
+        return `${causerName} created ${subjectRef}`;
       
       case 'updated':
         if (changedFields.length === 1) {
-          const field = changedFields[0].replace(/_/g, ' ');
-          const oldVal = formatValue(changes[changedFields[0]].old);
-          const newVal = formatValue(changes[changedFields[0]].new);
-          return `${causerName} updated the ${field} of ${subjectType} #${subjectId} from ${oldVal} to ${newVal}`;
+          const change = changes[changedFields[0]];
+          const field = humanizeValue(change?.label || changedFields[0]);
+          const oldVal = humanizeValue(change?.old, changedFields[0]);
+          const newVal = humanizeValue(change?.new, changedFields[0]);
+          return `${causerName} updated the ${field} of ${subjectRef} from ${oldVal} to ${newVal}`;
         } else if (changedFields.length > 1) {
-          return `${causerName} updated ${changedFields.length} fields in ${subjectType} #${subjectId}`;
+          return `${causerName} updated ${changedFields.length} fields in ${subjectRef}`;
         }
-        return `${causerName} updated ${subjectType} #${subjectId}`;
+        return `${causerName} updated ${subjectRef}`;
       
       case 'deleted':
-        return `${causerName} deleted ${subjectType} #${subjectId}`;
+        return `${causerName} deleted ${subjectRef}`;
       
       default:
-        return log.description || `${causerName} performed ${log.event} on ${subjectType} #${subjectId}`;
+        return `${causerName} performed ${humanizeValue(log.event)} on ${subjectRef}`;
+    }
+  };
+
+  const isCodeLikeSubjectLabel = (label: string): boolean => {
+    const trimmed = label.trim();
+    return /^[A-Z]{2,8}-\d{4,}$/i.test(trimmed) || /^[A-Z]{2,8}\d{6,}$/i.test(trimmed);
+  };
+
+  const getModalSubjectReference = (log: ActivityLog): string => {
+    const subjectType = formatSubjectType(log.subject_type);
+
+    if (!log.subject_label) {
+      return subjectType;
+    }
+
+    const label = String(log.subject_label).trim();
+    if (!label || isCodeLikeSubjectLabel(label)) {
+      return subjectType;
+    }
+
+    return `${subjectType} ${label}`;
+  };
+
+  // Get concise modal title (focuses on what changed, not who changed it)
+  const getModalTitle = (log: ActivityLog): string => {
+    const subjectRef = getModalSubjectReference(log);
+    
+    const changes = log.changes || {};
+    const changedFields = Object.keys(changes);
+    
+    switch (log.event) {
+      case 'created':
+        return `${subjectRef} created`;
+      
+      case 'updated':
+        if (changedFields.length === 1) {
+          const change = changes[changedFields[0]];
+          const field = (change?.label || changedFields[0]).replace(/_/g, ' ');
+          const oldVal = humanizeValue(change?.old, changedFields[0]);
+          const newVal = humanizeValue(change?.new, changedFields[0]);
+          return `${field} changed for ${subjectRef} from ${oldVal} to ${newVal}`;
+        } else if (changedFields.length > 1) {
+          return `${changedFields.length} fields changed in ${subjectRef}`;
+        }
+        return `Updated ${subjectRef}`;
+      
+      case 'deleted':
+        return `${subjectRef} deleted`;
+      
+      default:
+        return `${subjectRef} - ${log.event}`;
     }
   };
 
@@ -323,31 +390,50 @@ export default function ManagerAuditLogs() {
     const properties = log.properties;
     const changes = log.changes || {};
     
-    // Build formatted description
-    const formattedDescription = formatDetailedDescription(log);
+    // Detect dark mode
+    const isDarkMode = document.documentElement.classList.contains('dark');
+    
+    // Color scheme based on dark mode
+    const colors = {
+      grayBg: isDarkMode ? '#1f2937' : '#f9fafb',
+      grayText: isDarkMode ? '#9ca3af' : '#6b7280',
+      grayDarkText: isDarkMode ? '#e5e7eb' : '#374151',
+      redBg: isDarkMode ? '#7f1d1d' : '#fee2e2',
+      redText: isDarkMode ? '#fca5a5' : '#dc2626',
+      greenBg: isDarkMode ? '#15803d' : '#dcfce7',
+      greenText: isDarkMode ? '#86efac' : '#16a34a',
+      blueBg: isDarkMode ? '#1e3a8a' : '#dbeafe',
+      blueText: isDarkMode ? '#93c5fd' : '#2563eb',
+      indigoBg: isDarkMode ? '#312e81' : '#eef2ff',
+      indigoText: isDarkMode ? '#a5b4fc' : '#4f46e5',
+      borderColor: isDarkMode ? '#374151' : '#e5e7eb',
+    };
+    
+    // Get concise modal title
+    const modalTitle = getModalTitle(log);
     
     // Build diff view HTML
     let diffHtml = '';
     if (Object.keys(changes).length > 0) {
-      diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Changes Made:</h3><div class="space-y-3">';
+      diffHtml = `<div style="margin-top: 1rem;"><h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Changes Made:</h3><div style="display: flex; flex-direction: column; gap: 0.75rem;">`;
       for (const [field, change] of Object.entries(changes)) {
-        const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const fieldName = change.label || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         diffHtml += `
-          <div class="bg-gray-50 p-3 rounded-lg">
-            <p class="font-semibold text-gray-700 mb-2">${fieldName}:</p>
-            <div class="flex gap-4">
-              <div class="flex-1">
-                <p class="text-xs text-gray-500 mb-1">Old Value</p>
-                <p class="text-red-600 line-through bg-red-50 px-2 py-1 rounded">${formatValue(change.old)}</p>
+          <div style="background-color: ${colors.grayBg}; padding: 0.75rem; border-radius: 0.5rem;">
+            <p style="font-weight: 600; color: ${colors.grayDarkText}; margin-bottom: 0.5rem;">${fieldName}:</p>
+            <div style="display: flex; gap: 1rem;">
+              <div style="flex: 1;">
+                <p style="font-size: 0.75rem; color: ${colors.grayText}; margin-bottom: 0.25rem;">Old Value</p>
+                <p style="color: ${colors.redText}; text-decoration: line-through; background-color: ${colors.redBg}; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${formatValue(change.old)}</p>
               </div>
-              <div class="flex items-center">
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div style="display: flex; align-items: center;">
+                <svg style="width: 1.25rem; height: 1.25rem; color: ${colors.grayText};" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
                 </svg>
               </div>
-              <div class="flex-1">
-                <p class="text-xs text-gray-500 mb-1">New Value</p>
-                <p class="text-green-600 bg-green-50 px-2 py-1 rounded font-semibold">${formatValue(change.new)}</p>
+              <div style="flex: 1;">
+                <p style="font-size: 0.75rem; color: ${colors.grayText}; margin-bottom: 0.25rem;">New Value</p>
+                <p style="color: ${colors.greenText}; background-color: ${colors.greenBg}; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-weight: 600;">${formatValue(change.new)}</p>
               </div>
             </div>
           </div>
@@ -357,9 +443,9 @@ export default function ManagerAuditLogs() {
     } else if (log.event === 'created') {
       const attributes = properties.attributes || {};
       if (Object.keys(attributes).length > 0) {
-        diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Created With:</h3><div class="bg-green-50 p-3 rounded-lg"><div class="space-y-1">';
+        diffHtml = `<div style="margin-top: 1rem;"><h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Created With:</h3><div style="background-color: ${colors.greenBg}; padding: 0.75rem; border-radius: 0.5rem;"><div style="display: flex; flex-direction: column; gap: 0.25rem;">`;
         for (const [key, value] of Object.entries(attributes)) {
-          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${key.replace(/_/g, ' ')}:</span> ${formatValue(value)}</div>`;
+          diffHtml += `<div style="font-size: 0.875rem;"><span style="color: ${colors.greenText}; font-weight: 600;">${key.replace(/_/g, ' ')}:</span> ${formatValue(value)}</div>`;
         }
         diffHtml += '</div></div></div>';
       }
@@ -367,30 +453,30 @@ export default function ManagerAuditLogs() {
 
     // Build metadata HTML
     const metadataHtml = log.metadata ? `
-      <div class="mt-4 border-t pt-4">
-        <h3 class="font-semibold text-lg mb-3">Security Information:</h3>
-        <div class="bg-blue-50 p-3 rounded-lg space-y-2">
-          <p class="text-sm"><span class="font-semibold text-gray-700">IP Address:</span> <span class="text-blue-700 font-mono">${log.metadata.ip_address}</span></p>
-          <p class="text-sm"><span class="font-semibold text-gray-700">Device/Browser:</span> <span class="text-gray-600">${parseUserAgent(log.metadata.user_agent)}</span></p>
+      <div style="margin-top: 1rem; border-top: 1px solid ${colors.borderColor}; padding-top: 1rem;">
+        <h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Security Information:</h3>
+        <div style="background-color: ${colors.blueBg}; padding: 0.75rem; border-radius: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+          <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">IP Address:</span> <span style="color: ${colors.blueText}; font-family: monospace;">${log.metadata.ip_address}</span></p>
+          <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Device/Browser:</span> <span style="color: ${colors.grayText};">${parseUserAgent(log.metadata.user_agent)}</span></p>
         </div>
       </div>
     ` : '';
 
     const causerHtml = log.causer ? `
-      <div class="bg-indigo-50 p-3 rounded-lg mb-4">
-        <p class="text-sm"><span class="font-semibold text-gray-700">Performed by:</span> <span class="text-indigo-700 font-semibold">${log.causer.name}</span></p>
-        <p class="text-sm"><span class="font-semibold text-gray-700">Role:</span> <span class="text-indigo-600">${log.causer.role}</span></p>
-        <p class="text-sm"><span class="font-semibold text-gray-700">Email:</span> <span class="text-gray-600">${log.causer.email}</span></p>
+      <div style="background-color: ${colors.indigoBg}; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Performed by:</span> <span style="color: ${colors.indigoText}; font-weight: 600;">${log.causer.name}</span></p>
+        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Role:</span> <span style="color: ${colors.indigoText};">${log.causer.role}</span></p>
+        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Email:</span> <span style="color: ${colors.grayText};">${log.causer.email}</span></p>
       </div>
     ` : '';
 
     Swal.fire({
-      title: formattedDescription,
+      title: modalTitle,
       html: `
-        <div class="text-left">
+        <div style="text-align: left; color: ${colors.grayDarkText};">
           ${causerHtml}
-          <p class="mb-2 text-sm"><strong>Date:</strong> ${new Date(log.created_at).toLocaleString()}</p>
-          <p class="mb-4 text-sm"><strong>Subject Type:</strong> ${formatSubjectType(log.subject_type)}</p>
+          <p style="margin-bottom: 0.5rem; font-size: 0.875rem;"><strong>Date:</strong> ${new Date(log.created_at).toLocaleString()}</p>
+          <p style="margin-bottom: 1rem; font-size: 0.875rem;"><strong>Subject Type:</strong> ${formatSubjectType(log.subject_type)}</p>
           ${diffHtml}
           ${metadataHtml}
         </div>
@@ -398,15 +484,22 @@ export default function ManagerAuditLogs() {
       width: 900,
       confirmButtonText: 'Close',
       confirmButtonColor: '#3b82f6',
+      didOpen: (modal) => {
+        // Ensure modal text is visible
+        const htmlContent = modal.querySelector('.swal2-html-container');
+        if (htmlContent) {
+          htmlContent.style.color = colors.grayDarkText;
+        }
+      }
     });
   };
 
   const getEventBadgeColor = (event: string) => {
     switch (event) {
-      case 'created': return 'bg-green-100 text-green-800';
-      case 'updated': return 'bg-blue-100 text-blue-800';
-      case 'deleted': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'created': return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400';
+      case 'updated': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400';
+      case 'deleted': return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400';
+      default: return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200';
     }
   };
 
@@ -444,12 +537,12 @@ export default function ManagerAuditLogs() {
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-gray-800">Activity Audit Logs</h1>
+            <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Activity Audit Logs</h1>
           </div>
-          <p className="text-gray-600 mt-2">
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
             Complete oversight of all activities across departments
           </p>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
             Track all ERP operations: HR, Finance, CRM, and business activities
           </p>
         </div>
@@ -500,149 +593,185 @@ export default function ManagerAuditLogs() {
         )}
 
         {/* Filters */}
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
+        <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow mb-6 border border-gray-200 dark:border-gray-700">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 text-gray-700 font-semibold mb-4 hover:text-blue-600 transition"
+            className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-semibold mb-4 hover:text-blue-600 dark:hover:text-blue-400 transition"
+            aria-expanded={showFilters}
+            aria-label={showFilters ? "Hide audit log filters" : "Show audit log filters"}
           >
             <FunnelIcon className="w-5 h-5" />
             {showFilters ? 'Hide' : 'Show'} Filters
           </button>
 
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+            <fieldset className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <legend className="text-sm font-semibold text-gray-700 dark:text-gray-300 px-2">Filter Activity Logs</legend>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                <div>
+                  <label htmlFor="date-from" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date From</label>
+                  <input
+                    id="date-from"
+                    type="date"
+                    value={filters.date_from || ""}
+                    onChange={(e) => setFilter('date_from', e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    aria-label="Filter from date"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+                <div>
+                  <label htmlFor="date-to" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date To</label>
+                  <input
+                    id="date-to"
+                    type="date"
+                    value={filters.date_to || ""}
+                    onChange={(e) => setFilter('date_to', e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    aria-label="Filter to date"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Event</label>
-                <select
-                  value={eventFilter}
-                  onChange={(e) => setEventFilter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">All Events</option>
-                  <option value="created">Created</option>
-                  <option value="updated">Updated</option>
-                  <option value="deleted">Deleted</option>
-                </select>
-              </div>
+                <div>
+                  <label htmlFor="event-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Event</label>
+                  <select
+                    id="event-filter"
+                    value={filters.event || ""}
+                    onChange={(e) => setFilter('event', e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    aria-label="Filter by event type"
+                  >
+                    <option value="">All Events</option>
+                    <option value="created">Created</option>
+                    <option value="updated">Updated</option>
+                    <option value="deleted">Deleted</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
-                <select
-                  value={subjectTypeFilter}
-                  onChange={(e) => setSubjectTypeFilter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">All Types</option>
-                  <option value="Product">Products</option>
-                  <option value="Expense">Expenses</option>
-                  <option value="User">Employees</option>
-                  <option value="Order">Orders</option>
-                  <option value="Invoice">Invoices</option>
-                  <option value="Customer">Customers</option>
-                  <option value="Payroll">Payroll</option>
-                  <option value="LeaveRequest">Leave Requests</option>
-                  <option value="AttendanceRecord">Attendance</option>
-                  <option value="RepairRequest">Repair Requests</option>
-                  <option value="RepairService">Repair Services</option>
-                  <option value="PriceChangeRequest">Price Changes</option>
-                </select>
-              </div>
+                <div>
+                  <label htmlFor="activity-type-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Activity Type</label>
+                  <select
+                    id="activity-type-filter"
+                    value={filters.subject_type || ""}
+                    onChange={(e) => setFilter('subject_type', e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    aria-label="Filter by activity type"
+                  >
+                    <option value="">All Types</option>
+                    <option value="Product">Products</option>
+                    <option value="Expense">Expenses</option>
+                    <option value="User">Employees</option>
+                    <option value="Order">Orders</option>
+                    <option value="Invoice">Invoices</option>
+                    <option value="Customer">Customers</option>
+                    <option value="Payroll">Payroll</option>
+                    <option value="LeaveRequest">Leave Requests</option>
+                    <option value="AttendanceRecord">Attendance</option>
+                    <option value="RepairRequest">Repair Requests</option>
+                    <option value="RepairService">Repair Services</option>
+                    <option value="PriceChangeRequest">Price Changes</option>
+                  </select>
+                </div>
 
-              <div className="md:col-span-4">
-                <button
-                  onClick={clearFilters}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-                >
-                  Clear Filters
-                </button>
+                <div className="md:col-span-4">
+                  <button
+                    onClick={() => resetFilters()}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition font-medium"
+                    aria-label="Reset all filters"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
               </div>
-            </div>
+            </fieldset>
           )}
         </div>
 
         {/* Logs Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          {loading ? (
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+          {error ? (
+            <div className="p-12 text-center">
+              <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-6 rounded">
+                <h3 className="text-lg font-semibold text-red-800 dark:text-red-400 mb-2">Failed to Load Activity Logs</h3>
+                <p className="text-red-700 dark:text-red-300 mb-4">{error}</p>
+                <button
+                  onClick={() => fetchLogs(filters, page)}
+                  className="px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-600 transition font-medium"
+                  aria-label="Retry loading activity logs"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          ) : loading ? (
             <div className="flex justify-center items-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-3"></div>
+                <p className="text-gray-600 dark:text-gray-400 font-medium">Loading activity logs...</p>
+              </div>
             </div>
           ) : logs.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <DocumentTextIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg">No activity logs found</p>
-              <p className="text-sm text-gray-400 mt-2">Activities will appear here as changes are made</p>
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <DocumentTextIcon className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-600" />
+              <p className="text-lg font-medium">No activity logs found</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+                {Object.values(filters).some(f => f) 
+                  ? "Try adjusting your filters or clear them to see all activities"
+                  : "Activities will appear here as changes are made"}
+              </p>
             </div>
           ) : (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
+                  <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User/Actor</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Event</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User/Actor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Subject</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200">
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                     {logs.map((log) => {
                       const subjectUrl = getSubjectUrl(log);
                       const formattedDesc = formatDetailedDescription(log);
                       
                       return (
-                        <tr key={log.id} className="hover:bg-gray-50 transition">
+                        <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getEventBadgeColor(log.event)}`}>
                               {log.event}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <p className="text-sm text-gray-900 font-medium">{formattedDesc}</p>
+                            <p className="text-sm text-gray-900 dark:text-gray-100 font-medium">{formattedDesc}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {log.causer ? (
                               <>
-                                <p className="text-sm text-gray-900 font-medium">{log.causer.name}</p>
-                                <p className="text-xs text-gray-500">{log.causer.role}</p>
+                                <p className="text-sm text-gray-900 dark:text-gray-100 font-medium">{log.causer.name}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">{log.causer.role}</p>
                               </>
                             ) : (
-                              <p className="text-xs text-gray-400">Unknown User</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-600">Unknown User</p>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <p className="text-sm text-gray-900">{formatSubjectType(log.subject_type)}</p>
+                            <p className="text-sm text-gray-900 dark:text-gray-100">{formatSubjectType(log.subject_type)}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <p className="text-sm text-gray-900">{new Date(log.created_at).toLocaleDateString()}</p>
-                            <p className="text-xs text-gray-500">{new Date(log.created_at).toLocaleTimeString()}</p>
+                            <p className="text-sm text-gray-900 dark:text-gray-100">{new Date(log.created_at).toLocaleDateString()}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(log.created_at).toLocaleTimeString()}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <button
                               onClick={() => viewLogDetails(log)}
-                              className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-2 rounded-lg transition"
+                              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 p-2 rounded-lg transition"
                               title="View details"
+                              aria-label={`View details for ${formatDetailedDescription(log)}`}
                             >
                               <EyeIcon className="w-5 h-5" />
                             </button>
@@ -656,8 +785,8 @@ export default function ManagerAuditLogs() {
 
               {/* Pagination */}
               {pagination && pagination.last_page > 1 && (
-                <div className="flex justify-between items-center px-6 py-4 border-t bg-gray-50">
-                  <p className="text-sm text-gray-700">
+                <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-wrap gap-4">
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
                     Showing <span className="font-semibold">{((pagination.current_page - 1) * pagination.per_page) + 1}</span> to{' '}
                     <span className="font-semibold">{Math.min(pagination.current_page * pagination.per_page, pagination.total)}</span> of{' '}
                     <span className="font-semibold">{pagination.total}</span> results
@@ -665,9 +794,15 @@ export default function ManagerAuditLogs() {
 
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      className="px-3 py-1 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition"
+                      onClick={() => {
+                        if (page > 1) {
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                          setPersistentPage(page - 1);
+                        }
+                      }}
+                      disabled={page === 1}
+                      className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white dark:hover:bg-gray-700 dark:bg-gray-800 dark:text-white transition"
+                      aria-label="Previous page"
                     >
                       <ChevronLeftIcon className="w-5 h-5" />
                     </button>
@@ -677,31 +812,42 @@ export default function ManagerAuditLogs() {
                       if (
                         pageNum === 1 ||
                         pageNum === pagination.last_page ||
-                        (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
+                        (pageNum >= page - 1 && pageNum <= page + 1)
                       ) {
                         return (
                           <button
                             key={pageNum}
-                            onClick={() => setCurrentPage(pageNum)}
+                            onClick={() => {
+                              setPersistentPage(pageNum);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
                             className={`px-3 py-1 border rounded-lg transition ${
-                              currentPage === pageNum
+                              page === pageNum
                                 ? 'bg-blue-500 text-white border-blue-500'
-                                : 'hover:bg-white'
+                                : 'border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 dark:bg-gray-800 dark:text-white'
                             }`}
+                            aria-label={`Go to page ${pageNum}`}
+                            aria-current={page === pageNum ? "page" : undefined}
                           >
                             {pageNum}
                           </button>
                         );
-                      } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
-                        return <span key={pageNum} className="px-2">...</span>;
+                      } else if (pageNum === page - 2 || pageNum === page + 2) {
+                        return <span key={pageNum} className="px-2 text-gray-500 dark:text-gray-400">...</span>;
                       }
                       return null;
                     })}
 
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(pagination.last_page, prev + 1))}
-                      disabled={currentPage === pagination.last_page}
-                      className="px-3 py-1 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition"
+                      onClick={() => {
+                        if (page < pagination.last_page) {
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                          setPersistentPage(page + 1);
+                        }
+                      }}
+                      disabled={page === pagination.last_page}
+                      className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white dark:hover:bg-gray-700 dark:bg-gray-800 dark:text-white transition"
+                      aria-label="Next page"
                     >
                       <ChevronRightIcon className="w-5 h-5" />
                     </button>
@@ -715,3 +861,7 @@ export default function ManagerAuditLogs() {
     </AppLayoutERP>
   );
 }
+
+
+
+

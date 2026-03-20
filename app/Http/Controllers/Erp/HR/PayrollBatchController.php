@@ -51,12 +51,16 @@ class PayrollBatchController extends Controller
     {
         $user = Auth::guard('user')->user();
 
+        if (! $user) {
+            return null;
+        }
+
         if (
-            ! $user->hasRole('Manager')
-            && ! $user->can('access-employee-directory')
-            && ! $user->can('access-attendance-records')
+            ! $user->hasRole('Shop Owner')
             && ! $user->can('access-payslip-generation')
             && ! $user->can('access-view-payslip')
+            && ! $user->can('access-payslip-approval')
+            && ! $user->can('access-approval-workflow')
         ) {
             return null;
         }
@@ -373,7 +377,16 @@ class PayrollBatchController extends Controller
     {
         $user = Auth::guard('user')->user();
 
-        if (! $user->hasRole('Manager') && ! $user->can('view-payroll')) {
+        if (
+            ! $user
+            || (
+                ! $user->hasRole('Shop Owner')
+                && ! $user->can('access-payslip-generation')
+                && ! $user->can('access-view-payslip')
+                && ! $user->can('access-payslip-approval')
+                && ! $user->can('access-approval-workflow')
+            )
+        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

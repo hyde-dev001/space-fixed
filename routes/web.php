@@ -1122,11 +1122,10 @@ Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session'
     Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
     Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
 
-    // Expense approval/posting (users with approval permission)
+    // Expense approval (users with approval permission)
     Route::middleware('permission:approve-expenses')->group(function () {
         Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve']);
         Route::post('expenses/{id}/reject', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reject']);
-        Route::post('expenses/{id}/post', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'post']);
     });
 
     // Invoices
@@ -1431,7 +1430,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
     Route::get('/customer-reviews', [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'indexPage'])->name('customer-reviews');
 });
 
-// MANAGER routes (only MANAGER can access)
+// MANAGER routes (Manager role required; some routes add business-type/permission middleware)
 Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'role:Manager'])->group(function () {
     Route::get('/dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1553,6 +1552,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'ro
         }
         return Inertia::render('ERP/Manager/AuditLogs');
     })->name('audit-logs');
+    // Repair rejection review: manager route limited to repair-capable businesses
     Route::get('/repair-rejection-review', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1992,6 +1992,12 @@ Route::prefix('api/manager')->name('api.manager.')->middleware(['web', 'auth:use
     Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
     Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])->name('staff-performance');
     Route::get('/analytics', [ManagerController::class, 'getAnalytics'])->name('analytics');
+    Route::get('/inventory-overview', [ManagerController::class, 'getInventoryOverview'])->name('inventory-overview');
+    Route::get('/products', [ManagerController::class, 'getProducts'])->name('products');
+    Route::get('/reports', [ManagerController::class, 'getReports'])->name('reports.index');
+    Route::post('/reports/generate', [ManagerController::class, 'generateReport'])->name('reports.generate');
+    Route::post('/reports/{id}/send', [ManagerController::class, 'sendReport'])->name('reports.send');
+    Route::get('/reports/{id}/download', [ManagerController::class, 'downloadReport'])->name('reports.download');
 
     // Suspension Approval Routes
     Route::prefix('suspension-requests')->group(function () {

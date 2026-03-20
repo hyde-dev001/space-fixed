@@ -35,7 +35,7 @@ type RepairOrder = {
   conversation_id?: number | null;
   payment_enabled?: boolean;
   payment_status?: string;
-  payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
+  payment_policy?: 'deposit_50' | 'full_upfront';
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
   repairPackageId?: number | null;
@@ -646,8 +646,6 @@ export default function JobOrdersRepair() {
     switch (order.payment_policy ?? 'deposit_50') {
       case 'deposit_50':
         return 'Waiting for customer to pay the remaining 50% balance';
-      case 'pay_after':
-        return 'Waiting for customer to complete the pay-after payment';
       case 'full_upfront':
         return 'Waiting for customer payment to be completed';
       default:
@@ -2141,16 +2139,14 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={viewOrder.payment_policy !== 'pay_after' && !['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
+                      disabled={!['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${
-                        viewOrder.payment_policy === 'pay_after' || ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                        ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
                           : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
                       }`}
                       title={
-                        viewOrder.payment_policy === 'pay_after'
-                          ? 'Mark shoes as received (payment collected at pickup)'
-                          : ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                        ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'Mark shoes as received at shop'
                           : 'Waiting for customer deposit payment'
                       }
@@ -2174,16 +2170,14 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={viewOrder.payment_policy !== 'pay_after' && !['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
+                      disabled={!['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        viewOrder.payment_policy === 'pay_after' || ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                        ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
                           : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
                       }`}
                       title={
-                        viewOrder.payment_policy === 'pay_after'
-                          ? 'Mark as received (payment collected at pickup)'
-                          : ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                        ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'Mark as received'
                           : 'Waiting for customer deposit payment'
                       }

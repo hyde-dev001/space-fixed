@@ -27,6 +27,8 @@ type RepairOrder = {
   shoeType?: string;
   brand?: string;
   serviceType?: "pickup" | "walkin";
+  intakeDeliveryMethod?: "walk_in" | "customer_delivery";
+  returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery";
   pickupAddressLine?: string;
   pickupBarangay?: string;
   pickupCity?: string;
@@ -36,7 +38,7 @@ type RepairOrder = {
   conversation_id?: number | null;
   payment_enabled?: boolean;
   payment_status?: string;
-  payment_policy?: 'deposit_50' | 'full_upfront' | 'pay_after';
+  payment_policy?: 'deposit_50' | 'full_upfront';
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
   preferredDate?: string | null;
@@ -551,12 +553,14 @@ export default function JobOrdersRepair() {
           description: repair.description,
           shoeType: repair.shoe_type,
           brand: repair.brand,
-          serviceType: deliveryMethodOverrides[String(repair.id)] || (repair.delivery_method === 'pickup' ? 'pickup' : 'walkin'),
-          pickupAddressLine: repair.pickup_address?.address_line || null,
-          pickupBarangay: repair.pickup_address?.barangay || null,
-          pickupCity: repair.pickup_address?.city || null,
-          pickupRegion: repair.pickup_address?.region || null,
-          pickupPostalCode: repair.pickup_address?.postal_code || null,
+          intakeDeliveryMethod: repair.intake_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
+          returnDeliveryMethod: repair.return_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
+          serviceType: deliveryMethodOverrides[String(repair.id)] || ((repair.intake_delivery_method || repair.delivery_method) === 'walk_in' ? 'walkin' : 'pickup'),
+          pickupAddressLine: (repair.intake_address || repair.pickup_address)?.address_line || null,
+          pickupBarangay: (repair.intake_address || repair.pickup_address)?.barangay || null,
+          pickupCity: (repair.intake_address || repair.pickup_address)?.city || null,
+          pickupRegion: (repair.intake_address || repair.pickup_address)?.region || null,
+          pickupPostalCode: (repair.intake_address || repair.pickup_address)?.postal_code || null,
           imageUrls: (() => {
             let images = repair.images;
             
@@ -879,8 +883,6 @@ export default function JobOrdersRepair() {
     switch (order.payment_policy ?? 'deposit_50') {
       case 'deposit_50':
         return 'Waiting for customer to pay the remaining 50% balance';
-      case 'pay_after':
-        return 'Waiting for customer to complete the pay-after payment';
       case 'full_upfront':
         return 'Waiting for customer payment to be completed';
       default:
@@ -951,10 +953,10 @@ export default function JobOrdersRepair() {
   const handleChangeDeliveryMethod = async (order: RepairOrder) => {
     const current = order.serviceType === 'pickup' ? 'pickup' : 'walkin';
     const next: 'pickup' | 'walkin' = current === 'pickup' ? 'walkin' : 'pickup';
-    const nextLabel = next === 'walkin' ? 'Walk In (customer brings shoes)' : 'Pick Up (arrange courier)';
+    const nextLabel = next === 'walkin' ? 'Customer Walk-in Drop-off' : 'Customer Arranges Delivery to Shop';
 
     const result = await Swal.fire({
-      title: 'Change Delivery Method?',
+      title: 'Change Intake Method?',
       text: `Switch to: ${nextLabel}`,
       icon: 'question',
       showCancelButton: true,
@@ -974,9 +976,19 @@ export default function JobOrdersRepair() {
       });
       const data = await response.json();
       if (data.success) {
-        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, serviceType: next } : o));
-        if (viewOrder && viewOrder.id === order.id) setViewOrder(prev => prev ? { ...prev, serviceType: next } : prev);
-        await Swal.fire({ title: 'Updated', text: `Delivery method changed to ${nextLabel}.`, icon: 'success', confirmButtonText: 'OK', confirmButtonColor: '#2563eb' });
+        setOrders(prev => prev.map(o => o.id === order.id ? {
+          ...o,
+          serviceType: next,
+          intakeDeliveryMethod: next === 'walkin' ? 'walk_in' : 'customer_delivery',
+        } : o));
+        if (viewOrder && viewOrder.id === order.id) {
+          setViewOrder(prev => prev ? {
+            ...prev,
+            serviceType: next,
+            intakeDeliveryMethod: next === 'walkin' ? 'walk_in' : 'customer_delivery',
+          } : prev);
+        }
+        await Swal.fire({ title: 'Updated', text: `Intake method changed to ${nextLabel}.`, icon: 'success', confirmButtonText: 'OK', confirmButtonColor: '#2563eb' });
       } else {
         throw new Error(data.message || 'Failed to update');
       }
@@ -1446,9 +1458,25 @@ export default function JobOrdersRepair() {
   };
 
   const formatServiceType = (serviceType?: RepairOrder["serviceType"]) => {
-    if (serviceType === "pickup") return "Pick Up";
-    if (serviceType === "walkin") return "Walk In";
+    if (serviceType === "pickup") return "Customer Arranges Delivery to Shop";
+    if (serviceType === "walkin") return "Customer Walk-in Drop-off";
     return "Not specified";
+  };
+
+  const getReturnDeliveryMethod = (order: RepairOrder): "walk_in" | "customer_pickup" | "shop_delivery" => {
+    if (order.returnDeliveryMethod === "walk_in" || order.returnDeliveryMethod === "customer_pickup" || order.returnDeliveryMethod === "shop_delivery") {
+      return order.returnDeliveryMethod;
+    }
+
+    return order.serviceType === "walkin" ? "walk_in" : "customer_pickup";
+  };
+
+  const formatReturnDeliveryMethod = (order: RepairOrder) => {
+    const method = getReturnDeliveryMethod(order);
+
+    if (method === "walk_in") return "Customer Pick-up at Shop";
+    if (method === "shop_delivery") return "Shop Delivery to Customer";
+    return "Customer Arranges Courier Pickup";
   };
 
   const getShippingAddress = (order: RepairOrder) => {
@@ -1780,7 +1808,7 @@ export default function JobOrdersRepair() {
                     Status
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Pickup Method
+                    Intake Method
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Price
@@ -1954,7 +1982,7 @@ export default function JobOrdersRepair() {
                             </button>
                           )}
 
-                          {order.status === "ready-for-pickup" && order.serviceType === "pickup" && (
+                          {order.status === "ready-for-pickup" && getReturnDeliveryMethod(order) !== "walk_in" && (
                             <button
                               onClick={() => handleShipOrder(order)}
                               className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
@@ -1963,7 +1991,7 @@ export default function JobOrdersRepair() {
                               Ship
                             </button>
                           )}
-                          {order.status === "ready-for-pickup" && order.serviceType !== "pickup" && (
+                          {order.status === "ready-for-pickup" && getReturnDeliveryMethod(order) === "walk_in" && (
                             <button
                               onClick={() => handleActivatePickup(String(order.database_id))}
                               disabled={Boolean(order.pickup_enabled || order.pickup_enabled_at) || !isFullyPaidForRelease(order)}
@@ -2195,7 +2223,7 @@ export default function JobOrdersRepair() {
                       </div>
                     )}
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Delivery Method</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Intake Delivery Method</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-900 dark:text-white">
                           {formatServiceType(viewOrder.serviceType)}
@@ -2210,6 +2238,12 @@ export default function JobOrdersRepair() {
                           </button>
                         )}
                       </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Return Delivery Method</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatReturnDeliveryMethod(viewOrder)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Service Fee</span>
@@ -2513,16 +2547,14 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={viewOrder.payment_policy !== 'pay_after' && !['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
+                      disabled={!['paid', 'completed'].includes(viewOrder.payment_status ?? '')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        viewOrder.payment_policy === 'pay_after' || ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                        ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'bg-white hover:bg-gray-100 text-gray-900 border border-gray-900'
                           : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
                       }`}
                       title={
-                        viewOrder.payment_policy === 'pay_after'
-                          ? 'Mark shoes as received at shop (payment collected at pickup)'
-                          : ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
+                        ['paid', 'completed'].includes(viewOrder.payment_status ?? '')
                           ? 'Mark shoes as received at shop'
                           : 'Waiting for customer deposit payment'
                       }
