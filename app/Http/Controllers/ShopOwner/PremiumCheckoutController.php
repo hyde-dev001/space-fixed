@@ -170,7 +170,8 @@ class PremiumCheckoutController extends Controller
             'subscription_id' => 'nullable|integer',
         ]);
 
-        $subscriptionQuery = ShopOwnerSubscription::where('shop_owner_id', $shopOwner->id)
+        $subscriptionQuery = ShopOwnerSubscription::with('premiumPlan')
+            ->where('shop_owner_id', $shopOwner->id)
             ->whereIn('status', ['pending', 'active']);
 
         if (!empty($validated['subscription_id'])) {
@@ -186,9 +187,15 @@ class PremiumCheckoutController extends Controller
             ], 404);
         }
 
+        $effectiveEndsAt = $subscription->ends_at;
+        if ($subscription->status === 'active' && !$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
+            $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
+        }
+
         $subscription->update([
+            // Cancellation means stop renewal only. Access remains until the original deadline.
             'status'  => 'cancelled',
-            'ends_at' => $subscription->status === 'active' ? now() : $subscription->ends_at,
+            'ends_at' => $effectiveEndsAt,
         ]);
 
         return response()->json([
@@ -209,7 +216,7 @@ class PremiumCheckoutController extends Controller
 
         $subscription = ShopOwnerSubscription::with('premiumPlan')
             ->where('shop_owner_id', $shopOwner->id)
-            ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'expired' THEN 2 WHEN 'cancelled' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END")
+            ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'cancelled' THEN 1 WHEN 'pending' THEN 2 WHEN 'expired' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END")
             ->latest('updated_at')
             ->first();
 

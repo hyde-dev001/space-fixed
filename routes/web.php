@@ -130,7 +130,7 @@ Route::get('/customer/conversations', function () {
     }
 
     return Inertia::render('UserSide/Communication/message');
-})->middleware('auth:user')->name('customer.conversations');
+})->middleware(['auth:user', 'customer.account'])->name('customer.conversations');
 // Message / Chat with shop owner
 Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
     $user = Auth::guard('user')->user();
@@ -149,7 +149,7 @@ Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
     return Inertia::render('UserSide/Communication/message', [
         'shopOwnerId' => $shopOwnerId ? (int)$shopOwnerId : null,
     ]);
-})->middleware('auth:user')->name('message');
+})->middleware(['auth:user', 'customer.account'])->name('message');
 
 // Messages / Conversations listing page
 Route::get('/messages', function () {
@@ -169,7 +169,7 @@ Route::get('/messages', function () {
     return Inertia::render('UserSide/Communication/message', [
         'shops' => [], // Frontend will fetch shop list
     ]);
-})->middleware('auth:user')->name('messages');
+})->middleware(['auth:user', 'customer.account'])->name('messages');
 
 // Customer notifications page
 Route::get('/notifications', function () {
@@ -247,7 +247,7 @@ Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('au
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 // Customer Conversation Routes - Customer-side chat with shops
-Route::prefix('api/customer/conversations')->middleware('auth:user')->group(function () {
+Route::prefix('api/customer/conversations')->middleware(['auth:user', 'customer.account'])->group(function () {
     Route::get('/', [\App\Http\Controllers\API\Customer\ConversationController::class, 'index']);
     Route::get('/shops', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getContactedShops']);
     Route::post('/get-or-create', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getOrCreate']);
@@ -732,6 +732,7 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
 
     // Profile
     Route::post('upload-profile-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'uploadPhoto']);
+    Route::post('upload-cover-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'uploadCoverPhoto']);
 
     // Price Change Approvals
     Route::get('price-changes/pending', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerPending'])->middleware('check.business.type:retail,both');
@@ -1019,6 +1020,9 @@ Route::middleware(['auth:user', 'role:Manager'])->prefix('api/manager/repairs')-
 
     // Override rejection and reassign
     Route::post('{id}/override-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'overrideRejection']);
+
+    // Get available repairers for a repair (with skill matching)
+    Route::get('{id}/available-repairers', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getAvailableRepairersForRepair']);
 });
 
 // Shop Owner API Routes (Phase 6 - High-Value Approval)
@@ -1251,7 +1255,11 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
 
     // Shop management routes
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
-    Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])->name('shops.suspend');
+    Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
+        Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])->name('subscriptions.cancel');
+        Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])->name('subscriptions.upgrade');
+        Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])->name('subscriptions.downgrade');
+        Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])->name('shops.suspend');
     Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])->name('shops.activate');
     Route::delete('/shops/{id}', [SuperAdminController::class, 'deleteShop'])->name('shops.delete');
 

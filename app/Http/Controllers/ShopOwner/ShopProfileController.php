@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -18,6 +20,8 @@ class ShopProfileController extends Controller
     public function index(): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
+        $hasEstablishedYearColumn = Schema::hasColumn('shop_owners', 'established_year');
+        $fallbackEstablishedYear = data_get($shopOwner->operating_hours, 'established_year');
         
         return Inertia::render('ShopOwner/Settings/shopProfile', [
             'shop_owner' => [
@@ -26,6 +30,9 @@ class ShopProfileController extends Controller
                 'last_name' => $shopOwner->last_name,
                 'name' => $shopOwner->name ?? $shopOwner->business_name,
                 'business_name' => $shopOwner->business_name,
+                'established_year' => $hasEstablishedYearColumn
+                    ? $shopOwner->established_year
+                    : ($fallbackEstablishedYear !== null ? (int) $fallbackEstablishedYear : null),
                 'email' => $shopOwner->email,
                 'phone' => $shopOwner->phone,
                 'bio' => $shopOwner->bio,
@@ -34,6 +41,7 @@ class ShopProfileController extends Controller
                 'postal_code' => $shopOwner->postal_code,
                 'tax_id' => $shopOwner->tax_id,
                 'profile_photo' => $shopOwner->profile_photo,
+                'cover_photo' => $shopOwner->cover_photo,
                 'monday_open' => $shopOwner->monday_open,
                 'monday_close' => $shopOwner->monday_close,
                 'tuesday_open' => $shopOwner->tuesday_open,
@@ -58,8 +66,9 @@ class ShopProfileController extends Controller
     public function update(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
+        $hasEstablishedYearColumn = Schema::hasColumn('shop_owners', 'established_year');
 
-        $validated = $request->validate([
+        $rules = [
             'business_name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:shop_owners,email,' . $shopOwner->id,
             'phone' => 'sometimes|string|max:20',
@@ -87,7 +96,27 @@ class ShopProfileController extends Controller
             'saturday_close' => 'nullable|date_format:H:i',
             'sunday_open' => 'nullable|date_format:H:i',
             'sunday_close' => 'nullable|date_format:H:i',
-        ]);
+        ];
+
+        if ($hasEstablishedYearColumn) {
+            $rules['established_year'] = 'nullable|integer|min:1900|max:' . date('Y');
+        }
+
+        $validated = $request->validate($rules);
+
+        if (!$hasEstablishedYearColumn && $request->has('established_year')) {
+            $existingOperatingHours = is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [];
+            $inputEstablishedYear = $request->input('established_year');
+
+            if ($inputEstablishedYear === null || $inputEstablishedYear === '') {
+                unset($existingOperatingHours['established_year']);
+            } else {
+                $existingOperatingHours['established_year'] = (int) $inputEstablishedYear;
+            }
+
+            $validated['operating_hours'] = $existingOperatingHours;
+            unset($validated['established_year']);
+        }
 
         // Validate that opening time is before closing time for each day
         $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -162,20 +191,41 @@ class ShopProfileController extends Controller
                 ], 401);
             }
 
-            $validated = $request->validate([
-                'profile_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240',
+            $request->validate([
+                'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:10240|required_without:cover_photo',
+                'cover_photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:15360|required_without:profile_photo',
             ]);
 
-            // Delete old photo if exists
+            if ($request->hasFile('cover_photo')) {
+                $this->ensureCoverPhotoColumnExists();
+
+                if ($shopOwner->cover_photo && Storage::disk('public')->exists($shopOwner->cover_photo)) {
+                    Storage::disk('public')->delete($shopOwner->cover_photo);
+                }
+
+                $path = $request->file('cover_photo')->store('cover-photos', 'public');
+                $shopOwner->cover_photo = $path;
+                $shopOwner->save();
+
+                \Log::info('Cover photo uploaded', [
+                    'shop_owner_id' => $shopOwner->id,
+                    'path' => $path,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Cover photo uploaded successfully',
+                    'cover_photo' => $path,
+                ]);
+            }
+
             if ($shopOwner->profile_photo && Storage::disk('public')->exists($shopOwner->profile_photo)) {
                 Storage::disk('public')->delete($shopOwner->profile_photo);
             }
 
-            // Store new photo
             $path = $request->file('profile_photo')->store('profile-photos', 'public');
-
-            // Update shop owner record
-            $shopOwner->update(['profile_photo' => $path]);
+            $shopOwner->profile_photo = $path;
+            $shopOwner->save();
 
             \Log::info('Profile photo uploaded', [
                 'shop_owner_id' => $shopOwner->id,
@@ -203,6 +253,70 @@ class ShopProfileController extends Controller
                 'success' => false,
                 'message' => 'Failed to upload photo: ' . $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Upload cover photo
+     */
+    public function uploadCoverPhoto(Request $request)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+
+            if (!$shopOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
+            $request->validate([
+                'cover_photo' => 'required|image|mimes:jpeg,png,jpg,webp|max:15360',
+            ]);
+            $this->ensureCoverPhotoColumnExists();
+
+            if ($shopOwner->cover_photo && Storage::disk('public')->exists($shopOwner->cover_photo)) {
+                Storage::disk('public')->delete($shopOwner->cover_photo);
+            }
+
+            $path = $request->file('cover_photo')->store('cover-photos', 'public');
+            $shopOwner->cover_photo = $path;
+            $shopOwner->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cover photo uploaded successfully',
+                'cover_photo' => $path,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error uploading cover photo', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload cover photo: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Ensure legacy databases have the cover_photo column.
+     */
+    private function ensureCoverPhotoColumnExists(): void
+    {
+        if (!Schema::hasColumn('shop_owners', 'cover_photo')) {
+            Schema::table('shop_owners', function (Blueprint $table) {
+                $table->string('cover_photo')->nullable()->after('profile_photo');
+            });
         }
     }
 }

@@ -52,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'super_admin.auth' => \App\Http\Middleware\SuperAdminAuth::class,
             'super_admin.role' => \App\Http\Middleware\CheckSuperAdminRole::class,
             'shop.isolation' => \App\Http\Middleware\ShopIsolationMiddleware::class,
+            'customer.account' => \App\Http\Middleware\EnsureCustomerAccount::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,

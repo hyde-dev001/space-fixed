@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
 
@@ -51,6 +51,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     (e.target as HTMLImageElement).src = '/images/shop/shop.jpg';
@@ -61,10 +63,18 @@ const Repair: React.FC<Props> = ({ shops }) => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
         setIsSortOpen(false);
       }
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
+        setIsAccountMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleMobileLogout = () => {
+    setIsAccountMenuOpen(false);
+    router.post('/user/logout');
+  };
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -222,11 +232,67 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 </span>
               )}
             </Link>
-            <Link href={meHref} className="inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black" aria-label="Account">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </Link>
+            <div className="relative" ref={accountMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsAccountMenuOpen((prev) => !prev)}
+                className="inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black"
+                aria-label="Account menu"
+                aria-controls="repair-account-menu"
+              >
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </button>
+
+              {isAccountMenuOpen && (
+                <div
+                  id="repair-account-menu"
+                  className="absolute right-0 top-full z-50 mt-2 w-[min(88vw,14rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]"
+                >
+                  {isAuthenticated ? (
+                    <>
+                      <Link
+                        href="/my-orders"
+                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                        onClick={() => setIsAccountMenuOpen(false)}
+                      >
+                        <span>Orders</span>
+                      </Link>
+                      <Link
+                        href="/my-repairs"
+                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                        onClick={() => setIsAccountMenuOpen(false)}
+                      >
+                        <span>Repair</span>
+                      </Link>
+                      <Link
+                        href="/customer-profile"
+                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                        onClick={() => setIsAccountMenuOpen(false)}
+                      >
+                        <span>Edit Profile</span>
+                      </Link>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                        onClick={handleMobileLogout}
+                      >
+                        <span>Log out</span>
+                      </button>
+                    </>
+                  ) : (
+                    <Link
+                      href={meHref}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                      onClick={() => setIsAccountMenuOpen(false)}
+                    >
+                      <span>Customer Login</span>
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -362,22 +428,22 @@ const Repair: React.FC<Props> = ({ shops }) => {
               </svg>
               <span className={mobileNavLabelClasses(activeMobileTab === 'products')}>Products</span>
             </Link>
-            <Link href={meHref} className={mobileNavItemClasses(activeMobileTab === 'me')}>
-              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-              <svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-              <span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
-            </Link>
-            <Link href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
-              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-              <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
-              <span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
-            </Link>
             <Link href="/repair-services" className={mobileNavItemClasses(activeMobileTab === 'repair')}>
               <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'repair' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
               <svg className={mobileNavIconClasses(activeMobileTab === 'repair')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4l-5.2 5.2a1 1 0 000 1.4l1.3 1.3a1 1 0 001.4 0l5.2-5.2a4 4 0 005.4-5.4l-2.1 2.1-2.3-.5-.5-2.3 2.2-2.1z" />
               </svg>
               <span className={mobileNavLabelClasses(activeMobileTab === 'repair')}>Repair</span>
+            </Link>
+            <Link href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
+            </Link>
+            <Link href={meHref} className={mobileNavItemClasses(activeMobileTab === 'me')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
             </Link>
           </div>
         </div>

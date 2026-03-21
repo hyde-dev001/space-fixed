@@ -13,8 +13,8 @@ return new class extends Migration
             $table->foreignId('shop_owner_id')->constrained('shop_owners')->onDelete('cascade');
             $table->string('report_type', 50);
             $table->string('date_range', 20);
-            $table->timestamp('period_start');
-            $table->timestamp('period_end');
+            $table->dateTime('period_start');
+            $table->dateTime('period_end');
             $table->enum('status', ['generated', 'sent'])->default('generated');
             $table->text('notes')->nullable();
             $table->json('report_data')->nullable();

@@ -64,6 +64,7 @@ class RepairRequest extends Model
         'is_high_value',
         'requires_owner_approval',
         'repairer_rejection_reason',
+        'repairer_rejection_reason_category',
         'repairer_rejected_at',
         'repairer_rejected_by',
         'manager_review_notes',

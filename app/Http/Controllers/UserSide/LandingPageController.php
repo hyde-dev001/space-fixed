@@ -474,8 +474,7 @@ class LandingPageController extends Controller
                 } else {
                     // Generate default SVG with shop initials
                     $initials = strtoupper(substr($shop->business_name ?? $shop->first_name, 0, 1) . substr($shop->last_name ?? '', 0, 1));
-                    $colors = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
-                    $bgColor = $colors[abs(crc32($shop->id)) % count($colors)];
+                    $bgColor = '#16233b';
                     $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="' . $bgColor . '"/><text x="50%" y="50%" font-size="80" font-family="Arial, sans-serif" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">' . htmlspecialchars($initials) . '</text></svg>';
                     $image = 'data:image/svg+xml;base64,' . base64_encode($svg);
                 }
@@ -746,10 +745,15 @@ class LandingPageController extends Controller
             'profile_photo' => $shopOwner->profile_photo && str_starts_with($shopOwner->profile_photo, '/')
                 ? asset(ltrim($shopOwner->profile_photo, '/'))
                 : ($shopOwner->profile_photo ? asset('storage/' . ltrim($shopOwner->profile_photo, '/')) : null),
-            'cover_image' => asset('images/shop/p1.jpg'),
+            'cover_image' => $shopOwner->cover_photo && str_starts_with($shopOwner->cover_photo, '/')
+                ? asset(ltrim($shopOwner->cover_photo, '/'))
+                : ($shopOwner->cover_photo ? asset('storage/' . ltrim($shopOwner->cover_photo, '/')) : null),
             'rating' => 4.8,
             'total_reviews' => 0,
-            'established_year' => 2024,
+            'established_year' => $shopOwner->established_year
+                ?? data_get($shopOwner->operating_hours, 'established_year')
+                ?? optional($shopOwner->created_at)->year
+                ?? (int) now()->format('Y'),
             'country' => $shopOwner->country,
             'postal_code' => $shopOwner->postal_code,
             'tax_id' => $shopOwner->tax_id,

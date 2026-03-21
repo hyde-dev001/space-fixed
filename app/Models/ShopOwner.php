@@ -49,10 +49,12 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'last_name',            // Shop owner's last name
         'email',                // Contact email (must be unique)
         'profile_photo',        // Profile photo path
+        'cover_photo',          // Cover photo path
         'bio',                  // Shop/owner bio
         'phone',                // Contact phone number
         'password',             // Hashed password for authentication
         'business_name',        // Registered business name
+        'established_year',     // Year business was established
         'business_address',     // Physical business location
         'country',              // Country
         'city_state',           // City or state
@@ -114,6 +116,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_longitude' => 'decimal:8',
         'shop_geofence_radius' => 'integer',
         'attendance_geofence_enabled' => 'boolean',
+        'established_year' => 'integer',
     ];
 
     /**

@@ -162,12 +162,13 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
   const buttonDarkClass =
     'border border-white/55 bg-black/45 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_22px_40px_-18px_rgba(0,0,0,0.95)] focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
   const sectionContainerClass = 'mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-12';
+  const heroContainerClass = 'w-full px-4 sm:px-6 lg:px-10';
 
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
       <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
-        <Navigation />
+        <Navigation mobileMenuTriggerIcon="hamburger" />
 
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
@@ -187,8 +188,8 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
           <div className={`absolute inset-0 ${heroSlides[activeHeroSlide]?.overlayClass ?? 'bg-black/45'}`} />
         </div>
 
-        <div className={`${sectionContainerClass} flex min-h-[84svh] items-center pb-12 pt-20 sm:min-h-svh sm:py-24 lg:py-32`}>
-          <div className="relative z-10 w-full max-w-[24rem] text-center sm:max-w-[38rem] sm:text-left lg:max-w-4xl">
+        <div className={`${heroContainerClass} flex min-h-[84svh] items-center pb-12 pt-20 sm:min-h-svh sm:py-24 lg:py-32`}>
+          <div className="relative z-10 w-full max-w-[24rem] text-left sm:max-w-[38rem] lg:max-w-4xl">
             <h1 className="hero-headline mb-4 text-[2.35rem] font-bold leading-[0.9] tracking-tight text-white/90 xsm:text-[2.75rem] sm:mb-8 sm:text-[4.4rem] md:text-7xl lg:text-8xl xl:text-9xl">
               <span className="hero-headline-line hero-line-1">ELEVATE YOUR</span>
               <span className="hero-headline-line hero-line-2">SIGNATURE</span>
@@ -197,7 +198,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
             <p className="hero-description mb-7 max-w-xl text-base font-light leading-relaxed text-white/90 sm:mb-12 sm:max-w-2xl sm:text-lg md:text-xl lg:text-2xl">
               Discover refined footwear and atelier-grade repair services, curated for people who wear confidence with every step.
             </p>
-            <div data-scroll-reveal data-scroll-delay={220} className="scroll-reveal mx-auto flex w-full max-w-sm flex-col gap-3 sm:mx-0 sm:max-w-none sm:flex-row sm:gap-4">
+            <div data-scroll-reveal data-scroll-delay={220} className="scroll-reveal flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:gap-4">
               <Link
                 href={route("products")}
                 className={`${buttonBaseClass} ${buttonLightClass}`}
@@ -219,7 +220,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
               </Link>
             </div>
 
-            <div className="mt-6 flex items-center justify-center gap-2 sm:mt-8 sm:justify-start">
+            <div className="mt-6 flex items-center justify-start gap-2 sm:mt-8">
               {heroSlides.map((_, index) => (
                 <button
                   key={`hero-dot-${index}`}

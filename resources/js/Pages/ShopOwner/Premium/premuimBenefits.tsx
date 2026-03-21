@@ -71,7 +71,14 @@ const PremiumBenefits: React.FC<Props> = () => {
 		loadPremiumData();
 	}, []);
 
-	const activeSubscription = subscription?.status === 'active' ? subscription : null;
+	const now = new Date();
+	const hasRemainingAccess = (sub: PremiumSubscription | null) => {
+		if (!sub) return false;
+		if (!['active', 'cancelled'].includes(sub.status)) return false;
+		if (!sub.ends_at) return sub.status === 'active';
+		return new Date(sub.ends_at).getTime() >= now.getTime();
+	};
+	const activeSubscription = hasRemainingAccess(subscription) ? subscription : null;
 	const formatCurrency = (value: string | number) => `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	const getDurationLabel = (days: number) => (days === 30 ? '1 month' : `${days} days`);
 	const handleCheckout = async (planCode: string) => {
@@ -103,6 +110,8 @@ const PremiumBenefits: React.FC<Props> = () => {
 	};
 
 	const handleCancelSubscription = async () => {
+		if (subscription?.status === 'cancelled') return;
+
 		setCancellingSubscription(true);
 		setError(null);
 		try {
@@ -197,9 +206,15 @@ const PremiumBenefits: React.FC<Props> = () => {
 													{isCurrentPlan ? (
 														<div className="rounded-xl border border-[#16233b]/20 bg-[#16233b]/5 px-4 py-3">
 															<p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#16233b]">Plan Status</p>
-															<p className="mt-1 text-xs text-black/65">
-																Your subscription will automatically renew at the end of each billing period unless you cancel before the renewal date.
-															</p>
+															{subscription?.status === 'cancelled' ? (
+																<p className="mt-1 text-xs text-black/65">
+																	Your subscription is cancelled and will stay active until {subscription?.ends_at ? new Date(subscription.ends_at).toLocaleDateString() : 'the end of your current cycle'}.
+																</p>
+															) : (
+																<p className="mt-1 text-xs text-black/65">
+																	Your subscription will automatically renew at the end of each billing period unless you cancel before the renewal date.
+																</p>
+															)}
 														</div>
 													) : null}
 												</div>
@@ -232,7 +247,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
 													</svg>
 												</button>
-												{isCurrentPlan ? (
+												{isCurrentPlan && subscription?.status !== 'cancelled' ? (
 													<button
 														type="button"
 														onClick={handleCancelSubscription}

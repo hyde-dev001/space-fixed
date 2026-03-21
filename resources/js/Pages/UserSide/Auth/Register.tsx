@@ -26,7 +26,7 @@ export default function Register() {
 
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const authInputClasses = 'h-12 rounded-xl border-gray-200 bg-[#f8fafc] text-[13px] text-gray-800 shadow-none focus:border-gray-300 focus:ring-gray-200/70';
+  const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
   const validateStep = (step: number): boolean => {
     const newErrors: FormErrors = {};

@@ -1499,7 +1499,7 @@ export default function JobOrdersRepair() {
     }
 
     if (action === "accept") {
-      if (activeRepairCount >= repairRequestLimit) {
+      if (activeRepairCount > repairRequestLimit) {
         await Swal.fire({
           title: 'Repair Limit Reached',
           text: `This repairer already has ${activeRepairCount} active job orders. Increase the limit to accept more requests.`,
@@ -1622,7 +1622,7 @@ export default function JobOrdersRepair() {
           </div>
           <div className="flex flex-col items-end gap-2">
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              Active workload: <span className={`font-semibold ${activeRepairCount >= repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
+              Active workload: <span className={`font-semibold ${activeRepairCount > repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
             </p>
           </div>
         </div>

@@ -71,6 +71,12 @@ const ProductShow: React.FC = () => {
   const cartBadgeCount = Number(cartCountProp ?? (cartLoading ? 0 : cartCount) ?? 0);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   const [mobileUserDropdownOpen, setMobileUserDropdownOpen] = useState(false);
+  const [mobileSearchFocused, setMobileSearchFocused] = useState(false);
+  const [mobileSuggestionProducts, setMobileSuggestionProducts] = useState<any[]>([]);
+  const [mobileSuggestionShops, setMobileSuggestionShops] = useState<any[]>([]);
+  const [isMobileSearchingSuggestions, setIsMobileSearchingSuggestions] = useState(false);
+  const mobileSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const mobileSearchAbortRef = React.useRef<AbortController | null>(null);
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
   // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
@@ -441,6 +447,75 @@ const ProductShow: React.FC = () => {
     return () => removeCartGuestAddAttemptListener(handler);
   }, []);
 
+  // Mobile search suggestions with debounce
+  useEffect(() => {
+    const query = mobileSearchQuery.trim();
+    if (query.length < 2) {
+      setMobileSuggestionProducts([]);
+      setMobileSuggestionShops([]);
+      setIsMobileSearchingSuggestions(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      if (mobileSearchAbortRef.current) {
+        mobileSearchAbortRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      mobileSearchAbortRef.current = controller;
+      setIsMobileSearchingSuggestions(true);
+
+      try {
+        const response = await fetch(
+          `/api/search/suggestions?query=${encodeURIComponent(query)}`,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Search request failed');
+        }
+
+        const data = await response.json();
+        setMobileSuggestionProducts(Array.isArray(data.products) ? data.products : []);
+        setMobileSuggestionShops(Array.isArray(data.shops) ? data.shops : []);
+      } catch (error: any) {
+        if (error?.name !== 'AbortError') {
+          setMobileSuggestionProducts([]);
+          setMobileSuggestionShops([]);
+        }
+      } finally {
+        setIsMobileSearchingSuggestions(false);
+      }
+    }, 220);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [mobileSearchQuery]);
+
+  // Handle outside clicks to close mobile search suggestions
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        mobileSearchContainerRef.current &&
+        !mobileSearchContainerRef.current.contains(event.target as Node)
+      ) {
+        setMobileSearchFocused(false);
+      }
+    };
+
+    if (mobileSearchFocused) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [mobileSearchFocused]);
+
   const handleImageUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -715,30 +790,126 @@ const ProductShow: React.FC = () => {
             </svg>
           </button>
 
-          {/* Search field */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (mobileSearchQuery.trim()) router.visit(route('products', { search: mobileSearchQuery.trim() }));
-            }}
-            className="flex-1"
-          >
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={mobileSearchQuery}
-                onChange={(e) => setMobileSearchQuery(e.target.value)}
-                placeholder={product.name}
-                className="w-full rounded-full border border-gray-300 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
-                aria-label="Search products"
-              />
-            </div>
-          </form>
+          {/* Search field with suggestions */}
+          <div ref={mobileSearchContainerRef} className="relative flex-1">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (mobileSearchQuery.trim()) router.visit(route('products', { search: mobileSearchQuery.trim() }));
+              }}
+            >
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={mobileSearchQuery}
+                  onChange={(e) => setMobileSearchQuery(e.target.value)}
+                  onFocus={() => setMobileSearchFocused(true)}
+                  placeholder={product.name}
+                  className="w-full rounded-full border border-gray-300 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
+                  aria-label="Search products"
+                />
+              </div>
+            </form>
+
+            {/* Mobile search suggestions dropdown */}
+            {mobileSearchFocused && mobileSearchQuery.trim().length >= 2 && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-full rounded-2xl border border-gray-200 bg-white shadow-lg">
+                <div className="border-b border-gray-200 px-5 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Suggestions</p>
+                </div>
+
+                <div className="max-h-80 overflow-y-auto">
+                  {/* Products section */}
+                  {mobileSuggestionProducts.length > 0 && (
+                    <div>
+                      <div className="border-b border-gray-100 px-5 py-2">
+                        <p className="text-xs font-medium text-gray-600">Products</p>
+                      </div>
+                      {mobileSuggestionProducts.slice(0, 5).map((suggestion) => (
+                        <Link
+                          key={suggestion.id}
+                          href={suggestion.url}
+                          className="flex items-center gap-3 border-b border-gray-50 px-5 py-3 hover:bg-gray-50 transition-colors"
+                        >
+                          {suggestion.main_image ? (
+                            <img
+                              src={suggestion.main_image}
+                              alt={suggestion.name}
+                              className="h-8 w-8 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-lg bg-gray-200" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-gray-800 truncate">{suggestion.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{suggestion.shop_name}</p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Shop Profiles section */}
+                  {mobileSuggestionShops.length > 0 && (
+                    <div>
+                      <div className="border-b border-gray-100 px-5 py-2">
+                        <p className="text-xs font-medium text-gray-600">Shop Profiles</p>
+                      </div>
+                      {mobileSuggestionShops.slice(0, 4).map((suggestion) => (
+                        <div
+                          key={suggestion.id}
+                          className="flex items-center justify-between gap-3 border-b border-gray-50 px-5 py-3 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {suggestion.image ? (
+                              <img
+                                src={suggestion.image}
+                                alt={suggestion.name}
+                                className="h-8 w-8 rounded-full object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="h-8 w-8 rounded-full bg-gray-200 shrink-0" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm text-gray-800 truncate">{suggestion.name}</p>
+                              <p className="text-xs text-gray-500 truncate">{suggestion.location}</p>
+                            </div>
+                          </div>
+                          <Link
+                            href={suggestion.url}
+                            className="ml-2 whitespace-nowrap text-xs font-semibold text-[#16233b] hover:text-[#1a2942] transition-colors"
+                          >
+                            PROFILE
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No results state */}
+                  {!isMobileSearchingSuggestions &&
+                    mobileSuggestionProducts.length === 0 &&
+                    mobileSuggestionShops.length === 0 && (
+                      <div className="px-5 py-6 text-center">
+                        <p className="text-sm text-gray-500">No results found</p>
+                      </div>
+                    )}
+
+                  {/* Loading state */}
+                  {isMobileSearchingSuggestions && (
+                    <div className="px-5 py-6 text-center">
+                      <p className="text-sm text-gray-500">Searching...</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Cart icon with badge */}
           <Link
@@ -1628,19 +1799,41 @@ const ProductShow: React.FC = () => {
               )}
 
               {showAddedModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowAddedModal(false)}>
-                  <div className="bg-white rounded-xl w-[900px] max-w-[95%] p-6 grid grid-cols-2 gap-6 relative" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center">
-                        <img src={product.primary || (product.images && product.images[0])} alt={product.name} className="w-full h-[420px] object-contain rounded" />
-                      </div>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-3 py-4 sm:px-4" onClick={() => setShowAddedModal(false)}>
+                  <div
+                    className="relative grid w-full max-w-5xl grid-cols-1 gap-4 rounded-2xl bg-white p-4 sm:gap-5 sm:p-5 md:grid-cols-2 md:gap-6 md:p-6 lg:p-7"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-center rounded-xl bg-slate-50 p-2 sm:p-3">
+                      <img
+                        src={product.primary || (product.images && product.images[0])}
+                        alt={product.name}
+                        className="h-44 w-full object-contain sm:h-56 md:h-80 lg:h-96"
+                      />
+                    </div>
 
-                      <div className="p-4 flex flex-col justify-center">
-                        <h2 className="text-3xl font-bold lowercase mb-2 text-black">welcome to solespace</h2>
-                        <p className="text-sm text-black mb-6">We ship nationwide and offer shoe care, repairs, and exclusive drops. Be the first to know about restocks, repair offers, and everything Solespace.</p>
+                    <div className="flex flex-col justify-center px-1 py-1 sm:px-2">
+                      <h2 className="mb-2 text-2xl font-bold lowercase text-black sm:text-[2rem]">welcome to solespace</h2>
+                      <p className="mb-5 text-sm leading-relaxed text-black sm:text-[15px]">
+                        We ship nationwide and offer shoe care, repairs, and exclusive drops. Be the first to know about restocks,
+                        repair offers, and everything Solespace.
+                      </p>
 
-                      <div className="flex flex-col gap-3 mt-4">
-                        <button type="button" onClick={() => router.visit('/register')} className="w-full py-3 border border-gray-200 rounded text-center text-black hover:bg-gray-50">Sign Up</button>
-                        <button onClick={() => setShowAddedModal(false)} className="w-full py-3 border border-gray-200 rounded text-center text-black hover:bg-gray-50">No thanks</button>
+                      <div className="mt-2 flex flex-col gap-2.5 sm:gap-3">
+                        <button
+                          type="button"
+                          onClick={() => router.visit('/register')}
+                          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium text-black transition hover:bg-gray-50"
+                        >
+                          Sign Up
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddedModal(false)}
+                          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium text-black transition hover:bg-gray-50"
+                        >
+                          No thanks
+                        </button>
                       </div>
                     </div>
                   </div>

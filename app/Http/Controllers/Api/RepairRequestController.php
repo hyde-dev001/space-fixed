@@ -1152,6 +1152,24 @@ class RepairRequestController extends Controller
     private function autoAssignRepairer(RepairRequest $repairRequest)
     {
         try {
+            $shopWorkloadLimit = (int) (ShopOwner::query()
+                ->where('id', $repairRequest->shop_owner_id)
+                ->value('repair_workload_limit') ?? 20);
+
+            $activeStatuses = [
+                'assigned_to_repairer',
+                'repairer_accepted',
+                'pending',
+                'received',
+                'in-progress',
+                'in_progress',
+                'awaiting_parts',
+                'waiting_customer_confirmation',
+                'completed',
+                'ready-for-pickup',
+                'ready_for_pickup',
+            ];
+
             // Determine if the customer specified a preferred drop-off date
             $preferredDate = $repairRequest->scheduled_dropoff_date
                 ? $repairRequest->scheduled_dropoff_date->format('Y-m-d')
@@ -1183,13 +1201,8 @@ class RepairRequestController extends Controller
                     $query->where('name', 'Repairer');
                 })
                 ->where('status', 'active')
-                ->withCount(['assignedRepairs as active_repairs_count' => function($query) {
-                    $query->whereIn('status', [
-                        'assigned_to_repairer',
-                        'repairer_accepted',
-                        'in_progress',
-                        'awaiting_parts'
-                    ]);
+                ->withCount(['assignedRepairs as active_repairs_count' => function($query) use ($activeStatuses) {
+                    $query->whereIn('status', $activeStatuses);
                 }]);
 
             // STRATEGY 1: Least-busy repairer who is FREE on the preferred date (under capacity)
@@ -1198,7 +1211,7 @@ class RepairRequestController extends Controller
                 // Some repairers have blocked the preferred date — exclude them
                 $repairer = $baseQuery()
                     ->whereNotIn('id', $blockedRepairerIds)
-                    ->having('active_repairs_count', '<', 15)
+                    ->having('active_repairs_count', '<', $shopWorkloadLimit)
                     ->orderBy('active_repairs_count', 'asc')
                     ->orderBy('id', 'asc')
                     ->first();
@@ -1207,16 +1220,9 @@ class RepairRequestController extends Controller
             // STRATEGY 2: Normal least-busy pick under capacity (preferred date either not set, or no one blocked it)
             if (!$repairer) {
                 $repairer = $baseQuery()
-                    ->having('active_repairs_count', '<', 15) // Max capacity limit: 15 active repairs per repairer
+                    ->having('active_repairs_count', '<', $shopWorkloadLimit)
                     ->orderBy('active_repairs_count', 'asc')  // Assign to least busy first
                     ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
-                    ->first();
-            }
-            
-            // FALLBACK STRATEGY 3: All repairers at capacity — assign to least busy regardless
-            if (!$repairer) {
-                $repairer = $baseQuery()
-                    ->orderBy('active_repairs_count', 'asc')
                     ->first();
             }
             
@@ -1522,16 +1528,40 @@ class RepairRequestController extends Controller
             'in-progress', 'in_progress', 'awaiting_parts', 'waiting_customer_confirmation',
             'completed', 'ready-for-pickup', 'ready_for_pickup'];
 
-        $activeCount = RepairRequest::where('shop_owner_id', $shopOwner->id)
-            ->whereIn('status', $activeStatuses)
+        $perRepairerLimit = (int) ($shopOwner->repair_workload_limit ?? 20);
+
+        $repairerCount = User::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('status', 'active')
+            ->whereHas('roles', function ($query) {
+                $query->where('name', 'Repairer');
+            })
             ->count();
 
-        $limit = (int) ($shopOwner->repair_workload_limit ?? 20);
+        if ($repairerCount > 0) {
+            $activeCount = RepairRequest::query()
+                ->where('shop_owner_id', $shopOwner->id)
+                ->whereNotNull('assigned_repairer_id')
+                ->whereIn('status', $activeStatuses)
+                ->count();
+
+            $limit = $repairerCount * $perRepairerLimit;
+        } else {
+            // Fallback for owner-operated shops with no staff repairers
+            $activeCount = RepairRequest::query()
+                ->where('shop_owner_id', $shopOwner->id)
+                ->whereIn('status', $activeStatuses)
+                ->count();
+
+            $limit = $perRepairerLimit;
+        }
 
         return response()->json([
             'success'      => true,
             'active_count' => $activeCount,
             'limit'        => $limit,
+            'repairer_count' => $repairerCount,
+            'limit_per_repairer' => $perRepairerLimit,
             'is_full'      => $activeCount >= $limit,
         ]);
     }

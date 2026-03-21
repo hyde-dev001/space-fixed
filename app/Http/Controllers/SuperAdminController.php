@@ -121,6 +121,251 @@ class SuperAdminController extends Controller
     }
 
     /**
+     * Show subscription management page
+     */
+    public function showSubscriptionManagement(): Response
+    {
+        // Fetch all subscriptions with relations
+        $subscriptions = \App\Models\ShopOwnerSubscription::with(['shopOwner', 'premiumPlan'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($subscription) {
+                return [
+                    'id' => $subscription->id,
+                    'shop' => [
+                        'id' => $subscription->shopOwner->id,
+                        'business_name' => $subscription->shopOwner->business_name,
+                        'owner_name' => $subscription->shopOwner->first_name . ' ' . $subscription->shopOwner->last_name,
+                        'email' => $subscription->shopOwner->email,
+                    ],
+                    'premium_plan' => $subscription->premiumPlan ? [
+                        'id' => $subscription->premiumPlan->id,
+                        'name' => $subscription->premiumPlan->name,
+                        'price' => $subscription->premiumPlan->price,
+                        'duration_days' => $subscription->premiumPlan->duration_days,
+                    ] : null,
+                    'plan_code' => $subscription->plan_code,
+                    'showroom_slot_limit' => $subscription->showroom_slot_limit,
+                    'status' => $subscription->status,
+                    'amount_paid' => (float) ($subscription->paid_amount ?? $subscription->premiumPlan?->price ?? 0),
+                    'starts_at' => $subscription->starts_at ? $subscription->starts_at->format('Y-m-d H:i:s') : null,
+                    'ends_at' => $subscription->ends_at ? $subscription->ends_at->format('Y-m-d H:i:s') : null,
+                    'created_at' => $subscription->created_at->format('Y-m-d H:i:s'),
+                ];
+            });
+
+        // Calculate statistics
+        $now = \Carbon\Carbon::now();
+        $isOngoing = function (array $sub) use ($now) {
+            if (($sub['status'] ?? null) === 'deactivated') {
+                return false;
+            }
+
+            if (!empty($sub['ends_at'])) {
+                $endDate = \Carbon\Carbon::parse($sub['ends_at']);
+                return $endDate->greaterThanOrEqualTo($now);
+            }
+
+            return ($sub['status'] ?? null) === 'active';
+        };
+
+        $stats = [
+            // Keep cards consistent with UI badge logic: ongoing depends on end date, not only raw status.
+            'active' => $subscriptions->filter(fn ($sub) => $isOngoing($sub))->count(),
+            'expired' => $subscriptions->filter(fn ($sub) => !$isOngoing($sub))->count(),
+            // Count all successful paid subscriptions, even if later cancelled/expired.
+            'total_revenue' => $subscriptions->whereIn('status', ['active', 'cancelled', 'deactivated', 'expired'])->sum(function ($sub) {
+                return $sub['amount_paid'] ?? 0;
+            }),
+            'expiring_soon' => $subscriptions->filter(function ($sub) use ($isOngoing, $now) {
+                if (!$isOngoing($sub) || empty($sub['ends_at'])) {
+                    return false;
+                }
+
+                $endDate = \Carbon\Carbon::parse($sub['ends_at']);
+                return $endDate->betweenIncluded($now, $now->copy()->addDays(7));
+            })->count(),
+        ];
+
+        return Inertia::render('superAdmin/Shops/SubscriptionManagement', [
+            'subscriptions' => $subscriptions,
+            'stats' => $stats
+        ]);
+    }
+
+        /**
+         * Cancel a subscription
+         */
+        public function cancelSubscription(Request $request, $id)
+        {
+            try {
+                $subscription = \App\Models\ShopOwnerSubscription::with('premiumPlan')->findOrFail($id);
+                $refundedAmount = (float) ($subscription->paid_amount ?? $subscription->premiumPlan?->price ?? 0);
+
+                $effectiveEndsAt = $subscription->ends_at;
+                if (!$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
+                    $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
+                }
+
+                $subscription->update([
+                    'status' => 'deactivated',
+                    // Admin deactivation refunds the subscription amount from revenue accounting.
+                    'paid_amount' => 0,
+                    // Keep existing deadline; cancellation should stop renewal, not immediate access.
+                    'ends_at' => $effectiveEndsAt,
+                ]);
+
+                activity()
+                    ->performedOn($subscription)
+                    ->withProperties([
+                        'subscription_id' => $subscription->id,
+                        'shop_owner_id' => $subscription->shop_owner_id,
+                        'plan_code' => $subscription->plan_code,
+                        'cancelled_at' => now()->toDateTimeString(),
+                        'effective_ends_at' => $effectiveEndsAt?->toDateTimeString(),
+                        'refunded_amount' => $refundedAmount,
+                    ])
+                    ->log('Subscription deactivated and refunded by admin');
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Subscription cancelled and refunded successfully',
+                        'refunded_amount' => $refundedAmount,
+                        'subscription' => $subscription,
+                    ], 200);
+                }
+
+                return redirect()->back();
+            } catch (\Exception $e) {
+                \Log::error('Error cancelling subscription', [
+                    'subscription_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Failed to cancel subscription',
+                        'error' => $e->getMessage(),
+                    ], 500);
+                }
+
+                return redirect()->back()->with('error', 'Failed to cancel subscription');
+            }
+        }
+
+        /**
+         * Upgrade a subscription to a higher plan
+         */
+        public function upgradeSubscription(Request $request, $id)
+        {
+            try {
+                $validated = $request->validate([
+                    'plan_code' => 'required|string',
+                ]);
+
+                $subscription = \App\Models\ShopOwnerSubscription::findOrFail($id);
+                $newPlan = \App\Models\PremiumPlan::where('plan_code', $validated['plan_code'])->firstOrFail();
+
+                $oldPlanCode = $subscription->plan_code;
+                $subscription->update([
+                    'premium_plan_id' => $newPlan->id,
+                    'plan_code' => $newPlan->plan_code,
+                    'showroom_slot_limit' => $newPlan->showroom_slot_limit,
+                ]);
+
+                activity()
+                    ->performedOn($subscription)
+                    ->withProperties([
+                        'subscription_id' => $subscription->id,
+                        'shop_owner_id' => $subscription->shop_owner_id,
+                        'old_plan' => $oldPlanCode,
+                        'new_plan' => $newPlan->plan_code,
+                        'upgraded_at' => now()->toDateTimeString(),
+                    ])
+                    ->log("Subscription upgraded from {$oldPlanCode} to {$newPlan->plan_code}");
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Subscription upgraded successfully',
+                        'subscription' => $subscription,
+                    ], 200);
+                }
+
+                return redirect()->back()->with('success', 'Subscription upgraded successfully');
+            } catch (\Exception $e) {
+                \Log::error('Error upgrading subscription', [
+                    'subscription_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Failed to upgrade subscription',
+                        'error' => $e->getMessage(),
+                    ], 500);
+                }
+
+                return redirect()->back()->with('error', 'Failed to upgrade subscription');
+            }
+        }
+
+        /**
+         * Downgrade a subscription to a lower plan
+         */
+        public function downgradeSubscription(Request $request, $id)
+        {
+            try {
+                $validated = $request->validate([
+                    'plan_code' => 'required|string',
+                ]);
+
+                $subscription = \App\Models\ShopOwnerSubscription::findOrFail($id);
+                $newPlan = \App\Models\PremiumPlan::where('plan_code', $validated['plan_code'])->firstOrFail();
+
+                $oldPlanCode = $subscription->plan_code;
+                $subscription->update([
+                    'premium_plan_id' => $newPlan->id,
+                    'plan_code' => $newPlan->plan_code,
+                    'showroom_slot_limit' => $newPlan->showroom_slot_limit,
+                ]);
+
+                activity()
+                    ->performedOn($subscription)
+                    ->withProperties([
+                        'subscription_id' => $subscription->id,
+                        'shop_owner_id' => $subscription->shop_owner_id,
+                        'old_plan' => $oldPlanCode,
+                        'new_plan' => $newPlan->plan_code,
+                        'downgraded_at' => now()->toDateTimeString(),
+                    ])
+                    ->log("Subscription downgraded from {$oldPlanCode} to {$newPlan->plan_code}");
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Subscription downgraded successfully',
+                        'subscription' => $subscription,
+                    ], 200);
+                }
+
+                return redirect()->back()->with('success', 'Subscription downgraded successfully');
+            } catch (\Exception $e) {
+                \Log::error('Error downgrading subscription', [
+                    'subscription_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Failed to downgrade subscription',
+                        'error' => $e->getMessage(),
+                    ], 500);
+                }
+
+                return redirect()->back()->with('error', 'Failed to downgrade subscription');
+            }
+        }
+
+    /**
      * Show data reports dashboard (placeholder values for now)
      */
     public function showDataReports(): Response

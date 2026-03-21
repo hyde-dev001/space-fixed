@@ -331,6 +331,8 @@ class PaymongoWebhookController extends Controller
         $metadata   = $attributes['metadata'] ?? [];
         $payments   = $attributes['payments'] ?? [];
         $paymentId  = $payments[0]['id'] ?? null;
+        $paymentAttributes = $payments[0]['attributes'] ?? [];
+        $paidAmount = $this->extractPaidAmount($attributes, $paymentAttributes);
 
         // Resolve the subscription record (outside the transaction is fine for the lookup)
         $subscription = $this->resolveSubscription($sessionId, $metadata);
@@ -343,7 +345,7 @@ class PaymongoWebhookController extends Controller
             return response()->json(['message' => 'Subscription not found'], 404);
         }
 
-        $activated = DB::transaction(function () use ($subscription, $sessionId, $paymentId) {
+        $activated = DB::transaction(function () use ($subscription, $sessionId, $paymentId, $paidAmount) {
             // Lock the specific row; prevents duplicate activation under concurrent webhooks
             $locked = ShopOwnerSubscription::where('id', $subscription->id)
                 ->lockForUpdate()
@@ -369,13 +371,17 @@ class PaymongoWebhookController extends Controller
                 return false;
             }
 
-            $startsAt     = now();
+            $startsAt = now();
+            $locked->loadMissing('premiumPlan');
+            $durationDays = max(1, (int) ($locked->premiumPlan?->duration_days ?? 30));
+            $endsAt = $startsAt->copy()->addDays($durationDays);
 
             $locked->update([
                 'status'                => 'active',
                 'paymongo_payment_id'   => $paymentId,
+                'paid_amount'           => $paidAmount ?? $locked->paid_amount ?? $locked->premiumPlan?->price,
                 'starts_at'             => $startsAt,
-                'ends_at'               => null,
+                'ends_at'               => $endsAt,
             ]);
 
             activity()
@@ -385,10 +391,10 @@ class PaymongoWebhookController extends Controller
                     'shop_owner_id'   => $locked->shop_owner_id,
                     'plan_code'       => $locked->plan_code,
                     'starts_at'       => $startsAt->toDateTimeString(),
-                    'ends_at'         => null,
+                    'ends_at'         => $endsAt->toDateTimeString(),
                     'payment_id'      => $paymentId,
                     'session_id'      => $sessionId,
-                    'payment_method'  => 'PayMongo',
+                    'paid_amount'     => $paidAmount,
                 ])
                 ->log('Premium subscription activated: ' . $locked->plan_code);
 
@@ -396,7 +402,7 @@ class PaymongoWebhookController extends Controller
                 'subscription_id' => $locked->id,
                 'shop_owner_id'   => $locked->shop_owner_id,
                 'plan_code'       => $locked->plan_code,
-                'ends_at'         => null,
+                'ends_at'         => $endsAt->toDateTimeString(),
                 'payment_id'      => $paymentId,
                 'session_id'      => $sessionId,
             ]);
@@ -527,5 +533,20 @@ class PaymongoWebhookController extends Controller
         }
 
         return null;
+    }
+
+    private function extractPaidAmount(array $sessionAttributes, array $paymentAttributes): ?float
+    {
+        $rawAmount = $paymentAttributes['amount']
+            ?? $sessionAttributes['payments'][0]['attributes']['amount']
+            ?? $sessionAttributes['amount_total']
+            ?? null;
+
+        if (!is_numeric($rawAmount)) {
+            return null;
+        }
+
+        // PayMongo amounts are usually in centavos
+        return round(((float) $rawAmount) / 100, 2);
     }
 }

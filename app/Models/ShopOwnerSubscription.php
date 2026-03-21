@@ -18,12 +18,14 @@ class ShopOwnerSubscription extends Model
         'status',
         'paymongo_session_id',
         'paymongo_payment_id',
+        'paid_amount',
         'starts_at',
         'ends_at',
     ];
 
     protected $casts = [
         'showroom_slot_limit' => 'integer',
+        'paid_amount' => 'decimal:2',
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',
     ];

@@ -50,7 +50,11 @@ const resolveCategoryFromSearchQuery = (value: string): string | null => {
   return null;
 };
 
-const Navigation: React.FC = () => {
+type NavigationProps = {
+  mobileMenuTriggerIcon?: 'people' | 'hamburger';
+};
+
+const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people' }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -163,6 +167,8 @@ const Navigation: React.FC = () => {
   };
   const navRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const mobileUserMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuPanelRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const hoverCloseTimeoutRef = useRef<number | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -414,8 +420,22 @@ const Navigation: React.FC = () => {
       }
     };
 
+    const handleMobileOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const clickedTrigger = mobileUserMenuRef.current?.contains(target);
+      const clickedPanel = mobileMenuPanelRef.current?.contains(target);
+
+      if (!clickedTrigger && !clickedPanel) {
+        setMobileMenuOpen(false);
+      }
+    };
+
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    document.addEventListener('mousedown', handleMobileOutsideClick);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('mousedown', handleMobileOutsideClick);
+    };
   }, [mobileMenuOpen]);
 
   useEffect(() => {
@@ -448,7 +468,7 @@ const Navigation: React.FC = () => {
             SoleSpace
           </Link>
 
-          <div className="absolute right-0 flex items-center gap-1.5 2xl:hidden">
+          <div className="absolute right-0 flex items-center gap-1.5 2xl:hidden" ref={mobileUserMenuRef}>
             <Link
               href="/checkout"
               className={headerIconButtonClasses}
@@ -469,16 +489,24 @@ const Navigation: React.FC = () => {
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className={headerIconButtonClasses}
-              aria-label="Toggle menu"
-              aria-controls="mobile-nav-menu"
+              aria-label={mobileMenuTriggerIcon === 'hamburger' ? 'Toggle menu' : 'User account menu'}
             >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {mobileMenuTriggerIcon === 'hamburger' ? (
+                  mobileMenuOpen ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  )
                 ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 )}
               </svg>
+              {mobileMenuTriggerIcon === 'people' && isAuthenticated && userIconCount > 0 && (
+                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
+                  {userIconCount}
+                </span>
+              )}
             </button>
           </div>
           <div
@@ -1014,135 +1042,116 @@ const Navigation: React.FC = () => {
           </div>
         </div>
         {mobileMenuOpen && (
-          <div id="mobile-nav-menu" className="mx-auto mt-3 w-full max-w-[430px] rounded-[28px] border border-gray-200 bg-white px-4 py-4 text-center shadow-[0_24px_45px_-28px_rgba(15,23,42,0.45)] 2xl:hidden">
-              <form onSubmit={handleSearch} className="relative w-full">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </span>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setIsSearchFocused(true)}
-                  placeholder="Search products or shops..."
-                  className={mobileSearchInputClasses}
-                  aria-label="Search products or shops"
-                />
-              </form>
-              <div className="mt-4 space-y-3.5 pb-1">
-                <Link
-                  href={route("landing")}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 0 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 0 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Home
-                </Link>
-                <Link
-                  href={route("products")}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 1 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 1 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Products
-                </Link>
-                <Link
-                  href={route("products", { category: 'men' })}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 2 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 2 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Men
-                </Link>
-                <Link
-                  href={route("products", { category: 'women' })}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 3 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 3 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Women
-                </Link>
-                <Link
-                  href={route("products", { category: 'kids' })}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 4 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 4 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Kids
-                </Link>
-                <Link
-                  href={route("products", { category: 'sports' })}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 5 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 5 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Sports
-                </Link>
-                <Link
-                  href={route("repair")}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 6 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 6 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Repair
-                </Link>
-                <Link
-                  href={route("services")}
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-current={activeIndex === 7 ? "page" : undefined}
-                  className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                    activeIndex === 7 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Services
-                </Link>
+          <div className="2xl:hidden">
+            {mobileMenuTriggerIcon === 'hamburger' ? (
+              <div id="mobile-nav-menu" ref={mobileMenuPanelRef} className="mx-auto mt-3 w-full max-w-[430px] rounded-[28px] border border-gray-200 bg-white px-4 py-4 text-center shadow-[0_24px_45px_-28px_rgba(15,23,42,0.45)]">
+                <form onSubmit={handleSearch} className="relative w-full">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </span>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setIsSearchFocused(true)}
+                    placeholder="Search products or shops..."
+                    className={mobileSearchInputClasses}
+                    aria-label="Search products or shops"
+                  />
+                </form>
+                <div className="mt-4 space-y-3.5 pb-1">
+                  <Link href={route('landing')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Home</Link>
+                  <Link href={route('products')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Products</Link>
+                  <Link href={route('products', { category: 'men' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Men</Link>
+                  <Link href={route('products', { category: 'women' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Women</Link>
+                  <Link href={route('products', { category: 'kids' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Kids</Link>
+                  <Link href={route('products', { category: 'sports' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Sports</Link>
+                  <Link href={route('repair')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Repair</Link>
+                  <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Services</Link>
+                  {isAuthenticated ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="block w-full text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700"
+                    >
+                      Log out
+                    </button>
+                  ) : (
+                    <>
+                      <Link href={route('login')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Login</Link>
+                      <Link href={route('register')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Register</Link>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div id="mobile-user-menu" ref={mobileMenuPanelRef} className="absolute right-2 top-full z-50 mt-2 w-[min(88vw,14rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]">
                 {isAuthenticated ? (
-                  <button
-                    onClick={() => handleLogout()}
-                    className="block w-full text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700"
-                  >
-                    Log out
-                  </button>
-                ) : (
                   <>
                     <Link
-                      href={route("login")}
+                      href="/my-orders"
+                      className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                       onClick={() => setMobileMenuOpen(false)}
-                      className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                        (activeIndex === 8 || url === '/login') ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                      }`}
                     >
-                      Login
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      <span>Orders</span>
                     </Link>
                     <Link
-                      href={route("register")}
+                      href="/my-repairs"
+                      className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                       onClick={() => setMobileMenuOpen(false)}
-                      aria-current={activeIndex === 8 ? "page" : undefined}
-                      className={`block text-[11px] font-medium uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
-                        activeIndex === 8 ? 'font-semibold text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                      }`}
                     >
-                      Register
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span>Repair</span>
                     </Link>
+                    <Link
+                      href="/customer-profile"
+                      className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <span>Edit Profile</span>
+                    </Link>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleLogout();
+                      }}
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Log out</span>
+                    </button>
                   </>
+                ) : (
+                  <Link
+                    href="/user/login"
+                    className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    <span>Customer Login</span>
+                  </Link>
                 )}
               </div>
+            )}
           </div>
         )}
       </div>

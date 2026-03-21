@@ -768,7 +768,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       <Head title="Messages - Solespace" />
       <Navigation />
 
-      <main className="mt-16 sm:mt-20 h-[calc(100vh-4rem)] sm:h-[calc(100vh-5rem)] pb-16 lg:pb-0 flex flex-col w-full min-h-0 overflow-hidden">
+      <main className="mt-16 h-[calc(100vh-4rem)] min-h-0 w-full overflow-hidden pb-16 pt-2 sm:mt-20 sm:h-[calc(100vh-5rem)] sm:pt-3 lg:pb-0 flex flex-col">
         <div className="flex flex-1 min-h-0 w-full gap-0 h-full overflow-hidden">
           <div className={`${isMobileChatOpen ? 'hidden' : 'flex'} lg:flex w-full lg:w-96 h-full bg-white flex-col overflow-hidden lg:border-r lg:border-gray-200`}>
             <div className="border-b border-gray-200 px-6 py-4">
@@ -1648,20 +1648,21 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
             className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M6 7l2 10h8l2-10M10 17a2 2 0 100 4 2 2 0 000-4zm4 0a2 2 0 100 4 2 2 0 000-4z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h4l2.2-3.2a1 1 0 01.82-.43H14l3.2 2.4a2 2 0 001.2.4H21v3H3v-2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 15h.01M17 15h.01" />
             </svg>
             <span>Products</span>
           </button>
 
           <button
             type="button"
-            onClick={() => router.visit('/customer-profile')}
+            onClick={() => router.visit('/repair-services')}
             className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-3 3-2-2 2-2 3-3z" />
             </svg>
-            <span>Me</span>
+            <span>Repair</span>
           </button>
 
           <button
@@ -1678,13 +1679,13 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
           <button
             type="button"
-            onClick={() => router.visit('/repair-services')}
+            onClick={() => router.visit('/customer-profile')}
             className="flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-3 3-2-2 2-2 3-3z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z" />
             </svg>
-            <span>Repair</span>
+            <span>Me</span>
           </button>
         </div>
       </div>

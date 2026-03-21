@@ -32,26 +32,10 @@ class RepairWorkflowController extends Controller
     {
         try {
             $repairRequest = RepairRequest::findOrFail($requestId);
-            
-            // Find an available repairer from the shop
-            $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                ->whereHas('roles', function($query) {
-                    $query->where('name', 'Repairer');
-                })
-                ->where('status', 'active')
-                ->inRandomOrder()
-                ->first();
-            
-            if (!$repairer) {
-                // No repairer available, assign to any staff with repair permissions
-                $repairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                    ->whereHas('permissions', function($query) {
-                        $query->where('name', 'like', '%repair%');
-                    })
-                    ->where('status', 'active')
-                    ->inRandomOrder()
-                    ->first();
-            }
+
+            $selection = $this->resolveRepairerAssignmentCandidate($repairRequest);
+            $this->logAssignmentDecision($repairRequest, $selection, 'auto_assign');
+            $repairer = $selection['repairer'];
             
             if ($repairer) {
                 $repairRequest->update([
@@ -74,13 +58,17 @@ class RepairWorkflowController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'Repair request assigned successfully',
-                    'repairer_id' => $repairer->id
+                    'repairer_id' => $repairer->id,
+                    'assignment_strategy' => $selection['strategy'],
+                    'required_skill_count' => 0,
+                    'matched_required_skill_count' => $selection['matched_skill_count'],
                 ]);
             }
             
             return response()->json([
                 'success' => false,
-                'message' => 'No available repairer found'
+                'message' => 'No available repairer found',
+                'assignment_strategy' => $selection['strategy'],
             ], 404);
             
         } catch (\Exception $e) {
@@ -420,13 +408,15 @@ class RepairWorkflowController extends Controller
                     'in-progress', 'in_progress', 'awaiting_parts', 'waiting_customer_confirmation',
                     'completed', 'ready-for-pickup', 'ready_for_pickup'];
                 $activeCount = RepairRequest::where('shop_owner_id', $repairShopOwner->id)
+                    ->where('assigned_repairer_id', $user->id)
+                    ->where('id', '!=', $repairRequest->id)
                     ->whereIn('status', $activeStatuses)
                     ->count();
                 if ($activeCount >= $workloadLimit) {
                     DB::rollBack();
                     return response()->json([
                         'success' => false,
-                        'message' => "Repair workload limit reached ({$workloadLimit} active repairs). Please complete existing repairs before accepting new ones.",
+                        'message' => "Repair workload limit reached ({$workloadLimit} active repairs per repairer). Please complete existing repairs before accepting new ones.",
                     ], 422);
                 }
             }
@@ -532,8 +522,20 @@ class RepairWorkflowController extends Controller
     public function rejectRepair(Request $request, $requestId)
     {
         $request->validate([
-            'reason' => 'required|string|min:10|max:500'
+            'reason' => 'nullable|string|min:10|max:500',
+            'reason_text' => 'nullable|string|min:10|max:500',
+            'reason_category' => 'nullable|in:skills_gap,workload,parts_unavailable,safety_risk,quality_concern,other',
         ]);
+
+        $reasonText = trim((string) ($request->input('reason_text') ?? $request->input('reason') ?? ''));
+        $reasonCategory = (string) ($request->input('reason_category') ?? 'other');
+
+        if ($reasonText === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'A rejection reason is required.'
+            ], 422);
+        }
         
         try {
             DB::beginTransaction();
@@ -567,7 +569,7 @@ class RepairWorkflowController extends Controller
                 $repairRequest->update([
                     'status' => 'owner_rejected',
                     'owner_decision' => 'rejected',
-                    'owner_approval_notes' => $request->reason,
+                    'owner_approval_notes' => $reasonText,
                     'owner_reviewed_at' => now(),
                     'owner_reviewed_by' => $shopOwner->id,
                 ]);
@@ -579,7 +581,7 @@ class RepairWorkflowController extends Controller
                     try {
                         $this->notificationService->notifyRepairRejected($repairRequest->user_id, [
                             'order_number' => $repairRequest->request_id,
-                            'reason'       => $request->reason,
+                            'reason'       => $reasonText,
                         ]);
                     } catch (\Exception $e) {
                         \Log::warning('Could not notify customer of repair rejection: ' . $e->getMessage());
@@ -626,12 +628,16 @@ class RepairWorkflowController extends Controller
             
             // Find manager for escalation
             $manager = $this->findShopManager($repairRequest->shop_owner_id);
+            $missingSkillNames = $reasonCategory === 'skills_gap'
+                ? []
+                : [];
             
             $repairRequest->update([
                 'status' => 'repairer_rejected',
-                'repairer_rejection_reason' => $request->reason,
+                'repairer_rejection_reason' => $reasonText,
+                'repairer_rejection_reason_category' => $reasonCategory,
                 'repairer_rejected_at' => now(),
-                'repairer_rejected_by_id' => $user->id,
+                'repairer_rejected_by' => $user->id,
                 'assigned_manager_id' => $manager ? $manager->id : null,
             ]);
             
@@ -642,16 +648,28 @@ class RepairWorkflowController extends Controller
                 $this->notificationService->notifyRepairRejectedToManager($repairRequest->shop_owner_id, [
                     'order_number' => $repairRequest->request_id,
                     'repair_id'    => $repairRequest->id,
-                    'reason'       => $request->reason,
+                    'reason'       => $reasonText,
+                    'reason_category' => $reasonCategory,
+                    'missing_skills' => $missingSkillNames,
                 ]);
             } catch (\Exception $e) {
                 \Log::warning('Could not notify manager of repair rejection: ' . $e->getMessage());
             }
 
+            $suggestedRepairer = $reasonCategory === 'skills_gap'
+                ? $this->buildSuggestedRepairerPayload($repairRequest, (int) $user->id)
+                : null;
+
             return response()->json([
                 'success' => true,
                 'message' => 'Repair rejected. Manager has been notified for review.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'manager'])
+                'repair' => $repairRequest->fresh(['user', 'services', 'manager']),
+                'rejection_reason' => [
+                    'category' => $reasonCategory,
+                    'text' => $reasonText,
+                    'missing_skills' => $missingSkillNames,
+                ],
+                'suggested_repairer' => $suggestedRepairer,
             ]);
             
         } catch (\Exception $e) {
@@ -700,6 +718,14 @@ class RepairWorkflowController extends Controller
                 ->whereIn('status', ['repairer_rejected', 'rejected', 'assigned_to_repairer'])
                 ->orderBy('repairer_rejected_at', 'desc')
                 ->get();
+
+            $repairs->each(function (RepairRequest $repair) {
+                $excludeUserId = (int) ($repair->repairer_rejected_by ?? 0);
+                $repair->setAttribute(
+                    'suggested_repairer',
+                    $this->buildSuggestedRepairerPayload($repair, $excludeUserId > 0 ? $excludeUserId : null)
+                );
+            });
             
             return response()->json([
                 'success' => true,
@@ -808,7 +834,8 @@ class RepairWorkflowController extends Controller
     public function overrideRejection(Request $request, $requestId)
     {
         $request->validate([
-            'notes' => 'required|string|min:10|max:500'
+            'notes' => 'required|string|min:10|max:500',
+            'repairer_id' => 'nullable|integer|exists:users,id'
         ]);
         
         try {
@@ -853,15 +880,85 @@ class RepairWorkflowController extends Controller
                 ], 400);
             }
             
-            // Find another repairer (not the one who rejected)
-            $newRepairer = User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                ->where('id', '!=', $repairRequest->repairer_rejected_by_id)
-                ->whereHas('roles', function($query) {
-                    $query->where('name', 'Repairer');
-                })
-                ->where('status', 'active')
-                ->inRandomOrder()
-                ->first();
+            // If manager selected a specific repairer, use that; otherwise auto-select
+            $rejectedById = (int) ($repairRequest->repairer_rejected_by_id ?? $repairRequest->repairer_rejected_by ?? 0);
+            $workloadLimit = $this->getRepairWorkloadLimitForShop((int) $repairRequest->shop_owner_id);
+            
+            if ($request->filled('repairer_id')) {
+                // Manager selected a specific repairer
+                $selectedRepairerId = (int) $request->repairer_id;
+                $newRepairer = User::findOrFail($selectedRepairerId);
+                
+                // Verify the selected repairer is in the same shop and has Repairer role
+                if ($newRepairer->shop_owner_id != $repairRequest->shop_owner_id || !$newRepairer->hasRole('Repairer')) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid repairer selection'
+                    ], 400);
+                }
+                
+                // Verify it's not the same repairer who rejected it
+                if ($newRepairer->id === $rejectedById) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot reassign to the repairer who rejected it'
+                    ], 400);
+                }
+
+                $selectedRepairerActiveCount = RepairRequest::query()
+                    ->where('shop_owner_id', $repairRequest->shop_owner_id)
+                    ->where('assigned_repairer_id', $newRepairer->id)
+                    ->whereIn('status', $this->getActiveRepairStatuses())
+                    ->count();
+
+                if ($selectedRepairerActiveCount >= $workloadLimit) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Selected repairer is at workload limit ({$selectedRepairerActiveCount}/{$workloadLimit} active repairs). Choose another repairer."
+                    ], 422);
+                }
+                
+                $selection = [
+                    'repairer' => $newRepairer,
+                    'strategy' => 'manager_selection',
+                    'matched_skill_count' => 0,
+                ];
+            } else {
+                // Auto-select best repairer
+                $selection = $this->resolveRepairerAssignmentCandidate(
+                    $repairRequest,
+                    $rejectedById > 0 ? $rejectedById : null
+                );
+                $newRepairer = $selection['repairer'];
+                
+                // Check if no repairer could be found
+                if (!$newRepairer) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot override rejection: No available repairers found to assign this repair to.'
+                    ], 400);
+                }
+            }
+            
+            // Final validation: ensure we have a repairer to assign
+            if (!$newRepairer) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot complete override: No valid repairer selected or available.'
+                ], 400);
+            }
+            
+            $this->logAssignmentDecision(
+                $repairRequest,
+                $selection,
+                'manager_override_reassignment',
+                $rejectedById > 0 ? $rejectedById : null
+            );
             
                 $repairRequest->update([
                     'status' => 'manager_rejected',
@@ -896,6 +993,11 @@ class RepairWorkflowController extends Controller
                 'message' => $newRepairer 
                     ? 'Rejection overridden. Repair reassigned to another repairer.' 
                     : 'Rejection overridden but no available repairer found.',
+                'assignment_strategy' => $selection['strategy'],
+                'suggested_repairer' => $this->buildSuggestedRepairerPayload(
+                    $repairRequest,
+                    $rejectedById > 0 ? $rejectedById : null
+                ),
                 'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'managerReviewedBy'])
             ]);
             
@@ -904,6 +1006,98 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to override rejection: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available repairers for a repair (workload-based only)
+     * Used by manager to select repairers for override
+     */
+    public function getAvailableRepairersForRepair(Request $request, $repairRequestId)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            
+            if (!$user || !$user->hasRole('Manager')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $repairRequest = RepairRequest::findOrFail($repairRequestId);
+            
+            if ($repairRequest->shop_owner_id != $user->shop_owner_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $workloadLimit = $this->getRepairWorkloadLimitForShop((int) $repairRequest->shop_owner_id);
+
+            // Exclude the repairer who rejected it
+            $excludeUserId = (int) ($repairRequest->repairer_rejected_by_id ?? $repairRequest->repairer_rejected_by ?? 0);
+
+            // Get all active repairers in the shop
+            $baseQuery = User::query()
+                ->where('shop_owner_id', $repairRequest->shop_owner_id)
+                ->whereHas('roles', function ($query) {
+                    $query->where('name', 'Repairer');
+                })
+                ->where('status', 'active')
+                ->when($excludeUserId, function ($query) use ($excludeUserId) {
+                    $query->where('id', '!=', $excludeUserId);
+                })
+                ->withCount([
+                    'assignedRepairs as active_repairs_count' => function ($query) {
+                        $query->whereIn('status', $this->getActiveRepairStatuses());
+                    }
+                ])
+                ->having('active_repairs_count', '<', $workloadLimit);
+
+            $repairers = $baseQuery->get()->map(function ($repairer) {
+                return [
+                    'id' => $repairer->id,
+                    'name' => $repairer->name,
+                    'email' => $repairer->email,
+                    'phone' => $repairer->phone,
+                    'active_repairs' => $repairer->active_repairs_count ?? 0,
+                ];
+            });
+
+            // Sort by workload then by ID
+            $repairers = $repairers->sortBy(function ($r) {
+                return [
+                    $r['active_repairs'],                           // lower workload first
+                    $r['id'],                                       // then by ID
+                ];
+            })->values();
+
+            // Check if there are any available repairers
+            if ($repairers->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot override rejection: No other repairers are available in this shop to reassign to.',
+                    'can_override' => false,
+                    'repair_id' => $repairRequest->id,
+                ], 400);
+            }
+
+            return response()->json([
+                'success' => true,
+                'repair_id' => $repairRequest->id,
+                'repair_request_number' => $repairRequest->request_id,
+                'available_repairers' => $repairers,
+                'can_override' => true,
+                'workload_limit_per_repairer' => $workloadLimit,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch available repairers: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -2901,6 +3095,167 @@ class RepairWorkflowController extends Controller
             'materials_total' => $materialsTotal,
             'final_total' => $finalTotal,
         ];
+    }
+
+    /**
+     * Resolve the best repairer candidate for a repair request.
+     * Priority:
+     * 1) Exact skill coverage of all required skills
+     * 2) Best partial skill coverage
+     * 3) Lowest-workload active repairer
+     * 4) Active staff with repair-related permissions
+     */
+    private function resolveRepairerAssignmentCandidate(RepairRequest $repairRequest, ?int $excludeUserId = null): array
+    {
+        $workloadLimit = $this->getRepairWorkloadLimitForShop((int) $repairRequest->shop_owner_id);
+
+        $baseRepairerQuery = User::query()
+            ->where('shop_owner_id', $repairRequest->shop_owner_id)
+            ->whereHas('roles', function ($query) {
+                $query->where('name', 'Repairer');
+            })
+            ->where('status', 'active')
+            ->when($excludeUserId, function ($query) use ($excludeUserId) {
+                $query->where('id', '!=', $excludeUserId);
+            })
+            ->withCount([
+                'assignedRepairs as active_repairs_count' => function ($query) {
+                    $query->whereIn('status', $this->getActiveRepairStatuses());
+                }
+            ])
+            ->having('active_repairs_count', '<', $workloadLimit);
+
+        $workloadFallback = (clone $baseRepairerQuery)
+            ->orderBy('active_repairs_count')
+            ->orderBy('id')
+            ->first();
+
+        if ($workloadFallback) {
+            return [
+                'repairer' => $workloadFallback,
+                'strategy' => 'workload_fallback',
+                'matched_skill_count' => 0,
+            ];
+        }
+
+        $permissionFallback = User::query()
+            ->where('shop_owner_id', $repairRequest->shop_owner_id)
+            ->where('status', 'active')
+            ->when($excludeUserId, function ($query) use ($excludeUserId) {
+                $query->where('id', '!=', $excludeUserId);
+            })
+            ->whereHas('permissions', function ($query) {
+                $query->where('name', 'like', '%repair%');
+            })
+            ->withCount([
+                'assignedRepairs as active_repairs_count' => function ($query) {
+                    $query->whereIn('status', $this->getActiveRepairStatuses());
+                }
+            ])
+            ->having('active_repairs_count', '<', $workloadLimit)
+            ->orderBy('active_repairs_count')
+            ->orderBy('id')
+            ->first();
+
+        if ($permissionFallback) {
+            return [
+                'repairer' => $permissionFallback,
+                'strategy' => 'permission_fallback',
+                'matched_skill_count' => 0,
+            ];
+        }
+
+        return [
+            'repairer' => null,
+            'strategy' => 'no_candidate_found',
+            'matched_skill_count' => 0,
+        ];
+    }
+
+    private function logAssignmentDecision(
+        RepairRequest $repairRequest,
+        array $selection,
+        string $context,
+        ?int $excludedRepairerId = null
+    ): void {
+        try {
+            $candidate = $selection['repairer'] ?? null;
+
+            $properties = [
+                'context' => $context,
+                'strategy' => (string) ($selection['strategy'] ?? 'unknown'),
+                'selected_repairer_id' => $candidate ? (int) $candidate->id : null,
+                'selected_repairer_name' => $candidate ? (string) ($candidate->name ?? 'Repairer') : null,
+                'matched_required_skill_count' => (int) ($selection['matched_skill_count'] ?? 0),
+            ];
+
+            if ($excludedRepairerId) {
+                $properties['excluded_repairer_id'] = $excludedRepairerId;
+            }
+
+            $actor = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
+
+            $activity = activity('repair_assignment')
+                ->performedOn($repairRequest)
+                ->withProperties($properties);
+
+            if ($actor instanceof \Illuminate\Database\Eloquent\Model) {
+                $activity->causedBy($actor);
+            }
+
+            $activity->log('Repair assignment decision recorded.');
+        } catch (\Throwable $error) {
+            logger()->warning('Failed to log repair assignment decision.', [
+                'repair_request_id' => $repairRequest->id,
+                'context' => $context,
+                'error' => $error->getMessage(),
+            ]);
+        }
+    }
+
+    private function buildSuggestedRepairerPayload(RepairRequest $repairRequest, ?int $excludeUserId = null): ?array
+    {
+        $selection = $this->resolveRepairerAssignmentCandidate($repairRequest, $excludeUserId);
+        $candidate = $selection['repairer'];
+
+        if (!$candidate) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $candidate->id,
+            'name' => (string) ($candidate->name ?? 'Repairer'),
+            'strategy' => (string) ($selection['strategy'] ?? 'unknown'),
+            'required_skill_count' => 0,
+            'matched_required_skill_count' => (int) ($selection['matched_skill_count'] ?? 0),
+            'required_skills' => [],
+        ];
+    }
+
+    private function getActiveRepairStatuses(): array
+    {
+        return [
+            'assigned_to_repairer',
+            'repairer_accepted',
+            'pending',
+            'received',
+            'in_progress',
+            'awaiting_parts',
+            'ready_for_pickup',
+            'waiting_customer_confirmation',
+            'confirmed',
+            'owner_approval_pending',
+            'owner_approved',
+            'manager_reviewing',
+            'manager_approved',
+        ];
+    }
+
+    private function getRepairWorkloadLimitForShop(int $shopOwnerId): int
+    {
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+
+        return (int) ($shopOwner?->repair_workload_limit ?? 20);
     }
 
     private function syncRepairPricingTotals(RepairRequest $repairRequest): array

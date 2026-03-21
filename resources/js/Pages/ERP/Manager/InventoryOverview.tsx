@@ -202,14 +202,6 @@ export default function ERPInventoryOverview() {
             <h1 className="text-2xl font-semibold mb-1">Inventory Overview</h1>
             <p className="text-gray-600 dark:text-gray-400">View all available stock and inventory levels (Read-only)</p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-              Manager View
-            </span>
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              Read-Only Access
-            </span>
-          </div>
         </div>
 
         {/* Metrics */}

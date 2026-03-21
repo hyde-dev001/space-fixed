@@ -63,7 +63,10 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     try {
       // Get localStorage cart for comparison
       const raw = localStorage.getItem('ss_cart');
-      const localCart = raw ? JSON.parse(raw) : [];
+      const parsedLocalCart = raw ? JSON.parse(raw) : [];
+      const localCart = Array.isArray(parsedLocalCart)
+        ? parsedLocalCart.filter((item: any) => item && typeof item === 'object' && item.id != null)
+        : [];
       
       // Fetch server cart data
       const response = await fetch('/api/cart', {
@@ -84,6 +87,13 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
         const validatedCart: any[] = [];
         
         for (const localItem of localCart) {
+          const localQty = Number(localItem.qty) || 0;
+
+          if (localQty <= 0) {
+            hasChanges = true;
+            continue;
+          }
+
           const serverItem = serverItems.find((si: any) => 
             String(si.product_id) === String(localItem.id)
           );
@@ -96,13 +106,22 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
           }
           
           // Check if quantity needs adjustment due to stock
-          if (serverItem.stock_quantity < localItem.qty) {
-            console.warn(`Cart validation: Item ${localItem.id} quantity adjusted from ${localItem.qty} to ${serverItem.stock_quantity} (stock limit)`);
-            localItem.qty = serverItem.stock_quantity;
+          let validatedQty = localQty;
+          if (serverItem.stock_quantity < localQty) {
+            console.warn(`Cart validation: Item ${localItem.id} quantity adjusted from ${localQty} to ${serverItem.stock_quantity} (stock limit)`);
+            validatedQty = serverItem.stock_quantity;
             hasChanges = true;
           }
+
+          if (validatedQty <= 0) {
+            hasChanges = true;
+            continue;
+          }
           
-          validatedCart.push(localItem);
+          validatedCart.push({
+            ...localItem,
+            qty: validatedQty,
+          });
         }
         
         // Update localStorage if changes were made
@@ -111,8 +130,6 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
           const newTotal = validatedCart.reduce((s: number, it: any) => s + (it.qty || 0), 0);
           setCartCount(newTotal);
           console.log('Cart validation: Changes applied, cart updated');
-        } else {
-          console.log('Cart validation: No issues found');
         }
         
         // Sync count with server

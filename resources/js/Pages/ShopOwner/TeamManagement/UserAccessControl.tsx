@@ -351,6 +351,8 @@ const UserAccessControl: React.FC = () => {
     return aliases[normalizedKey] || role.trim();
   }
 
+  const isRepairerRole = (roleValue?: string | null) => normalizeRoleName(roleValue) === 'Repairer';
+
   function mapEmployeeFromServer(emp: any): Employee {
     return {
       ...emp,
@@ -406,7 +408,6 @@ const UserAccessControl: React.FC = () => {
     position: '', // Simple text field for position/job title
     salary: '',
   });
-  
   const [accountAction, setAccountAction] = useState<'activate' | 'suspend'>('activate');
   const [accountReason, setAccountReason] = useState('');
   const [isSubmittingEmployee, setIsSubmittingEmployee] = useState(false);
@@ -782,10 +783,10 @@ const UserAccessControl: React.FC = () => {
         }, {
           preserveScroll: true,
           preserveState: true,
-          onSuccess: (page) => {
+          onSuccess: async (page) => {
             // Get the response data from the page props
             const responseData = page.props as any;
-            
+
             setIsSubmittingEmployee(false);
             
             // Clear the form
@@ -842,7 +843,7 @@ const UserAccessControl: React.FC = () => {
     }, 100);
   };
 
-  const handleEditEmployee = () => {
+  const handleEditEmployee = async () => {
     if (!editingEmployee || !employeeForm.firstName || !employeeForm.lastName || !employeeForm.email) {
       setIsEmployeeModalOpen(false);
       setTimeout(() => {
@@ -1200,6 +1201,7 @@ const UserAccessControl: React.FC = () => {
       position: (employee as any).position || '',
       salary: employee.salary?.toString() || '',
     });
+
     setIsEmployeeModalOpen(true);
   };
 
@@ -1715,6 +1717,7 @@ const UserAccessControl: React.FC = () => {
                           <select 
                             value={employeeForm.department} 
                             onChange={(e) => setEmployeeForm({ ...employeeForm, department: e.target.value })} 
+                            title="Department or role"
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                           >
                             <option value="">Select department/role</option>

@@ -86,4 +86,14 @@ class RepairService extends Model
         return $this->belongsToMany(RepairPackage::class, 'repair_package_service')
             ->withTimestamps();
     }
+
+    /**
+     * Get repair requests using this service
+     */
+    public function repairRequests()
+    {
+        return $this->belongsToMany(RepairRequest::class, 'repair_request_service')
+            ->withTimestamps();
+    }
+
 }

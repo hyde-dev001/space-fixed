@@ -1,8 +1,7 @@
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
-import Swal from "sweetalert2";
-import { hasPermission, hasRole } from "../../../utils/permissions";
+import { hasRole } from "../../../utils/permissions";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import axios from "axios";
 
@@ -161,6 +160,15 @@ interface RepairRejection {
 	repairerName?: string;
 }
 
+interface AvailableRepairer {
+	id: number;
+	name: string;
+	email?: string;
+	active_repairs?: number;
+}
+
+type FeedbackTone = "success" | "error" | "warning";
+
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
 
@@ -219,7 +227,6 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 
 export default function RepairRejectReview() {
 	const { auth } = usePage().props as any;
-	const userRole = auth?.user?.role;
 
 	const [rejections, setRejections] = useState<RepairRejection[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
@@ -229,20 +236,36 @@ export default function RepairRejectReview() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState("Pending");
 	const [isLoading, setIsLoading] = useState(true);
+	const [accessDeniedOpen, setAccessDeniedOpen] = useState(false);
+	const [approveModalOpen, setApproveModalOpen] = useState(false);
+	const [approveNotes, setApproveNotes] = useState("");
+	const [isApproving, setIsApproving] = useState(false);
+	const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+	const [overrideNotes, setOverrideNotes] = useState("");
+	const [overrideError, setOverrideError] = useState("");
+	const [isOverriding, setIsOverriding] = useState(false);
+	const [isLoadingRepairers, setIsLoadingRepairers] = useState(false);
+	const [overrideTarget, setOverrideTarget] = useState<RepairRejection | null>(null);
+	const [availableRepairers, setAvailableRepairers] = useState<AvailableRepairer[]>([]);
+	const [selectedRepairerId, setSelectedRepairerId] = useState<number | null>(null);
+	const [feedbackModal, setFeedbackModal] = useState<{
+		open: boolean;
+		title: string;
+		message: string;
+		tone: FeedbackTone;
+	}>({
+		open: false,
+		title: "",
+		message: "",
+		tone: "success",
+	});
 
 	useEffect(() => {
 		// Check if user has Manager role using Spatie
 		const isManager = hasRole(auth, "Manager");
 
 		if (!isManager) {
-			Swal.fire({
-				icon: "error",
-				title: "Access Denied",
-				text: "You do not have permission to access repair rejection reviews. This page is restricted to Manager role only.",
-				confirmButtonColor: "#000000",
-			}).then(() => {
-				window.history.back();
-			});
+			setAccessDeniedOpen(true);
 		} else {
 			fetchRejections();
 		}
@@ -281,11 +304,11 @@ export default function RepairRejectReview() {
 			}
 		} catch (error) {
 			console.error('Failed to fetch rejections:', error);
-			Swal.fire({
-				icon: 'error',
+			setFeedbackModal({
+				open: true,
 				title: 'Failed to load rejections',
-				text: 'Please try refreshing the page',
-				confirmButtonColor: '#000000',
+				message: 'Please try refreshing the page.',
+				tone: 'error',
 			});
 		} finally {
 			setIsLoading(false);
@@ -321,116 +344,139 @@ export default function RepairRejectReview() {
 	const handleCloseModal = () => {
 		setViewModalOpen(false);
 		setActiveImage(null);
+		setApproveModalOpen(false);
+		setOverrideModalOpen(false);
+		setOverrideError("");
 	};
 
-	const handleApproveRejection = async (rejection: RepairRejection) => {
-		const { value: notes } = await Swal.fire({
-			title: "Approve Rejection?",
-			html: `
-				<div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
-					<p style="margin-bottom: 0.5rem;"><strong>Request:</strong> ${rejection.requestNumber}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${rejection.serviceName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${rejection.customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${rejection.rejectionReason}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Rejected by:</strong> ${rejection.orderedBy}</p>
-				</div>
-			`,
-			input: 'textarea',
-			inputPlaceholder: 'Add notes (optional)...',
-			inputAttributes: {
-				'aria-label': 'Notes'
-			},
-			icon: "question",
-			showCancelButton: true,
-			confirmButtonColor: "#10b981",
-			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Approve Rejection",
-			cancelButtonText: "Cancel",
-		});
+	const handleApproveRejection = (rejection: RepairRejection) => {
+		setSelectedRejection(rejection);
+		setApproveNotes("");
+		setApproveModalOpen(true);
+	};
 
-		if (notes !== undefined) {
-			try {
-				const response = await axios.post(`/api/manager/repairs/${rejection.id}/approve-rejection`, {
-					notes: notes
+	const submitApproveRejection = async () => {
+		if (!selectedRejection) return;
+
+		try {
+			setIsApproving(true);
+			const response = await axios.post(`/api/manager/repairs/${selectedRejection.id}/approve-rejection`, {
+				notes: approveNotes,
+			});
+
+			if (response.data.success) {
+				setApproveModalOpen(false);
+				handleCloseModal();
+				setFeedbackModal({
+					open: true,
+					title: "Approved",
+					message: response.data.message || "The rejection has been approved.",
+					tone: "success",
 				});
-				
-				if (response.data.success) {
-					handleCloseModal();
-					await Swal.fire({
-						title: "Approved!",
-						text: response.data.message || "The rejection has been approved.",
-						icon: "success",
-						confirmButtonColor: "#2563eb",
-					});
-					fetchRejections();
-				}
-			} catch (error: any) {
-				console.error('Failed to approve rejection:', error);
-				Swal.fire({
-					icon: 'error',
-					title: 'Failed to approve',
-					text: error.response?.data?.message || 'Please try again',
-					confirmButtonColor: '#000000',
-				});
+				fetchRejections();
 			}
+		} catch (error: any) {
+			console.error('Failed to approve rejection:', error);
+			setFeedbackModal({
+				open: true,
+				title: 'Failed to approve',
+				message: error.response?.data?.message || 'Please try again.',
+				tone: 'error',
+			});
+		} finally {
+			setIsApproving(false);
 		}
 	};
 
 	const handleRejectRejection = async (rejection: RepairRejection) => {
-		const { value: notes } = await Swal.fire({
-			title: "Override Rejection?",
-			html: `
-				<div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
-					<p style="margin-bottom: 0.5rem;">The repair will be reassigned to another repairer.</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Request:</strong> ${rejection.requestNumber}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${rejection.customerName}</p>
-				</div>
-			`,
-			input: 'textarea',
-			inputPlaceholder: 'Reason for override (required, min 10 characters)...',
-			inputAttributes: {
-				'aria-label': 'Override reason'
-			},
-			inputValidator: (value) => {
-				if (!value || value.length < 10) {
-					return 'Please provide a reason (minimum 10 characters)'
-				}
-			},
-			icon: "warning",
-			showCancelButton: true,
-			confirmButtonColor: "#ef4444",
-			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Override & Reassign",
-			cancelButtonText: "Cancel",
-		});
+		try {
+			setIsLoadingRepairers(true);
+			setOverrideTarget(rejection);
+			setOverrideNotes("");
+			setOverrideError("");
+			setSelectedRepairerId(null);
+			setAvailableRepairers([]);
 
-		if (notes) {
-			try {
-				const response = await axios.post(`/api/manager/repairs/${rejection.id}/override-rejection`, {
-					notes: notes
+			// First, fetch available repairers
+			const repairerResponse = await axios.get(`/api/manager/repairs/${rejection.id}/available-repairers`);
+			
+			// Check if override is even possible
+			if (!repairerResponse.data.success || !repairerResponse.data.can_override) {
+				setFeedbackModal({
+					open: true,
+					title: 'Cannot Override Rejection',
+					message: repairerResponse.data.message || 'There are no other repairers available in this shop to reassign the repair to. The rejection must be approved instead.',
+					tone: 'warning',
 				});
-				
-				if (response.data.success) {
-					handleCloseModal();
-					await Swal.fire({
-						title: "Overridden!",
-						text: response.data.message || "The repair has been reassigned.",
-						icon: "success",
-						confirmButtonColor: "#2563eb",
-					});
-					fetchRejections();
-				}
-			} catch (error: any) {
-				console.error('Failed to override rejection:', error);
-				Swal.fire({
-					icon: 'error',
-					title: 'Failed to override',
-					text: error.response?.data?.message || 'Please try again',
-					confirmButtonColor: '#000000',
-				});
+				return;
 			}
+
+			const repairers: AvailableRepairer[] = repairerResponse.data.available_repairers || [];
+			setAvailableRepairers(repairers);
+			setSelectedRepairerId(repairers[0]?.id ?? null);
+			setOverrideModalOpen(true);
+		} catch (error: any) {
+			console.error('Failed to fetch available repairers:', error);
+			setFeedbackModal({
+				open: true,
+				title: 'Failed to load available repairers',
+				message: error.response?.data?.message || error.message || 'Please try again.',
+				tone: 'error',
+			});
+		} finally {
+			setIsLoadingRepairers(false);
 		}
 	};
+
+	const submitOverrideRejection = async () => {
+		if (!overrideTarget) return;
+		if (!selectedRepairerId) {
+			setOverrideError('Please select a repairer before continuing.');
+			return;
+		}
+		if (overrideNotes.trim().length < 10) {
+			setOverrideError('Please provide a reason with at least 10 characters.');
+			return;
+		}
+
+		try {
+			setIsOverriding(true);
+			setOverrideError("");
+			const response = await axios.post(`/api/manager/repairs/${overrideTarget.id}/override-rejection`, {
+				notes: overrideNotes,
+				repairer_id: selectedRepairerId,
+			});
+
+			if (response.data.success) {
+				setOverrideModalOpen(false);
+				handleCloseModal();
+				setFeedbackModal({
+					open: true,
+					title: 'Overridden',
+					message: response.data.message || 'The repair has been reassigned to the selected repairer.',
+					tone: 'success',
+				});
+				fetchRejections();
+			}
+		} catch (error: any) {
+			console.error('Failed to override rejection:', error);
+			setFeedbackModal({
+				open: true,
+				title: 'Failed to override',
+				message: error.response?.data?.message || 'Please try again.',
+				tone: 'error',
+			});
+		} finally {
+			setIsOverriding(false);
+		}
+	};
+
+	const feedbackToneClasses =
+		feedbackModal.tone === "success"
+			? "bg-green-50 border-green-200 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200"
+			: feedbackModal.tone === "warning"
+			? "bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-200"
+			: "bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-200";
 
 	return (
 		<AppLayoutERP>
@@ -438,7 +484,7 @@ export default function RepairRejectReview() {
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
-						<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Repair Rejection Review</h1>
+						<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Repair Rejected Review</h1>
 						<p className="text-gray-600 dark:text-gray-400">Review and approve rejection of repair service requests</p>
 					</div>
 					<div className="flex flex-wrap items-center justify-end gap-3">
@@ -526,7 +572,7 @@ export default function RepairRejectReview() {
 									<th className="pb-3 font-medium">Request</th>
 									<th className="pb-3 font-medium">Service</th>
 									<th className="pb-3 font-medium">Customer</th>
-									<th className="pb-3 font-medium">Ordered By</th>
+									<th className="pb-3 font-medium">Rected By</th>
 									<th className="pb-3 font-medium">Status</th>
 									<th className="pb-3 font-medium text-right">Action</th>
 								</tr>
@@ -693,7 +739,7 @@ export default function RepairRejectReview() {
 											<p className="font-semibold text-gray-900 dark:text-white">{selectedRejection.requestedOn}</p>
 										</div>
 										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm bg-white dark:bg-gray-900">
-											<p className="text-gray-600 dark:text-gray-400">Ordered By</p>
+											<p className="text-gray-600 dark:text-gray-400">Rected By</p>
 											<p className="font-semibold text-gray-900 dark:text-white">{selectedRejection.orderedBy}</p>
 										</div>
 										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm bg-white dark:bg-gray-900">
@@ -799,10 +845,197 @@ export default function RepairRejectReview() {
 							</button>
 							<button
 								onClick={() => handleRejectRejection(selectedRejection)}
-								disabled={selectedRejection.status !== "Pending"}
+								disabled={selectedRejection.status !== "Pending" || isLoadingRepairers}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Override & Reassign
+								{isLoadingRepairers ? "Loading repairers..." : "Override & Reassign"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{accessDeniedOpen && (
+				<div className="fixed inset-0 z-1000001 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="absolute inset-0" />
+					<div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl p-6">
+						<div className="flex items-start gap-3">
+							<div className="size-10 rounded-xl bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300 flex items-center justify-center">
+								<XIcon className="size-5" />
+							</div>
+							<div>
+								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Access Denied</h3>
+								<p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+									You do not have permission to access repair rejection reviews. This page is restricted to Manager role only.
+								</p>
+							</div>
+						</div>
+						<div className="mt-6 flex justify-end">
+							<button
+								onClick={() => {
+									setAccessDeniedOpen(false);
+									window.history.back();
+								}}
+								className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+							>
+								Go Back
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{approveModalOpen && selectedRejection && (
+				<div className="fixed inset-0 z-1000001 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="absolute inset-0" onClick={() => setApproveModalOpen(false)} />
+					<div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Approve Rejection</h3>
+							<button
+								onClick={() => setApproveModalOpen(false)}
+								title="Close approve modal"
+								aria-label="Close approve modal"
+								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+							>
+								<XIcon className="size-5" />
+							</button>
+						</div>
+						<div className="px-6 py-5 space-y-4">
+							<div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 text-sm">
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Request:</span> {selectedRejection.requestNumber}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Service:</span> {selectedRejection.serviceName}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Customer:</span> {selectedRejection.customerName}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Reason:</span> {selectedRejection.rejectionReason}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Rejected by:</span> {selectedRejection.orderedBy}</p>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes (optional)</label>
+								<textarea
+									value={approveNotes}
+									onChange={(e) => setApproveNotes(e.target.value)}
+									rows={4}
+									placeholder="Add notes..."
+									className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+								/>
+							</div>
+						</div>
+						<div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
+							<button
+								onClick={() => setApproveModalOpen(false)}
+								className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-semibold"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={submitApproveRejection}
+								disabled={isApproving}
+								className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{isApproving ? "Approving..." : "Approve Rejection"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{overrideModalOpen && overrideTarget && (
+				<div className="fixed inset-0 z-1000001 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="absolute inset-0" onClick={() => setOverrideModalOpen(false)} />
+					<div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Repairer for Reassignment</h3>
+							<button
+								onClick={() => setOverrideModalOpen(false)}
+								title="Close override modal"
+								aria-label="Close override modal"
+								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+							>
+								<XIcon className="size-5" />
+							</button>
+						</div>
+						<div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+							<div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 text-sm">
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Repair:</span> {overrideTarget.requestNumber}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Customer:</span> {overrideTarget.customerName}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Service:</span> {overrideTarget.serviceName}</p>
+							</div>
+							<div className="space-y-2">
+								{availableRepairers.length === 0 ? (
+									<div className="text-sm text-red-600 dark:text-red-400">No available repairers found.</div>
+								) : (
+									availableRepairers.map((repairer) => (
+										<button
+											key={repairer.id}
+											type="button"
+											onClick={() => {
+												setSelectedRepairerId(repairer.id);
+												setOverrideError("");
+											}}
+											className={`w-full text-left rounded-lg border p-3 transition-colors ${
+												selectedRepairerId === repairer.id
+													? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
+													: "border-gray-200 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/50 dark:hover:bg-gray-800"
+											}`}
+										>
+											<p className="font-semibold text-gray-900 dark:text-gray-100">{repairer.name}</p>
+											<p className="text-xs text-gray-600 dark:text-gray-400">{repairer.email || "No email"} | {repairer.active_repairs ?? 0} active repairs</p>
+											<p className="text-xs text-gray-500 dark:text-gray-400">Available for reassignment</p>
+										</button>
+									))
+								)}
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for override (required, min 10 characters)</label>
+								<textarea
+									value={overrideNotes}
+									onChange={(e) => {
+										setOverrideNotes(e.target.value);
+										setOverrideError("");
+									}}
+									rows={4}
+									placeholder="Enter reason for override..."
+									className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+								/>
+							</div>
+							{overrideError && (
+								<div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+									{overrideError}
+								</div>
+							)}
+						</div>
+						<div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
+							<button
+								onClick={() => setOverrideModalOpen(false)}
+								className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-semibold"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={submitOverrideRejection}
+								disabled={isOverriding}
+								className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{isOverriding ? "Reassigning..." : "Override & Reassign"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{feedbackModal.open && (
+				<div className="fixed inset-0 z-1000002 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="absolute inset-0" onClick={() => setFeedbackModal((prev) => ({ ...prev, open: false }))} />
+					<div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+						<div className={`m-4 rounded-lg border p-4 ${feedbackToneClasses}`}>
+							<h3 className="text-base font-semibold">{feedbackModal.title}</h3>
+							<p className="mt-1 text-sm">{feedbackModal.message}</p>
+						</div>
+						<div className="px-4 pb-4 flex justify-end">
+							<button
+								onClick={() => setFeedbackModal((prev) => ({ ...prev, open: false }))}
+								className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+							>
+								OK
 							</button>
 						</div>
 					</div>

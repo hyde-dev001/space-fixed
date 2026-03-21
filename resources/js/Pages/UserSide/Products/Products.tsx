@@ -86,8 +86,14 @@ const Products: React.FC<Props> = () => {
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
   const [mobileAccountOpen, setMobileAccountOpen] = useState(false);
+  const [mobileSearchFocused, setMobileSearchFocused] = useState(false);
+  const [mobileSuggestionProducts, setMobileSuggestionProducts] = useState<ShopSearchResult[]>([]);
+  const [mobileSuggestionShops, setMobileSuggestionShops] = useState<ShopSearchResult[]>([]);
+  const [isMobileSearchingSuggestions, setIsMobileSearchingSuggestions] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const mobileAccountRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchContainerRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchAbortRef = useRef<AbortController | null>(null);
   const hoverTimersRef = useRef<Record<number, number>>({});
 
   useEffect(() => {
@@ -95,6 +101,7 @@ const Products: React.FC<Props> = () => {
     const search = params.get('search') || '';
     const category = (params.get('category') || '').toLowerCase();
     setSearchQuery(search);
+    setMobileSearchQuery(search);
     setActiveCategory(
       ALLOWED_CATEGORY_FILTERS.includes(category as typeof ALLOWED_CATEGORY_FILTERS[number])
         ? category
@@ -137,6 +144,57 @@ const Products: React.FC<Props> = () => {
     fetchShops();
   }, [searchQuery]);
 
+  // Mobile search suggestions
+  useEffect(() => {
+    const query = mobileSearchQuery.trim();
+
+    if (query.length < 2) {
+      setMobileSuggestionProducts([]);
+      setMobileSuggestionShops([]);
+      setIsMobileSearchingSuggestions(false);
+      if (mobileSearchAbortRef.current) {
+        mobileSearchAbortRef.current.abort();
+        mobileSearchAbortRef.current = null;
+      }
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        if (mobileSearchAbortRef.current) {
+          mobileSearchAbortRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        mobileSearchAbortRef.current = controller;
+        setIsMobileSearchingSuggestions(true);
+
+        const response = await fetch(`/api/search/suggestions?query=${encodeURIComponent(query)}`, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load search suggestions');
+        }
+
+        const data = await response.json();
+        setMobileSuggestionProducts(Array.isArray(data.products) ? data.products : []);
+        setMobileSuggestionShops(Array.isArray(data.shops) ? data.shops : []);
+      } catch (error: any) {
+        if (error?.name !== 'AbortError') {
+          setMobileSuggestionProducts([]);
+          setMobileSuggestionShops([]);
+        }
+      } finally {
+        setIsMobileSearchingSuggestions(false);
+      }
+    }, 220);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [mobileSearchQuery]);
+
+  // Close mobile search suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
@@ -144,6 +202,9 @@ const Products: React.FC<Props> = () => {
       }
       if (mobileAccountRef.current && !mobileAccountRef.current.contains(event.target as Node)) {
         setMobileAccountOpen(false);
+      }
+      if (mobileSearchContainerRef.current && !mobileSearchContainerRef.current.contains(event.target as Node)) {
+        setMobileSearchFocused(false);
       }
     };
 
@@ -393,152 +454,286 @@ const Products: React.FC<Props> = () => {
           <Navigation />
         </div>
 
-        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white px-4 pb-3 pt-3 shadow-sm xl:hidden">
-          <div className="flex items-center gap-1.5">
-            <div className="relative flex-1">
-              <svg className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-2 bg-white px-2 py-2 shadow-sm xl:hidden">
+          {/* Home button / Breadcrumb */}
+          <Link
+            href="/"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+            aria-label="Home"
+            title="Home"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10.5l9-7 9 7V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1v-9.5z" />
+            </svg>
+          </Link>
+
+          {/* Search field */}
+          <div ref={mobileSearchContainerRef} className="relative flex-1">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (mobileSearchQuery.trim()) {
+                  const params = new URLSearchParams();
+                  params.append('search', mobileSearchQuery.trim());
+                  window.location.href = `/products?${params.toString()}`;
+                }
+              }}
+              className="relative"
+            >
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-20">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
               <input
                 type="text"
                 value={mobileSearchQuery}
                 onChange={(e) => setMobileSearchQuery(e.target.value)}
+                onFocus={() => setMobileSearchFocused(true)}
                 placeholder="Search products"
-                className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-11 pr-3 text-base text-gray-900 shadow-sm outline-none ring-0 placeholder:text-gray-500"
+                className="w-full rounded-full border border-gray-300 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
                 aria-label="Search products"
               />
-            </div>
-            <Link href="/checkout" className="relative inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black" aria-label="Cart">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
-                <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
-                <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
-              </svg>
-              {cartBadgeCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
-                  {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
-                </span>
-              )}
-            </Link>
-            <div className="relative" ref={mobileAccountRef}>
-              <button
-                type="button"
-                onClick={() => setMobileAccountOpen((prev) => !prev)}
-                className="inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black"
-                aria-label="Account menu"
-              >
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </button>
+            </form>
 
-              {mobileAccountOpen && (
+            {/* Mobile Search Suggestions Dropdown */}
+            {mobileSearchFocused && mobileSearchQuery.trim().length >= 2 && (
+              <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">
+                {isMobileSearchingSuggestions ? (
+                  <div className="px-4 py-3 text-sm text-gray-500">Searching suggestions...</div>
+                ) : mobileSuggestionProducts.length === 0 && mobileSuggestionShops.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-gray-500">No suggestions found.</div>
+                ) : (
+                  <>
+                    <div className="border-b border-gray-200 px-4 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Suggestions</p>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {mobileSuggestionProducts.length > 0 && (
+                        <div className="border-b border-gray-200 px-3 py-2">
+                          <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Products</p>
+                          {mobileSuggestionProducts.slice(0, 5).map((product) => (
+                            <Link
+                              key={`mobile-product-${product.id}`}
+                              href={product.url}
+                              className="flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-gray-50"
+                              onClick={() => setMobileSearchFocused(false)}
+                            >
+                              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-100">
+                                {product.image ? (
+                                  <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">P</div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-medium text-gray-900">{product.name}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+
+                      {mobileSuggestionShops.length > 0 && (
+                        <div className="px-3 py-2">
+                          <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+                            Shop Profiles
+                          </p>
+                          {mobileSuggestionShops.slice(0, 4).map((shop) => (
+                            <Link
+                              key={`mobile-shop-${shop.id}`}
+                              href={shop.url}
+                              className="flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-gray-50"
+                              onClick={() => setMobileSearchFocused(false)}
+                            >
+                              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full border border-gray-100 bg-gray-100">
+                                {shop.image ? (
+                                  <img src={shop.image} alt={shop.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">S</div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-medium text-gray-900">{shop.name}</p>
+                                {shop.location && <p className="truncate text-[10px] text-gray-500">{shop.location}</p>}
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Cart icon with badge */}
+          <Link
+            href="/checkout"
+            className="relative flex h-9 w-9 shrink-0 items-center justify-center text-gray-700 hover:text-[#16233b] transition-colors"
+            aria-label="Shopping cart"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
+              <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
+              <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
+            </svg>
+            {cartBadgeCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+                {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
+              </span>
+            )}
+          </Link>
+
+          {/* User / Account icon with dropdown */}
+          <div className="relative" ref={mobileAccountRef}>
+            <button
+              type="button"
+              onClick={() => setMobileAccountOpen((o) => !o)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+              aria-label="Account"
+              title="Account"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </button>
+
+            {mobileAccountOpen && (
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setMobileAccountOpen(false)}
+                />
+                {/* Dropdown */}
                 <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]">
                   {isAuthenticated ? (
                     <>
-                      <Link href="/my-orders" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                      <Link
+                        href="/my-orders"
+                        onClick={() => setMobileAccountOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
                         <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                         </svg>
-                        <span>Orders</span>
+                        Orders
                       </Link>
-                      <Link href="/my-repairs" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                      <Link
+                        href="/my-repairs"
+                        onClick={() => setMobileAccountOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
                         <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        <span>Repair</span>
+                        Repair
                       </Link>
-                      <Link href="/customer-profile" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                      <Link
+                        href="/customer-profile"
+                        onClick={() => setMobileAccountOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
                         <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
-                        <span>Edit Profile</span>
+                        Edit Profile
                       </Link>
                       <button
                         type="button"
-                        onClick={handleLogout}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                        onClick={() => { setMobileAccountOpen(false); handleLogout(); }}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50"
                       >
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                         </svg>
-                        <span>Log Out</span>
+                        Log Out
                       </button>
                     </>
                   ) : (
-                    <Link href="/user/login" onClick={() => setMobileAccountOpen(false)} className="flex items-center gap-3 px-4 py-3 text-left text-sm font-medium text-gray-900 hover:bg-gray-50">
+                    <Link
+                      href="/user/login"
+                      onClick={() => setMobileAccountOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                    >
                       <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                       </svg>
-                      <span>Login</span>
+                      Login
                     </Link>
                   )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-5 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">
+        <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-16 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">
           <div className="mb-8 w-full md:max-w-none">
-            <div className="text-[11px] xl:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Shoes</div>
-            <div className="mt-2 flex justify-end">
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <nav className="text-[11px] xl:text-xs text-black/55 tracking-[0.18em] uppercase">
+                <Link href="/" className="hover:text-black transition-colors">Home</Link>
+                <span className="mx-2 text-black/35">/</span>
+                <span>All Shoes</span>
+              </nav>
               <div className="relative" ref={sortMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsSortOpen((prev) => !prev)}
-                className="flex items-center gap-2 text-sm text-black/80"
-              >
-                <span>
-                  <span className="font-semibold">Sort by:</span>{' '}
-                  <span>{sortLabelMap[sortBy]}</span>
-                </span>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
-                  <svg
-                    className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen((prev) => !prev)}
+                  className="flex items-center gap-2 text-sm text-black/80 hover:text-black transition-colors"
+                >
+                  <span>
+                    <span className="font-semibold">Sort by:</span>{' '}
+                    <span>{sortLabelMap[sortBy]}</span>
+                  </span>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+                    <svg
+                      className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </button>
 
-              {isSortOpen && (
-                <div className="absolute right-0 left-auto z-20 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
-                  {sortOptions.map((option) => {
-                    const isActive = sortBy === option.value;
+                {isSortOpen && (
+                  <div className="absolute right-0 left-auto z-20 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                    {sortOptions.map((option) => {
+                      const isActive = sortBy === option.value;
 
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          if (option.value === 'near_me') {
-                            setSortBy('near_me');
-                            setCurrentPage(1);
-                            setIsSortOpen(false);
-                            if (!userCoords) requestLocation();
-                          } else {
-                            setSortBy(option.value);
-                            setIsSortOpen(false);
-                          }
-                        }}
-                        className="group w-full px-5 py-2.5 text-left text-sm"
-                      >
-                        <span className={`relative inline-block ${isActive ? 'text-black font-semibold' : 'text-black/75'}`}>
-                          {option.label}
-                          <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            if (option.value === 'near_me') {
+                              setSortBy('near_me');
+                              setCurrentPage(1);
+                              setIsSortOpen(false);
+                              if (!userCoords) requestLocation();
+                            } else {
+                              setSortBy(option.value);
+                              setIsSortOpen(false);
+                            }
+                          }}
+                          className="group w-full px-5 py-2.5 text-left text-sm"
+                        >
+                          <span className={`relative inline-block ${isActive ? 'text-black font-semibold' : 'text-black/75'}`}>
+                            {option.label}
+                            <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -549,13 +744,13 @@ const Products: React.FC<Props> = () => {
             </div>
           )}
 
-          <h1 className="mb-3 hidden text-4xl font-bold tracking-tight text-black uppercase xl:block xl:text-5xl 2xl:text-6xl">
+          <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:mb-3 xl:text-4xl xl:font-bold 2xl:text-5xl">
             {searchQuery ? `Search Results for "${searchQuery}"` : 'ALL SHOES'}
           </h1>
-          <p className="mb-8 hidden max-w-3xl text-base font-light leading-relaxed text-black/65 xl:block xl:mb-10">
+          <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:mb-10">
             {searchQuery 
               ? `Showing results matching "${searchQuery}"`
-              : 'Browse our curated collection of shoes. Click a product to view details and select sizes.'}
+              : 'Discover our curated selection of shoes. Browse by style, price, and location. Click any product to view details and select your size.'}
           </p>
 
           {searchQuery && (
@@ -820,22 +1015,22 @@ const Products: React.FC<Props> = () => {
               </svg>
               <span className={mobileNavLabelClasses(activeMobileTab === 'products')}>Products</span>
             </Link>
-            <Link href={meHref} className={mobileNavItemClasses(activeMobileTab === 'me')}>
-              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-              <svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-              <span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
-            </Link>
-            <Link href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
-              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-              <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
-              <span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
-            </Link>
             <Link href="/repair-services" className={mobileNavItemClasses(activeMobileTab === 'repair')}>
               <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'repair' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
               <svg className={mobileNavIconClasses(activeMobileTab === 'repair')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4l-5.2 5.2a1 1 0 000 1.4l1.3 1.3a1 1 0 001.4 0l5.2-5.2a4 4 0 005.4-5.4l-2.1 2.1-2.3-.5-.5-2.3 2.2-2.1z" />
               </svg>
               <span className={mobileNavLabelClasses(activeMobileTab === 'repair')}>Repair</span>
+            </Link>
+            <Link href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
+            </Link>
+            <Link href={meHref} className={mobileNavItemClasses(activeMobileTab === 'me')}>
+              <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+              <svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              <span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
             </Link>
           </div>
         </div>

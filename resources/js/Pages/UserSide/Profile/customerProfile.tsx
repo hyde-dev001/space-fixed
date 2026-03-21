@@ -564,20 +564,20 @@ const CustomerProfile: React.FC = () => {
 						<svg className={mobileNavIconClasses(activeMobileTab === 'products')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h4l2.2-3.2a1 1 0 01.82-.43H14l3.2 2.4a2 2 0 001.2.4H21v3H3v-2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 15h.01M17 15h.01" /></svg>
 						<span className={mobileNavLabelClasses(activeMobileTab === 'products')}>Products</span>
 					</a>
-					<a href="/customer-profile" className={mobileNavItemClasses(activeMobileTab === 'me')}>
-						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-						<svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-						<span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
+					<a href="/repair-services" className={mobileNavItemClasses(activeMobileTab === 'repair')}>
+						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'repair' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+						<svg className={mobileNavIconClasses(activeMobileTab === 'repair')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4l-5.2 5.2a1 1 0 000 1.4l1.3 1.3a1 1 0 001.4 0l5.2-5.2a4 4 0 005.4-5.4l-2.1 2.1-2.3-.5-.5-2.3 2.2-2.1z" /></svg>
+						<span className={mobileNavLabelClasses(activeMobileTab === 'repair')}>Repair</span>
 					</a>
 					<a href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
 						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
 						<svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
 						<span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
 					</a>
-					<a href="/repair-services" className={mobileNavItemClasses(activeMobileTab === 'repair')}>
-						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'repair' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-						<svg className={mobileNavIconClasses(activeMobileTab === 'repair')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a4 4 0 01-5.4 5.4l-5.2 5.2a1 1 0 000 1.4l1.3 1.3a1 1 0 001.4 0l5.2-5.2a4 4 0 005.4-5.4l-2.1 2.1-2.3-.5-.5-2.3 2.2-2.1z" /></svg>
-						<span className={mobileNavLabelClasses(activeMobileTab === 'repair')}>Repair</span>
+					<a href="/customer-profile" className={mobileNavItemClasses(activeMobileTab === 'me')}>
+						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'me' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+						<svg className={mobileNavIconClasses(activeMobileTab === 'me')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+						<span className={mobileNavLabelClasses(activeMobileTab === 'me')}>Me</span>
 					</a>
 				</div>
 			</div>

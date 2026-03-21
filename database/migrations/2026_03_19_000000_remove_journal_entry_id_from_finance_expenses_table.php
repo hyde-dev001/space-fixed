@@ -26,7 +26,9 @@ return new class extends Migration {
             $table->string('status')->change(); // Change to string to allow modification
         });
 
-        DB::statement("ALTER TABLE finance_expenses MODIFY status ENUM('draft', 'submitted', 'approved', 'rejected') DEFAULT 'submitted'");
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE finance_expenses MODIFY status ENUM('draft', 'submitted', 'approved', 'rejected') DEFAULT 'submitted'");
+        }
     }
 
     public function down(): void
@@ -35,7 +37,9 @@ return new class extends Migration {
             $table->unsignedBigInteger('journal_entry_id')->nullable()->after('status');
         });
 
-        // Restore enum
-        DB::statement("ALTER TABLE finance_expenses MODIFY status ENUM('draft', 'submitted', 'approved', 'posted', 'rejected') DEFAULT 'submitted'");
+        // Restore enum (MySQL only)
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE finance_expenses MODIFY status ENUM('draft', 'submitted', 'approved', 'posted', 'rejected') DEFAULT 'submitted'");
+        }
     }
 };

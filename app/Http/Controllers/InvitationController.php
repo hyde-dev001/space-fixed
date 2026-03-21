@@ -92,18 +92,19 @@ class InvitationController extends Controller
                 'string',
                 'min:8',
                 'confirmed',
-                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@\$!%*?&])[A-Za-z\d@\$!%*?&]/',
             ],
         ], [
             'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
         ]);
 
-        // Set password and clear invitation token
+        // Set password and clear invitation token, and clear the force_password_change flag
         $user->update([
             'password' => Hash::make($validated['password']),
             'invite_token' => null,
             'invite_expires_at' => null,
             'email_verified_at' => now(),
+            'force_password_change' => false,
         ]);
 
         return redirect('/user/login')->with('success', 'Your account has been activated! Please log in with your work email and new password.');

@@ -729,9 +729,23 @@ class NotificationService
     /** Notify Manager role users when a repairer rejects a repair (needs review) */
     public function notifyRepairRejectedToManager(int $shopId, array $repairData): void
     {
+        $orderNumber = $repairData['order_number'] ?? $repairData['repair_id'] ?? 'N/A';
+        $missingSkills = collect($repairData['missing_skills'] ?? [])
+            ->map(fn ($skill) => trim((string) $skill))
+            ->filter(fn ($skill) => $skill !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $message = "Repairer rejected repair #{$orderNumber}. Review required.";
+
+        if (!empty($missingSkills)) {
+            $message .= ' Missing skills: ' . implode(', ', $missingSkills) . '.';
+        }
+
         $this->sendToErpRole('Manager', $shopId, NotificationType::REPAIR_REJECTION_REVIEW,
             'Repair Rejection Needs Review',
-            "Repairer rejected repair #{$repairData['order_number']}. Review required.",
+            $message,
             $repairData, '/erp/manager/repair-rejection-review', 'high'
         );
     }

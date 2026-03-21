@@ -14,6 +14,7 @@ export default function Forgot() {
 	const [email, setEmail] = useState('');
 	const [errors, setErrors] = useState<FormErrors>({});
 	const [isLoading, setIsLoading] = useState(false);
+	const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
 	const validateForm = (): boolean => {
 		const newErrors: FormErrors = {};
@@ -85,7 +86,7 @@ export default function Forgot() {
 													setErrors({ email: undefined });
 												}
 											}}
-											className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
+											className={`pl-10 ${authInputClasses} ${errors.email ? 'border-red-500' : ''}`}
 										/>
 									</div>
 									{errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
