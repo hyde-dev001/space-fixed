@@ -170,10 +170,8 @@ class PayrollController extends Controller
             'leave_days'       => 'nullable|integer|min:0|max:31',
             'absent_days'      => 'nullable|integer|min:0|max:31',
             'overtime_hours'   => 'nullable|numeric|min:0|max:744',
-            'rest_day_hours'   => 'nullable|numeric|min:0|max:744',
             'special_holiday_hours' => 'nullable|numeric|min:0|max:744',
             'regular_holiday_hours' => 'nullable|numeric|min:0|max:744',
-            'night_differential_hours' => 'nullable|numeric|min:0|max:744',
             'undertime_hours'  => 'nullable|numeric|min:0|max:744',
             'salesCommission'  => 'nullable|numeric|min:0',
             'performanceBonus' => 'nullable|numeric|min:0',
@@ -212,10 +210,8 @@ class PayrollController extends Controller
         if ($request->filled('leave_days'))      $overrides['leave_days']      = (int)   $request->leave_days;
         if ($request->filled('absent_days'))     $overrides['absent_days']     = (int)   $request->absent_days;
         if ($request->filled('overtime_hours'))  $overrides['overtime_hours']  = (float) $request->overtime_hours;
-        if ($request->filled('rest_day_hours')) $overrides['rest_day_hours'] = (float) $request->rest_day_hours;
         if ($request->filled('special_holiday_hours')) $overrides['special_holiday_hours'] = (float) $request->special_holiday_hours;
         if ($request->filled('regular_holiday_hours')) $overrides['regular_holiday_hours'] = (float) $request->regular_holiday_hours;
-        if ($request->filled('night_differential_hours')) $overrides['night_differential_hours'] = (float) $request->night_differential_hours;
         if ($request->filled('undertime_hours')) $overrides['undertime_hours'] = (float) $request->undertime_hours;
 
         try {
@@ -439,11 +435,14 @@ class PayrollController extends Controller
                     'description' => 'Mark final-approved payslips as paid',
                     'required_fields' => [
                         'payrollIds' => 'array of payroll IDs',
+                    ],
+                    'optional_fields' => [
                         'paymentDate' => 'YYYY-MM-DD format',
                         'paymentMethod' => 'bank_transfer|check|cash',
                         'payoutReference' => 'transaction reference',
                         'payoutProofType' => 'bank_reference|receipt_number|check_number|other',
                         'payoutProofReference' => 'proof identifier',
+                        'payoutProofNotes' => 'free-text notes',
                     ],
                 ],
             ],
@@ -474,11 +473,11 @@ class PayrollController extends Controller
         $validator = Validator::make($request->all(), [
             'payrollIds' => 'required|array',
             'payrollIds.*' => 'exists:payrolls,id',
-            'paymentDate' => 'required|date',
-            'paymentMethod' => 'required|in:bank_transfer,check,cash',
-            'payoutReference' => 'required|string|max:255',
-            'payoutProofType' => 'required|in:bank_reference,receipt_number,check_number,other',
-            'payoutProofReference' => 'required|string|max:255',
+            'paymentDate' => 'nullable|date',
+            'paymentMethod' => 'nullable|in:bank_transfer,check,cash',
+            'payoutReference' => 'nullable|string|max:255',
+            'payoutProofType' => 'nullable|in:bank_reference,receipt_number,check_number,other',
+            'payoutProofReference' => 'nullable|string|max:255',
             'payoutProofNotes' => 'nullable|string|max:1000',
         ]);
 
@@ -498,10 +497,11 @@ class PayrollController extends Controller
         $processedCount = 0;
         $errors = [];
         $idempotencyConflicts = 0;
+        $paymentDate = (string) ($request->input('paymentDate') ?: now()->toDateString());
 
         foreach ($payrollIds as $payrollId) {
             try {
-                DB::transaction(function () use ($user, $payrollId, $request) {
+                DB::transaction(function () use ($user, $payrollId, $request, $paymentDate) {
                     $payroll = Payroll::forShopOwner($user->shop_owner_id)
                         ->with('employee')
                         ->whereKey($payrollId)
@@ -524,16 +524,33 @@ class PayrollController extends Controller
                         throw new \RuntimeException("Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.");
                     }
 
-                    $payroll->markAsPaid((string) $request->paymentDate, [
-                        'payment_method' => (string) $request->paymentMethod,
-                        'payout_reference' => (string) $request->payoutReference,
-                        'payout_proof_type' => (string) $request->payoutProofType,
-                        'payout_proof_reference' => (string) $request->payoutProofReference,
-                        'payout_proof_notes' => $request->input('payoutProofNotes'),
+                    $disbursementDetails = [
                         'disbursed_by' => (int) $user->id,
-                    ]);
+                    ];
 
-                    $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, (string) $request->paymentDate);
+                    if ($request->filled('paymentMethod')) {
+                        $disbursementDetails['payment_method'] = (string) $request->input('paymentMethod');
+                    }
+
+                    if ($request->filled('payoutReference')) {
+                        $disbursementDetails['payout_reference'] = (string) $request->input('payoutReference');
+                    }
+
+                    if ($request->filled('payoutProofType')) {
+                        $disbursementDetails['payout_proof_type'] = (string) $request->input('payoutProofType');
+                    }
+
+                    if ($request->filled('payoutProofReference')) {
+                        $disbursementDetails['payout_proof_reference'] = (string) $request->input('payoutProofReference');
+                    }
+
+                    if ($request->filled('payoutProofNotes')) {
+                        $disbursementDetails['payout_proof_notes'] = (string) $request->input('payoutProofNotes');
+                    }
+
+                    $payroll->markAsPaid($paymentDate, $disbursementDetails);
+
+                    $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, $paymentDate);
                 });
 
                 $processedCount++;
@@ -917,10 +934,8 @@ class PayrollController extends Controller
             'attendance_days' => 'nullable|integer|min:0|max:31',
             'leave_days'     => 'nullable|integer|min:0|max:31',
             'overtime_hours' => 'nullable|numeric|min:0',
-            'rest_day_hours' => 'nullable|numeric|min:0',
             'special_holiday_hours' => 'nullable|numeric|min:0',
             'regular_holiday_hours' => 'nullable|numeric|min:0',
-            'night_differential_hours' => 'nullable|numeric|min:0',
             'undertime_hours' => 'nullable|numeric|min:0',
             'absent_days'    => 'nullable|integer|min:0',
             'sales_commission' => 'nullable|numeric|min:0',
@@ -940,10 +955,8 @@ class PayrollController extends Controller
             : (int) floor($regularHours / 8);
         $leaveDays = (int) ($request->leave_days ?? 0);
         $overtimeHours = (float) ($request->overtime_hours ?? 0);
-        $restDayHours = (float) ($request->rest_day_hours ?? 0);
         $specialHolidayHours = (float) ($request->special_holiday_hours ?? 0);
         $regularHolidayHours = (float) ($request->regular_holiday_hours ?? 0);
-        $nightDifferentialHours = (float) ($request->night_differential_hours ?? 0);
         $undertimeHours = (float) ($request->undertime_hours ?? 0);
         $absentDays = (int) ($request->absent_days ?? 0);
 
@@ -959,10 +972,8 @@ class PayrollController extends Controller
                 'attendance_days' => $attendanceDays,
                 'leave_days' => $leaveDays,
                 'overtime_hours' => $overtimeHours,
-                'rest_day_hours' => $restDayHours,
                 'special_holiday_hours' => $specialHolidayHours,
                 'regular_holiday_hours' => $regularHolidayHours,
-                'night_differential_hours' => $nightDifferentialHours,
                 'undertime_hours' => $undertimeHours,
                 'absent_days' => $absentDays,
             ]
@@ -979,12 +990,11 @@ class PayrollController extends Controller
         $statutory = $calculation['statutory'] ?? [];
 
         $basicPay = (float) ($breakdown['basic_pay'] ?? 0);
-        $monthlySalary = (float) ($employee->salary ?? 0);
+        $dailyRate = (float) ($ruleEngine['daily_rate'] ?? ($employee->salary ?? 0));
+        $monthlyEquivalentSalary = (float) ($ruleEngine['monthly_base_salary'] ?? ($dailyRate * 26));
         $overtimePay = (float) ($breakdown['overtime_pay'] ?? 0);
-        $restDayPay = (float) ($breakdown['rest_day_pay'] ?? 0);
         $specialHolidayPay = (float) ($breakdown['special_holiday_pay'] ?? 0);
         $regularHolidayPay = (float) ($breakdown['regular_holiday_pay'] ?? 0);
-        $nightDifferentialPay = (float) ($breakdown['night_differential_pay'] ?? 0);
         $tax = (float) ($statutory['withholding_tax'] ?? 0);
         $sss = (float) ($statutory['sss_contribution'] ?? 0);
         $philhealth = (float) ($statutory['philhealth_contribution'] ?? 0);
@@ -1000,27 +1010,24 @@ class PayrollController extends Controller
                 'employee' => [
                     'id'             => $employee->id,
                     'name'           => "{$employee->first_name} {$employee->last_name}",
-                    'monthly_salary' => $monthlySalary,
+                    'daily_rate'     => round($dailyRate, 2),
+                    'monthly_salary' => round($monthlyEquivalentSalary, 2),
                 ],
                 'hours' => [
                     'attendance_days' => $attendanceDays,
                     'leave_days' => $leaveDays,
                     'regular_hours'  => round($regularHours, 2),
                     'overtime_hours' => round($overtimeHours, 2),
-                    'rest_day_hours' => round($restDayHours, 2),
                     'special_holiday_hours' => round($specialHolidayHours, 2),
                     'regular_holiday_hours' => round($regularHolidayHours, 2),
-                    'night_differential_hours' => round($nightDifferentialHours, 2),
                     'undertime_hours' => round($undertimeHours, 2),
                     'absent_days'    => $absentDays,
                 ],
                 'earnings' => [
                     'basic_pay'          => round($basicPay, 2),
                     'overtime_pay'       => round($overtimePay, 2),
-                    'rest_day_pay'       => round($restDayPay, 2),
                     'special_holiday_pay' => round($specialHolidayPay, 2),
                     'regular_holiday_pay' => round($regularHolidayPay, 2),
-                    'night_differential_pay' => round($nightDifferentialPay, 2),
                     'sales_commission'   => round($salesCommission, 2),
                     'performance_bonus'  => round($performanceBonus, 2),
                     'other_allowances'   => round($otherAllowances, 2),

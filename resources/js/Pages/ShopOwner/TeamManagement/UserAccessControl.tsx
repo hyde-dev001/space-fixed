@@ -164,6 +164,8 @@ const UserAccessControl: React.FC = () => {
   const auth = pageProps.auth;
   const shopOwner = auth?.shop_owner;
   const businessType = shopOwner?.business_type?.toLowerCase(); // 'retail', 'repair', 'both'
+  const currentUserId = Number(auth?.user?.id ?? 0);
+  const currentAccountEmail = String(auth?.user?.email ?? shopOwner?.email ?? '').trim().toLowerCase();
   
   // Access flash data from shared props (HandleInertiaRequests shares session flash data)
   const success = pageProps.success;
@@ -1217,6 +1219,19 @@ const UserAccessControl: React.FC = () => {
       return;
     }
 
+    const employeeEmail = String(employee.email ?? '').trim().toLowerCase();
+    const isSelfAccount = (currentUserId > 0 && Number(employee.userId) === currentUserId)
+      || (currentAccountEmail !== '' && employeeEmail === currentAccountEmail);
+
+    if (isSelfAccount) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot reset the password of the account you are currently using.',
+      });
+      return;
+    }
+
     try {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       const response = await fetch(`/api/shop-owner/employees/${employee.userId}/regenerate-invite`, {
@@ -1364,8 +1379,9 @@ const UserAccessControl: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => viewInvitationLink(employee)}
-                              className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors duration-200"
-                              title="View/Resend Invitation Link"
+                              className={`p-2 rounded-lg transition-colors duration-200 ${(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'text-green-600/50 cursor-not-allowed' : 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'}`}
+                              title={(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'You cannot reset your own account password' : 'View/Resend Invitation Link'}
+                              disabled={String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -1767,7 +1783,7 @@ const UserAccessControl: React.FC = () => {
                       </div>
 
                       <div className="mt-4">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Monthly Salary</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Daily Rate</label>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">₱</span>
                           <input 
@@ -1780,7 +1796,7 @@ const UserAccessControl: React.FC = () => {
                             className="w-full pl-8 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                           />
                         </div>
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Basic monthly salary for payroll calculation</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Daily base rate for payroll calculation</p>
                       </div>
                     </div>
 

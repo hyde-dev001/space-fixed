@@ -36,6 +36,9 @@ class Expense extends Model
         'shop_id',
         'purchase_order_id',
         'meta',
+        'approval_id',
+        'current_approval_level',
+        'approval_workflow_version',
     ];
 
     protected $casts = [
@@ -49,6 +52,14 @@ class Expense extends Model
     public function supplierOrder()
     {
         return $this->belongsTo(\App\Models\SupplierOrder::class, 'purchase_order_id');
+    }
+
+    /**
+     * Get the approval workflow for this expense (polymorphic)
+     */
+    public function approval()
+    {
+        return $this->morphOne(\App\Models\Approval::class, 'approvable');
     }
 
     /**

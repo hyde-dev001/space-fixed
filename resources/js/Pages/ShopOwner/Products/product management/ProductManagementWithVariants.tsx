@@ -1,4 +1,4 @@
- import React, { useState, useEffect } from 'react';
+  import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Head } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';

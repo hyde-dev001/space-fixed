@@ -45,7 +45,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "manager.{$shopOwner->id}@solespace.com",
                 'position' => 'Store Manager',
                 'department' => 'Manager',
-                'salary' => 65000.00,
+                'salary' => 2500.00,
                 'phone' => '+639171110001',
             ],
             // Finance Staff
@@ -55,7 +55,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "finance.{$shopOwner->id}@solespace.com",
                 'position' => 'Finance Officer',
                 'department' => 'Finance',
-                'salary' => 45000.00,
+                'salary' => 1730.77,
                 'phone' => '+639172220001',
             ],
             // HR Staff
@@ -65,7 +65,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "hr.{$shopOwner->id}@solespace.com",
                 'position' => 'HR Specialist',
                 'department' => 'HR',
-                'salary' => 42000.00,
+                'salary' => 1615.38,
                 'phone' => '+639173330001',
             ],
             // CRM Staff
@@ -75,7 +75,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "crm.{$shopOwner->id}@solespace.com",
                 'position' => 'Customer Relations Officer',
                 'department' => 'CRM',
-                'salary' => 38000.00,
+                'salary' => 1461.54,
                 'phone' => '+639174440001',
             ],
             // Inventory Manager
@@ -85,7 +85,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "inventory.{$shopOwner->id}@solespace.com",
                 'position' => 'Inventory Manager',
                 'department' => 'Inventory Manager',
-                'salary' => 48000.00,
+                'salary' => 1846.15,
                 'phone' => '+639175550001',
             ],
             // Procurement Manager
@@ -95,7 +95,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "procurement.{$shopOwner->id}@solespace.com",
                 'position' => 'Procurement Manager',
                 'department' => 'Procurement Manager',
-                'salary' => 50000.00,
+                'salary' => 1923.08,
                 'phone' => '+639178880001',
             ],
             // General Staff
@@ -105,7 +105,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "staff.{$shopOwner->id}@solespace.com",
                 'position' => 'Sales Associate',
                 'department' => 'Staff',
-                'salary' => 28000.00,
+                'salary' => 1076.92,
                 'phone' => '+639176660001',
             ],
         ];
@@ -118,7 +118,7 @@ class EmployeeSeeder extends Seeder
                 'email' => "repairer.{$shopOwner->id}@solespace.com",
                 'position' => 'Shoe Repair Technician',
                 'department' => 'Repairer',
-                'salary' => 35000.00,
+                'salary' => 1346.15,
                 'phone' => '+639177770001',
             ];
         }
@@ -126,8 +126,11 @@ class EmployeeSeeder extends Seeder
         foreach ($commonEmployees as &$employeeData) {
             $position = $employeeData['position'] ?? '';
             if ($position !== '' && array_key_exists($position, $basePayTable)) {
-                $employeeData['salary'] = (float) $basePayTable[$position];
+                $employeeData['salary'] = round((float) $basePayTable[$position], 2);
             }
+
+            // Salary is now seeded directly as daily rate.
+            $employeeData['salary'] = round((float) $employeeData['salary'], 2);
         }
         unset($employeeData);
 
@@ -513,4 +516,5 @@ class EmployeeSeeder extends Seeder
 
             return $date->isWeekday();
         }
+
 }

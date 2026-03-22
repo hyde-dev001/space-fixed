@@ -116,6 +116,7 @@ const approvalWorkflowItems: NavItem[] = [
       { name: "Refund Approval", route: "shop-owner.refund-approvals" },
       { name: "Price Approvals", route: "shop-owner.price-approvals" },
       { name: "Payslip Approval", route: "shop-owner.payslip-approvals" },
+      { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals" },
       { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval" },
       { name: "Expense Approvals", route: "shop-owner.expense-approvals" },
       { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval" },
@@ -288,6 +289,7 @@ const AppSidebar_shopOwner: React.FC = () => {
       'shopOwner.user-access-control',
       'shop-owner.audit-logs',
       'shop-owner.price-approvals',
+      'shop-owner.salary-adjustment-approvals',
       'shop-owner.purchase-request-approval',
       'shop-owner.repair-reject-approval',
       'shopOwner.suspend-accounts'

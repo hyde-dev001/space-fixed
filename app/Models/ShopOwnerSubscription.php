@@ -19,6 +19,8 @@ class ShopOwnerSubscription extends Model
         'paymongo_session_id',
         'paymongo_payment_id',
         'paid_amount',
+        'cancellation_reason',
+        'cancellation_notes',
         'starts_at',
         'ends_at',
     ];

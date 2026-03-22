@@ -63,7 +63,7 @@ interface PriceRequest {
   requestedBy: string;
   requestDate: string;
   reason: string;
-  status: 'pending' | 'finance_approved' | 'finance_rejected' | 'owner_approved' | 'owner_rejected';
+  status: 'pending' | 'finance_approved' | 'finance_rejected' | 'owner_approved' | 'owner_rejected' | 'pending_finance_final';
   image: string;
   financeReviewedBy: string | null;
   financeReviewedAt: string | null;
@@ -71,6 +71,10 @@ interface PriceRequest {
   ownerReviewedBy: string | null;
   ownerReviewedAt: string | null;
   rejectionReason?: string;
+  approval_id?: number;
+  approval_workflow_version?: string;
+  current_approval_level?: number;
+  is_intermediate_approval?: boolean;
 }
 
 type MetricColor = "success" | "warning" | "info";
@@ -202,27 +206,45 @@ function PriceApprovalContent() {
         rejectionReason: item.owner_rejection_reason,
         ownerReviewedBy: item.owner_reviewer?.name || null,
         ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
+        approval_id: item.approval?.id,
+        approval_workflow_version: item.approval_workflow_version,
+        current_approval_level: item.current_approval_level,
+        is_intermediate_approval: item.is_intermediate_approval,
       }));
 
       // Map repair service price changes
-      const repairRequests = repairResult.data.map((item: any) => ({
-        id: item.id,
-        type: 'repair',
-        item: item.name,
-        currentPrice: item.old_price ? `₱${parseFloat(item.old_price).toLocaleString()}` : 'N/A',
-        requestedPrice: `₱${parseFloat(item.price).toLocaleString()}`,
-        requestedBy: item.creator?.name || 'Unknown',
-        requestDate: new Date(item.created_at).toISOString().split('T')[0],
-        reason: item.reason || 'Price update for repair service',
-        status: item.mapped_status || item.status,
-        image: '/images/repair-service-placeholder.jpg',
-        financeReviewedBy: item.financeReviewer?.name || null,
-        financeReviewedAt: item.finance_reviewed_at ? new Date(item.finance_reviewed_at).toISOString().split('T')[0] : null,
-        financeNotes: item.finance_notes,
-        rejectionReason: item.rejection_reason,
-        ownerReviewedBy: item.ownerReviewer?.name || null,
-        ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
-      }));
+      const repairRequests = repairResult.data.map((item: any) => {
+        const mappedStatus = item.mapped_status || item.status;
+        const rawCurrentPrice = Number(item.old_price ?? item.price ?? 0);
+        const rawRequestedPrice = Number(
+          (mappedStatus === 'finance_approved' || mappedStatus === 'pending_finance_final')
+            ? (item.finance_notes ?? item.price ?? 0)
+            : (item.price ?? item.finance_notes ?? 0)
+        );
+
+        return {
+          id: item.id,
+          type: 'repair',
+          item: item.name,
+          currentPrice: `₱${rawCurrentPrice.toLocaleString()}`,
+          requestedPrice: `₱${rawRequestedPrice.toLocaleString()}`,
+          requestedBy: item.updater?.name || item.creator?.name || 'Unknown',
+          requestDate: new Date(item.created_at).toISOString().split('T')[0],
+          reason: item.change_reason || item.reason || item.description || 'Price update for repair service',
+          status: mappedStatus,
+          image: '/images/repair-service-placeholder.jpg',
+          financeReviewedBy: item.financeReviewer?.name || null,
+          financeReviewedAt: item.finance_reviewed_at ? new Date(item.finance_reviewed_at).toISOString().split('T')[0] : null,
+          financeNotes: item.finance_notes,
+          rejectionReason: item.rejection_reason,
+          ownerReviewedBy: item.ownerReviewer?.name || null,
+          ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
+          approval_id: item.approval?.id,
+          approval_workflow_version: item.approval_workflow_version,
+          current_approval_level: item.current_approval_level,
+          is_intermediate_approval: item.is_intermediate_approval,
+        };
+      });
       
       // Combine both arrays and sort by date (most recent first)
       const combinedRequests = [...shoeRequests, ...repairRequests].sort((a, b) => 
@@ -256,7 +278,10 @@ function PriceApprovalContent() {
     // Apply view mode filter
     let matchesViewMode = true;
     if (viewMode === 'pending') {
-      matchesViewMode = item.status === 'finance_approved'; // Awaiting owner review
+      const isOwnerActionStep = item.status === 'finance_approved' && (
+        item.approval_workflow_version !== 'v4_multi_level' || (item.current_approval_level ?? 0) === 2
+      );
+      matchesViewMode = isOwnerActionStep; // Awaiting owner review
     } else if (viewMode === 'recent') {
       matchesViewMode = item.status === 'owner_approved'; // Recently approved
     }
@@ -272,7 +297,10 @@ function PriceApprovalContent() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  const pendingCount = requests.filter(r => r.status === "finance_approved").length;
+  const pendingCount = requests.filter(r =>
+    r.status === "finance_approved" &&
+    (r.approval_workflow_version !== 'v4_multi_level' || (r.current_approval_level ?? 0) === 2)
+  ).length;
   const approvedCount = requests.filter(r => r.status === "owner_approved").length;
   const rejectedCount = requests.filter(r => r.status === "owner_rejected").length;
 
@@ -290,8 +318,15 @@ function PriceApprovalContent() {
   };
 
   const handleApprove = async (request: PriceRequest) => {
+    const is4Step = request.approval_workflow_version === 'v4_multi_level';
+    const actionText = is4Step ? 'Forward to Finance' : 'Apply Price Change';
+    const buttonText = is4Step ? 'Approve & Forward to Finance' : 'Approve & Apply Price';
+    const confirmationMsg = is4Step 
+      ? `✓ This will forward the price change to Finance for final approval.`
+      : `✓ This will immediately apply the price change to the ${request.type === 'shoe' ? 'product' : 'service'}.`;
+    
     const result = await Swal.fire({
-      title: "Final Approval - Apply Price Change",
+      title: `${is4Step ? 'Price Approval' : 'Final Approval'} - ${actionText}`,
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Type:</strong> ${request.type === 'shoe' ? 'Shoe Product' : 'Repair Service'}</p>
@@ -305,7 +340,7 @@ function PriceApprovalContent() {
             ${request.financeNotes ? `<p style="margin-bottom: 0.5rem;"><strong>Finance Notes:</strong> ${request.financeNotes}</p>` : ''}
           ` : ''}
           <p style="margin-top: 1rem; color: #10b981; font-size: 0.875rem; font-weight: 600;">
-            ✓ This will immediately apply the price change to the ${request.type === 'shoe' ? 'product' : 'service'}.
+            ${confirmationMsg}
           </p>
         </div>
       `,
@@ -313,7 +348,7 @@ function PriceApprovalContent() {
       showCancelButton: true,
       confirmButtonColor: "#10b981",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Approve & Apply Price",
+      confirmButtonText: buttonText,
       cancelButtonText: "Cancel",
     });
 
@@ -346,10 +381,13 @@ function PriceApprovalContent() {
         setSelectedRequest(null);
 
         // Show centered modal notification
+        const isForwardToFinance = is4Step && !(result?.is_final ?? false);
         await Swal.fire({
           icon: 'success',
-          title: 'Price Changed Successfully',
-          text: `${request.item} price updated to ${request.requestedPrice}`,
+          title: isForwardToFinance ? 'Approval Forwarded' : 'Price Changed Successfully',
+          text: isForwardToFinance
+            ? `${request.item} was approved and forwarded to Finance for final approval`
+            : `${request.item} price updated to ${request.requestedPrice}`,
           confirmButtonColor: '#000000',
         });
 
@@ -463,8 +501,8 @@ function PriceApprovalContent() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Final Price Approval</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Review Finance-approved price changes and give final approval</p>
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Price Approvals</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Review and approve Finance-vetted price changes</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
             {/* Type Filter */}
@@ -570,7 +608,7 @@ function PriceApprovalContent() {
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Price Change Requests</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Final approval for Finance-vetted price changes</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Review price change requests that have been approved by Finance</p>
           </div>
 
           {/* Search */}
@@ -751,7 +789,9 @@ function PriceApprovalContent() {
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Final Price Approval</h2>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {selectedRequest.approval_workflow_version === 'v4_multi_level' ? 'Price Approval - Forward to Finance' : 'Final Price Approval'}
+                  </h2>
                   {selectedRequest.status === 'owner_approved' && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                       <CheckIcon className="w-3 h-3" />
@@ -767,7 +807,7 @@ function PriceApprovalContent() {
                   {selectedRequest.status === 'finance_approved' && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                       <ClockIcon className="w-3 h-3" />
-                      Awaiting Your Review
+                      {selectedRequest.approval_workflow_version === 'v4_multi_level' ? 'Forwarding to Finance' : 'Awaiting Your Review'}
                     </span>
                   )}
                 </div>
@@ -899,7 +939,7 @@ function PriceApprovalContent() {
                       className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
-                      Approve & Apply Price
+                      {selectedRequest.approval_workflow_version === 'v4_multi_level' ? 'Approve & Forward' : 'Approve & Apply Price'}
                     </button>
                   </>
                 ) : selectedRequest.status === 'owner_approved' ? (

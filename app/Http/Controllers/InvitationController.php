@@ -139,6 +139,12 @@ class InvitationController extends Controller
             return response()->json(['error' => 'Linked user account not found'], 404);
         }
 
+        if ((int) $user->id === (int) $authUser->id || strcasecmp((string) $user->email, (string) $authUser->email) === 0) {
+            return response()->json([
+                'error' => 'You cannot reset the password of the account you are currently using.'
+            ], 422);
+        }
+
         $newToken = Str::random(64);
         $newExpiry = Carbon::now()->addDays(7);
 
@@ -166,11 +172,22 @@ class InvitationController extends Controller
      */
     public function regenerate(Request $request, $employeeId)
     {
+        $authUser = Auth::guard('user')->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $employee = Employee::findOrFail($employeeId);
         $user = User::where('email', $employee->email)->first();
         
         if (!$user) {
             return response()->json(['error' => 'User account not found'], 404);
+        }
+
+        if ((int) $user->id === (int) $authUser->id || strcasecmp((string) $user->email, (string) $authUser->email) === 0) {
+            return response()->json([
+                'error' => 'You cannot reset the password of the account you are currently using.'
+            ], 422);
         }
         
         // Generate new token
@@ -181,7 +198,7 @@ class InvitationController extends Controller
             'invite_token' => $newToken,
             'invite_expires_at' => $newExpiry,
             'invited_at' => now(),
-            'invited_by' => auth()->id(),
+            'invited_by' => $authUser->id,
         ]);
         
         return response()->json([

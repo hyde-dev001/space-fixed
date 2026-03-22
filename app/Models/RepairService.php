@@ -18,6 +18,7 @@ class RepairService extends Model
         'old_price',
         'duration',
         'description',
+        'change_reason',
         'status',
         'rejection_reason',
         'shop_owner_id',
@@ -28,6 +29,9 @@ class RepairService extends Model
         'finance_reviewed_at',
         'owner_reviewed_by',
         'owner_reviewed_at',
+        'approval_id',
+        'current_approval_level',
+        'approval_workflow_version',
     ];
 
     protected $casts = [
@@ -76,6 +80,14 @@ class RepairService extends Model
     public function ownerReviewer()
     {
         return $this->belongsTo(\App\Models\ShopOwner::class, 'owner_reviewed_by');
+    }
+
+    /**
+     * Get the approval for this repair service (polymorphic)
+     */
+    public function approval()
+    {
+        return $this->morphOne(Approval::class, 'approvable');
     }
 
     /**

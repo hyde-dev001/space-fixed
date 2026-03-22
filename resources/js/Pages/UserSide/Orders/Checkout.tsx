@@ -979,8 +979,8 @@ const Checkout: React.FC = () => {
       selected_item_ids: selectedItemIds,
     };
     
-    // Store checkout data in sessionStorage for the payment page
-    console.log('Storing checkout data:', checkoutData);
+
+
     sessionStorage.setItem('checkoutData', JSON.stringify(checkoutData));
     
     // Redirect to payment page

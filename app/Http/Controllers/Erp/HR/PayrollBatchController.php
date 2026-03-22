@@ -8,7 +8,6 @@ use App\Models\HR\PayrollComponent;
 use App\Models\Employee;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\HolidayCalendar;
-use App\Models\HR\BranchPayrollSetting;
 use App\Models\HR\LeaveRequest;
 use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
@@ -486,15 +485,6 @@ class PayrollBatchController extends Controller
                 ->keyBy(fn ($h) => $h->holiday_date->toDateString())
             : collect();
 
-        // Load night differential window from branch settings (fall back to DOLE defaults)
-        $branchSetting = $shopOwnerId
-            ? BranchPayrollSetting::where('shop_owner_id', $shopOwnerId)
-                ->where('is_active', true)
-                ->first()
-            : null;
-        $ndStart = $branchSetting?->night_differential_start ?? '22:00:00'; // 10 PM
-        $ndEnd   = $branchSetting?->night_differential_end   ?? '06:00:00'; // 6 AM
-
         $totalRegularHours       = 0;
         $totalOvertimeHours      = 0;
         $totalUndertimeHours     = 0;
@@ -502,10 +492,8 @@ class PayrollBatchController extends Controller
         $totalLeaveDays          = 0;
         $totalLateDays           = 0;
         $totalPresentDays        = 0;
-        $restDayHours            = 0;
         $specialHolidayHours     = 0;
         $regularHolidayHours     = 0;
-        $nightDifferentialHours  = 0;
 
         foreach ($records as $record) {
             $dateStr = $record->date->toDateString();
@@ -540,22 +528,10 @@ class PayrollBatchController extends Controller
                     // special_non_working, special_working, local
                     $specialHolidayHours += $workedHours;
                 }
-            } elseif ($this->isRestDay($record->date, $shopOwner)) {
-                $restDayHours += $workedHours;
-            } else {
+            } elseif (! $this->isRestDay($record->date, $shopOwner)) {
                 $totalRegularHours += $workedHours;
             }
 
-            // Night differential: compute overlap of [check_in, check_out] with [ndStart, ndEnd]
-            if ($record->check_in_time && $record->check_out_time) {
-                $nightDifferentialHours += $this->computeNightDifferentialHours(
-                    $record->check_in_time,
-                    $record->check_out_time,
-                    $record->date,
-                    $ndStart,
-                    $ndEnd
-                );
-            }
         }
 
         $workingDays = Carbon::parse($startDate)->diffInWeekdays(Carbon::parse($endDate)) + 1;
@@ -569,52 +545,11 @@ class PayrollBatchController extends Controller
             'total_leave_days'         => $totalLeaveDays,
             'total_late_days'          => $totalLateDays,
             'total_present_days'       => $totalPresentDays,
-            'rest_day_hours'           => round($restDayHours, 2),
             'special_holiday_hours'    => round($specialHolidayHours, 2),
             'regular_holiday_hours'    => round($regularHolidayHours, 2),
-            'night_differential_hours' => round($nightDifferentialHours, 2),
             'working_days'             => $workingDays,
             'is_finalized'             => $isFinalized,
         ];
-    }
-
-    /**
-     * Calculate how many hours of a shift fall within the night differential window.
-     * Handles overnight windows (e.g. 22:00 – 06:00).
-     */
-    protected function computeNightDifferentialHours(
-        $checkIn,
-        $checkOut,
-        $date,
-        string $ndStart,
-        string $ndEnd
-    ): float {
-        $base       = Carbon::parse($date->toDateString());
-        $shiftStart = Carbon::parse($base->toDateString() . ' ' . (is_string($checkIn) ? $checkIn : date('H:i:s', strtotime($checkIn))));
-        $shiftEnd   = Carbon::parse($base->toDateString() . ' ' . (is_string($checkOut) ? $checkOut : date('H:i:s', strtotime($checkOut))));
-
-        // Handle overnight shifts (check-out past midnight)
-        if ($shiftEnd->lte($shiftStart)) {
-            $shiftEnd->addDay();
-        }
-
-        $ndStartTime = Carbon::parse($base->toDateString() . ' ' . $ndStart);
-        $ndEndTime   = Carbon::parse($base->toDateString() . ' ' . $ndEnd);
-
-        // ND window crosses midnight (e.g. 22:00 – 06:00 next day)
-        if ($ndEndTime->lte($ndStartTime)) {
-            $ndEndTime->addDay();
-        }
-
-        // Overlap = max(0, min(shiftEnd, ndEnd) - max(shiftStart, ndStart))
-        $overlapStart = $shiftStart->max($ndStartTime);
-        $overlapEnd   = $shiftEnd->min($ndEndTime);
-
-        if ($overlapEnd->lte($overlapStart)) {
-            return 0.0;
-        }
-
-        return round($overlapStart->diffInMinutes($overlapEnd) / 60, 2);
     }
 
     protected function isRestDay(Carbon $date, ?ShopOwner $shopOwner): bool
@@ -633,7 +568,7 @@ class PayrollBatchController extends Controller
      */
     protected function calculatePayrollPreview(Employee $employee, array $attendanceData, string $startDate, string $endDate): array
     {
-        $baseSalary = (float) ($employee->salary ?? 0);
+        $baseDailyRate = (float) ($employee->salary ?? 0);
         $extraEarnings = $this->payrollService->resolveAdditionalEarnings(
             $employee,
             $startDate . ' to ' . $endDate
@@ -651,10 +586,8 @@ class PayrollBatchController extends Controller
                 'leave_days' => (float) ($attendanceData['total_leave_days'] ?? 0),
                 'overtime_hours' => (float) ($attendanceData['total_overtime_hours'] ?? 0),
                 'undertime_hours' => (float) ($attendanceData['total_undertime_hours'] ?? 0),
-                'rest_day_hours' => (float) ($attendanceData['rest_day_hours'] ?? 0),
                 'special_holiday_hours' => (float) ($attendanceData['special_holiday_hours'] ?? 0),
                 'regular_holiday_hours' => (float) ($attendanceData['regular_holiday_hours'] ?? 0),
-                'night_differential_hours' => (float) ($attendanceData['night_differential_hours'] ?? 0),
             ],
             $endDate
         );
@@ -663,12 +596,11 @@ class PayrollBatchController extends Controller
         $breakdown = $calculation['breakdown'] ?? [];
         $statutory = $calculation['statutory'] ?? [];
 
-        $basicPay = $baseSalary;
+        $basicPay = (float) ($breakdown['basic_pay'] ?? 0);
+        $monthlyEquivalentSalary = (float) ($ruleEngine['monthly_base_salary'] ?? ($baseDailyRate * 26));
         $overtimePay = (float) ($breakdown['overtime_pay'] ?? 0);
-        $restDayPay = (float) ($breakdown['rest_day_pay'] ?? 0);
         $specialHolidayPay = (float) ($breakdown['special_holiday_pay'] ?? 0);
         $regularHolidayPay = (float) ($breakdown['regular_holiday_pay'] ?? 0);
-        $nightDifferentialPay = (float) ($breakdown['night_differential_pay'] ?? 0);
 
         $totalAllowances = $salesCommission + $performanceBonus + $otherAllowances;
         $grossSalary = (float) ($calculation['gross_salary'] ?? 0);
@@ -682,17 +614,15 @@ class PayrollBatchController extends Controller
         $netSalary = (float) ($calculation['net_salary'] ?? 0);
 
         return [
-            'base_salary'            => round($baseSalary, 2),
+            'base_salary'            => round($monthlyEquivalentSalary, 2),
             'daily_rate'             => round((float) ($ruleEngine['daily_rate'] ?? 0), 4),
             'hourly_rate'            => round((float) ($ruleEngine['hourly_rate'] ?? 0), 4),
             'work_days_basis'        => (float) ($ruleEngine['work_days_basis'] ?? 0),
             'work_hours_basis'       => (float) ($ruleEngine['work_hours_basis'] ?? 0),
             'basic_pay'              => round($basicPay, 2),
             'overtime_pay'           => round($overtimePay, 2),
-            'rest_day_pay'           => round($restDayPay, 2),
             'special_holiday_pay'    => round($specialHolidayPay, 2),
             'regular_holiday_pay'    => round($regularHolidayPay, 2),
-            'night_differential_pay' => round($nightDifferentialPay, 2),
             'sales_commission'       => round($salesCommission, 2),
             'performance_bonus'      => round($performanceBonus, 2),
             'other_allowances'       => round($otherAllowances, 2),
@@ -721,10 +651,8 @@ class PayrollBatchController extends Controller
             'leave_days' => (int) ($attendanceData['total_leave_days'] ?? 0),
             'overtime_hours' => (float) ($attendanceData['total_overtime_hours'] ?? 0),
             'undertime_hours' => (float) ($attendanceData['total_undertime_hours'] ?? 0),
-            'rest_day_hours' => (float) ($attendanceData['rest_day_hours'] ?? 0),
             'special_holiday_hours' => (float) ($attendanceData['special_holiday_hours'] ?? 0),
             'regular_holiday_hours' => (float) ($attendanceData['regular_holiday_hours'] ?? 0),
-            'night_differential_hours' => (float) ($attendanceData['night_differential_hours'] ?? 0),
         ];
     }
 

@@ -30,6 +30,9 @@ interface SubscriptionItem {
   amount_paid: number;
   starts_at: string | null;
   ends_at: string | null;
+  next_billing_at: string | null;
+  cancellation_reason: string | null;
+  cancellation_notes: string | null;
   created_at: string;
 }
 
@@ -204,10 +207,12 @@ const MetricCard = ({
 
 export default function SubscriptionManagement() {
   const { subscriptions, stats, success, error: errorMessage } = usePage<PageProps>().props;
+  const itemsPerPage = 6;
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | UiStatus>('all');
   const [sortBy, setSortBy] = useState<SortValue>('latest');
+  const [currentPage, setCurrentPage] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState<number | null>(null);
   const [selected, setSelected] = useState<SubscriptionItem | null>(null);
 
@@ -290,6 +295,19 @@ export default function SubscriptionManagement() {
     });
   }, [subscriptions, search, statusFilter, sortBy]);
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedRows = rows.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, sortBy]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
   const withSubmitState = (subscriptionId: number, callback: () => void) => {
     setIsSubmitting(subscriptionId);
     callback();
@@ -298,7 +316,7 @@ export default function SubscriptionManagement() {
   const deactivateSubscription = (subscription: SubscriptionItem) => {
     Swal.fire({
       title: 'Deactivate subscription?',
-      text: `This will deactivate ${subscription.shop.business_name}'s subscription renewal.`,
+      text: `This will deactivate ${subscription.shop.business_name}'s premium subscription renewal.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Yes, deactivate',
@@ -309,10 +327,16 @@ export default function SubscriptionManagement() {
       withSubmitState(subscription.id, () => {
         router.post(
           `/admin/subscriptions/${subscription.id}/cancel`,
-          {},
+          {
+            cancellation_reason: 'admin_deactivated',
+            cancellation_notes: null,
+          },
           {
             preserveScroll: true,
-            onFinish: () => setIsSubmitting(null),
+            onFinish: () => {
+              setIsSubmitting(null);
+              setSelected(null);
+            },
           }
         );
       });
@@ -389,61 +413,60 @@ export default function SubscriptionManagement() {
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-700/40">
+              <table className="w-full min-w-245">
+                <thead className="bg-gray-50 dark:bg-gray-900/50">
                   <tr>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Shop Details</th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Plan</th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Amount</th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Started</th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Expires</th>
-                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Status</th>
-                    <th className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-300">Actions</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Shop Details</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Plan</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Amount</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Started</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Next Billing</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Expires</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
+                    <th className="px-6 py-4 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-5 py-14 text-center">
+                      <td colSpan={8} className="px-6 py-14 text-center">
                         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">No subscriptions found</p>
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Try changing filters or searching by another keyword.</p>
                       </td>
                     </tr>
                   )}
 
-                  {rows.map((subscription) => (
+                  {paginatedRows.map((subscription) => (
                     <tr
                       key={subscription.id}
                       onClick={() => setSelected(subscription)}
-                      className="cursor-pointer border-b border-gray-100 transition hover:bg-blue-50/50 dark:border-gray-700 dark:hover:bg-gray-700/30"
+                      className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
                     >
-                      <td className="px-5 py-4">
+                      <td className="px-6 py-4">
                         <p className="font-semibold text-gray-900 dark:text-white">{subscription.shop.business_name}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{subscription.shop.owner_name}</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">{subscription.shop.email}</p>
                       </td>
-                      <td className="px-5 py-4 text-sm text-gray-800 dark:text-gray-200">
+                      <td className="px-6 py-4 text-sm text-gray-800 dark:text-gray-200">
                         <p>{subscription.premium_plan?.name ?? 'No plan linked'}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Code: {subscription.plan_code}</p>
                       </td>
-                      <td className="px-5 py-4 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                      <td className="px-6 py-4 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                         {formatMoney(subscription.amount_paid)}
                       </td>
-                      <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.starts_at)}</td>
-                      <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.ends_at)}</td>
-                      <td className="px-5 py-4">
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.starts_at)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.next_billing_at)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.ends_at)}</td>
+                      <td className="px-6 py-4">
                         <StatusBadge uiStatus={resolveUiStatus(subscription.status, subscription.ends_at)} />
                       </td>
-                      <td className="px-5 py-4 text-center">
+                      <td className="px-6 py-4 text-center">
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelected(subscription);
                           }}
-                          className="flex items-center justify-center text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
                           aria-label={`View subscription ${subscription.id}`}
                         >
                           <EyeIcon className="size-5" />
@@ -454,6 +477,53 @@ export default function SubscriptionManagement() {
                 </tbody>
               </table>
             </div>
+
+            {rows.length > 0 && (
+              <div className="border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(endIndex, rows.length)}</span> of <span className="font-medium">{rows.length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="rounded-lg border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                      title="Previous page"
+                    >
+                      <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`h-10 min-w-10 rounded-lg px-3 font-medium transition-colors ${
+                          currentPage === page
+                            ? 'bg-blue-600 text-white'
+                            : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="rounded-lg border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                      title="Next page"
+                    >
+                      <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -464,13 +534,13 @@ export default function SubscriptionManagement() {
             onClick={() => setSelected(null)}
           >
             <div
-              className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800"
+              className="w-full max-w-5xl rounded-3xl border border-gray-200 bg-white p-7 shadow-2xl dark:border-gray-700 dark:bg-gray-800 sm:p-8"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="mb-5 flex items-start justify-between border-b border-gray-200 pb-4 dark:border-gray-700">
+              <div className="mb-6 flex items-start justify-between border-b border-gray-200 pb-5 dark:border-gray-700">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Subscription Details</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{selected.shop.business_name}</p>
+                  <h2 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Subscription Details</h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{selected.shop.business_name}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge uiStatus={resolveUiStatus(selected.status, selected.ends_at)} />
@@ -485,35 +555,50 @@ export default function SubscriptionManagement() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-700">
                   <p className="text-xs uppercase tracking-wide text-gray-400">Owner</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{selected.shop.owner_name}</p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{selected.shop.email}</p>
+                  <p className="mt-2 text-base font-semibold text-gray-900 dark:text-white">{selected.shop.owner_name}</p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{selected.shop.email}</p>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-700">
                   <p className="text-xs uppercase tracking-wide text-gray-400">Plan</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                  <p className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
                     {selected.premium_plan?.name ?? 'No linked plan'}
                   </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Code: {selected.plan_code}</p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Status: {resolveUiStatus(selected.status, selected.ends_at) === 'ongoing' ? 'Active' : 'Not Active'}</p>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-700">
                   <p className="text-xs uppercase tracking-wide text-gray-400">Amount Paid</p>
-                  <p className="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(selected.amount_paid)}</p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Showroom slots: {selected.showroom_slot_limit}</p>
+                  <p className="mt-2 text-base font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(selected.amount_paid)}</p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Showroom slots: {selected.showroom_slot_limit}</p>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-700 lg:col-span-2">
                   <p className="text-xs uppercase tracking-wide text-gray-400">Subscription Period</p>
-                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">Start: {formatDate(selected.starts_at)}</p>
-                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">Expires: {formatDate(selected.ends_at)}</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">Start: <span className="font-medium">{formatDate(selected.starts_at)}</span></p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">Next Billing: <span className="font-medium">{formatDate(selected.next_billing_at)}</span></p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">Expires: <span className="font-medium">{formatDate(selected.ends_at)}</span></p>
+                  </div>
                 </div>
+
+                {selected.status === 'cancelled' && (
+                  <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-700">
+                    <p className="text-xs uppercase tracking-wide text-gray-400">Cancellation Feedback</p>
+                    <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+                      Reason: <span className="font-medium">{selected.cancellation_reason ? selected.cancellation_reason.replaceAll('_', ' ') : 'No reason submitted'}</span>
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      Notes: {selected.cancellation_notes || 'No additional notes'}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={() => setSelected(null)}>
                   Close
                 </Button>

@@ -21,18 +21,16 @@ class PayrollService
 {
     /**
      * Phase 3 rule engine breakdown.
-     * Monthly base pay is the source of truth, then daily/hourly are derived from
-     * branch payroll settings (or defaults) and used for premium computations.
+        * Daily base pay is the source of truth, while monthly/hourly are derived from
+        * branch payroll settings (or defaults) and used for payroll computations.
      */
     public function computeRuleEngineAmounts(Employee $employee, array $overrides = []): array
     {
         $basis = $this->resolveRateBasis($employee, $overrides);
 
         $overtimeHours          = $this->normalizeNumber($overrides['overtime_hours'] ?? 0);
-        $restDayHours           = $this->normalizeNumber($overrides['rest_day_hours'] ?? 0);
         $specialHolidayHours    = $this->normalizeNumber($overrides['special_holiday_hours'] ?? 0);
         $regularHolidayHours    = $this->normalizeNumber($overrides['regular_holiday_hours'] ?? 0);
-        $nightDifferentialHours = $this->normalizeNumber($overrides['night_differential_hours'] ?? 0);
         $absentDays             = $this->normalizeNumber($overrides['absent_days'] ?? 0);
         $undertimeHours         = $this->normalizeNumber($overrides['undertime_hours'] ?? 0);
 
@@ -52,18 +50,18 @@ class PayrollService
             'night_differential_rate'  => $basis['night_differential_rate'],
 
             'overtime_hours'           => $overtimeHours,
-            'rest_day_hours'           => $restDayHours,
+            'rest_day_hours'           => 0,
             'special_holiday_hours'    => $specialHolidayHours,
             'regular_holiday_hours'    => $regularHolidayHours,
-            'night_differential_hours' => $nightDifferentialHours,
+            'night_differential_hours' => 0,
             'absent_days'              => $absentDays,
             'undertime_hours'          => $undertimeHours,
 
             'overtime_pay'             => round($hourlyRate * $overtimeHours * $basis['overtime_multiplier'], 2),
-            'rest_day_pay'             => round($hourlyRate * $restDayHours * $basis['rest_day_multiplier'], 2),
+            'rest_day_pay'             => 0,
             'special_holiday_pay'      => round($hourlyRate * $specialHolidayHours * $basis['special_holiday_multiplier'], 2),
             'regular_holiday_pay'      => round($hourlyRate * $regularHolidayHours * $basis['regular_holiday_multiplier'], 2),
-            'night_differential_pay'   => round($hourlyRate * $nightDifferentialHours * $basis['night_differential_rate'], 2),
+            'night_differential_pay'   => 0,
 
             'absent_deduction'         => round($dailyRate * $absentDays, 2),
             'undertime_deduction'      => round($hourlyRate * $undertimeHours, 2),
@@ -260,6 +258,7 @@ class PayrollService
         $startDate = $period['start_date'];
         $endDate = $period['end_date'];
         $normalizedPeriodKey = $period['normalized_period_key'];
+        $rateBasis = $this->resolveRateBasis($employee, $overrides);
         
         return Payroll::create([
             'employee_id' => $employee->id,
@@ -267,8 +266,8 @@ class PayrollService
             'payroll_period' => $normalizedPeriodKey,
             'pay_period_start' => $startDate,
             'pay_period_end' => $endDate,
-            'basic_salary' => $employee->salary ?? 0,   // new canonical column
-            'base_salary'  => $employee->salary ?? 0,   // original non-nullable column kept in sync
+            'basic_salary' => $rateBasis['monthly_base_salary'], // placeholder monthly-equivalent; finalized after calculations
+            'base_salary'  => $rateBasis['monthly_base_salary'], // original non-nullable column kept in sync
             'gross_salary' => 0,                        // placeholder; updated after component calculation
             'net_salary'   => 0,                        // placeholder; updated after component calculation
             'attendance_days' => $overrides['attendance_days'] ?? 0,
@@ -326,7 +325,7 @@ class PayrollService
     ): array {
         $rules = $this->computeRuleEngineAmounts($employee, $overrides);
         $componentDefinitions = $this->buildComponentDefinitions($employee, $customComponents, $overrides, $rules);
-        $basicSalary = (float) ($employee->salary ?? 0);
+        $basicSalary = (float) ($rules['monthly_base_salary'] ?? 0);
 
         $components = collect($componentDefinitions)
             ->map(function (array $componentData) use ($basicSalary, $overrides) {
@@ -413,10 +412,8 @@ class PayrollService
             'breakdown' => [
                 'basic_pay' => $this->sumComponentAmounts($components, ['Basic Salary']),
                 'overtime_pay' => $this->sumComponentAmounts($components, ['Overtime Pay']),
-                'rest_day_pay' => $this->sumComponentAmounts($components, ['Rest Day Pay']),
                 'special_holiday_pay' => $this->sumComponentAmounts($components, ['Special Holiday Pay']),
                 'regular_holiday_pay' => $this->sumComponentAmounts($components, ['Regular Holiday Pay']),
-                'night_differential_pay' => $this->sumComponentAmounts($components, ['Night Differential Pay']),
                 'sales_commission' => $this->sumComponentAmounts($components, ['Sales Commission']),
                 'performance_bonus' => $this->sumComponentAmounts($components, ['Performance Bonus']),
                 'other_allowances' => $this->sumComponentAmounts($components, ['Other Allowances', 'Allowances']),
@@ -430,13 +427,14 @@ class PayrollService
      * Resolve additional earning amounts and map them to custom payroll components.
      *
      * When explicit amounts are not supplied, employee-level defaults are used:
-     * - sales_commission = monthly salary × sales_commission_rate
-     * - performance_bonus = monthly salary × performance_bonus_rate
+     * - sales_commission = monthly-equivalent salary × sales_commission_rate
+     * - performance_bonus = monthly-equivalent salary × performance_bonus_rate
      * - other_allowances = employee.other_allowances
      */
     public function resolveAdditionalEarnings(Employee $employee, ?string $periodLabel = null, array $values = []): array
     {
-        $baseSalary = $this->normalizeNumber($employee->salary ?? 0);
+        $rateBasis = $this->resolveRateBasis($employee, []);
+        $baseSalary = $this->normalizeNumber($rateBasis['monthly_base_salary'] ?? 0);
 
         $salesCommission = array_key_exists('sales_commission', $values)
             ? $this->normalizeNumber($values['sales_commission'])
@@ -517,8 +515,8 @@ class PayrollService
 
     protected function buildComponentDefinitions(Employee $employee, array $customComponents, array $overrides, ?array $rules = null): array
     {
-        $basicSalary = (float) ($employee->salary ?? 0);
         $rules ??= $this->computeRuleEngineAmounts($employee, $overrides);
+        $basicSalary = (float) ($rules['monthly_base_salary'] ?? 0);
         $noWorkNoPay = $this->isNoWorkNoPayEnabled();
 
         $standardEarnings = [
@@ -534,7 +532,7 @@ class PayrollService
                 'category' => 'Basic Pay',
                 'description' => $noWorkNoPay
                     ? 'No-work-no-pay: prorated by paid days (attendance + approved leave)'
-                    : 'Monthly basic salary'
+                    : 'Daily base rate converted to monthly-equivalent salary'
             ],
             [
                 'type' => PayrollComponent::TYPE_EARNING,
@@ -546,7 +544,7 @@ class PayrollService
                 'recurring' => true,
                 'affects_gross' => false,
                 'category' => 'Accruals',
-                'description' => 'Monthly accrual — 1/12 of basic salary (PD 851)'
+                'description' => 'Monthly accrual — 1/12 of monthly-equivalent basic salary (PD 851)'
             ],
         ];
         
@@ -567,20 +565,6 @@ class PayrollService
                 'affects_gross' => true,
                 'category' => 'Premium Pay',
                 'description' => number_format($rules['overtime_hours'], 2) . ' hour(s) × ₱' . number_format($rules['hourly_rate'], 2) . ' × ' . number_format($rules['overtime_multiplier'], 2),
-            ];
-        }
-
-        if (($rules['rest_day_pay'] ?? 0) > 0) {
-            $standardEarnings[] = [
-                'type' => PayrollComponent::TYPE_EARNING,
-                'name' => 'Rest Day Pay',
-                'base_amount' => $rules['rest_day_pay'],
-                'method' => PayrollComponent::METHOD_CUSTOM,
-                'taxable' => true,
-                'recurring' => false,
-                'affects_gross' => true,
-                'category' => 'Premium Pay',
-                'description' => number_format($rules['rest_day_hours'], 2) . ' hour(s) × ₱' . number_format($rules['hourly_rate'], 2) . ' × ' . number_format($rules['rest_day_multiplier'], 2),
             ];
         }
 
@@ -612,19 +596,6 @@ class PayrollService
             ];
         }
 
-        if (($rules['night_differential_pay'] ?? 0) > 0) {
-            $standardEarnings[] = [
-                'type' => PayrollComponent::TYPE_EARNING,
-                'name' => 'Night Differential Pay',
-                'base_amount' => $rules['night_differential_pay'],
-                'method' => PayrollComponent::METHOD_CUSTOM,
-                'taxable' => true,
-                'recurring' => false,
-                'affects_gross' => true,
-                'category' => 'Premium Pay',
-                'description' => number_format($rules['night_differential_hours'], 2) . ' hour(s) × ₱' . number_format($rules['hourly_rate'], 2) . ' × ' . number_format($rules['night_differential_rate'], 2),
-            ];
-        }
         
         // Absent-day deduction: prorate daily rate × absent days
         // absent_days = working days that were neither attended nor on approved leave.
@@ -638,7 +609,7 @@ class PayrollService
                 'recurring'   => false,
                 'affects_gross' => false,
                 'category'    => 'Attendance Deductions',
-                'description' => number_format($rules['absent_days'], 2) . ' absent day(s) × ₱' . number_format($rules['daily_rate'], 2) . '/day (basic ÷ workdays)',
+                'description' => number_format($rules['absent_days'], 2) . ' absent day(s) × ₱' . number_format($rules['daily_rate'], 2) . '/day',
             ];
         }
 
@@ -738,7 +709,7 @@ class PayrollService
 
     protected function resolveRateBasis(Employee $employee, array $overrides): array
     {
-        $monthlyBase = $this->normalizeNumber($employee->salary ?? 0);
+        $dailyBase = $this->normalizeNumber($employee->salary ?? 0);
 
         $setting = $this->resolveBranchPayrollSetting($employee, $overrides);
 
@@ -754,7 +725,8 @@ class PayrollService
         $workDays = $workDays > 0 ? $workDays : 26;
         $workHours = $workHours > 0 ? $workHours : 8;
 
-        $dailyRate = $workDays > 0 ? $monthlyBase / $workDays : 0;
+        $dailyRate = $dailyBase;
+        $monthlyBase = $dailyRate * $workDays;
         $hourlyRate = $workHours > 0 ? $dailyRate / $workHours : 0;
 
         return [

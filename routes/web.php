@@ -685,6 +685,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::get('/expense-approvals', function () {
             return Inertia::render('ShopOwner/Approvals/ExpenseApproval');
         })->name('expense-approvals');
+
+        Route::get('/salary-adjustment-approvals', function () {
+            return Inertia::render('ShopOwner/Approvals/SalaryChangesApproval');
+        })->name('salary-adjustment-approvals');
     });
 
     // STAFF/EMPLOYEE MANAGEMENT - Business only
@@ -742,8 +746,9 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
     // Payslip Approvals (Shop Owner Portal)
     Route::prefix('payslip-approvals')->middleware('check.registration.type:company')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'getPayslipsForApproval'])->name('shop_owner.payslip_approval.index');
-        Route::get('/{id}', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'getPayslipForApproval'])->name('shop_owner.payslip_approval.show');
-        Route::post('/{id}/final-approve', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'finalApprovePayslip'])->name('shop_owner.payslip_approval.final_approve');
+        Route::post('/batch/final-approve', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'batchFinalApprove'])->name('shop_owner.payslip_approval.batch_final_approve');
+        Route::get('/{id}', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'getPayslipForApproval'])->whereNumber('id')->name('shop_owner.payslip_approval.show');
+        Route::post('/{id}/final-approve', [\App\Http\Controllers\Api\Finance\PayslipApprovalController::class, 'finalApprovePayslip'])->whereNumber('id')->name('shop_owner.payslip_approval.final_approve');
     });
 });
 

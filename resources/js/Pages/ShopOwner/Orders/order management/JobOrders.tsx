@@ -556,13 +556,8 @@ export default function JobOrdersPage() {
         })
       });
 
-      // Log the response for debugging
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers.get('content-type'));
-      
       const responseText = await response.text();
-      console.log('Response body:', responseText);
-
+  
       if (!response.ok) {
         // Try to parse as JSON, fallback to text
         let errorMessage = 'Failed to update order shipping information';

@@ -10,6 +10,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\AuditLog;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rules\Password;
 
 class SuperAdminController extends Controller
@@ -125,11 +126,43 @@ class SuperAdminController extends Controller
      */
     public function showSubscriptionManagement(): Response
     {
+        $now = \Carbon\Carbon::now();
+        $hasCancellationColumns = Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
+            && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes');
+
         // Fetch all subscriptions with relations
         $subscriptions = \App\Models\ShopOwnerSubscription::with(['shopOwner', 'premiumPlan'])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($subscription) {
+            ->map(function ($subscription) use ($now, $hasCancellationColumns) {
+                $effectiveEndsAt = $subscription->ends_at;
+                if (!$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
+                    $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
+                }
+
+                $nextBillingAt = null;
+                if (!in_array($subscription->status, ['deactivated', 'cancelled', 'expired', 'failed'], true) && $effectiveEndsAt?->greaterThanOrEqualTo($now)) {
+                    $nextBillingAt = $effectiveEndsAt;
+                }
+
+                $cancellationReason = $hasCancellationColumns ? $subscription->cancellation_reason : null;
+                $cancellationNotes = $hasCancellationColumns ? $subscription->cancellation_notes : null;
+
+                if ((empty($cancellationReason) || empty($cancellationNotes)) && class_exists(\Spatie\Activitylog\Models\Activity::class)) {
+                    $activity = \Spatie\Activitylog\Models\Activity::query()
+                        ->where('subject_type', \App\Models\ShopOwnerSubscription::class)
+                        ->where('subject_id', $subscription->id)
+                        ->where(function ($query) {
+                            $query->where('description', 'like', '%cancel%')
+                                ->orWhere('description', 'like', '%deactivat%');
+                        })
+                        ->latest('id')
+                        ->first();
+
+                    $cancellationReason = $cancellationReason ?: data_get($activity, 'properties.reason');
+                    $cancellationNotes = $cancellationNotes ?: data_get($activity, 'properties.notes');
+                }
+
                 return [
                     'id' => $subscription->id,
                     'shop' => [
@@ -150,12 +183,14 @@ class SuperAdminController extends Controller
                     'amount_paid' => (float) ($subscription->paid_amount ?? $subscription->premiumPlan?->price ?? 0),
                     'starts_at' => $subscription->starts_at ? $subscription->starts_at->format('Y-m-d H:i:s') : null,
                     'ends_at' => $subscription->ends_at ? $subscription->ends_at->format('Y-m-d H:i:s') : null,
+                    'next_billing_at' => $nextBillingAt?->format('Y-m-d H:i:s'),
+                    'cancellation_reason' => $cancellationReason,
+                    'cancellation_notes' => $cancellationNotes,
                     'created_at' => $subscription->created_at->format('Y-m-d H:i:s'),
                 ];
             });
 
         // Calculate statistics
-        $now = \Carbon\Carbon::now();
         $isOngoing = function (array $sub) use ($now) {
             if (($sub['status'] ?? null) === 'deactivated') {
                 return false;
@@ -199,21 +234,38 @@ class SuperAdminController extends Controller
         public function cancelSubscription(Request $request, $id)
         {
             try {
+                $validated = $request->validate([
+                    'cancellation_reason' => 'nullable|string|max:120',
+                    'cancellation_notes' => 'nullable|string|max:1000',
+                ]);
+
+                $reason = trim((string) ($validated['cancellation_reason'] ?? ''));
+                $notes = trim((string) ($validated['cancellation_notes'] ?? ''));
+
                 $subscription = \App\Models\ShopOwnerSubscription::with('premiumPlan')->findOrFail($id);
                 $refundedAmount = (float) ($subscription->paid_amount ?? $subscription->premiumPlan?->price ?? 0);
+                $hasCancellationColumns = Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
+                    && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes');
 
                 $effectiveEndsAt = $subscription->ends_at;
                 if (!$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
                     $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
                 }
 
-                $subscription->update([
+                $updatePayload = [
                     'status' => 'deactivated',
                     // Admin deactivation refunds the subscription amount from revenue accounting.
                     'paid_amount' => 0,
                     // Keep existing deadline; cancellation should stop renewal, not immediate access.
                     'ends_at' => $effectiveEndsAt,
-                ]);
+                ];
+
+                if ($hasCancellationColumns) {
+                    $updatePayload['cancellation_reason'] = $reason !== '' ? $reason : null;
+                    $updatePayload['cancellation_notes'] = $notes !== '' ? $notes : null;
+                }
+
+                $subscription->update($updatePayload);
 
                 activity()
                     ->performedOn($subscription)
@@ -224,6 +276,8 @@ class SuperAdminController extends Controller
                         'cancelled_at' => now()->toDateTimeString(),
                         'effective_ends_at' => $effectiveEndsAt?->toDateTimeString(),
                         'refunded_amount' => $refundedAmount,
+                        'reason' => $reason !== '' ? $reason : null,
+                        'notes' => $notes !== '' ? $notes : null,
                     ])
                     ->log('Subscription deactivated and refunded by admin');
 

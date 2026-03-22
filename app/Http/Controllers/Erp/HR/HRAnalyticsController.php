@@ -358,7 +358,9 @@ class HRAnalyticsController extends Controller
             ->select('salary')
             ->get()
             ->map(function($employee) {
-                $salary = $employee->salary ?? 0;
+                // Employee salary is daily rate; convert to monthly-equivalent
+                // for existing monthly salary distribution ranges.
+                $salary = ((float) ($employee->salary ?? 0)) * 26;
                 if ($salary < 30000) return '<30K';
                 if ($salary < 50000) return '30K-50K';
                 if ($salary < 75000) return '50K-75K';

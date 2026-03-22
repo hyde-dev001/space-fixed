@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
+
+const cancellationReasons = [
+	{ value: 'reduce_costs', label: 'I need to reduce business costs' },
+	{ value: 'low_value', label: 'I am not getting enough value from the subscription' },
+	{ value: 'technical_issues', label: 'I experienced technical issues' },
+	{ value: 'missing_features', label: 'It is missing features I need' },
+	{ value: 'subscribed_by_mistake', label: 'I subscribed by mistake' },
+	{ value: 'temporary_pause', label: 'I only need a temporary pause' },
+	{ value: 'others', label: 'Others' },
+] as const;
 
 type PremiumPlan = {
 	plan_code: string;
@@ -13,11 +23,13 @@ type PremiumPlan = {
 
 type PremiumSubscription = {
 	id: number;
-	status: 'pending' | 'active' | 'expired' | 'cancelled' | 'failed';
+	status: 'pending' | 'active' | 'expired' | 'cancelled' | 'deactivated' | 'failed';
 	plan_code: string | null;
 	showroom_slot_limit: number | null;
 	starts_at: string | null;
 	ends_at: string | null;
+	cancellation_reason?: string | null;
+	cancellation_notes?: string | null;
 	premiumPlan?: {
 		name?: string | null;
 	} | null;
@@ -43,12 +55,20 @@ const checkIcon = (
 );
 
 const PremiumBenefits: React.FC<Props> = () => {
+	const pageProps = usePage().props as any;
+	const shopOwnerId = pageProps.shop_owner?.id ?? pageProps.auth?.shop_owner?.id ?? null;
+	const virtualShowroomHref = shopOwnerId ? `/shop-profile/${shopOwnerId}/virtual-showroom?from=shop-owner-premium` : null;
+
 	const [plans, setPlans] = useState<PremiumPlan[]>([]);
 	const [subscription, setSubscription] = useState<PremiumSubscription | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [checkoutPlan, setCheckoutPlan] = useState<string | null>(null);
 	const [cancellingSubscription, setCancellingSubscription] = useState(false);
+	const [showCancelModal, setShowCancelModal] = useState(false);
+	const [cancelReason, setCancelReason] = useState<string>('');
+	const [cancelReasonNotes, setCancelReasonNotes] = useState('');
+	const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
 
 	useEffect(() => {
 		const loadPremiumData = async () => {
@@ -70,6 +90,24 @@ const PremiumBenefits: React.FC<Props> = () => {
 
 		loadPremiumData();
 	}, []);
+
+	useEffect(() => {
+		if (!showCancelModal) return;
+
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				setShowCancelModal(false);
+			}
+		};
+
+		document.body.style.overflow = 'hidden';
+		window.addEventListener('keydown', onKeyDown);
+
+		return () => {
+			document.body.style.overflow = '';
+			window.removeEventListener('keydown', onKeyDown);
+		};
+	}, [showCancelModal]);
 
 	const now = new Date();
 	const hasRemainingAccess = (sub: PremiumSubscription | null) => {
@@ -111,14 +149,29 @@ const PremiumBenefits: React.FC<Props> = () => {
 
 	const handleCancelSubscription = async () => {
 		if (subscription?.status === 'cancelled') return;
+		if (!cancelReason) {
+			setCancelReasonError('Please select a reason before continuing.');
+			return;
+		}
+
+		const isOthers = cancelReason === 'others';
+		if (isOthers && !cancelReasonNotes.trim()) {
+			setCancelReasonError('Please add notes when you select Others.');
+			return;
+		}
 
 		setCancellingSubscription(true);
+		setCancelReasonError(null);
 		setError(null);
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			const response = await axios.post(
 				'/api/shop-owner/premium/cancel',
-				{ subscription_id: activeSubscription?.id ?? undefined },
+				{
+					subscription_id: activeSubscription?.id ?? undefined,
+					cancellation_reason: cancelReason,
+					cancellation_notes: isOthers ? cancelReasonNotes.trim() : undefined,
+				},
 				{
 					withCredentials: true,
 					headers: { 'X-CSRF-TOKEN': csrfToken || '' },
@@ -126,11 +179,21 @@ const PremiumBenefits: React.FC<Props> = () => {
 			);
 
 			setSubscription(response.data?.subscription ?? null);
+			setShowCancelModal(false);
+			setCancelReason('');
+			setCancelReasonNotes('');
 		} catch (err: any) {
 			setError(err?.response?.data?.message || 'Unable to cancel premium subscription.');
 		} finally {
 			setCancellingSubscription(false);
 		}
+	};
+
+	const openCancelModal = () => {
+		setCancelReason('');
+		setCancelReasonNotes('');
+		setCancelReasonError(null);
+		setShowCancelModal(true);
 	};
 
 	return (
@@ -160,6 +223,42 @@ const PremiumBenefits: React.FC<Props> = () => {
 							</p>
 						</div>
 
+						{subscription?.status === 'deactivated' ? (
+							<div className="mb-10 overflow-hidden rounded-3xl border border-[#16233b]/20 bg-linear-to-r from-[#16233b]/8 via-[#16233b]/4 to-transparent shadow-[0_22px_40px_-28px_rgba(15,23,42,0.6)]">
+								<div className="flex items-start gap-4 p-6 sm:p-7">
+									<div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#16233b] text-white">
+										<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
+										</svg>
+									</div>
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#16233b]/75">Subscription Update</p>
+										<div className="mt-2 space-y-3 text-sm leading-relaxed text-[#0f1b33]">
+											<p>Dear Valued Customer,</p>
+											<p>
+												We would like to inform you that your subscription has been temporarily deactivated as part of an ongoing account and policy review process. This action is taken to ensure compliance with our terms and to maintain the integrity and security of our services.
+											</p>
+											<p>
+												If you believe this action has been taken in error or if you require further clarification, we encourage you to reach out to our support team. You may contact us at <a href="mailto:solespace@gmail.com" className="font-semibold underline underline-offset-2">SOLESPACE@GMAIL.COM</a>, and we will be happy to assist you promptly.
+											</p>
+											<p>
+												We appreciate your understanding and cooperation while we complete this review. Thank you for your patience.
+											</p>
+											<p>
+												Sincerely,<br />
+												Customer Support Team
+											</p>
+										</div>
+										{subscription.cancellation_notes ? (
+											<p className="mt-3 rounded-xl border border-[#16233b]/15 bg-white/80 px-3 py-2 text-sm text-[#0f1b33]">
+												<span className="font-semibold">Admin message:</span> {subscription.cancellation_notes}
+											</p>
+										) : null}
+									</div>
+								</div>
+							</div>
+						) : null}
+
 							{loading ? (
 								<div className="mb-10 rounded-2xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-700">
 									<p>Loading premium plans and subscription status...</p>
@@ -175,10 +274,11 @@ const PremiumBenefits: React.FC<Props> = () => {
 										Boolean(activeSubscription?.plan_code) &&
 										String(activeSubscription?.plan_code).toLowerCase() === String(plan.plan_code).toLowerCase();
 									const canCheckoutThisPlan = !activeSubscription && !checkoutPlan;
+									const shouldShowShowroomButton = isCurrentPlan && Boolean(virtualShowroomHref);
 									const planButtonLabel = checkoutPlan === plan.plan_code
 										? 'Starting Checkout...'
 										: isCurrentPlan
-											? 'Current Plan'
+											? 'View Virtual Showroom'
 											: activeSubscription
 												? 'Active Subscription'
 												: 'Subscribe Now';
@@ -210,6 +310,10 @@ const PremiumBenefits: React.FC<Props> = () => {
 																<p className="mt-1 text-xs text-black/65">
 																	Your subscription is cancelled and will stay active until {subscription?.ends_at ? new Date(subscription.ends_at).toLocaleDateString() : 'the end of your current cycle'}.
 																</p>
+															) : subscription?.status === 'deactivated' ? (
+																<p className="mt-1 text-xs text-black/65">
+																	This plan is currently deactivated by admin. Please review the subscription notice for full details.
+																</p>
 															) : (
 																<p className="mt-1 text-xs text-black/65">
 																	Your subscription will automatically renew at the end of each billing period unless you cancel before the renewal date.
@@ -226,31 +330,40 @@ const PremiumBenefits: React.FC<Props> = () => {
 													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">View shoes in horizontal detail inside the showroom</span></li>
 													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">Enable image-sequence uploads for showroom presentation</span></li>
 												</ul>
-												<button
-													type="button"
-													onClick={() => {
-														if (canCheckoutThisPlan) {
-															handleCheckout(plan.plan_code);
-														}
-													}}
-													disabled={!canCheckoutThisPlan}
-													className={`${actionBtnBase} ${
-														isCurrentPlan
-															? `${actionBtnDark} cursor-default`
-															: activeSubscription
-																? 'cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-400'
-																: actionBtnDark
-													}`}
-												>
-													{planButtonLabel}
-													<svg className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-													</svg>
-												</button>
+												{shouldShowShowroomButton ? (
+													<Link href={virtualShowroomHref as string} className={`${actionBtnBase} ${actionBtnDark}`}>
+														{planButtonLabel}
+														<svg className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+														</svg>
+													</Link>
+												) : (
+													<button
+														type="button"
+														onClick={() => {
+															if (canCheckoutThisPlan) {
+																handleCheckout(plan.plan_code);
+															}
+														}}
+														disabled={!canCheckoutThisPlan}
+														className={`${actionBtnBase} ${
+															isCurrentPlan
+																? `${actionBtnDark} cursor-default`
+																: activeSubscription
+																	? 'cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-400'
+																	: actionBtnDark
+														}`}
+													>
+														{planButtonLabel}
+														<svg className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+														</svg>
+													</button>
+												)}
 												{isCurrentPlan && subscription?.status !== 'cancelled' ? (
 													<button
 														type="button"
-														onClick={handleCancelSubscription}
+														onClick={openCancelModal}
 														disabled={cancellingSubscription}
 														className="mt-3 block w-full rounded-full border border-[#16233b]/30 bg-white px-6 py-3 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[#16233b] transition hover:border-[#16233b] hover:bg-[#16233b]/5 disabled:cursor-not-allowed disabled:opacity-60"
 													>
@@ -309,6 +422,106 @@ const PremiumBenefits: React.FC<Props> = () => {
 						</section>
 				</div>
 			</div>
+
+				{showCancelModal ? (
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+						<div className="w-full max-w-4xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="cancel-premium-title">
+							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
+								<div>
+									<h2 id="cancel-premium-title" className="text-2xl font-bold tracking-tight text-black">Cancel Premium Subscription?</h2>
+									<p className="mt-1.5 text-sm leading-relaxed text-black/65">
+										Help us improve by sharing your reason for cancellation.
+									</p>
+								</div>
+								<button
+									type="button"
+									onClick={() => setShowCancelModal(false)}
+									className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-black/70 transition hover:border-gray-400 hover:text-black"
+									aria-label="Close cancellation modal"
+								>
+									<svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+										<path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+									</svg>
+								</button>
+							</div>
+
+							<div className="mb-6 rounded-2xl border border-[#16233b]/20 bg-[#16233b]/5 p-4 text-sm text-[#16233b]">
+								<p className="font-semibold uppercase tracking-[0.12em]">What happens after cancellation</p>
+								<p className="mt-2 leading-relaxed">
+									Your subscription remains active until the end of your current billing period. You will not be charged on the next billing date, and the current payment is non-refundable.
+								</p>
+							</div>
+
+							<div className="space-y-2.5">
+								<p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/60">Reason for cancellation</p>
+								{cancellationReasons.map((reason) => (
+									<label
+										key={reason.value}
+										className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm transition ${
+											cancelReason === reason.value
+												? 'border-[#16233b] bg-[#16233b]/5 text-black shadow-[0_10px_20px_-18px_rgba(22,35,59,0.9)]'
+												: 'border-gray-200 text-black/80 hover:border-gray-300'
+										}`}
+									>
+										<input
+											type="radio"
+											name="cancel-reason"
+											value={reason.value}
+											checked={cancelReason === reason.value}
+											onChange={(e) => {
+												setCancelReason(e.target.value);
+												setCancelReasonError(null);
+											}}
+											className="mt-0.5 h-4 w-4 border-gray-400 text-[#16233b] focus:ring-[#16233b]"
+										/>
+										<span className="leading-relaxed">{reason.label}</span>
+									</label>
+								))}
+							</div>
+
+							{cancelReason === 'others' ? (
+								<div className="mt-4">
+									<label htmlFor="cancel-notes" className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
+										Additional Notes
+									</label>
+									<textarea
+										id="cancel-notes"
+										value={cancelReasonNotes}
+										onChange={(e) => {
+											setCancelReasonNotes(e.target.value);
+											setCancelReasonError(null);
+										}}
+										rows={4}
+										placeholder="Please share your reason in more detail..."
+										className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-black outline-none transition focus:border-[#16233b] focus:ring-2 focus:ring-[#16233b]/15"
+									/>
+								</div>
+							) : null}
+
+							{cancelReasonError ? (
+								<p className="mt-3 text-sm font-medium text-red-700">{cancelReasonError}</p>
+							) : null}
+
+							<div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+								<button
+									type="button"
+									onClick={() => setShowCancelModal(false)}
+									className="rounded-full border border-gray-300 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-black/70 transition hover:border-gray-400 hover:text-black"
+								>
+									Keep Subscription
+								</button>
+								<button
+									type="button"
+									onClick={handleCancelSubscription}
+									disabled={cancellingSubscription}
+									className="rounded-full border border-[#8f1212] bg-[#b91c1c] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:-translate-y-0.5 hover:bg-[#9f1616] disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:opacity-60"
+								>
+									{cancellingSubscription ? 'Cancelling...' : 'Confirm Cancellation'}
+								</button>
+							</div>
+						</div>
+					</div>
+				) : null}
 		</>
 	);
 };

@@ -55,6 +55,9 @@ enum NotificationType: string
     case OVERTIME_REQUEST_APPROVED = 'overtime_request_approved';
     case OVERTIME_REQUEST_REJECTED = 'overtime_request_rejected';
     case PAYSLIP_READY = 'payslip_ready';
+    case PAYSLIP_REJECTED = 'payslip_rejected';
+    case PRICE_CHANGE_REJECTED = 'price_change_rejected';
+    case EXPENSE_REJECTED = 'expense_rejected';
 
     // ==================== MANAGER NOTIFICATIONS ====================
     case LEAVE_REQUEST_PENDING = 'leave_request_pending';
@@ -147,6 +150,9 @@ enum NotificationType: string
             self::OVERTIME_REQUEST_APPROVED => 'Overtime Request Approved',
             self::OVERTIME_REQUEST_REJECTED => 'Overtime Request Rejected',
             self::PAYSLIP_READY => 'Payslip Ready',
+            self::PAYSLIP_REJECTED => 'Payslip Rejected',
+            self::PRICE_CHANGE_REJECTED => 'Price Change Rejected',
+            self::EXPENSE_REJECTED => 'Expense Rejected',
 
             // HR notifications
             self::LEAVE_SUBMITTED => 'New Leave Request',
@@ -191,14 +197,16 @@ enum NotificationType: string
             
             self::EXPENSE_APPROVAL, self::EXPENSE_REQUEST_PENDING,
             self::INVOICE_CREATED, self::INVOICE_CREATED_FINANCE,
-            self::EXPENSE_SUBMITTED, self::PURCHASE_REQUEST_SUBMITTED => 'finance',
+            self::EXPENSE_SUBMITTED, self::EXPENSE_REJECTED,
+            self::PRICE_CHANGE_REJECTED,
+            self::PURCHASE_REQUEST_SUBMITTED => 'finance',
             
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
             self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
             self::OVERTIME_SUBMITTED, self::OVERTIME_REQUEST_PENDING,
             self::OVERTIME_REQUEST_APPROVED, self::OVERTIME_REQUEST_REJECTED,
             self::ATTENDANCE_REMINDER, self::DOCUMENT_EXPIRING,
-            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::TRAINING_ASSIGNED => 'hr',
+            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED => 'hr',
             
             self::NEW_LEAD, self::LEAD_UPDATED, self::OPPORTUNITY_CREATED,
             self::CUSTOMER_SUPPORT_TICKET => 'crm',

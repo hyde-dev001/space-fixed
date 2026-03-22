@@ -3,17 +3,21 @@
 namespace App\Http\Controllers\Api\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
 use App\Notifications\HR\PayslipGenerated;
 use App\Services\NotificationService;
+use App\Services\PayslipApprovalService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 /**
  * PayslipApprovalController (Finance module)
@@ -33,7 +37,10 @@ class PayslipApprovalController extends Controller
 {
     use LogsHRActivity;
 
-    public function __construct(private NotificationService $notificationService)
+    public function __construct(
+        private NotificationService $notificationService,
+        private PayslipApprovalService $payslipApprovalService
+    )
     {
     }
 
@@ -43,22 +50,101 @@ class PayslipApprovalController extends Controller
 
     private function resolveShopOwnerActorUserId(int $shopOwnerId): ?int
     {
-        $mappedByRoleColumn = User::query()
+        $shopOwner = ShopOwner::query()->select('id', 'email')->find($shopOwnerId);
+
+        $mappedByPermissionRole = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereIn('role', ['Shop Owner', 'SHOP_OWNER', 'shop_owner'])
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner']))
             ->orderByDesc('id')
             ->value('id');
 
-        if ($mappedByRoleColumn) {
-            return (int) $mappedByRoleColumn;
+        if ($mappedByPermissionRole) {
+            return (int) $mappedByPermissionRole;
         }
 
-        $fallbackUserId = User::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->orderByDesc('id')
-            ->value('id');
+        if ($shopOwner && ! empty($shopOwner->email)) {
+            $mappedByEmail = User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereRaw('LOWER(email) = ?', [strtolower((string) $shopOwner->email)])
+                ->orderByDesc('id')
+                ->value('id');
 
-        return $fallbackUserId ? (int) $fallbackUserId : null;
+            if ($mappedByEmail) {
+                return (int) $mappedByEmail;
+            }
+        }
+
+        return null;
+    }
+
+    private function ensureShopOwnerActorUserId($shopOwner): ?int
+    {
+        if (! isset($shopOwner->id)) {
+            return null;
+        }
+
+        $resolvedId = $this->resolveShopOwnerActorUserId((int) $shopOwner->id);
+        if ($resolvedId) {
+            return $resolvedId;
+        }
+
+        $primaryEmail = strtolower(trim((string) ($shopOwner->email ?? '')));
+        $fallbackEmail = 'shopowner+' . $shopOwner->id . '@solespace.local';
+        $candidateEmails = array_values(array_unique(array_filter([$primaryEmail, $fallbackEmail])));
+
+        foreach ($candidateEmails as $candidateEmail) {
+            $existingUser = User::query()->whereRaw('LOWER(email) = ?', [strtolower($candidateEmail)])->first();
+            if (! $existingUser) {
+                continue;
+            }
+
+            if (! empty($existingUser->shop_owner_id) && (int) $existingUser->shop_owner_id !== (int) $shopOwner->id) {
+                continue;
+            }
+
+            $existingUser->shop_owner_id = (int) $shopOwner->id;
+            if (empty($existingUser->name)) {
+                $existingUser->name = trim((string) ($shopOwner->first_name ?? '') . ' ' . (string) ($shopOwner->last_name ?? ''));
+            }
+            if (empty($existingUser->email_verified_at)) {
+                $existingUser->email_verified_at = now();
+            }
+            $existingUser->save();
+
+            try {
+                if (! $existingUser->hasRole('Shop Owner')) {
+                    $existingUser->assignRole('Shop Owner');
+                }
+            } catch (\Throwable $e) {
+            }
+
+            return (int) $existingUser->id;
+        }
+
+        $firstName = (string) ($shopOwner->first_name ?? 'Shop');
+        $lastName = (string) ($shopOwner->last_name ?? 'Owner');
+        $name = trim($firstName . ' ' . $lastName);
+
+        try {
+            $newUser = User::query()->create([
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'name' => $name !== '' ? $name : ('Shop Owner #' . $shopOwner->id),
+                'email' => $fallbackEmail,
+                'password' => Hash::make(Str::random(40)),
+                'shop_owner_id' => (int) $shopOwner->id,
+                'email_verified_at' => now(),
+            ]);
+
+            try {
+                $newUser->assignRole('Shop Owner');
+            } catch (\Throwable $e) {
+            }
+
+            return (int) $newUser->id;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function authorizeWorkflowViewer(): ?array
@@ -81,9 +167,10 @@ class PayslipApprovalController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         if ($shopOwner) {
+            $actorUserId = $this->ensureShopOwnerActorUserId($shopOwner);
             return [
                 'shop_owner_id' => (int) $shopOwner->id,
-                'actor_user_id' => $this->resolveShopOwnerActorUserId((int) $shopOwner->id),
+                'actor_user_id' => $actorUserId,
                 'name' => trim((string) ($shopOwner->full_name ?? $shopOwner->business_name ?? 'Shop Owner')),
                 'guard' => 'shop_owner',
             ];
@@ -127,9 +214,10 @@ class PayslipApprovalController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         if ($shopOwner) {
+            $actorUserId = $this->ensureShopOwnerActorUserId($shopOwner);
             return [
                 'shop_owner_id' => (int) $shopOwner->id,
-                'actor_user_id' => $this->resolveShopOwnerActorUserId((int) $shopOwner->id),
+                'actor_user_id' => $actorUserId,
                 'name' => trim((string) ($shopOwner->full_name ?? $shopOwner->business_name ?? 'Shop Owner')),
                 'guard' => 'shop_owner',
             ];
@@ -244,14 +332,54 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        if ($payslip->approval_status === 'approved') {
-            return response()->json(['error' => 'Payslip already checker-approved'], 400);
-        }
-
+        // Validate maker-checker
         if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
             return response()->json([
                 'error' => 'Maker-checker violation. The payroll generator cannot act as the Finance checker.',
             ], 403);
+        }
+
+        // If payslip has new 4-step approval workflow, use it
+        if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+            $result = $this->payslipApprovalService->approvePayslip(
+                $payslip,
+                User::find($actor['actor_user_id']),
+                $request->input('notes')
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'error' => $result['message'],
+                    'details' => $result
+                ], 422);
+            }
+
+            $payslip->refresh();
+
+            $this->logHRActivity(
+                $actor['shop_owner_id'],
+                'payslip_approved_level_' . $payslip->current_approval_level,
+                'Payslip Approved - Level ' . $payslip->current_approval_level,
+                "Payslip #{$payslip->id} approved at level {$payslip->current_approval_level} by {$actor['name']}",
+                $payslip
+            );
+
+            return response()->json([
+                'message' => $result['message'],
+                'payslip' => $this->transformPayslip($payslip->fresh([
+                    'employee:id,first_name,last_name,department,position',
+                    'checker:id,name',
+                    'finalApprover:id,name',
+                    'disburser:id,name',
+                ])),
+                'is_final' => $result['is_final'] ?? false,
+                'approval_level' => $payslip->current_approval_level,
+            ]);
+        }
+
+        // Fallback to legacy 2-step approval for existing payslips
+        if ($payslip->approval_status === 'approved') {
+            return response()->json(['error' => 'Payslip already checker-approved'], 400);
         }
 
         try {
@@ -319,6 +447,44 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
+        // If payslip has new 4-step approval workflow, use it
+        if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+            $result = $this->payslipApprovalService->rejectPayslip(
+                $payslip,
+                User::find($actor['actor_user_id']),
+                $request->input('notes')
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'error' => $result['message'],
+                    'details' => $result
+                ], 422);
+            }
+
+            $payslip->refresh();
+
+            $this->logHRActivity(
+                $actor['shop_owner_id'],
+                'payslip_rejected_level_' . $payslip->current_approval_level,
+                'Payslip Rejected - Level ' . $payslip->current_approval_level,
+                "Payslip #{$payslip->id} rejected at level {$payslip->current_approval_level}: {$request->input('notes')}",
+                $payslip
+            );
+
+            return response()->json([
+                'message' => $result['message'],
+                'payslip' => $this->transformPayslip($payslip->fresh([
+                    'employee:id,first_name,last_name,department,position',
+                    'checker:id,name',
+                    'finalApprover:id,name',
+                    'disburser:id,name',
+                ])),
+                'rejection_level' => $payslip->current_approval_level,
+            ]);
+        }
+
+        // Fallback to legacy 2-step rejection for existing payslips
         if ($payslip->status === 'approved' || $payslip->status === 'paid') {
             return response()->json(['error' => 'Final-approved or paid payrolls cannot be rejected from the checker queue'], 400);
         }
@@ -369,6 +535,8 @@ class PayslipApprovalController extends Controller
 
     /**
      * Final approval before payroll can be disbursed.
+     * For 4-step workflows: can be called by Shop Owner (level 2) or Finance Manager (level 4)
+     * For legacy workflows: called by Shop Owner only
      */
     public function finalApprovePayslip(Request $request, $id): JsonResponse
     {
@@ -393,7 +561,7 @@ class PayslipApprovalController extends Controller
 
         $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
             ->with([
-                'employee:id,first_name,last_name,department,position',
+                'employee:id,first_name,last_name,department,position,email',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -404,6 +572,68 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
+        // Maker-checker validations
+        if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
+            return response()->json(['error' => 'Maker-checker violation. The payroll generator cannot be the final approver.'], 403);
+        }
+
+        // If payslip has new 4-step approval workflow, use it
+        if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+            $result = $this->payslipApprovalService->approvePayslip(
+                $payslip,
+                User::find($actor['actor_user_id']),
+                $request->input('notes')
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'error' => $result['message'],
+                    'details' => $result
+                ], 422);
+            }
+
+            $payslip->refresh();
+
+            $this->logHRActivity(
+                $actor['shop_owner_id'],
+                'payslip_approved_level_' . $payslip->current_approval_level,
+                'Payslip Approved - Level ' . $payslip->current_approval_level,
+                "Payslip #{$payslip->id} approved at level {$payslip->current_approval_level} by {$actor['name']}",
+                $payslip
+            );
+
+            // If this was the final approval (level 4), send notification to employee
+            if (($result['is_final'] ?? false) && $payslip->employee && $payslip->employee->user) {
+                try {
+                    $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
+                    if ($employeeUserId > 0) {
+                        $this->notificationService->notifyPayslipReady($employeeUserId, $actor['shop_owner_id'], [
+                            'payroll_id' => $payslip->id,
+                            'period' => $payslip->payroll_period,
+                            'net_salary' => number_format((float) $payslip->net_salary, 2),
+                        ]);
+                    }
+
+                    $payslip->employee->user->notify(new PayslipGenerated($payslip));
+                } catch (\Exception $e) {
+                    \Log::error('Failed to notify employee of payslip', ['error' => $e->getMessage()]);
+                }
+            }
+
+            return response()->json([
+                'message' => $result['message'],
+                'payslip' => $this->transformPayslip($payslip->fresh([
+                    'employee:id,first_name,last_name,department,position',
+                    'checker:id,name',
+                    'finalApprover:id,name',
+                    'disburser:id,name',
+                ])),
+                'is_final' => $result['is_final'] ?? false,
+                'approval_level' => $payslip->current_approval_level,
+            ]);
+        }
+
+        // Fallback to legacy 2-step for existing payslips
         if ($payslip->status === 'paid') {
             return response()->json(['error' => 'Paid payrolls cannot be final-approved again'], 400);
         }
@@ -414,10 +644,6 @@ class PayslipApprovalController extends Controller
 
         if (! empty($payslip->final_approved_by) || $payslip->status === 'approved') {
             return response()->json(['error' => 'Payroll already has final approval'], 400);
-        }
-
-        if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
-            return response()->json(['error' => 'Maker-checker violation. The payroll generator cannot be the final approver.'], 403);
         }
 
         if ((int) ($payslip->approved_by ?? 0) === (int) $actor['actor_user_id']) {
@@ -437,8 +663,9 @@ class PayslipApprovalController extends Controller
 
             try {
                 if ($payslip->employee && $payslip->employee->user) {
-                    if ($payslip->employee->user_id) {
-                        $this->notificationService->notifyPayslipReady($payslip->employee->user_id, $actor['shop_owner_id'], [
+                    $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
+                    if ($employeeUserId > 0) {
+                        $this->notificationService->notifyPayslipReady($employeeUserId, $actor['shop_owner_id'], [
                             'payroll_id' => $payslip->id,
                             'period' => $payslip->payroll_period,
                             'net_salary' => number_format((float) $payslip->net_salary, 2),
@@ -585,6 +812,174 @@ class PayslipApprovalController extends Controller
             'approved' => $approvedCount,
             'failed'   => $failedCount,
             'errors'   => $errors,
+        ]);
+    }
+
+    /**
+     * Final-approve multiple checker-approved payslips (Shop Owner bulk action).
+     */
+    public function batchFinalApprove(Request $request): JsonResponse
+    {
+        $actor = $this->authorizeFinalApprover();
+        if (! $actor) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (empty($actor['actor_user_id'])) {
+            return response()->json([
+                'error' => 'No linked ERP user was found for this shop owner. Please contact support to map the account before final approval.',
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'payslip_ids' => 'required|array',
+            'payslip_ids.*' => 'required|integer|exists:payrolls,id',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $approvedCount = 0;
+        $failedCount = 0;
+        $errors = [];
+        $notes = $request->input('notes');
+
+        foreach ((array) $request->input('payslip_ids', []) as $payslipId) {
+            try {
+                $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
+                    ->with([
+                        'employee:id,first_name,last_name,department,position,email',
+                        'employee.user:id,name,email',
+                    ])
+                    ->find($payslipId);
+
+                if (! $payslip) {
+                    $errors[] = "Payslip #{$payslipId} not found";
+                    $failedCount++;
+                    continue;
+                }
+
+                if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
+                    $errors[] = "Payslip #{$payslipId}: Maker-checker violation. The payroll generator cannot be the final approver.";
+                    $failedCount++;
+                    continue;
+                }
+
+                if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+                    $result = $this->payslipApprovalService->approvePayslip(
+                        $payslip,
+                        User::find($actor['actor_user_id']),
+                        $notes
+                    );
+
+                    if (! ($result['success'] ?? false)) {
+                        $errors[] = "Payslip #{$payslipId}: " . ($result['message'] ?? 'Final approval failed');
+                        $failedCount++;
+                        continue;
+                    }
+
+                    $payslip->refresh();
+
+                    $this->logHRActivity(
+                        $actor['shop_owner_id'],
+                        'payslip_approved_level_' . $payslip->current_approval_level,
+                        'Payslip Approved - Level ' . $payslip->current_approval_level,
+                        "Payslip #{$payslip->id} approved at level {$payslip->current_approval_level} by {$actor['name']} (batch)",
+                        $payslip
+                    );
+
+                    if (($result['is_final'] ?? false) && $payslip->employee && $payslip->employee->user) {
+                        try {
+                            $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
+                            if ($employeeUserId > 0) {
+                                $this->notificationService->notifyPayslipReady($employeeUserId, $actor['shop_owner_id'], [
+                                    'payroll_id' => $payslip->id,
+                                    'period' => $payslip->payroll_period,
+                                    'net_salary' => number_format((float) $payslip->net_salary, 2),
+                                ]);
+                            }
+
+                            $payslip->employee->user->notify(new PayslipGenerated($payslip));
+                        } catch (\Exception $notificationError) {
+                            \Log::error('Failed to send batch final approval payslip notification', [
+                                'payroll_id' => $payslip->id,
+                                'error' => $notificationError->getMessage(),
+                            ]);
+                        }
+                    }
+
+                    $approvedCount++;
+                    continue;
+                }
+
+                if ($payslip->status === 'paid') {
+                    $errors[] = "Payslip #{$payslipId}: Paid payrolls cannot be final-approved again";
+                    $failedCount++;
+                    continue;
+                }
+
+                if ($payslip->approval_status !== 'approved' || empty($payslip->approved_by)) {
+                    $errors[] = "Payslip #{$payslipId}: Finance checker approval is required before final approval";
+                    $failedCount++;
+                    continue;
+                }
+
+                if (! empty($payslip->final_approved_by) || $payslip->status === 'approved') {
+                    $errors[] = "Payslip #{$payslipId}: Payroll already has final approval";
+                    $failedCount++;
+                    continue;
+                }
+
+                if ((int) ($payslip->approved_by ?? 0) === (int) $actor['actor_user_id']) {
+                    $errors[] = "Payslip #{$payslipId}: Maker-checker violation. The Finance checker cannot also be the final approver.";
+                    $failedCount++;
+                    continue;
+                }
+
+                $payslip->markAsFinalApproved((int) $actor['actor_user_id'], $notes);
+
+                $this->logHRActivity(
+                    $actor['shop_owner_id'],
+                    'payslip_final_approved',
+                    'Payslip Final Approved',
+                    "Payslip #{$payslip->id} final-approved by {$actor['name']} (batch)",
+                    $payslip
+                );
+
+                try {
+                    if ($payslip->employee && $payslip->employee->user) {
+                        $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
+                        if ($employeeUserId > 0) {
+                            $this->notificationService->notifyPayslipReady($employeeUserId, $actor['shop_owner_id'], [
+                                'payroll_id' => $payslip->id,
+                                'period' => $payslip->payroll_period,
+                                'net_salary' => number_format((float) $payslip->net_salary, 2),
+                            ]);
+                        }
+
+                        $payslip->employee->user->notify(new PayslipGenerated($payslip));
+                    }
+                } catch (\Exception $notificationError) {
+                    \Log::error('Failed to send batch final approval payslip notification', [
+                        'payroll_id' => $payslip->id,
+                        'error' => $notificationError->getMessage(),
+                    ]);
+                }
+
+                $approvedCount++;
+            } catch (\Exception $e) {
+                $errors[] = "Failed to final-approve payslip #{$payslipId}: " . $e->getMessage();
+                $failedCount++;
+            }
+        }
+
+        return response()->json([
+            'message' => "Final-approved {$approvedCount} payslip(s) successfully",
+            'approved' => $approvedCount,
+            'failed' => $failedCount,
+            'errors' => $errors,
         ]);
     }
 

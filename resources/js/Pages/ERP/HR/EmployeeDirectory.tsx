@@ -350,6 +350,8 @@ export const EmployeeManagement: React.FC<{
   const auth = pageProps.auth;
   const shopOwner = auth?.shop_owner;
   const businessType = shopOwner?.business_type?.toLowerCase(); // 'retail', 'repair', 'both'
+  const currentUserId = Number(auth?.user?.id ?? 0);
+  const currentUserEmail = String(auth?.user?.email ?? '').trim().toLowerCase();
   
   // Check for flash data with employee credentials
   const success = pageProps.success || flash?.success;
@@ -1204,6 +1206,19 @@ export const EmployeeManagement: React.FC<{
   };
 
   const handleResetEmployeePassword = async (employee: Employee) => {
+    const employeeEmail = String(employee.email ?? '').trim().toLowerCase();
+    const linkedUserId = Number(employee.linkedUser ?? 0);
+    const isSelfAccount = (linkedUserId > 0 && linkedUserId === currentUserId) || (employeeEmail !== '' && employeeEmail === currentUserEmail);
+
+    if (isSelfAccount) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot reset the password of the account you are currently using.',
+      });
+      return;
+    }
+
     const result = await Swal.fire({
       title: 'Reset employee password?',
       html: `This will invalidate the current password for <strong>${buildName(employee)}</strong> and generate a new account setup link.`,
@@ -1282,6 +1297,19 @@ export const EmployeeManagement: React.FC<{
 
   // View/Resend Invitation Link
   const viewInvitationLink = async (employee: Employee) => {
+    const employeeEmail = String(employee.email ?? '').trim().toLowerCase();
+    const linkedUserId = Number(employee.linkedUser ?? 0);
+    const isSelfAccount = (linkedUserId > 0 && linkedUserId === currentUserId) || (employeeEmail !== '' && employeeEmail === currentUserEmail);
+
+    if (isSelfAccount) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot reset the password of the account you are currently using.',
+      });
+      return;
+    }
+
     try {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       const response = await fetch(`/api/hr/employees/${employee.id}/regenerate-invite`, {
@@ -1807,9 +1835,9 @@ export const EmployeeManagement: React.FC<{
                         <div className="flex flex-wrap justify-end gap-2">
                           <button
                             onClick={() => handleResetEmployeePassword(employee)}
-                            className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            title="Reset Employee Password"
-                            disabled={isProcessingId === employee.id}
+                            className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "Reset Employee Password"}
+                            disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
                           >
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
@@ -1817,9 +1845,9 @@ export const EmployeeManagement: React.FC<{
                           </button>
                           <button
                             onClick={() => viewInvitationLink(employee)}
-                            className={`text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            title="View/Resend Invitation Link"
-                            disabled={isProcessingId === employee.id}
+                            className={`text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "View/Resend Invitation Link"}
+                            disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
                           >
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -2304,7 +2332,7 @@ export const EmployeeManagement: React.FC<{
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Monthly Salary
+                            Daily Rate
                           </label>
                           <div className="relative">
                             <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">₱</span>
@@ -2323,7 +2351,7 @@ export const EmployeeManagement: React.FC<{
                               className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
                             />
                           </div>
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Basic monthly salary for payroll calculation</p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Daily base rate for payroll calculation</p>
                         </div>
                       </div>
                     </div>

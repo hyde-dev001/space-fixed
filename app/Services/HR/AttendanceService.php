@@ -344,8 +344,9 @@ class AttendanceService
         $workingDays = $summary['period']['working_days'];
         $presentDays = $summary['attendance']['present_days'];
         $absentDays = $workingDays - $presentDays;
-        
-        $perDaySalary = ($employee->salary ?? 0) / $workingDays;
+
+        // Employee salary is stored as daily rate.
+        $perDaySalary = (float) ($employee->salary ?? 0);
         $deduction = $absentDays * $perDaySalary;
         
         return [

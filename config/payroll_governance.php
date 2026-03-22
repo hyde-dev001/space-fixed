@@ -28,14 +28,14 @@ return [
     ],
 
     'base_pay_table' => [
-        'Store Manager' => 65000.00,
-        'Finance Officer' => 45000.00,
-        'HR Specialist' => 42000.00,
-        'Customer Relations Officer' => 38000.00,
-        'Inventory Manager' => 48000.00,
-        'Procurement Manager' => 50000.00,
-        'Sales Associate' => 28000.00,
-        'Shoe Repair Technician' => 35000.00,
+        'Store Manager' => 2500.00,
+        'Finance Officer' => 1730.77,
+        'HR Specialist' => 1615.38,
+        'Customer Relations Officer' => 1461.54,
+        'Inventory Manager' => 1846.15,
+        'Procurement Manager' => 1923.08,
+        'Sales Associate' => 1076.92,
+        'Shoe Repair Technician' => 1346.15,
     ],
 
     'maker_checker' => [

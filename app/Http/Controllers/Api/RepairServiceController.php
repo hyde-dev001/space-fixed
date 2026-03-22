@@ -9,9 +9,17 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Spatie\Activitylog\Models\Activity;
 
 class RepairServiceController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * Display a listing of the repair services.
      */
@@ -159,6 +167,7 @@ class RepairServiceController extends Controller
 
     /**
      * Update the specified repair service in storage.
+     * Price changes require approval workflow (Finance → Shop Owner).
      */
     public function update(Request $request, $id)
     {
@@ -177,6 +186,7 @@ class RepairServiceController extends Controller
             'price' => 'sometimes|numeric|min:0',
             'duration' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
+            'reason' => 'sometimes|string|max:1000',
             'status' => 'sometimes|in:Active,Inactive,Pending,Under Review,Rejected',
             'rejection_reason' => 'nullable|string',
         ]);
@@ -188,10 +198,76 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
-        $updateData = $request->only(['name', 'category', 'price', 'duration', 'description', 'status', 'rejection_reason']);
-        $updateData['updated_by'] = Auth::guard('user')->id() ?? null;
+        // Determine baseline current price for workflow.
+        // If a record is already in review and old_price exists, old_price is the authoritative current price.
+        $baselineCurrentPrice = $this->resolveBaselineCurrentPrice($service);
+
+        // Check if price is being changed against baseline current price
+        $isPriceChange = $request->filled('price') && (float)$request->price !== $baselineCurrentPrice;
+
+        if ($isPriceChange) {
+            // Price change requires approval workflow
+            // Store current list price as old_price baseline.
+            // The actual price will only be updated after final Finance approval.
+            $service->update([
+                'old_price' => $baselineCurrentPrice, // Keep current list price as old_price baseline
+                // Never apply proposed price here; keep list price unchanged until final finance approval.
+                'price' => $baselineCurrentPrice,
+                'status' => 'Under Review',
+                'description' => $request->description ?? $service->description,
+                'change_reason' => $request->reason ?? $service->change_reason,
+                'duration' => $request->duration ?? $service->duration,
+                'updated_by' => Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id(),
+                'finance_reviewed_by' => null,
+                'finance_reviewed_at' => null,
+                'owner_reviewed_by' => null,
+                'owner_reviewed_at' => null,
+                'rejection_reason' => null,
+            ]);
+            
+            // Store the proposed price in finance_notes as temporary storage for approval workflow
+            $service->finance_notes = (string) ((float) $request->price);
+            $service->save();
+
+            // Activity log for price change request
+            activity()
+                ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
+                ->performedOn($service)
+                ->withProperties([
+                    'service_name' => $service->name,
+                    'category' => $service->category,
+                    'current_price' => (float)$service->old_price,
+                    'proposed_price' => (float)$request->price,
+                    'reason' => $request->reason ?? 'Price update',
+                    'requested_by' => Auth::guard('user')->user()?->name ?? Auth::guard('shop_owner')->user()->name,
+                ])
+                ->log('Repair service price change requested - Awaiting Finance approval');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Price change request submitted for approval. Finance will review shortly.',
+                'data' => $service,
+            ]);
+        }
+
+        // Non-price updates can be applied directly
+        $updateData = $request->only(['name', 'category', 'duration', 'description']);
+        if ($request->filled('status')) {
+            $updateData['status'] = $request->status;
+        }
+        $updateData['updated_by'] = Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id();
 
         $service->update($updateData);
+
+        // Activity log for non-price updates
+        activity()
+            ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'updated_fields' => array_keys($updateData),
+            ])
+            ->log('Repair service updated');
 
         return response()->json([
             'success' => true,
@@ -253,7 +329,7 @@ class RepairServiceController extends Controller
 
         // Always return all statuses for metrics calculation on frontend
         // The frontend will handle filtering for display
-        $query->whereIn('status', ['Under Review', 'Pending Owner Approval', 'Active', 'Rejected']);
+        $query->whereIn('status', ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Active', 'Rejected']);
 
         $services = $query->orderBy('updated_at', 'desc')->get();
 
@@ -265,27 +341,35 @@ class RepairServiceController extends Controller
                 $frontendStatus = 'pending';
             } elseif ($service->status === 'Pending Owner Approval') {
                 $frontendStatus = 'finance_approved';
-            } elseif ($service->status === 'Active' && $service->owner_reviewed_at) {
-                // Only Active services that went through approval workflow
+            } elseif ($service->status === 'Pending Finance Final Approval') {
+                $frontendStatus = 'owner_approved'; // Owner approved, awaiting finance final
+            } elseif ($service->status === 'Active' && $service->owner_reviewed_at && $service->finance_reviewed_at) {
+                // Only Active services that went through full approval workflow
                 $frontendStatus = 'owner_approved';
             } elseif ($service->status === 'Active' && !$service->finance_reviewed_at) {
                 // Active services that were never reviewed (newly created) - skip these
                 return null;
             } elseif ($service->status === 'Rejected' && $service->finance_reviewed_at && !$service->owner_reviewed_at) {
                 $frontendStatus = 'finance_rejected';
-            } elseif ($service->status === 'Rejected' && $service->owner_reviewed_at) {
+            } elseif ($service->status === 'Rejected' && $service->owner_reviewed_at && !($service->status === 'Pending Finance Final Approval')) {
                 $frontendStatus = 'owner_rejected';
             }
+
+            // Get proposed price from finance_notes (temporary storage) if in approval workflow
+            $proposedPrice = ($service->status === 'Under Review' || $service->status === 'Pending Owner Approval' || $service->status === 'Pending Finance Final Approval' || ($service->status === 'Rejected' && $service->finance_reviewed_at))
+                ? $this->resolveProposedPrice($service)
+                : (float)$service->price;
 
             return [
                 'id' => $service->id,
                 'service_name' => $service->name,
                 'category' => $service->category,
-                'current_price' => (float)$service->price,
-                'proposed_price' => (float)$service->price,
+                'current_price' => (float)$service->old_price,
+                'proposed_price' => $proposedPrice,
                 'duration' => $service->duration,
-                'reason' => $service->description ?? 'Price update request',
+                'reason' => $this->resolveChangeReason($service),
                 'status' => $frontendStatus,
+                'raw_status' => $service->status,
                 'created_at' => $service->created_at,
                 'updated_at' => $service->updated_at,
                 'requester' => $service->updater ? [
@@ -342,9 +426,19 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
+        $proposedPrice = $this->resolveProposedPrice($service);
+
+        if ($proposedPrice === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No proposed price found for this request. Please resubmit the price change request.',
+            ], 422);
+        }
+
         $service->update([
             'status' => 'Pending Owner Approval',
-            'finance_notes' => $request->notes,
+            // Keep proposed price in finance_notes so it survives the full 4-step workflow.
+            'finance_notes' => $proposedPrice,
             'finance_reviewed_by' => Auth::guard('user')->id(),
             'finance_reviewed_at' => now(),
         ]);
@@ -356,18 +450,20 @@ class RepairServiceController extends Controller
             ->withProperties([
                 'service_name' => $service->name,
                 'category' => $service->category,
-                'price' => $service->price,
+                'current_price' => (float)$service->old_price,
+                'proposed_price' => (float) $proposedPrice,
                 'finance_notes' => $request->notes,
                 'approved_by_name' => Auth::guard('user')->user()->name,
                 'approved_by_role' => Auth::guard('user')->user()->role ?? 'Finance Staff',
             ])
-            ->log('Repair service price approved by Finance - Forwarded to Shop Owner');
+            ->log('Repair service price change approved by Finance - Forwarded to Shop Owner');
 
         // Notify shop owner about repair service price approval
         $notificationService = app(NotificationService::class);
         $notificationService->notifyRepairServiceRequest($service->shop_owner_id, [
             'service_name' => $service->name,
-            'price' => number_format($service->price, 2),
+            'current_price' => number_format($service->old_price, 2),
+            'proposed_price' => number_format((float) $proposedPrice, 2),
             'service_id' => $service->id,
         ]);
 
@@ -403,6 +499,8 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
+        $proposedPrice = $service->finance_notes;
+
         $service->update([
             'status' => 'Rejected',
             'rejection_reason' => $request->reason,
@@ -417,12 +515,21 @@ class RepairServiceController extends Controller
             ->withProperties([
                 'service_name' => $service->name,
                 'category' => $service->category,
-                'price' => $service->price,
+                'current_price' => (float)$service->old_price,
+                'proposed_price' => (float)$proposedPrice,
                 'rejection_reason' => $request->reason,
                 'rejected_by_name' => Auth::guard('user')->user()->name,
                 'rejected_by_role' => Auth::guard('user')->user()->role ?? 'Finance Staff',
             ])
-            ->log('Repair service price rejected by Finance');
+            ->log('Repair service price change rejected by Finance');
+
+        // Send rejection notification to shop owner
+        $this->notificationService->notifyRepairServiceRejected($service->shop_owner_id, [
+            'service_name' => $service->name,
+            'old_price' => (float)$service->old_price,
+            'price' => (float)$proposedPrice,
+            'rejection_reason' => $request->reason,
+        ]);
 
         return response()->json([
             'success' => true,
@@ -459,21 +566,26 @@ class RepairServiceController extends Controller
         
         $services = RepairService::whereIn('status', ['Pending Owner Approval', 'Active', 'Rejected'])
             ->where('shop_owner_id', $shopOwnerId)
-            ->with(['creator', 'updater'])
+            ->with(['creator', 'updater', 'approval'])
             ->orderBy('updated_at', 'desc')
             ->get();
 
-        // Transform status to match frontend expectations
+        // Transform status to match frontend expectations while preserving full status info
         $services->each(function ($service) {
             $statusMap = [
                 'Under Review' => 'pending',
                 'Pending Owner Approval' => 'finance_approved',
+                'Pending Finance Final Approval' => 'pending_finance_final',  // New intermediate status
                 'Active' => 'owner_approved',
                 'Rejected' => $service->finance_reviewed_at ? 
                     ($service->owner_reviewed_at ? 'owner_rejected' : 'finance_rejected') : 
                     'owner_rejected',
             ];
             $service->mapped_status = $statusMap[$service->status] ?? $service->status;
+            $service->current_approval_level = 2;  // Shop owner is always level 2 for pending approvals
+            $service->approval_workflow_version = 'v4_multi_level';  // Repair services use 4-step workflow
+            $service->is_intermediate_approval = $service->status === 'Pending Owner Approval';  // Indicates if this is intermediate
+            $service->reason = $this->resolveChangeReason($service);
         });
 
         return response()->json([
@@ -483,7 +595,7 @@ class RepairServiceController extends Controller
     }
 
     /**
-     * Shop Owner gives final approval
+     * Shop Owner approves and forwards back to Finance for final approval
      */
     public function ownerApprove($id)
     {
@@ -496,24 +608,100 @@ class RepairServiceController extends Controller
             ], 404);
         }
 
+        $proposedPrice = $service->finance_notes;
+
         $service->update([
-            'status' => 'Active',
+            'status' => 'Pending Finance Final Approval',
             'owner_reviewed_by' => Auth::guard('shop_owner')->id(),
             'owner_reviewed_at' => now(),
         ]);
 
-        // Activity log for final approval
+        // Activity log for shop owner approval
         activity()
             ->causedBy(Auth::guard('shop_owner')->user())
             ->performedOn($service)
             ->withProperties([
                 'service_name' => $service->name,
                 'category' => $service->category,
-                'price' => $service->price,
+                'current_price' => (float)$service->old_price,
+                'proposed_price' => (float)$proposedPrice,
                 'approved_by_name' => Auth::guard('shop_owner')->user()->name,
-                'approval_level' => 'Shop Owner (Final)',
+                'approval_level' => 'Shop Owner',
             ])
-            ->log('Repair service price final approval - Service activated');
+            ->log('Repair service price change approved by Shop Owner - Forwarded to Finance for final approval');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Service approved by Shop Owner. Forwarding to Finance for final approval.',
+            'data' => $service,
+        ]);
+    }
+
+    /**
+     * Finance gives final approval and applies the price change
+     */
+    public function financeApproveFinal(Request $request, $id)
+    {
+        $service = RepairService::find($id);
+
+        if (!$service) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service not found',
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'notes' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Apply the proposed price from finance_notes
+        $proposedPrice = $this->resolveProposedPrice($service);
+
+        if ($proposedPrice === null) {
+            $recoveredProposedPrice = $this->recoverProposedPriceFromActivity($service);
+            if ($recoveredProposedPrice !== null) {
+                $proposedPrice = $recoveredProposedPrice;
+                // Restore workflow state for this in-flight record.
+                $service->finance_notes = (string) $recoveredProposedPrice;
+                $service->save();
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot apply final approval because proposed price is missing.',
+                ], 422);
+            }
+        }
+
+        $service->update([
+            'status' => 'Active',
+            'price' => $proposedPrice, // Apply the price change now
+            'finance_notes' => $request->notes,
+            'finance_reviewed_by' => Auth::guard('user')->id(),
+            'finance_reviewed_at' => now(),
+        ]);
+
+        // Activity log for final approval with price applied
+        activity()
+            ->causedBy(Auth::guard('user')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'category' => $service->category,
+                'old_price' => (float)$service->old_price,
+                'new_price' => (float)$proposedPrice,
+                'finance_notes' => $request->notes,
+                'approved_by_name' => Auth::guard('user')->user()->name,
+                'approval_level' => 'Finance (Final)',
+            ])
+            ->log('Repair service price change final approval by Finance - Price applied and activated');
 
         return response()->json([
             'success' => true,
@@ -522,8 +710,87 @@ class RepairServiceController extends Controller
         ]);
     }
 
+    private function recoverProposedPriceFromActivity(RepairService $service): ?float
+    {
+        $activities = Activity::query()
+            ->where('subject_type', RepairService::class)
+            ->where('subject_id', $service->id)
+            ->latest('id')
+            ->limit(25)
+            ->get();
+
+        foreach ($activities as $activity) {
+            $proposed = data_get($activity->properties, 'proposed_price');
+            if (is_numeric($proposed)) {
+                return (float) $proposed;
+            }
+
+            $newPrice = data_get($activity->properties, 'new_price');
+            if (is_numeric($newPrice)) {
+                return (float) $newPrice;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveBaselineCurrentPrice(RepairService $service): float
+    {
+        // For in-flight approval rows, old_price is the authoritative current list price.
+        if (
+            in_array($service->status, ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval'], true)
+            && $service->old_price !== null
+        ) {
+            return (float) $service->old_price;
+        }
+
+        return (float) $service->price;
+    }
+
+    private function resolveProposedPrice(RepairService $service): ?float
+    {
+        if (is_numeric($service->finance_notes)) {
+            return (float) $service->finance_notes;
+        }
+
+        // Recovery fallback for previously corrupted rows where proposed price was written to price
+        // while old_price still holds the baseline current price.
+        if (
+            in_array($service->status, ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval'], true)
+            && $service->old_price !== null
+            && (float) $service->price !== (float) $service->old_price
+        ) {
+            return (float) $service->price;
+        }
+
+        return null;
+    }
+
+    private function resolveChangeReason(RepairService $service): string
+    {
+        if (!empty($service->change_reason)) {
+            return (string) $service->change_reason;
+        }
+
+        $activities = Activity::query()
+            ->where('subject_type', RepairService::class)
+            ->where('subject_id', $service->id)
+            ->latest('id')
+            ->limit(25)
+            ->get();
+
+        foreach ($activities as $activity) {
+            $reason = data_get($activity->properties, 'reason');
+            if (is_string($reason) && trim($reason) !== '') {
+                return $reason;
+            }
+        }
+
+        return (string) ($service->description ?? 'Price update request');
+    }
+
     /**
-     * Shop Owner rejects the service
+     * Shop Owner rejects the service price change
      */
     public function ownerReject(Request $request, $id)
     {
@@ -547,6 +814,8 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
+        $proposedPrice = $service->finance_notes;
+
         $service->update([
             'status' => 'Rejected',
             'rejection_reason' => $request->reason,
@@ -561,13 +830,30 @@ class RepairServiceController extends Controller
             ->withProperties([
                 'service_name' => $service->name,
                 'category' => $service->category,
-                'price' => $service->price,
-                'rejection_reason' => $request->reason,  // Fixed: use $request->reason instead of rejection_reason
+                'current_price' => (float)$service->old_price,
+                'proposed_price' => (float)$proposedPrice,
+                'rejection_reason' => $request->reason,
                 'rejected_by_name' => Auth::guard('shop_owner')->user()->name,
                 'rejection_level' => 'Shop Owner (Final)',
             ])
-            ->log('Repair service price rejected by Shop Owner (Final Decision)');
+            ->log('Repair service price change rejected by Shop Owner (Final Decision)');
         
+        // Send rejection notification to Finance staff
+        $financeUsers = \App\Models\User::whereHas('roles', function ($q) {
+            $q->where('name', 'Finance');
+        })
+        ->where('shop_owner_id', $service->shop_owner_id)
+        ->get();
+
+        foreach ($financeUsers as $financeUser) {
+            $this->notificationService->notifyRepairServiceRejected($service->shop_owner_id, [
+                'service_name' => $service->name,
+                'old_price' => (float)$service->old_price,
+                'price' => (float)$proposedPrice,
+                'rejection_reason' => $request->reason,
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Service price change rejected.',

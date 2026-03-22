@@ -82,6 +82,8 @@ interface PriceRequest {
   ownerReviewedBy: string | null;
   ownerReviewedAt: string | null;
   rejectionReason?: string;
+  approvalWorkflowVersion?: string;
+  currentApprovalLevel?: number;
 }
 
 type MetricColor = "success" | "warning" | "info";
@@ -150,7 +152,7 @@ export default function ShoePriceApproval() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PriceRequest | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("pending");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending"); // New: View toggle
 
   useEffect(() => {
@@ -180,7 +182,7 @@ export default function ShoePriceApproval() {
     try {
       setLoading(true);
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const url = statusFilter === "All" 
+      const url = statusFilter.toLowerCase() === "all" 
         ? '/api/finance/price-changes' 
         : `/api/finance/price-changes?status=${statusFilter}`;
 
@@ -213,6 +215,8 @@ export default function ShoePriceApproval() {
         rejectionReason: item.finance_rejection_reason || item.owner_rejection_reason,
         ownerReviewedBy: item.owner_reviewer?.name || null,
         ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
+        approvalWorkflowVersion: item.approval_workflow_version,
+        currentApprovalLevel: item.current_approval_level,
       }));
       
       setRequests(apiRequests);
@@ -237,9 +241,15 @@ export default function ShoePriceApproval() {
     // Apply view mode filter
     let matchesViewMode = true;
     if (viewMode === 'pending') {
-      matchesViewMode = item.status === 'pending'; // Awaiting Finance review
+      const isFinanceFinalQueue =
+        item.approvalWorkflowVersion === 'v4_multi_level' &&
+        item.status === 'finance_approved' &&
+        (item.currentApprovalLevel ?? 0) >= 3;
+      matchesViewMode = item.status === 'pending' || isFinanceFinalQueue; // Initial finance review + finance final queue
     } else if (viewMode === 'recent') {
-      matchesViewMode = item.status === 'finance_approved' || item.status === 'owner_approved'; // Recently approved by Finance
+      const isForwardedToOwner =
+        item.status === 'finance_approved' && (item.currentApprovalLevel ?? 0) < 3;
+      matchesViewMode = isForwardedToOwner || item.status === 'owner_approved'; // Forwarded by Finance or fully approved
     }
     
     return matchesSearch && matchesViewMode;
@@ -250,7 +260,13 @@ export default function ShoePriceApproval() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  const pendingCount = requests.filter(r => r.status === "pending").length;
+  const pendingCount = requests.filter((r) => {
+    const isFinanceFinalQueue =
+      r.approvalWorkflowVersion === 'v4_multi_level' &&
+      r.status === 'finance_approved' &&
+      (r.currentApprovalLevel ?? 0) >= 3;
+    return r.status === 'pending' || isFinanceFinalQueue;
+  }).length;
   const financeApprovedCount = requests.filter(r => r.status === "finance_approved").length;
   const approvedCount = requests.filter(r => r.status === "owner_approved").length;
   const rejectedCount = requests.filter(r => r.status === "finance_rejected" || r.status === "owner_rejected").length;
@@ -272,8 +288,13 @@ export default function ShoePriceApproval() {
     setViewModalOpen(false);
     setSelectedRequest(null);
 
+    const isFinanceFinalStep =
+      request.approvalWorkflowVersion === 'v4_multi_level' &&
+      request.status === 'finance_approved' &&
+      (request.currentApprovalLevel ?? 0) >= 3;
+
     const { value: notes } = await Swal.fire({
-      title: "Approve & Forward to Owner",
+      title: isFinanceFinalStep ? "Final Finance Approval" : "Approve & Forward to Owner",
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Item:</strong> ${request.item}</p>
@@ -281,7 +302,7 @@ export default function ShoePriceApproval() {
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
           <p style="margin-bottom: 1rem;"><strong>Reason:</strong> ${request.reason}</p>
-          <p style="color: #6b7280; font-size: 0.875rem;">This will forward the request to the Shop Owner for final approval.</p>
+          <p style="color: #6b7280; font-size: 0.875rem;">${isFinanceFinalStep ? 'This is the final finance step and will apply the price change.' : 'This will forward the request to the Shop Owner for review.'}</p>
         </div>
       `,
       input: "textarea",
@@ -291,7 +312,7 @@ export default function ShoePriceApproval() {
       showCancelButton: true,
       confirmButtonColor: "#10b981",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Approve & Forward",
+      confirmButtonText: isFinanceFinalStep ? "Approve & Apply Price" : "Approve & Forward",
       cancelButtonText: "Cancel",
     });
 
@@ -323,8 +344,10 @@ export default function ShoePriceApproval() {
         // Show centered modal notification
         await Swal.fire({
           icon: 'success',
-          title: 'Approved & Forwarded',
-          text: `${request.item} sent to Shop Owner for final approval`,
+          title: result?.is_final ? 'Price Applied' : 'Approved & Forwarded',
+          text: result?.is_final
+            ? `${request.item} price change has been applied`
+            : `${request.item} sent to Shop Owner for review`,
           confirmButtonColor: '#000000',
         });
 
@@ -705,10 +728,16 @@ export default function ShoePriceApproval() {
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Finance Price Review</h2>
-                  {selectedRequest.status === 'finance_approved' && (
+                  {selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) < 3 && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                       <CheckIcon className="w-3 h-3" />
                       Forwarded to Owner
+                    </span>
+                  )}
+                  {selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) >= 3 && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                      <ClockIcon className="w-3 h-3" />
+                      Pending Finance Final Approval
                     </span>
                   )}
                   {selectedRequest.status === 'owner_approved' && (
@@ -853,7 +882,7 @@ export default function ShoePriceApproval() {
 
               {/* Actions */}
               <div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                {selectedRequest.status === 'pending' ? (
+                {(selectedRequest.status === 'pending' || (selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) >= 3)) ? (
                   <>
                     <button
                       onClick={() => {
@@ -873,12 +902,12 @@ export default function ShoePriceApproval() {
                       className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
-                      Approve & Forward to Owner
+                      {(selectedRequest.currentApprovalLevel ?? 0) >= 3 ? 'Approve & Apply Price' : 'Approve & Forward to Owner'}
                     </button>
                   </>
                 ) : selectedRequest.status === 'finance_approved' ? (
                   <div className="flex-1 px-4 py-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold text-center">
-                    ✓ Forwarded to Owner - Awaiting Final Approval
+                    ✓ Forwarded to Owner - Awaiting Review
                   </div>
                 ) : selectedRequest.status === 'owner_approved' ? (
                   <div className="flex-1 px-4 py-3 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-semibold text-center">

@@ -9,6 +9,7 @@ import type { PurchaseOrder as PurchaseOrderType, PurchaseRequest } from "@/type
 
 type PurchaseOrderStatus = "draft" | "sent" | "confirmed" | "in_transit" | "delivered" | "completed" | "cancelled";
 type MetricColor = "success" | "warning" | "info";
+const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface PurchaseOrderFormState {
 	selectedPrId: number | null;
@@ -35,6 +36,18 @@ const formatStatus = (status: string): string => {
 		cancelled: "Cancelled"
 	};
 	return statusMap[status] || status;
+};
+
+const hasSizeSystemPrefix = (value: string): boolean => {
+	const normalized = value.trim().toUpperCase();
+	return SIZE_SYSTEMS.some((system) => normalized.startsWith(`${system} `));
+};
+
+const formatRequestedSizeDisplay = (value: string): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "";
+	if (hasSizeSystemPrefix(trimmed)) return trimmed;
+	return `Size ${trimmed}`;
 };
 
 interface MetricCardProps {
@@ -636,7 +649,7 @@ export default function PurchaseOrders() {
 									<option value="">-- Choose an approved PR --</option>
 									{approvedPRs.map((pr) => (
 										<option key={pr.id} value={pr.id}>
-											{pr.pr_number} - {pr.product_name} (Qty: {pr.quantity}{pr.requested_size ? `, Size: ${pr.requested_size}` : ""}, {currency.format(pr.total_cost)})
+											{pr.pr_number} - {pr.product_name} (Qty: {pr.quantity}{pr.requested_size ? `, ${formatRequestedSizeDisplay(pr.requested_size)}` : ""}, {currency.format(pr.total_cost)})
 										</option>
 									))}
 								</select>

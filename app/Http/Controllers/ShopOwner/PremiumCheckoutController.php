@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class PremiumCheckoutController extends Controller
 {
@@ -160,7 +161,11 @@ class PremiumCheckoutController extends Controller
      * Cancel a pending or active premium subscription for the current shop owner.
      *
      * POST /api/shop-owner/premium/cancel
-     * Body (optional): { "subscription_id": 123 }
+     * Body (optional): {
+     *   "subscription_id": 123,
+     *   "cancellation_reason": "too_expensive",
+     *   "cancellation_notes": "optional notes"
+     * }
      */
     public function cancel(Request $request)
     {
@@ -168,6 +173,8 @@ class PremiumCheckoutController extends Controller
 
         $validated = $request->validate([
             'subscription_id' => 'nullable|integer',
+            'cancellation_reason' => 'nullable|string|max:120',
+            'cancellation_notes' => 'nullable|string|max:1000',
         ]);
 
         $subscriptionQuery = ShopOwnerSubscription::with('premiumPlan')
@@ -192,10 +199,29 @@ class PremiumCheckoutController extends Controller
             $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
         }
 
-        $subscription->update([
+        $reason = trim((string) ($validated['cancellation_reason'] ?? ''));
+        $notes = trim((string) ($validated['cancellation_notes'] ?? ''));
+        $hasCancellationColumns = Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
+            && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes');
+
+        $updatePayload = [
             // Cancellation means stop renewal only. Access remains until the original deadline.
             'status'  => 'cancelled',
             'ends_at' => $effectiveEndsAt,
+        ];
+
+        if ($hasCancellationColumns) {
+            $updatePayload['cancellation_reason'] = $reason !== '' ? $reason : null;
+            $updatePayload['cancellation_notes'] = $notes !== '' ? $notes : null;
+        }
+
+        $subscription->update($updatePayload);
+
+        Log::info('Shop owner cancelled premium subscription', [
+            'shop_owner_id' => $shopOwner->id,
+            'subscription_id' => $subscription->id,
+            'reason' => $reason !== '' ? $reason : null,
+            'notes' => $notes !== '' ? $notes : null,
         ]);
 
         return response()->json([

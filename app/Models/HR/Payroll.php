@@ -61,6 +61,9 @@ class Payroll extends Model
         'payout_proof_notes',
         'disbursed_by',
         'disbursed_at',
+        'approval_id',
+        'current_approval_level',
+        'approval_workflow_version',
     ];
 
     protected $casts = [
@@ -137,6 +140,14 @@ class Payroll extends Model
     public function disburser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'disbursed_by');
+    }
+
+    /**
+     * Get the centralized approval workflow for this payslip (polymorphic)
+     */
+    public function approval()
+    {
+        return $this->morphOne(\App\Models\Approval::class, 'approvable');
     }
     
     /**

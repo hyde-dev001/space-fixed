@@ -10,8 +10,10 @@ import type { StockRequestApproval } from "@/types/procurement";
 type RequestPriority = "high" | "medium" | "low";
 type PurchaseRequestStatus = "draft" | "pending_finance" | "approved" | "rejected";
 type MetricColor = "success" | "warning" | "info";
+const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface PurchaseRequestFormState {
+	stockRequestId: string;
 	productName: string;
 	requestedSize: string;
 	supplierId: string;
@@ -23,6 +25,7 @@ interface PurchaseRequestFormState {
 }
 
 const initialFormState: PurchaseRequestFormState = {
+	stockRequestId: "",
 	productName: "",
 	requestedSize: "",
 	supplierId: "",
@@ -63,6 +66,18 @@ const statusBadgeClass: Record<string, string> = {
 	pending_finance: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
 	approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+};
+
+const hasSizeSystemPrefix = (value: string): boolean => {
+	const normalized = value.trim().toUpperCase();
+	return SIZE_SYSTEMS.some((system) => normalized.startsWith(`${system} `));
+};
+
+const formatRequestedSizeDisplay = (value: string): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "";
+	if (hasSizeSystemPrefix(trimmed)) return trimmed;
+	return `Size ${trimmed}`;
 };
 
 interface MetricCardProps {
@@ -260,7 +275,7 @@ export default function PurchaseRequest() {
 	};
 
 	const handleCreatePR = async () => {
-		if (!formData.inventoryItemId.trim() || !formData.supplierId.trim() || !formData.quantity.trim() || !formData.unitCost.trim() || !formData.justification.trim()) {
+		if (!formData.stockRequestId.trim() || !formData.inventoryItemId.trim() || !formData.supplierId.trim() || !formData.quantity.trim() || !formData.unitCost.trim() || !formData.justification.trim()) {
 			await Swal.fire({
 				icon: "warning",
 				title: "Missing fields",
@@ -511,12 +526,13 @@ export default function PurchaseRequest() {
 								<select
 									title="Select approved stock request"
 									aria-label="Select approved stock request"
-									value={formData.inventoryItemId}
+									value={formData.stockRequestId}
 									onChange={(event) => {
-										const sr = acceptedStockRequests.find((r) => String(r.inventory_item_id) === event.target.value);
+										const sr = acceptedStockRequests.find((r) => String(r.id) === event.target.value);
 										setFormData((prev) => ({
 											...prev,
-											inventoryItemId: event.target.value,
+											stockRequestId: event.target.value,
+											inventoryItemId: sr ? String(sr.inventory_item_id) : "",
 											productName:   sr ? sr.product_name : "",
 											requestedSize: sr ? (sr.requested_size ?? "") : "",
 											quantity:      sr ? String(sr.quantity_needed) : "",
@@ -529,8 +545,8 @@ export default function PurchaseRequest() {
 									{acceptedStockRequests
 										.filter((sr) => !activeInventoryItemIds.has(String(sr.inventory_item_id)))
 										.map((sr) => (
-											<option key={sr.id} value={String(sr.inventory_item_id)}>
-												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{sr.requested_size ? `, Size: ${sr.requested_size}` : ""})
+											<option key={sr.id} value={String(sr.id)}>
+												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{sr.requested_size ? `, ${formatRequestedSizeDisplay(sr.requested_size)}` : ""})
 											</option>
 										))}
 								</select>
@@ -567,7 +583,7 @@ export default function PurchaseRequest() {
 									<rect x="3" y="3" width="18" height="18" rx="2" />
 								</svg>
 								<span className="text-sm text-indigo-700 dark:text-indigo-300">
-									Inventory requested <strong>Size {formData.requestedSize}</strong> specifically
+									Inventory requested <strong>{formatRequestedSizeDisplay(formData.requestedSize)}</strong> specifically
 								</span>
 							</div>
 						)}
@@ -686,7 +702,7 @@ export default function PurchaseRequest() {
 									<rect x="3" y="3" width="18" height="18" rx="2" />
 								</svg>
 								<span className="text-sm text-indigo-700 dark:text-indigo-300">
-									Requested Size: <strong>Size {viewingRequest.requested_size}</strong>
+									Requested Size: <strong>{formatRequestedSizeDisplay(viewingRequest.requested_size)}</strong>
 									</span>
 								</div>
 							)}

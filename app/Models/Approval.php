@@ -26,7 +26,10 @@ class Approval extends Model
         'total_levels',
         'status',
         'comments',
-        'metadata'
+        'metadata',
+        'approval_roles',
+        'current_approver_role',
+        'level_reviewers'
     ];
 
     protected $casts = [
@@ -34,7 +37,10 @@ class Approval extends Model
         'reviewed_at' => 'datetime',
         'current_level' => 'integer',
         'total_levels' => 'integer',
-        'status' => ApprovalStatus::class
+        'status' => ApprovalStatus::class,
+        'metadata' => 'array',
+        'approval_roles' => 'json',
+        'level_reviewers' => 'json'
     ];
 
     /**
@@ -107,5 +113,194 @@ class Approval extends Model
     public function scopeRejected($query)
     {
         return $query->where('status', ApprovalStatus::REJECTED);
+    }
+
+    /**
+     * Get the role required for approval at a specific level
+     */
+    public function getApproverRoleForLevel(?int $level = null): ?string
+    {
+        $level = $level ?? $this->current_level;
+        if (!$this->approval_roles) {
+            return null;
+        }
+        return $this->approval_roles[(string)$level] ?? null;
+    }
+
+    /**
+     * Check if a user can approve this approval at the current level
+     */
+    public function canApprove($user): bool
+    {
+        // Cannot approve if already approved or rejected
+        if ($this->status !== ApprovalStatus::PENDING) {
+            return false;
+        }
+
+        // Cannot approve own request
+        if ($user->id === $this->requested_by) {
+            return false;
+        }
+
+        $requiredRole = $this->getApproverRoleForLevel();
+        if (!$requiredRole) {
+            return false;
+        }
+
+        // Check if user has the required role
+        return $this->userHasApprovalRole($user, $requiredRole);
+    }
+
+    /**
+     * Check if a user has a specific approval role
+     */
+    public function userHasApprovalRole($user, string $role): bool
+    {
+        return match ($role) {
+            'finance' => $user->hasRole('finance')
+                || $user->hasRole('Finance')
+                || $user->hasRole('Finance Manager')
+                || $user->hasRole('finance-manager')
+                || $this->userHasAnyPermissionSafe($user, [
+                    'access-shoe-price-approval',
+                    'access-repair-price-approval',
+                    'approve-expenses',
+                ]),
+            'shop_owner' => $this->isMatchingShopOwner($user)
+                || $this->userHasRoleSafe($user, 'shop-owner')
+                || $this->userHasRoleSafe($user, 'Shop Owner'),
+            'finance_final' => (
+                $user->hasRole('Finance Manager')
+                || $user->hasRole('finance-manager')
+                || $this->userHasPermissionSafe($user, 'access-approval-workflow')
+            ) && $this->userHasAnyPermissionSafe($user, [
+                'access-shoe-price-approval',
+                'access-repair-price-approval',
+                'approve-expenses',
+                'access-approval-workflow',
+            ]),
+            default => false
+        };
+    }
+
+    private function userHasPermissionSafe($user, string $permission): bool
+    {
+        try {
+            return $user->hasPermissionTo($permission);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function userHasAnyPermissionSafe($user, array $permissions): bool
+    {
+        foreach ($permissions as $permission) {
+            if ($this->userHasPermissionSafe($user, $permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function userHasRoleSafe($user, string $role): bool
+    {
+        try {
+            return method_exists($user, 'hasRole') ? (bool) $user->hasRole($role) : false;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function isMatchingShopOwner($user): bool
+    {
+        $userId = (int) ($user->id ?? 0);
+        $linkedShopOwnerId = (int) ($user->shop_owner_id ?? 0);
+        $approvalShopOwnerId = (int) $this->shop_owner_id;
+
+        if ($userId > 0 && $userId === $approvalShopOwnerId) {
+            return true;
+        }
+
+        if ($linkedShopOwnerId > 0 && $linkedShopOwnerId === $approvalShopOwnerId) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the next approver role after current level
+     */
+    public function getNextApproverRole(): ?string
+    {
+        $nextLevel = $this->current_level + 1;
+        if ($nextLevel > $this->total_levels) {
+            return null;
+        }
+        return $this->getApproverRoleForLevel($nextLevel);
+    }
+
+    /**
+     * Transition approval to next level
+     */
+    public function transitionToNextLevel($user, string $action = 'approved', ?string $comments = null): bool
+    {
+        if (!$this->canApprove($user)) {
+            return false;
+        }
+
+        // Record this level's review
+        $this->recordLevelReview($user, $action, $comments);
+
+        if ($action === 'rejected') {
+            $this->status = ApprovalStatus::REJECTED;
+            $this->reviewed_by = $user->id;
+            $this->reviewed_at = now();
+            return $this->save();
+        }
+
+        // If approved, move to next level
+        if ($this->current_level >= $this->total_levels) {
+            // All levels approved
+            $this->status = ApprovalStatus::APPROVED;
+            $this->reviewed_by = $user->id;
+            $this->reviewed_at = now();
+            return $this->save();
+        }
+
+        // Move to next level
+        $this->current_level++;
+        $this->current_approver_role = $this->getNextApproverRole();
+        $this->reviewed_by = $user->id;
+        $this->reviewed_at = now();
+        return $this->save();
+    }
+
+    /**
+     * Record a reviewer's action at a specific level
+     */
+    public function recordLevelReview($user, string $action, ?string $comments = null): void
+    {
+        $levelReviewers = $this->level_reviewers ?? [];
+        
+        $levelReviewers[(string)$this->current_level] = [
+            'user_id' => $user->id,
+            'action' => $action,
+            'comments' => $comments,
+            'reviewed_at' => now()->toIso8601String()
+        ];
+
+        $this->level_reviewers = $levelReviewers;
+        
+        // Also create an audit trail entry
+        if ($this->relationLoaded('history')) {
+            $this->history()->create([
+                'level' => $this->current_level,
+                'reviewer_id' => $user->id,
+                'action' => $action,
+                'comments' => $comments
+            ]);
+        }
     }
 }

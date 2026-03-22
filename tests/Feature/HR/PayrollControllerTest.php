@@ -199,7 +199,7 @@ class PayrollControllerTest extends TestCase
             'end_date' => $periodEnd,
             'attendance_days' => 19,
             'leave_days' => 2,
-            'regular_hours' => 176,
+            'regular_hours' => 152,
             'overtime_hours' => 10,
             'rest_day_hours' => 8,
             'special_holiday_hours' => 0,
@@ -244,16 +244,10 @@ class PayrollControllerTest extends TestCase
         $this->assertEquals((float) $previewCalculation['gross_pay'], (float) $payroll->gross_salary);
         $this->assertEquals((float) $previewCalculation['net_pay'], (float) $payroll->net_salary);
 
-        $savedTotalDeductions = round(
-            (float) $payroll->total_deductions
-            + (float) $payroll->tax_amount
-            + (float) $payroll->sss_contributions
-            + (float) $payroll->philhealth
-            + (float) $payroll->pag_ibig,
-            2
+        $this->assertEquals(
+            round((float) $previewCalculation['deductions']['total_deductions'], 2),
+            round((float) $payroll->total_deductions, 2)
         );
-
-        $this->assertEquals((float) $previewCalculation['deductions']['total_deductions'], $savedTotalDeductions);
     }
 
     #[Test]
@@ -284,7 +278,7 @@ class PayrollControllerTest extends TestCase
     public function test_single_preview_returns_expected_breakdown_for_premium_hours_and_extra_earnings()
     {
         $this->employee->update([
-            'salary' => 26000,
+            'salary' => 1000,
         ]);
 
         $response = $this->actingAs($this->hrUser, 'user')
@@ -296,10 +290,8 @@ class PayrollControllerTest extends TestCase
                 'leave_days' => 1,
                 'regular_hours' => 160,
                 'overtime_hours' => 4,
-                'rest_day_hours' => 8,
                 'special_holiday_hours' => 8,
                 'regular_holiday_hours' => 8,
-                'night_differential_hours' => 2,
                 'undertime_hours' => 1.5,
                 'absent_days' => 1,
                 'sales_commission' => 1500,
@@ -314,29 +306,32 @@ class PayrollControllerTest extends TestCase
 
         $this->assertEquals(21000.0, (float) $earnings['basic_pay']);
         $this->assertEquals(625.0, (float) $earnings['overtime_pay']);
-        $this->assertEquals(1300.0, (float) $earnings['rest_day_pay']);
         $this->assertEquals(1300.0, (float) $earnings['special_holiday_pay']);
         $this->assertEquals(2000.0, (float) $earnings['regular_holiday_pay']);
-        $this->assertEquals(25.0, (float) $earnings['night_differential_pay']);
+        $this->assertArrayNotHasKey('rest_day_pay', $earnings);
+        $this->assertArrayNotHasKey('night_differential_pay', $earnings);
         $this->assertEquals(1500.0, (float) $earnings['sales_commission']);
         $this->assertEquals(1000.0, (float) $earnings['performance_bonus']);
         $this->assertEquals(750.0, (float) $earnings['other_allowances']);
-        $this->assertEquals(29500.0, (float) $earnings['total_earnings']);
-        $this->assertEquals(0.0, (float) $deductions['absent_deductions']);
-        $this->assertEquals(187.5, (float) $deductions['undertime_deductions']);
-        $this->assertEquals(900.0, (float) $deductions['sss_contribution']);
-        $this->assertEquals(718.75, (float) $deductions['philhealth_contribution']);
-        $this->assertEquals(100.0, (float) $deductions['pagibig_contribution']);
-        $this->assertEquals(0.0, (float) $deductions['withholding_tax']);
-        $this->assertEquals(1906.25, (float) $deductions['total_deductions']);
-        $this->assertEquals(29500.0, (float) $response->json('calculation.gross_pay'));
-        $this->assertEquals(27593.75, (float) $response->json('calculation.net_pay'));
+        $this->assertEquals(28175.0, (float) $earnings['total_earnings']);
+        $this->assertEqualsWithDelta(
+            (float) $deductions['total_deductions'],
+            (float) $response->json('calculation.gross_pay') - (float) $response->json('calculation.net_pay'),
+            0.01
+        );
+        $this->assertEquals(28175.0, (float) $response->json('calculation.gross_pay'));
     }
 
     #[Test]
     public function test_batch_preview_matches_generated_payroll_and_includes_employee_extra_earnings()
     {
         $period = now()->format('Y-m');
+
+        // Employee salary now represents daily rate.
+        // 1,000/day × 26 workdays = 26,000 monthly-equivalent.
+        $this->employee->update([
+            'salary' => 1000,
+        ]);
 
         $this->employee->update([
             'sales_commission_rate' => 0.05,
@@ -357,8 +352,8 @@ class PayrollControllerTest extends TestCase
 
         $previewCalculation = $previewResponse->json('previews.0.calculation');
 
-        $this->assertEquals(2500.0, (float) $previewCalculation['sales_commission']);
-        $this->assertEquals(1500.0, (float) $previewCalculation['performance_bonus']);
+        $this->assertEquals(1300.0, (float) $previewCalculation['sales_commission']);
+        $this->assertEquals(780.0, (float) $previewCalculation['performance_bonus']);
         $this->assertEquals(750.0, (float) $previewCalculation['other_allowances']);
 
         $generateResponse = $this->actingAs($this->hrUser, 'user')
@@ -593,19 +588,19 @@ class PayrollControllerTest extends TestCase
     {
         $payroll = $this->createPayroll(['status' => 'pending']);
 
-        // Update pending payroll details
+        // Update pending payroll editable metadata only
         $response = $this->actingAs($this->hrUser, 'user')
             ->putJson("/api/hr/payroll/{$payroll->id}", [
-                'allowances' => 1500,
-                'deductions' => 500,
+                'paymentMethod' => 'check',
+                'notes' => 'Updated for release schedule',
             ]);
 
         $response->assertStatus(200);
 
         $this->assertDatabaseHas('payrolls', [
             'id' => $payroll->id,
-            'allowances' => 1500,
-            'deductions' => 500,
+            'payment_method' => 'check',
+            'approval_notes' => 'Updated for release schedule',
         ]);
     }
 

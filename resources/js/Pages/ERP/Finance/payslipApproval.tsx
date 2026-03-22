@@ -77,6 +77,7 @@ interface PayslipApprovalListResponse {
 interface PayslipApprovalProps {
 	apiBase?: string;
 	allowDisbursement?: boolean;
+	allowFinalApproveAll?: boolean;
 	headTitle?: string;
 }
 
@@ -225,6 +226,7 @@ const PAGE_SIZE = 6;
 export default function PayslipApproval({
 	apiBase = '/api/finance/payslip-approvals',
 	allowDisbursement = true,
+	allowFinalApproveAll = false,
 	headTitle = 'Payslip Approval - Solespace ERP',
 }: PayslipApprovalProps = {}) {
 	const { auth } = usePage().props as any;
@@ -352,6 +354,82 @@ export default function PayslipApproval({
 		} finally {
 			setLoading(false);
 		}
+	};
+
+	const loadReadyForDisbursementIds = async (): Promise<number[]> => {
+		const collectedIds: number[] = [];
+		let page = 1;
+		let lastPage = 1;
+
+		do {
+			const params = new URLSearchParams({
+				page: String(page),
+				per_page: '100',
+				workflow_status: 'ready_for_disbursement',
+			});
+
+			if (searchQuery.trim()) {
+				params.set('search', searchQuery.trim());
+			}
+
+			const response = await fetch(`${buildApiUrl()}?${params.toString()}`, {
+				headers: {
+					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+					'Accept': 'application/json',
+				},
+				credentials: 'include',
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to load ready-for-disbursement payslips');
+			}
+
+			const data: PayslipApprovalListResponse = await response.json();
+			const pageIds = (Array.isArray(data.data) ? data.data : []).map((item) => item.id);
+			collectedIds.push(...pageIds);
+			lastPage = Math.max(1, data.meta?.last_page || 1);
+			page += 1;
+		} while (page <= lastPage);
+
+		return Array.from(new Set(collectedIds));
+	};
+
+	const loadAwaitingFinalApprovalIds = async (): Promise<number[]> => {
+		const collectedIds: number[] = [];
+		let page = 1;
+		let lastPage = 1;
+
+		do {
+			const params = new URLSearchParams({
+				page: String(page),
+				per_page: '100',
+				workflow_status: 'awaiting_final_approval',
+			});
+
+			if (searchQuery.trim()) {
+				params.set('search', searchQuery.trim());
+			}
+
+			const response = await fetch(`${buildApiUrl()}?${params.toString()}`, {
+				headers: {
+					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+					'Accept': 'application/json',
+				},
+				credentials: 'include',
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to load awaiting-final-approval payslips');
+			}
+
+			const data: PayslipApprovalListResponse = await response.json();
+			const pageIds = (Array.isArray(data.data) ? data.data : []).map((item) => item.id);
+			collectedIds.push(...pageIds);
+			lastPage = Math.max(1, data.meta?.last_page || 1);
+			page += 1;
+		} while (page <= lastPage);
+
+		return Array.from(new Set(collectedIds));
 	};
 
 	const totalPages = Math.max(1, paginationMeta.last_page || 1);
@@ -563,71 +641,23 @@ export default function PayslipApproval({
 		setViewModalOpen(false);
 		setSelectedRequest(null);
 
-		const { value: formValues } = await Swal.fire({
-			title: "Disburse Payslip",
+		const confirmation = await Swal.fire({
+			title: "Mark as Paid",
 			html: `
 				<div style="text-align: left; margin-top: 0.5rem;">
-					<p style="margin-bottom: 0.75rem;"><strong>${request.employee_name}</strong> · ${request.pay_period} · ${formatCurrency(request.net_pay)}</p>
-					<div style="margin-bottom: 0.75rem;">
-						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Payment Method *</label>
-						<select id="swal-paymentMethod" class="swal2-input" style="margin:0; width:100%;">
-							<option value="">-- Select --</option>
-							<option value="bank_transfer">Bank Transfer</option>
-							<option value="cash">Cash</option>
-							<option value="check">Check</option>
-						</select>
-					</div>
-					<div style="margin-bottom: 0.75rem;">
-						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Payment Date *</label>
-						<input id="swal-paymentDate" type="date" class="swal2-input" style="margin:0; width:100%;" value="${new Date().toISOString().slice(0, 10)}" />
-					</div>
-					<div style="margin-bottom: 0.75rem;">
-						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Payout Reference *</label>
-						<input id="swal-payoutReference" type="text" class="swal2-input" style="margin:0; width:100%;" placeholder="Transaction/reference number" />
-					</div>
-					<div style="margin-bottom: 0.75rem;">
-						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Proof Type *</label>
-						<select id="swal-proofType" class="swal2-input" style="margin:0; width:100%;">
-							<option value="">-- Select --</option>
-							<option value="bank_reference">Bank Reference</option>
-							<option value="receipt_number">Receipt Number</option>
-							<option value="check_number">Check Number</option>
-							<option value="other">Other</option>
-						</select>
-					</div>
-					<div style="margin-bottom: 0.75rem;">
-						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Proof Reference *</label>
-						<input id="swal-proofReference" type="text" class="swal2-input" style="margin:0; width:100%;" placeholder="Receipt/check/reference number" />
-					</div>
-					<div>
-						<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Notes</label>
-						<textarea id="swal-proofNotes" class="swal2-textarea" style="margin:0; width:100%;" placeholder="Optional disbursement notes"></textarea>
-					</div>
+					<p style="margin-bottom: 0.5rem;"><strong>Employee:</strong> ${request.employee_name}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Period:</strong> ${request.pay_period}</p>
+					<p style="margin-bottom: 0;"><strong>Net Pay:</strong> ${formatCurrency(request.net_pay)}</p>
 				</div>
 			`,
-			focusConfirm: false,
 			showCancelButton: true,
 			confirmButtonColor: "#7c3aed",
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Mark as Paid",
 			cancelButtonText: "Cancel",
-			preConfirm: () => {
-				const paymentMethod = (document.getElementById('swal-paymentMethod') as HTMLSelectElement)?.value;
-				const paymentDate = (document.getElementById('swal-paymentDate') as HTMLInputElement)?.value;
-				const payoutReference = (document.getElementById('swal-payoutReference') as HTMLInputElement)?.value;
-				const proofType = (document.getElementById('swal-proofType') as HTMLSelectElement)?.value;
-				const proofReference = (document.getElementById('swal-proofReference') as HTMLInputElement)?.value;
-				const proofNotes = (document.getElementById('swal-proofNotes') as HTMLTextAreaElement)?.value;
-
-				if (!paymentMethod || !paymentDate || !payoutReference || !proofType || !proofReference) {
-					Swal.showValidationMessage('All required fields must be filled in.');
-					return false;
-				}
-				return { paymentMethod, paymentDate, payoutReference, proofType, proofReference, proofNotes };
-			},
 		});
 
-		if (formValues) {
+		if (confirmation.isConfirmed) {
 			setIsApproving(true);
 			try {
 				const response = await fetch(buildApiUrl('/disburse'), {
@@ -640,12 +670,6 @@ export default function PayslipApproval({
 					credentials: 'include',
 					body: JSON.stringify({
 						payrollIds: [request.id],
-						paymentDate: formValues.paymentDate,
-						paymentMethod: formValues.paymentMethod,
-						payoutReference: formValues.payoutReference,
-						payoutProofType: formValues.proofType,
-						payoutProofReference: formValues.proofReference,
-						payoutProofNotes: formValues.proofNotes,
 					}),
 				});
 
@@ -678,6 +702,220 @@ export default function PayslipApproval({
 			} finally {
 				setIsApproving(false);
 			}
+		}
+	};
+
+	const handleApproveAllReadyForDisbursement = async () => {
+		if (readyForDisbursementCount === 0) {
+			await Swal.fire({
+				icon: "info",
+				title: "No Ready Payslips",
+				text: "There are no payslips ready for disbursement.",
+				confirmButtonColor: "#3b82f6",
+			});
+			return;
+		}
+
+		let readyIds: number[] = [];
+		setIsApproving(true);
+		try {
+			readyIds = await loadReadyForDisbursementIds();
+		} catch (error: any) {
+			await Swal.fire('Error', error.message || 'Failed to load ready-for-disbursement payslips', 'error');
+			setIsApproving(false);
+			return;
+		}
+		setIsApproving(false);
+
+		if (readyIds.length === 0) {
+			await Swal.fire({
+				icon: "info",
+				title: "No Matching Payslips",
+				text: "No ready-for-disbursement payslips were found for the current filters.",
+				confirmButtonColor: "#3b82f6",
+			});
+			return;
+		}
+
+		const confirmation = await Swal.fire({
+			title: "Approve All Ready Payslips",
+			html: `
+				<div style="text-align: left; margin-top: 0.5rem;">
+					<p style="margin-bottom: 0;"><strong>${readyIds.length}</strong> payslip(s) will be marked as paid.</p>
+				</div>
+			`,
+			showCancelButton: true,
+			confirmButtonColor: "#7c3aed",
+			cancelButtonColor: "#6b7280",
+			confirmButtonText: "Approve All",
+			cancelButtonText: "Cancel",
+		});
+
+		if (!confirmation.isConfirmed) {
+			return;
+		}
+
+		setIsApproving(true);
+		try {
+			const response = await fetch(buildApiUrl('/disburse'), {
+				method: 'POST',
+				headers: {
+					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+					'Accept': 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					payrollIds: readyIds,
+				}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				if (data?.errors && typeof data.errors === 'object') {
+					const firstFieldError = Object.values(data.errors).find((messages) => Array.isArray(messages) && messages.length > 0) as string[] | undefined;
+					if (firstFieldError?.[0]) {
+						throw new Error(firstFieldError[0]);
+					}
+				}
+
+				throw new Error(data.message || data.error || 'Disbursement failed');
+			}
+
+			if (Array.isArray(data?.errors) && data.errors.length > 0) {
+				throw new Error(data.errors[0]);
+			}
+
+			await Swal.fire({
+				title: "Approved All",
+				text: `${readyIds.length} payslip(s) marked as paid successfully.`,
+				icon: "success",
+				confirmButtonColor: "#111827",
+			});
+
+			loadPayslips();
+		} catch (error: any) {
+			await Swal.fire('Error', error.message || 'Bulk disbursement failed', 'error');
+		} finally {
+			setIsApproving(false);
+		}
+	};
+
+	const handleFinalApproveAll = async () => {
+		if (awaitingFinalApprovalCount === 0) {
+			await Swal.fire({
+				icon: "info",
+				title: "No Awaiting Owner Payslips",
+				text: "There are no payslips waiting for final owner approval.",
+				confirmButtonColor: "#3b82f6",
+			});
+			return;
+		}
+
+		let payslipIds: number[] = [];
+		setIsApproving(true);
+		try {
+			payslipIds = await loadAwaitingFinalApprovalIds();
+		} catch (error: any) {
+			await Swal.fire('Error', error.message || 'Failed to load awaiting-owner payslips', 'error');
+			setIsApproving(false);
+			return;
+		}
+		setIsApproving(false);
+
+		if (payslipIds.length === 0) {
+			await Swal.fire({
+				icon: "info",
+				title: "No Matching Payslips",
+				text: "No awaiting-owner payslips were found for the current filters.",
+				confirmButtonColor: "#3b82f6",
+			});
+			return;
+		}
+
+		const { value: notes } = await Swal.fire({
+			title: "Final Approve All",
+			html: `
+				<div style="text-align: left; margin-top: 0.5rem;">
+					<p style="margin-bottom: 0.75rem;"><strong>${payslipIds.length}</strong> payslip(s) will be final-approved.</p>
+				</div>
+			`,
+			input: "textarea",
+			inputLabel: "Approval Notes (Optional)",
+			inputPlaceholder: "Add notes for batch final approval...",
+			showCancelButton: true,
+			confirmButtonColor: "#7c3aed",
+			cancelButtonColor: "#6b7280",
+			confirmButtonText: "Final Approve All",
+			cancelButtonText: "Cancel",
+		});
+
+		if (notes === undefined) {
+			return;
+		}
+
+		setIsApproving(true);
+		try {
+			const response = await fetch(buildApiUrl('/batch/final-approve'), {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+					'Accept': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					payslip_ids: payslipIds,
+					notes: notes || '',
+				}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				if (data?.errors && typeof data.errors === 'object') {
+					const firstFieldError = Object.values(data.errors).find((messages) => Array.isArray(messages) && messages.length > 0) as string[] | undefined;
+					if (firstFieldError?.[0]) {
+						throw new Error(firstFieldError[0]);
+					}
+				}
+
+				throw new Error(data.error || data.message || 'Batch final approval failed');
+			}
+
+			const approved = Number(data?.approved ?? 0);
+			const failed = Number(data?.failed ?? 0);
+			const hasErrors = failed > 0;
+			const errorList = Array.isArray(data?.errors) ? data.errors : [];
+
+			await Swal.fire({
+				icon: hasErrors ? "warning" : "success",
+				title: hasErrors ? "Partially Completed" : "All Final-Approved!",
+				html: `
+					<div class="text-left space-y-2">
+						<div class="bg-green-50 border border-green-200 rounded-lg p-3">
+							<p class="text-green-800"><strong>✅ Final-approved:</strong> ${approved} payslip(s)</p>
+						</div>
+						${hasErrors ? `
+							<div class="bg-red-50 border border-red-200 rounded-lg p-3">
+								<p class="text-red-800"><strong>❌ Failed:</strong> ${failed} payslip(s)</p>
+								${errorList.length > 0 ? `
+									<ul class="mt-2 text-xs text-red-700 space-y-1">
+										${errorList.slice(0, 5).map((err: string) => `<li>• ${err}</li>`).join('')}
+										${errorList.length > 5 ? `<li>• ... and ${errorList.length - 5} more</li>` : ''}
+									</ul>
+								` : ''}
+							</div>
+						` : ''}
+					</div>
+				`,
+				confirmButtonColor: "#111827",
+			});
+
+			loadPayslips();
+		} catch (error: any) {
+			await Swal.fire('Error', error.message || 'Batch final approval failed', 'error');
+		} finally {
+			setIsApproving(false);
 		}
 	};
 
@@ -877,11 +1115,31 @@ export default function PayslipApproval({
 						{pendingCount > 0 && canCheckerApprove && (
 							<button
 								onClick={handleApproveAll}
-								disabled={isBatchApproving}
+								disabled={isBatchApproving || isApproving}
 								className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
 							>
 								<CheckIcon className="size-4" />
 								Approve All ({pendingCount})
+							</button>
+						)}
+						{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
+							<button
+								onClick={handleFinalApproveAll}
+								disabled={isApproving || isBatchApproving}
+								className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+							>
+								<CheckIcon className="size-4" />
+								Approve All Owner ({awaitingFinalApprovalCount})
+							</button>
+						)}
+						{readyForDisbursementCount > 0 && canDisburse && (
+							<button
+								onClick={handleApproveAllReadyForDisbursement}
+								disabled={isApproving || isBatchApproving}
+								className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+							>
+								<CalendarIcon className="size-4" />
+								Approve All Ready ({readyForDisbursementCount})
 							</button>
 						)}
 						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">

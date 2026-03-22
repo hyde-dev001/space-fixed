@@ -635,6 +635,18 @@ class NotificationService
         );
     }
 
+    /** Notify employee when their payslip is rejected */
+    public function notifyPayslipRejected(int $userId, int $shopId, array $payrollData): void
+    {
+        $reason = $payrollData['rejection_reason'] ?? $payrollData['reason'] ?? '';
+        $reasonText = $reason ? " Reason: {$reason}" : '';
+        $this->sendToUser($userId, NotificationType::PAYSLIP_REJECTED,
+            'Payslip Rejected',
+            "Your payslip for {$payrollData['period']} was rejected and requires correction.{$reasonText}",
+            $payrollData, '/erp/my-payslips', $shopId
+        );
+    }
+
     // ==================== FINANCE NOTIFICATIONS ====================
 
     /** Notify Finance users when a new invoice is created */
@@ -654,6 +666,18 @@ class NotificationService
             'New Expense Submitted',
             "Expense {$expenseData['reference']} of ₱{$expenseData['amount']} ({$expenseData['category']}) needs review.",
             $expenseData, '/erp/finance/expenses', 'medium'
+        );
+    }
+
+    /** Notify requester when their expense is rejected */
+    public function notifyExpenseRejected(int $userId, int $shopId, array $expenseData): void
+    {
+        $reason = $expenseData['rejection_reason'] ?? $expenseData['reason'] ?? '';
+        $reasonText = $reason ? " Reason: {$reason}" : '';
+        $this->sendToUser($userId, NotificationType::EXPENSE_REJECTED,
+            'Expense Request Rejected',
+            "Your expense request of ₱{$expenseData['amount']} ({$expenseData['category']}) was rejected.{$reasonText}",
+            $expenseData, '/erp/finance/expenses', $shopId
         );
     }
 
@@ -1006,6 +1030,23 @@ class NotificationService
     }
 
     /**
+     * Notify when a price change request is rejected
+     */
+    public function notifyPriceChangeRejected(int $shopOwnerId, array $requestData): ?Notification
+    {
+        $reason = $requestData['rejection_reason'] ?? $requestData['reason'] ?? '';
+        $reasonText = $reason ? " Reason: {$reason}" : '';
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::PRICE_CHANGE_REJECTED,
+            title: 'Price Change Rejected',
+            message: "{$requestData['product_name']} price change (₱{$requestData['old_price']} → ₱{$requestData['new_price']}) was rejected.{$reasonText}",
+            data: $requestData,
+            actionUrl: '/shop-owner/price-approvals'
+        );
+    }
+
+    /**
      * Notify shop owner of repair service approval request
      * Only sends notification to individual shop owners, not companies
      */
@@ -1018,11 +1059,33 @@ class NotificationService
             return null;
         }
 
+        $displayPrice = $serviceData['price']
+            ?? $serviceData['proposed_price']
+            ?? $serviceData['current_price']
+            ?? '0.00';
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::REPAIR_SERVICE_REQUEST,
             title: 'Repair Service Approval Required',
-            message: "New repair service '{$serviceData['service_name']}' requires approval - ₱{$serviceData['price']}",
+            message: "New repair service '{$serviceData['service_name']}' requires approval - ₱{$displayPrice}",
+            data: $serviceData,
+            actionUrl: '/shop-owner/repair-reject-approval'
+        );
+    }
+
+    /**
+     * Notify shop owner when repair service price change is rejected
+     */
+    public function notifyRepairServiceRejected(int $shopOwnerId, array $serviceData): ?Notification
+    {
+        $reason = $serviceData['rejection_reason'] ?? $serviceData['reason'] ?? '';
+        $reasonText = $reason ? " Reason: {$reason}" : '';
+        return $this->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::REPAIR_SERVICE_REQUEST,
+            title: 'Repair Service Price Change Rejected',
+            message: "Repair service '{$serviceData['service_name']}' price change (₱{$serviceData['old_price']} → ₱{$serviceData['price']}) was rejected.{$reasonText}",
             data: $serviceData,
             actionUrl: '/shop-owner/repair-reject-approval'
         );

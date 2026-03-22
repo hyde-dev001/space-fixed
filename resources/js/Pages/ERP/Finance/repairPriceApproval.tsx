@@ -93,6 +93,7 @@ interface RepairPriceRequest {
   ownerReviewedBy: string | null;
   ownerReviewedAt: string | null;
   rejectionReason?: string;
+  rawStatus?: string;
 }
 
 type MetricColor = "success" | "warning" | "info";
@@ -203,6 +204,7 @@ export default function RepairPriceApproval() {
         rejectionReason: item.finance_rejection_reason || item.owner_rejection_reason,
         ownerReviewedBy: item.owner_reviewer?.name || null,
         ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
+        rawStatus: item.raw_status,
       }));
       
       setRequests(apiRequests);
@@ -251,9 +253,12 @@ export default function RepairPriceApproval() {
     // Apply view mode filter
     let matchesViewMode = true;
     if (viewMode === 'pending') {
-      matchesViewMode = item.status === 'pending'; // Awaiting Finance review
+      const isFinanceFinalQueue = item.rawStatus === 'Pending Finance Final Approval';
+      matchesViewMode = item.status === 'pending' || isFinanceFinalQueue; // Initial finance review + finance final queue
     } else if (viewMode === 'recent') {
-      matchesViewMode = item.status === 'finance_approved' || item.status === 'owner_approved'; // Recently approved by Finance
+      const isForwardedToOwner = item.status === 'finance_approved';
+      const isFullyApplied = item.status === 'owner_approved' && item.rawStatus === 'Active';
+      matchesViewMode = isForwardedToOwner || isFullyApplied;
     }
     
     return matchesSearch && matchesViewMode;
@@ -264,9 +269,9 @@ export default function RepairPriceApproval() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  const pendingCount = requests.filter(r => r.status === "pending").length;
+  const pendingCount = requests.filter((r) => r.status === "pending" || r.rawStatus === 'Pending Finance Final Approval').length;
   const financeApprovedCount = requests.filter(r => r.status === "finance_approved").length;
-  const approvedCount = requests.filter(r => r.status === "owner_approved").length;
+  const approvedCount = requests.filter(r => r.status === "owner_approved" && r.rawStatus === 'Active').length;
   const rejectedCount = requests.filter(r => r.status === "finance_rejected" || r.status === "owner_rejected").length;
 
   const handleViewClick = (request: RepairPriceRequest) => {
@@ -286,8 +291,10 @@ export default function RepairPriceApproval() {
     setViewModalOpen(false);
     setSelectedRequest(null);
 
+    const isFinanceFinalStep = request.rawStatus === 'Pending Finance Final Approval';
+
     const { value: notes } = await Swal.fire({
-      title: "Approve & Forward to Owner",
+      title: isFinanceFinalStep ? "Final Finance Approval" : "Approve & Forward to Owner",
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${request.serviceName}</p>
@@ -296,7 +303,7 @@ export default function RepairPriceApproval() {
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
           <p style="margin-bottom: 1rem;"><strong>Reason:</strong> ${request.reason}</p>
-          <p style="color: #6b7280; font-size: 0.875rem;">This will forward the request to the Shop Owner for final approval.</p>
+          <p style="color: #6b7280; font-size: 0.875rem;">${isFinanceFinalStep ? 'This is the final finance step and will apply the price change.' : 'This will forward the request to the Shop Owner for review.'}</p>
         </div>
       `,
       input: "textarea",
@@ -306,14 +313,18 @@ export default function RepairPriceApproval() {
       showCancelButton: true,
       confirmButtonColor: "#10b981",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Approve & Forward",
+      confirmButtonText: isFinanceFinalStep ? "Approve & Apply Price" : "Approve & Forward",
       cancelButtonText: "Cancel",
     });
 
     if (notes !== undefined) {
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        const response = await fetch(`/api/finance/repair-price-changes/${request.id}/approve`, {
+        const approvalEndpoint = isFinanceFinalStep
+          ? `/api/finance/repair-price-changes/${request.id}/approve-final`
+          : `/api/finance/repair-price-changes/${request.id}/approve`;
+
+        const response = await fetch(approvalEndpoint, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -338,8 +349,10 @@ export default function RepairPriceApproval() {
         // Show centered modal notification
         await Swal.fire({
           icon: 'success',
-          title: 'Approved & Forwarded',
-          text: `${request.serviceName} sent to Shop Owner for final approval`,
+          title: isFinanceFinalStep ? 'Price Applied' : 'Approved & Forwarded',
+          text: isFinanceFinalStep
+            ? `${request.serviceName} price change has been applied`
+            : `${request.serviceName} sent to Shop Owner for review`,
           confirmButtonColor: '#000000',
         });
 
@@ -628,11 +641,11 @@ export default function RepairPriceApproval() {
                             }`}
                           >
                             {request.status === "pending" 
-                              ? "Pending Finance" 
+                              ? "Pending Finance"
                               : request.status === "finance_approved"
                               ? "Pending Owner"
                               : request.status === "owner_approved"
-                              ? "Approved"
+                              ? (request.rawStatus === 'Pending Finance Final Approval' ? 'Pending Finance Final Approval' : 'Approved')
                               : "Rejected"}
                           </span>
                         </td>
@@ -727,9 +740,14 @@ export default function RepairPriceApproval() {
                       Pending Owner
                     </span>
                   )}
-                  {selectedRequest.status === 'owner_approved' && (
+                  {selectedRequest.status === 'owner_approved' && selectedRequest.rawStatus !== 'Pending Finance Final Approval' && (
                     <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-200">
                       Fully Approved
+                    </span>
+                  )}
+                  {selectedRequest.status === 'owner_approved' && selectedRequest.rawStatus === 'Pending Finance Final Approval' && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                      Pending Finance Final Approval
                     </span>
                   )}
                   {selectedRequest.status === 'finance_rejected' && (
@@ -875,7 +893,7 @@ export default function RepairPriceApproval() {
 
               {/* Actions */}
               <div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                {selectedRequest.status === 'pending' ? (
+                {(selectedRequest.status === 'pending' || (selectedRequest.status === 'owner_approved' && selectedRequest.rawStatus === 'Pending Finance Final Approval')) ? (
                   <>
                     <button
                       onClick={() => {
@@ -895,7 +913,7 @@ export default function RepairPriceApproval() {
                       className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
-                      Approve & Forward
+                      {selectedRequest.rawStatus === 'Pending Finance Final Approval' ? 'Approve & Apply Price' : 'Approve & Forward'}
                     </button>
                   </>
                 ) : selectedRequest.status === 'finance_approved' ? (

@@ -25,6 +25,9 @@ class PriceChangeRequest extends Model
         'owner_reviewed_at',
         'owner_rejection_reason',
         'shop_owner_id',
+        'approval_id',
+        'current_approval_level',
+        'approval_workflow_version',
     ];
 
     protected $casts = [
@@ -59,6 +62,12 @@ class PriceChangeRequest extends Model
     public function shopOwner()
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    // Polymorphic approval relationship
+    public function approval()
+    {
+        return $this->morphOne(Approval::class, 'approvable');
     }
 
     // Helper methods

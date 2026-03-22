@@ -1044,6 +1044,12 @@ class UserAccessControlController extends Controller
                 return response()->json(['error' => 'Employee not found'], 404);
             }
 
+            if (strcasecmp((string) ($user->email ?? ''), (string) ($shopOwner->email ?? '')) === 0) {
+                return response()->json([
+                    'error' => 'You cannot reset the password of the account you are currently using.'
+                ], 422);
+            }
+
             // Generate new invitation token
             $inviteToken = Str::random(64);
             $inviteExpiresAt = Carbon::now()->addDays(7);

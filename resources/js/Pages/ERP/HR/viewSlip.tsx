@@ -32,10 +32,8 @@ type SlipRecord = {
     // Hours breakdown (to match Generate Payslip output)
     totalRegularHours?: number;
     totalOvertimeHours?: number;
-    totalRestDayHours?: number;
     totalSpecialHolidayHours?: number;
     totalRegularHolidayHours?: number;
-    totalNightDifferentialHours?: number;
     totalUndertimeHours?: number;
     totalAbsentDays?: number;
 };
@@ -124,10 +122,8 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
         deductionDetails,
         totalRegularHours: regularHours > 0 ? regularHours : attendanceDays * 8,
         totalOvertimeHours: toNumber(apiPayroll.overtime_hours),
-        totalRestDayHours: toNumber(apiPayroll.rest_day_hours),
         totalSpecialHolidayHours: toNumber(apiPayroll.special_holiday_hours),
         totalRegularHolidayHours: toNumber(apiPayroll.regular_holiday_hours),
-        totalNightDifferentialHours: toNumber(apiPayroll.night_differential_hours),
         totalUndertimeHours: toNumber(apiPayroll.undertime_hours),
         totalAbsentDays: absentDays,
     };
@@ -171,12 +167,6 @@ const getInitials = (name: string) =>
         .join("")
         .slice(0, 2)
         .toUpperCase();
-
-const DownloadIcon = ({ className = "size-5" }: { className?: string }) => (
-    <svg className={className} fill="none" viewBox="0 0 25 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.6686 16.75C12.4526 16.75 12.2579 16.6587 12.1211 16.5126L7.5115 11.9059C7.21851 11.6131 7.21836 11.1382 7.51116 10.8452C7.80396 10.5523 8.27883 10.5521 8.57182 10.8449L11.9186 14.1896V4C11.9186 3.58579 12.2544 3.25 12.6686 3.25C13.0828 3.25 13.4186 3.58579 13.4186 4V14.1854L16.7615 10.8449C17.0545 10.5521 17.5294 10.5523 17.8222 10.8453C18.115 11.1383 18.1148 11.6131 17.8218 11.9059L13.2469 16.4776C13.1093 16.644 12.9013 16.75 12.6686 16.75ZM5.41663 16C5.41663 15.5858 5.08084 15.25 4.66663 15.25C4.25241 15.25 3.91663 15.5858 3.91663 16V18.5C3.91663 19.7426 4.92399 20.75 6.16663 20.75H19.1675C20.4101 20.75 21.4175 19.7426 21.4175 18.5V16C21.4175 15.5858 21.0817 15.25 20.6675 15.25C20.2533 15.25 19.9175 15.5858 19.9175 16V18.5C19.9175 18.9142 19.5817 19.25 19.1675 19.25H6.16663C5.75241 19.25 5.41663 18.9142 5.41663 18.5V16Z" />
-    </svg>
-);
 
 export default function ViewSlip() {
     const [slipData, setSlipData] = useState<SlipRecord[]>([]);
@@ -605,20 +595,12 @@ export default function ViewSlip() {
                                     <span className="text-lg font-bold text-green-600 dark:text-green-400">{formatHours(selectedSlip.totalOvertimeHours || 0)}</span>
                                 </div>
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                                    <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Rest Day Hours</span>
-                                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalRestDayHours || 0)}</span>
-                                </div>
-                                <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Special Holiday Hours</span>
                                     <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalSpecialHolidayHours || 0)}</span>
                                 </div>
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Holiday Hours</span>
                                     <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalRegularHolidayHours || 0)}</span>
-                                </div>
-                                <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                                    <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Night Diff Hours</span>
-                                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(selectedSlip.totalNightDifferentialHours || 0)}</span>
                                 </div>
                                 <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Undertime</span>
@@ -710,13 +692,6 @@ export default function ViewSlip() {
                                 className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                             >
                                 Close
-                            </button>
-                            <button
-                                className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                                title="Download"
-                                aria-label="Download"
-                            >
-                                <DownloadIcon className="size-5 text-blue-600 dark:text-blue-400" />
                             </button>
                         </div>
                     </div>

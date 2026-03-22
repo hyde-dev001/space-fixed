@@ -103,7 +103,7 @@ class SalaryChangeController extends Controller
 
     /**
      * POST /api/hr/salary-changes
-     * Propose a new salary change.
+      * Propose a new daily-rate change.
      */
     public function store(Request $request): JsonResponse
     {
@@ -181,7 +181,7 @@ class SalaryChangeController extends Controller
             $this->auditCustom(
                 AuditLog::MODULE_EMPLOYEE,
                 'salary_change_proposed',
-                "Salary change proposed for {$employee->first_name} {$employee->last_name}: " .
+                "Daily-rate change proposed for {$employee->first_name} {$employee->last_name}: " .
                     "₱{$previousSalary} → ₱{$newSalary} ({$changePercent}%)",
                 [
                     'employee_id'    => $employee->id,
@@ -203,7 +203,7 @@ class SalaryChangeController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Salary change proposal submitted and awaiting approval.',
+                'message' => 'Daily-rate change proposal submitted and awaiting approval.',
                 'data'    => $change->load(['employee:id,first_name,last_name', 'proposer:id,name']),
             ], 201);
 

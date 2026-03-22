@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\Expense;
 use App\Models\AuditLog;
+use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\ExpenseApprovalService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,10 +19,15 @@ use Spatie\QueryBuilder\AllowedFilter;
 class ExpenseController extends Controller
 {
     protected NotificationService $notificationService;
+    protected ExpenseApprovalService $expenseApprovalService;
 
-    public function __construct(NotificationService $notificationService)
+    public function __construct(
+        NotificationService $notificationService,
+        ExpenseApprovalService $expenseApprovalService
+    )
     {
         $this->notificationService = $notificationService;
+        $this->expenseApprovalService = $expenseApprovalService;
     }
     public function index(Request $request)
     {
@@ -115,6 +122,20 @@ class ExpenseController extends Controller
 
             $expense = Expense::create($expenseData);
 
+            // Create 4-step approval workflow for the expense
+            $shopOwner = User::find($shopId);
+            if ($shopOwner) {
+                try {
+                    $this->expenseApprovalService->createExpenseApproval($expense, $shopOwner);
+                } catch (\Exception $e) {
+                    Log::error('Failed to create expense approval workflow', [
+                        'expense_id' => $expense->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    // Continue anyway - approval workflow is optional
+                }
+            }
+
             $this->audit('create_expense', $expense->id, $expense->toArray());
 
             DB::commit();
@@ -178,21 +199,65 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        if ($expense->status !== 'submitted') {
-            return response()->json(['message' => 'Only submitted expenses can be approved'], 422);
-        }
-
+        // Validate self-approval
         $creatorId = (int) data_get($expense->meta, 'created_by', 0);
         if ($creatorId !== 0 && $creatorId === (int) Auth::id()) {
             return response()->json(['message' => 'Expense creator cannot approve their own expense'], 422);
         }
 
-        // Check approval limit
+        // If expense has new 4-step approval workflow, use it
+        if ($expense->approval_id) {
+            $result = $this->expenseApprovalService->approveExpense(
+                $expense,
+                Auth::user(),
+                $request->input('approval_notes')
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => $result['message'],
+                    'details' => $result
+                ], 422);
+            }
+
+            $expense->refresh();
+
+            // Activity log
+            activity()
+                ->causedBy(Auth::user())
+                ->performedOn($expense)
+                ->withProperties([
+                    'reference' => $expense->reference,
+                    'category' => $expense->category,
+                    'vendor' => $expense->vendor,
+                    'amount' => $expense->amount,
+                    'approval_level' => $expense->current_approval_level,
+                    'approval_notes' => $request->input('approval_notes'),
+                    'approved_by_name' => Auth::user()->name,
+                    'is_final' => $result['is_final'] ?? false,
+                ])
+                ->log('Expense approved at level ' . $expense->current_approval_level);
+
+            $this->audit('approve_expense', $expense->id, [
+                'approval_level' => $expense->current_approval_level,
+                'status' => $expense->status
+            ]);
+
+            return response()->json([
+                'message' => $result['message'],
+                'expense' => $expense,
+                'is_final' => $result['is_final'] ?? false
+            ]);
+        }
+
+        // Fallback to old single-level approval for legacy expenses
+        if ($expense->status !== 'submitted') {
+            return response()->json(['message' => 'Only submitted expenses can be approved'], 422);
+        }
+
         $user = Auth::user();
         $approvalLimit = $user->approval_limit;
         
-        // If approval_limit is null, user has unlimited approval authority (e.g., Finance Manager)
-        // If approval_limit is set, check if it's sufficient
         if ($approvalLimit !== null && $expense->amount > $approvalLimit) {
             return response()->json([
                 'message' => 'Insufficient approval authority',
@@ -211,7 +276,6 @@ class ExpenseController extends Controller
             'approval_notes' => $request->input('approval_notes'),
         ]);
 
-        // Activity log with business context
         activity()
             ->causedBy(Auth::user())
             ->performedOn($expense)
@@ -238,23 +302,70 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
 
+        $request->validate([
+            'approval_notes' => 'required|string|max:1000'
+        ]);
+
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        if ($expense->status !== 'submitted') {
-            return response()->json(['message' => 'Only submitted expenses can be rejected'], 422);
-        }
-
+        // Validate self-rejection
         $creatorId = (int) data_get($expense->meta, 'created_by', 0);
         if ($creatorId !== 0 && $creatorId === (int) Auth::id()) {
             return response()->json(['message' => 'Expense creator cannot reject their own expense'], 422);
         }
 
-        // Check approval limit (same authority required to reject as to approve)
+        // If expense has new 4-step approval workflow, use it
+        if ($expense->approval_id) {
+            $result = $this->expenseApprovalService->rejectExpense(
+                $expense,
+                Auth::user(),
+                $request->input('approval_notes')
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => $result['message'],
+                    'details' => $result
+                ], 422);
+            }
+
+            $expense->refresh();
+
+            // Activity log
+            activity()
+                ->causedBy(Auth::user())
+                ->performedOn($expense)
+                ->withProperties([
+                    'reference' => $expense->reference,
+                    'category' => $expense->category,
+                    'vendor' => $expense->vendor,
+                    'amount' => $expense->amount,
+                    'rejection_reason' => $request->input('approval_notes'),
+                    'rejected_by_name' => Auth::user()->name,
+                    'rejected_by_role' => Auth::user()->role ?? 'Finance Staff',
+                    'rejection_level' => $expense->current_approval_level,
+                ])
+                ->log('Expense rejected at level ' . $expense->current_approval_level);
+
+            $this->audit('reject_expense', $expense->id, [
+                'approval_level' => $expense->current_approval_level,
+                'status' => $expense->status
+            ]);
+
+            return response()->json([
+                'message' => $result['message'],
+                'expense' => $expense
+            ]);
+        }
+
+        // Fallback to old single-level rejection for legacy expenses
+        if ($expense->status !== 'submitted') {
+            return response()->json(['message' => 'Only submitted expenses can be rejected'], 422);
+        }
+
         $user = Auth::user();
         $approvalLimit = $user->approval_limit;
         
-        // If approval_limit is null, user has unlimited approval authority (e.g., Finance Manager)
-        // If approval_limit is set, check if it's sufficient
         if ($approvalLimit !== null && $expense->amount > $approvalLimit) {
             return response()->json([
                 'message' => 'Insufficient approval authority',
@@ -273,7 +384,6 @@ class ExpenseController extends Controller
             'approval_notes' => $request->input('approval_notes'),
         ]);
 
-        // Activity log with business context and rejection reason
         activity()
             ->causedBy(Auth::user())
             ->performedOn($expense)

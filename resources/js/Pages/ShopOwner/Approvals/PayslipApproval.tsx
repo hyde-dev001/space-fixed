@@ -7,6 +7,7 @@ export default function ShopOwnerPayslipApprovalPage() {
 			<PayslipApproval
 				apiBase="/api/shop-owner/payslip-approvals"
 				allowDisbursement={false}
+				allowFinalApproveAll={true}
 				headTitle="Payslip Approval - Shop Owner"
 			/>
 		</AppLayoutShopOwner>

@@ -105,10 +105,6 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
   // Fetch reviews and check eligibility on mount
   useEffect(() => {
-    console.log('Shop Hours Data:', shop.hours);
-    console.log('Shop ID:', shop.id);
-    console.log('Is Authenticated:', isAuthenticated);
-    console.log('Auth Object:', auth);
     fetchReviews();
     if (isAuthenticated) {
       checkReviewEligibility();
@@ -136,7 +132,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      console.log('Checking eligibility for shop:', shop.id);
+  
       const response = await fetch(`/api/shops/${shop.id}/reviews/check-eligibility`, {
         credentials: 'include',
         headers: {
@@ -145,7 +141,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
         },
       });
       const data = await response.json();
-      console.log('Eligibility response:', data);
+ 
       if (data.success) {
         setCanReview(data.can_review);
         setReviewEligibility(data);

@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -10,7 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE shop_owner_subscriptions MODIFY status ENUM('pending', 'active', 'expired', 'cancelled', 'deactivated', 'failed') DEFAULT 'pending'");
+        if (Schema::getConnection()->getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE shop_owner_subscriptions MODIFY status ENUM('pending', 'active', 'expired', 'cancelled', 'deactivated', 'failed') DEFAULT 'pending'");
+        }
     }
 
     /**
@@ -18,6 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("ALTER TABLE shop_owner_subscriptions MODIFY status ENUM('pending', 'active', 'expired', 'cancelled', 'failed') DEFAULT 'pending'");
+        if (Schema::getConnection()->getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE shop_owner_subscriptions MODIFY status ENUM('pending', 'active', 'expired', 'cancelled', 'failed') DEFAULT 'pending'");
+        }
     }
 };

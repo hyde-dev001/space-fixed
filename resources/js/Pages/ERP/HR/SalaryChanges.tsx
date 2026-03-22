@@ -53,6 +53,14 @@ interface Summary {
   cancelled: number;
 }
 
+type MetricCardProps = {
+  title: string;
+  value: number;
+  description?: string;
+  color?: "success" | "error" | "warning" | "info";
+  icon: React.FC<{ className?: string }>;
+};
+
 // ─── Status / Type Helpers ────────────────────────────────────────────────────
 
 const statusPill: Record<ChangeStatus, string> = {
@@ -84,6 +92,74 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return createPortal(children, document.body);
 };
 
+const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const XCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l6-6m0 0l-6-6m6 6l6 6m-6-6l-6 6" />
+  </svg>
+);
+
+const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const SparklesIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l1.5 3L10 7.5 6.5 9 5 12l-1.5-3L0 7.5 3.5 6 5 3zm14 2l2 4 4 2-4 2-2 4-2-4-4-2 4-2 2-4zM8 15l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
+  </svg>
+);
+
+const BanIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728m-12.728 0a9 9 0 010-12.728m0 0L18.364 18.364m-12.728 0L18.364 5.636" />
+  </svg>
+);
+
+const MetricCard: React.FC<MetricCardProps> = ({
+  title,
+  value,
+  icon: Icon,
+  color,
+  description,
+}) => {
+  const getColorClasses = () => {
+    switch (color) {
+      case "success": return "from-green-500 to-emerald-600";
+      case "error": return "from-red-500 to-rose-600";
+      case "warning": return "from-yellow-500 to-orange-600";
+      case "info": return "from-blue-500 to-indigo-600";
+      default: return "from-gray-500 to-gray-600";
+    }
+  };
+
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
+      <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+      <div className="relative">
+        <div className="mb-4 flex items-center justify-between">
+          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${getColorClasses()} shadow-lg transition-all duration-300 group-hover:rotate-6 group-hover:scale-110`}>
+            <Icon className="size-7 text-white drop-shadow-sm" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
+          <h3 className="text-3xl font-bold text-gray-900 transition-colors duration-300 dark:text-white">
+            {value.toLocaleString()}
+          </h3>
+          {description && <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmtCurrency = (val: number) =>
@@ -97,6 +173,14 @@ const fmtDate = (str?: string | null) => {
 const fmtPct = (val: number) => {
   const sign = val >= 0 ? "+" : "";
   return `${sign}${val.toFixed(2)}%`;
+};
+
+const getInitials = (name?: string | null) => {
+  if (!name) return "--";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "--";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 };
 
 const getCsrfToken = (): string =>
@@ -122,6 +206,15 @@ const SalaryChanges: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<"All" | ChangeStatus>("All");
   const [search, setSearch] = useState("");
   const [viewChange, setViewChange] = useState<SalaryChange | null>(null);
+  const [isNewChangeOpen, setIsNewChangeOpen] = useState(false);
+  const [isSubmittingNewChange, setIsSubmittingNewChange] = useState(false);
+  const [newChangeError, setNewChangeError] = useState<string | null>(null);
+  const [newChangeForm, setNewChangeForm] = useState({
+    employee_id: "",
+    new_salary: "",
+    effective_date: new Date().toISOString().slice(0, 10),
+    reason: "",
+  });
 
   // ─── Data Fetching ───────────────────────────────────────────────────────────
 
@@ -180,96 +273,84 @@ const SalaryChanges: React.FC = () => {
 
   // ─── Action Handlers ──────────────────────────────────────────────────────────
 
-  const handleNewChange = async () => {
-    const employeeOptions = employees
-      .map((e) => `<option value="${e.id}" data-salary="${e.salary}">${e.name}${e.department ? ` — ${e.department}` : ""}</option>`)
-      .join("");
-
-    const today = new Date().toISOString().slice(0, 10);
-
-    const result = await Swal.fire({
-      title: "Propose Salary Change",
-      html: `
-        <div style="text-align:left;font-size:14px;">
-          <label style="font-weight:600;display:block;margin-bottom:4px;">Employee *</label>
-          <select id="sc-employee" class="swal2-input" style="margin:0 0 12px;width:100%;height:40px;padding:0 10px;">
-            <option value="">— Select employee —</option>
-            ${employeeOptions}
-          </select>
-
-          <div id="sc-current-salary-row" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f1f5f9;border-radius:6px;">
-            Current salary: <strong id="sc-current-salary-display"></strong>
-          </div>
-
-          <label style="font-weight:600;display:block;margin-bottom:4px;">New Salary (PHP) *</label>
-          <input id="sc-new-salary" type="number" min="0" step="0.01" class="swal2-input" placeholder="e.g. 25000.00" style="margin:0 0 12px;width:100%;" />
-
-          <label style="font-weight:600;display:block;margin-bottom:4px;">Effective Date *</label>
-          <input id="sc-effective-date" type="date" class="swal2-input" value="${today}" style="margin:0 0 12px;width:100%;" />
-
-          <label style="font-weight:600;display:block;margin-bottom:4px;">Reason *</label>
-          <textarea id="sc-reason" class="swal2-textarea" placeholder="Describe the reason for this change..." style="margin:0;width:100%;height:80px;"></textarea>
-        </div>
-      `,
-      showCancelButton: true,
-      confirmButtonText: "Submit",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#3b82f6",
-      focusConfirm: false,
-      didOpen: () => {
-        const sel = document.getElementById("sc-employee") as HTMLSelectElement;
-        sel?.addEventListener("change", () => {
-          const opt = sel.options[sel.selectedIndex];
-          const salary = opt.getAttribute("data-salary");
-          const row = document.getElementById("sc-current-salary-row")!;
-          const disp = document.getElementById("sc-current-salary-display")!;
-          if (salary) {
-            disp.textContent = fmtCurrency(parseFloat(salary));
-            row.style.display = "block";
-          } else {
-            row.style.display = "none";
-          }
-        });
-      },
-      preConfirm: () => {
-        const employeeId = (document.getElementById("sc-employee") as HTMLSelectElement).value;
-        const newSalary = (document.getElementById("sc-new-salary") as HTMLInputElement).value;
-        const effectiveDate = (document.getElementById("sc-effective-date") as HTMLInputElement).value;
-        const reason = (document.getElementById("sc-reason") as HTMLTextAreaElement).value.trim();
-
-        if (!employeeId) { Swal.showValidationMessage("Please select an employee."); return false; }
-        if (!newSalary || parseFloat(newSalary) <= 0) { Swal.showValidationMessage("Please enter a valid new salary."); return false; }
-        if (!effectiveDate) { Swal.showValidationMessage("Effective date is required."); return false; }
-        if (!reason) { Swal.showValidationMessage("Please provide a reason."); return false; }
-
-        return { employee_id: parseInt(employeeId), new_salary: parseFloat(newSalary), effective_date: effectiveDate, reason };
-      },
+  const resetNewChangeForm = () => {
+    setNewChangeForm({
+      employee_id: "",
+      new_salary: "",
+      effective_date: new Date().toISOString().slice(0, 10),
+      reason: "",
     });
+    setNewChangeError(null);
+  };
 
-    if (!result.isConfirmed || !result.value) return;
+  const openNewChangeModal = () => {
+    resetNewChangeForm();
+    setIsNewChangeOpen(true);
+  };
+
+  const closeNewChangeModal = () => {
+    if (isSubmittingNewChange) return;
+    setIsNewChangeOpen(false);
+    setNewChangeError(null);
+  };
+
+  const handleSubmitNewChange = async () => {
+    setNewChangeError(null);
+
+    const employeeId = Number(newChangeForm.employee_id);
+    const salary = Number(newChangeForm.new_salary);
+    const reason = newChangeForm.reason.trim();
+
+    if (!employeeId) {
+      setNewChangeError("Please select an employee.");
+      return;
+    }
+    if (!Number.isFinite(salary) || salary <= 0) {
+      setNewChangeError("Please enter a valid new daily rate.");
+      return;
+    }
+    if (!newChangeForm.effective_date) {
+      setNewChangeError("Effective date is required.");
+      return;
+    }
+    if (!reason) {
+      setNewChangeError("Please provide a reason.");
+      return;
+    }
+
+    setIsSubmittingNewChange(true);
 
     try {
       const res = await fetch("/api/hr/salary-changes", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
-        body: JSON.stringify(result.value),
+        body: JSON.stringify({
+          employee_id: employeeId,
+          new_salary: salary,
+          effective_date: newChangeForm.effective_date,
+          reason,
+        }),
       });
-      const data = await res.json();
+
+      const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
         if (res.status === 403 && data.code === "RETROACTIVE_LOCKED") {
-          Swal.fire("Retroactive Change Blocked", data.message ?? "This effective date falls within a closed payroll period. You need override authority to proceed.", "warning");
+          setNewChangeError(data.message ?? "This effective date falls within a closed payroll period. You need override authority to proceed.");
         } else {
-          Swal.fire("Error", data.message ?? "Failed to submit salary change.", "error");
+          setNewChangeError(data.message ?? "Failed to submit salary change.");
         }
         return;
       }
 
-      Swal.fire("Submitted", "Salary change proposal has been submitted for approval.", "success");
+      setIsNewChangeOpen(false);
+      resetNewChangeForm();
       fetchChanges();
     } catch {
-      Swal.fire("Error", "A network error occurred. Please try again.", "error");
+      setNewChangeError("A network error occurred. Please try again.");
+    } finally {
+      setIsSubmittingNewChange(false);
     }
   };
 
@@ -604,45 +685,38 @@ const SalaryChanges: React.FC = () => {
     </ModalPortal>
   );
 
-  // ─── Summary Cards ────────────────────────────────────────────────────────────
-
-  const cards = [
-    { label: "Pending", value: summary.pending, color: "amber" },
-    { label: "Approved", value: summary.approved, color: "sky" },
-    { label: "Applied", value: summary.applied, color: "emerald" },
-    { label: "Rejected", value: summary.rejected, color: "rose" },
-  ] as const;
-
-  const cardColorMap = {
-    amber: "border-amber-400 dark:border-amber-600",
-    sky: "border-sky-400 dark:border-sky-600",
-    emerald: "border-emerald-400 dark:border-emerald-600",
-    rose: "border-rose-400 dark:border-rose-600",
+  const stats = {
+    total: summary.pending + summary.approved + summary.applied + summary.rejected + summary.cancelled,
+    pending: summary.pending,
+    approved: summary.approved,
+    applied: summary.applied,
+    rejected: summary.rejected,
+    cancelled: summary.cancelled,
   };
 
-  const cardTextMap = {
-    amber: "text-amber-600 dark:text-amber-400",
-    sky: "text-sky-600 dark:text-sky-400",
-    emerald: "text-emerald-600 dark:text-emerald-400",
-    rose: "text-rose-600 dark:text-rose-400",
-  };
+  const selectedEmployee = useMemo(() => {
+    const id = Number(newChangeForm.employee_id);
+    if (!id) return null;
+    return employees.find((employee) => employee.id === id) ?? null;
+  }, [employees, newChangeForm.employee_id]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Salary Change Requests</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Propose, review, and track employee salary adjustments.</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Salary Change Requests</h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">Propose, review, and track employee salary adjustments.</p>
         </div>
         {canManage && (
           <button
-            onClick={handleNewChange}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors"
+            onClick={openNewChangeModal}
+            disabled={isSubmittingNewChange}
+            className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 ${isSubmittingNewChange ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 5v14M5 12h14" />
             </svg>
             New Salary Change
@@ -650,44 +724,79 @@ const SalaryChanges: React.FC = () => {
         )}
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {cards.map((card) => (
-          <div key={card.label} className={`bg-white dark:bg-gray-900 rounded-2xl border-l-4 ${cardColorMap[card.color]} p-4 shadow-sm`}>
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{card.label}</p>
-            <p className={`text-3xl font-bold mt-1 ${cardTextMap[card.color]}`}>{card.value}</p>
-          </div>
-        ))}
+      {/* Metrics */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-5">
+        <MetricCard
+          title="Total Requests"
+          value={stats.total}
+          icon={SparklesIcon}
+          color="info"
+          description="All salary change records"
+        />
+        <MetricCard
+          title="Pending"
+          value={stats.pending}
+          icon={ClockIcon}
+          color="warning"
+          description="Awaiting approval"
+        />
+        <MetricCard
+          title="Approved"
+          value={stats.approved}
+          icon={CheckCircleIcon}
+          color="info"
+          description="Ready to apply"
+        />
+        <MetricCard
+          title="Applied"
+          value={stats.applied}
+          icon={CheckCircleIcon}
+          color="success"
+          description="Updated on employee records"
+        />
+        <MetricCard
+          title="Rejected / Cancelled"
+          value={stats.rejected + stats.cancelled}
+          icon={XCircleIcon}
+          color="error"
+          description="Closed without apply"
+        />
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by employee or department..."
-            className="flex-1 px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "All" | ChangeStatus)}
-            title="Filter by status"
-            className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="All">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="applied">Applied</option>
-            <option value="rejected">Rejected</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="lg:col-span-3">
+            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by employee or department..."
+              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 placeholder-gray-500 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-400"
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as "All" | ChangeStatus)}
+              title="Filter by status"
+              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+            >
+              <option value="All">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="applied">Applied</option>
+              <option value="rejected">Rejected</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-white/3">
         {loading ? (
           <div className="py-24 text-center text-gray-400 dark:text-gray-600">
             <svg className="animate-spin w-8 h-8 mx-auto mb-3 text-blue-500" fill="none" viewBox="0 0 24 24">
@@ -702,79 +811,95 @@ const SalaryChanges: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Employee</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Previous</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">New</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Change</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Effective</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Actions</th>
+            <table className="w-full">
+              <thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Employee</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Previous</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">New</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Change</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Type</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Effective</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Status</th>
+                  <th className="px-6 py-4 text-center text-sm font-semibold text-gray-900 dark:text-white">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filtered.map((change) => (
-                  <tr key={change.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900 dark:text-white">{change.employee?.name ?? `#${change.employee_id}`}</div>
-                      {change.employee?.department && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{change.employee.department}</div>
-                      )}
-                      {change.retroactive && (
-                        <span className="inline-block text-xs font-medium text-amber-600 dark:text-amber-400">⚠ Retroactive</span>
-                      )}
+                  <tr key={change.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/40">
+                          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                            {getInitials(change.employee?.name)}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">{change.employee?.name ?? `#${change.employee_id}`}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{change.employee?.department ?? "No department"}</p>
+                          {change.retroactive && (
+                            <span className="mt-0.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                              Retroactive
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300 font-mono">{fmtCurrency(change.previous_salary)}</td>
-                    <td className="px-4 py-3 text-gray-900 dark:text-white font-mono font-medium">{fmtCurrency(change.new_salary)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4 font-mono text-sm text-gray-700 dark:text-gray-300">{fmtCurrency(change.previous_salary)}</td>
+                    <td className="px-6 py-4 font-mono text-sm font-medium text-gray-900 dark:text-white">{fmtCurrency(change.new_salary)}</td>
+                    <td className="px-6 py-4">
                       <span className={`font-medium ${change.change_percent >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                         {fmtPct(change.change_percent)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${changeTypePill[change.change_type]}`}>
                         {changeTypeLabel[change.change_type]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(change.effective_date)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{fmtDate(change.effective_date)}</td>
+                    <td className="px-6 py-4">
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusPill[change.status]}`}>
                         {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => setViewChange(change)}
-                          className="px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          title="View details"
                         >
-                          View
+                          <svg className="size-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
                         </button>
                         {canApprove && change.status === "pending" && change.proposed_by !== currentUserId && (
                           <button
                             onClick={() => handleApprove(change)}
-                            className="px-3 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                            className="rounded-lg p-2 transition-colors hover:bg-green-50 dark:hover:bg-green-900/20"
+                            title="Approve"
                           >
-                            Approve
+                            <CheckCircleIcon className="size-5 text-green-600 dark:text-green-400" />
                           </button>
                         )}
                         {canApprove && change.status === "approved" && !change.applied_at && (
                           <button
                             onClick={() => handleApply(change)}
-                            className="px-3 py-1 text-xs font-medium text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-lg transition-colors"
+                            className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            title="Apply now"
                           >
-                            Apply
+                            <SparklesIcon className="size-5 text-blue-600 dark:text-blue-400" />
                           </button>
                         )}
                         {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                           <button
                             onClick={() => handleCancel(change)}
-                            className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            className="rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                            title="Cancel"
                           >
-                            Cancel
+                            <BanIcon className="size-5 text-gray-500 dark:text-gray-400" />
                           </button>
                         )}
                       </div>
@@ -789,6 +914,126 @@ const SalaryChanges: React.FC = () => {
 
       {/* View Modal */}
       {viewChange && <ViewModal change={viewChange} />}
+
+      {/* New Salary Change Modal */}
+      {isNewChangeOpen && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Propose Daily Rate Change</h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Create a salary change request for approval.</p>
+                </div>
+                <button
+                  onClick={closeNewChangeModal}
+                  className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl leading-none font-light transition-colors"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-8 max-h-[calc(90vh-150px)] overflow-y-auto">
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Employee <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={newChangeForm.employee_id}
+                      onChange={(e) => setNewChangeForm((prev) => ({ ...prev, employee_id: e.target.value }))}
+                      title="Select employee"
+                      className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                    >
+                      <option value="">Select employee</option>
+                      {employees.map((employee) => (
+                        <option key={employee.id} value={employee.id}>
+                          {employee.name}{employee.department ? ` - ${employee.department}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedEmployee && (
+                    <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-3">
+                      <p className="text-sm text-blue-900 dark:text-blue-300">
+                        Current daily rate: <span className="font-semibold">{fmtCurrency(selectedEmployee.salary)}</span>
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        New Daily Rate (PHP) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="e.g. 850.00"
+                        value={newChangeForm.new_salary}
+                        onChange={(e) => setNewChangeForm((prev) => ({ ...prev, new_salary: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Effective Date <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        title="Effective date"
+                        value={newChangeForm.effective_date}
+                        onChange={(e) => setNewChangeForm((prev) => ({ ...prev, effective_date: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Reason <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={newChangeForm.reason}
+                      onChange={(e) => setNewChangeForm((prev) => ({ ...prev, reason: e.target.value }))}
+                      placeholder="Describe the reason for this change..."
+                      rows={4}
+                      className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  {newChangeError && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300">
+                      {newChangeError}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 px-8 py-4 flex gap-3 justify-end">
+                <button
+                  onClick={closeNewChangeModal}
+                  disabled={isSubmittingNewChange}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-all duration-200 hover:shadow-sm disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmitNewChange}
+                  disabled={isSubmittingNewChange}
+                  className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isSubmittingNewChange ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  {isSubmittingNewChange ? "Submitting..." : "Submit Salary Change"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </div>
   );
 };

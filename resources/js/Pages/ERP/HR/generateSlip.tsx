@@ -5,6 +5,7 @@ import Swal from "sweetalert2";
 // ==================== Type Definitions ====================
 type EmployeeStatus = "active" | "inactive" | "on_leave";
 type AttendanceStatus = "finalized" | "pending" | "not_started";
+type PayrollWorkflowStatus = "pending" | "awaiting_checker" | "awaiting_final_approval" | "ready_for_disbursement" | "paid";
 
 type Employee = {
 	id: number;
@@ -14,7 +15,8 @@ type Employee = {
 	department: string;
 	position: string;
 	status: EmployeeStatus;
-	monthlySalary?: number;
+	dailySalary?: number;
+	monthlyEquivalentSalary?: number;
 	dailyRate?: number;
 	hourlyRate?: number;
 	// Retail shop compensation structure
@@ -27,6 +29,7 @@ type Employee = {
 	};
 	lastSlipGenerated?: string;
 	hasSlipForPeriod?: boolean; // Whether slip already exists for selected period
+	payrollWorkflowStatus?: PayrollWorkflowStatus;
 };
 
 type PayrollPeriod = {
@@ -45,10 +48,8 @@ type PayrollPeriod = {
 type PayrollHoursBreakdown = {
 	regularHours: number;
 	overtimeHours: number;
-	restDayHours: number;
 	specialHolidayHours: number;
 	regularHolidayHours: number;
-	nightDifferentialHours: number;
 	undertimeHours: number;
 	absentDays: number;
 	attendanceDays: number;
@@ -58,10 +59,8 @@ type PayrollHoursBreakdown = {
 type PayrollEarningsBreakdown = {
 	basicPay: number;
 	overtimePay: number;
-	restDayPay: number;
 	specialHolidayPay: number;
 	regularHolidayPay: number;
-	nightDifferentialPay: number;
 	salesCommission: number;
 	performanceBonus: number;
 	otherAllowances: number;
@@ -151,10 +150,8 @@ type SingleSlipAttendanceSummary = {
 	regularHours: number;
 	overtimeHours: number;
 	undertimeHours: number;
-	restDayHours: number;
 	specialHolidayHours: number;
 	regularHolidayHours: number;
-	nightDifferentialHours: number;
 };
 
 // ==================== Icon Components ====================
@@ -224,7 +221,8 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
 		department: apiEmployee.department || 'N/A',
 		position: apiEmployee.position || 'N/A',
 		status: apiEmployee.status as EmployeeStatus,
-		monthlySalary: parseFloat(apiEmployee.salary || apiEmployee.monthly_salary || 0),
+		dailySalary: parseFloat(apiEmployee.salary || apiEmployee.daily_rate || 0),
+		monthlyEquivalentSalary: apiEmployee.monthly_salary ? parseFloat(apiEmployee.monthly_salary) : undefined,
 		dailyRate: apiEmployee.daily_rate ? parseFloat(apiEmployee.daily_rate) : undefined,
 		hourlyRate: apiEmployee.hourly_rate ? parseFloat(apiEmployee.hourly_rate) : undefined,
 		salesCommissionRate: apiEmployee.sales_commission_rate ? parseFloat(apiEmployee.sales_commission_rate) : 0,
@@ -233,6 +231,7 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
 		loans: undefined,
 		lastSlipGenerated: undefined,
 		hasSlipForPeriod: false,
+		payrollWorkflowStatus: "pending",
 	};
 };
 
@@ -258,10 +257,8 @@ const buildSingleSlipAttendanceSummary = (summary: any): SingleSlipAttendanceSum
 	regularHours: Number(summary?.total_regular_hours ?? 0),
 	overtimeHours: Number(summary?.total_overtime_hours ?? 0),
 	undertimeHours: clampNonNegative(summary?.total_undertime_hours),
-	restDayHours: Number(summary?.rest_day_hours ?? 0),
 	specialHolidayHours: Number(summary?.special_holiday_hours ?? 0),
 	regularHolidayHours: Number(summary?.regular_holiday_hours ?? 0),
-	nightDifferentialHours: Number(summary?.night_differential_hours ?? 0),
 });
 
 const normalizeSinglePreviewBreakdown = (employee: Employee, calc: any): PayrollBreakdown => ({
@@ -272,10 +269,8 @@ const normalizeSinglePreviewBreakdown = (employee: Employee, calc: any): Payroll
 	hours: {
 		regularHours: toNumber(calc?.hours?.regular_hours),
 		overtimeHours: toNumber(calc?.hours?.overtime_hours),
-		restDayHours: toNumber(calc?.hours?.rest_day_hours),
 		specialHolidayHours: toNumber(calc?.hours?.special_holiday_hours),
 		regularHolidayHours: toNumber(calc?.hours?.regular_holiday_hours),
-		nightDifferentialHours: toNumber(calc?.hours?.night_differential_hours),
 		undertimeHours: toNumber(calc?.hours?.undertime_hours),
 		absentDays: toNumber(calc?.hours?.absent_days),
 		attendanceDays: toNumber(calc?.hours?.attendance_days),
@@ -284,10 +279,8 @@ const normalizeSinglePreviewBreakdown = (employee: Employee, calc: any): Payroll
 	earnings: {
 		basicPay: toNumber(calc?.earnings?.basic_pay),
 		overtimePay: toNumber(calc?.earnings?.overtime_pay),
-		restDayPay: toNumber(calc?.earnings?.rest_day_pay),
 		specialHolidayPay: toNumber(calc?.earnings?.special_holiday_pay),
 		regularHolidayPay: toNumber(calc?.earnings?.regular_holiday_pay),
-		nightDifferentialPay: toNumber(calc?.earnings?.night_differential_pay),
 		salesCommission: toNumber(calc?.earnings?.sales_commission),
 		performanceBonus: toNumber(calc?.earnings?.performance_bonus),
 		otherAllowances: toNumber(calc?.earnings?.other_allowances),
@@ -328,10 +321,8 @@ const normalizeBatchPreviewBreakdown = (preview: any): PayrollBreakdown => {
 		hours: {
 			regularHours: toNumber(attendance?.total_regular_hours),
 			overtimeHours: toNumber(attendance?.total_overtime_hours),
-			restDayHours: toNumber(attendance?.rest_day_hours),
 			specialHolidayHours: toNumber(attendance?.special_holiday_hours),
 			regularHolidayHours: toNumber(attendance?.regular_holiday_hours),
-			nightDifferentialHours: toNumber(attendance?.night_differential_hours),
 			undertimeHours: toNumber(attendance?.total_undertime_hours),
 			absentDays: toNumber(attendance?.total_absent_days),
 			attendanceDays: toNumber(attendance?.total_present_days),
@@ -340,10 +331,8 @@ const normalizeBatchPreviewBreakdown = (preview: any): PayrollBreakdown => {
 		earnings: {
 			basicPay: toNumber(calculation?.basic_pay),
 			overtimePay: toNumber(calculation?.overtime_pay),
-			restDayPay: toNumber(calculation?.rest_day_pay),
 			specialHolidayPay: toNumber(calculation?.special_holiday_pay),
 			regularHolidayPay: toNumber(calculation?.regular_holiday_pay),
-			nightDifferentialPay: toNumber(calculation?.night_differential_pay),
 			salesCommission: toNumber(calculation?.sales_commission),
 			performanceBonus: toNumber(calculation?.performance_bonus),
 			otherAllowances: toNumber(calculation?.other_allowances),
@@ -391,6 +380,8 @@ export default function GenerateSlip() {
 	const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
 	const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
 	const [isLoadingPeriods, setIsLoadingPeriods] = useState(true);
+	const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+	const [periodSearch, setPeriodSearch] = useState("");
 	const [search, setSearch] = useState("");
 	const [department, setDepartment] = useState<string>("");
 	const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0);
@@ -405,10 +396,8 @@ export default function GenerateSlip() {
 	// Manual hours input state
 	const [totalRegularHours, setTotalRegularHours] = useState<number>(0);
 	const [totalOvertimeHours, setTotalOvertimeHours] = useState<number>(0);
-	const [restDayHours, setRestDayHours] = useState<number>(0);
 	const [specialHolidayHours, setSpecialHolidayHours] = useState<number>(0);
 	const [regularHolidayHours, setRegularHolidayHours] = useState<number>(0);
-	const [nightDifferentialHours, setNightDifferentialHours] = useState<number>(0);
 	const [totalUndertimeHours, setTotalUndertimeHours] = useState<number>(0);
 	const [totalAbsentDays, setTotalAbsentDays] = useState<number>(0);
 	
@@ -432,6 +421,33 @@ export default function GenerateSlip() {
 	});
 
 	const selectedPeriod = payrollPeriods[selectedPeriodIndex];
+	const filteredPayrollPeriods = useMemo(() => {
+		const term = periodSearch.trim().toLowerCase();
+		if (!term) return payrollPeriods;
+
+		return payrollPeriods.filter((period) => {
+			const text = `${period.month} ${period.startDate} ${period.endDate} ${period.periodKey ?? ""}`.toLowerCase();
+			return text.includes(term);
+		});
+	}, [payrollPeriods, periodSearch]);
+
+	const attendanceStatusBadgeClasses: Record<AttendanceStatus, string> = {
+		finalized: "bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800",
+		pending: "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800",
+		not_started: "bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700",
+	};
+
+	const attendanceStatusLabel: Record<AttendanceStatus, string> = {
+		finalized: "Finalized",
+		pending: "Pending",
+		not_started: "Not Started",
+	};
+
+	const handlePeriodSelect = (index: number) => {
+		setSelectedPeriodIndex(index);
+		setIsPeriodModalOpen(false);
+		setPeriodSearch("");
+	};
 	const payrollPeriodKey = useMemo(
 		() => {
 			if (!selectedPeriod) return "";
@@ -522,6 +538,20 @@ export default function GenerateSlip() {
 	}, []);
 
 	useEffect(() => {
+		if (!isPeriodModalOpen) return;
+
+		const handleEscape = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				setIsPeriodModalOpen(false);
+				setPeriodSearch("");
+			}
+		};
+
+		document.addEventListener('keydown', handleEscape);
+		return () => document.removeEventListener('keydown', handleEscape);
+	}, [isPeriodModalOpen]);
+
+	useEffect(() => {
 		const fetchGovernanceReadiness = async () => {
 			if (!payrollPeriodKey) {
 				setGovernanceStatus((prev) => ({
@@ -562,6 +592,55 @@ export default function GenerateSlip() {
 					: Array.isArray(payload)
 						? payload
 						: [];
+
+				const workflowStatusByEmployeeId = new Map<number, PayrollWorkflowStatus>();
+				const generatedAtByEmployeeId = new Map<number, string>();
+				for (const row of payrollRows) {
+					const employeeId = Number(row?.employee_id ?? 0);
+					if (!employeeId) continue;
+
+					const workflowStatusRaw = String(row?.workflow_status || '').toLowerCase();
+					const statusRaw = String(row?.status || '').toLowerCase();
+					const approvalStatusRaw = String(row?.approval_status || '').toLowerCase();
+
+					let normalizedStatus: PayrollWorkflowStatus = 'pending';
+					if (workflowStatusRaw === 'paid' || statusRaw === 'paid') {
+						normalizedStatus = 'paid';
+					} else if (workflowStatusRaw === 'ready_for_disbursement' || (statusRaw === 'approved' && Boolean(row?.final_approved_by))) {
+						normalizedStatus = 'ready_for_disbursement';
+					} else if (workflowStatusRaw === 'awaiting_final_approval' || (approvalStatusRaw === 'approved' && statusRaw === 'pending')) {
+						normalizedStatus = 'awaiting_final_approval';
+					} else if (workflowStatusRaw === 'awaiting_checker' || approvalStatusRaw === 'pending') {
+						normalizedStatus = 'awaiting_checker';
+					}
+
+					workflowStatusByEmployeeId.set(employeeId, normalizedStatus);
+					if (row?.created_at) {
+						generatedAtByEmployeeId.set(employeeId, String(row.created_at));
+					}
+				}
+
+				setEmployeeData((prevData) => prevData.map((employee) => {
+					const workflowStatus = workflowStatusByEmployeeId.get(employee.id);
+					if (!workflowStatus) {
+						return {
+							...employee,
+							hasSlipForPeriod: false,
+							lastSlipGenerated: undefined,
+							payrollWorkflowStatus: 'pending',
+						};
+					}
+
+					const generatedAt = generatedAtByEmployeeId.get(employee.id);
+					return {
+						...employee,
+						hasSlipForPeriod: true,
+						lastSlipGenerated: generatedAt
+							? new Date(generatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+							: employee.lastSlipGenerated,
+						payrollWorkflowStatus: workflowStatus,
+					};
+				}));
 
 				const summary = payrollRows.reduce(
 					(acc: GovernanceReadinessStatus, row: any) => {
@@ -632,8 +711,7 @@ export default function GenerateSlip() {
 				: true;
 			const matchesDepartment = department ? e.department === department : true;
 			const matchesStatus = e.status === "active";
-			const pendingOnly = !e.hasSlipForPeriod;
-			return matchesSearch && matchesDepartment && matchesStatus && pendingOnly;
+			return matchesSearch && matchesDepartment && matchesStatus;
 		});
 	}, [search, department, employeeData]);
 
@@ -734,10 +812,8 @@ export default function GenerateSlip() {
 		// Reset hours input fields and fetch attendance data
 		setTotalRegularHours(0);
 		setTotalOvertimeHours(0);
-		setRestDayHours(0);
 		setSpecialHolidayHours(0);
 		setRegularHolidayHours(0);
-		setNightDifferentialHours(0);
 		setTotalUndertimeHours(0);
 		setTotalAbsentDays(0);
 		setAttendanceSummary(null);
@@ -787,10 +863,8 @@ export default function GenerateSlip() {
 				setAttendanceSummary(nextAttendanceSummary);
 				setTotalRegularHours(nextAttendanceSummary.regularHours);
 				setTotalOvertimeHours(nextAttendanceSummary.overtimeHours);
-				setRestDayHours(nextAttendanceSummary.restDayHours);
 				setSpecialHolidayHours(nextAttendanceSummary.specialHolidayHours);
 				setRegularHolidayHours(nextAttendanceSummary.regularHolidayHours);
-				setNightDifferentialHours(nextAttendanceSummary.nightDifferentialHours);
 				setTotalUndertimeHours(nextAttendanceSummary.undertimeHours);
 				setTotalAbsentDays(nextAttendanceSummary.absentDays);
 
@@ -813,10 +887,8 @@ export default function GenerateSlip() {
 		setAttendanceSummary(null);
 		setTotalRegularHours(0);
 		setTotalOvertimeHours(0);
-		setRestDayHours(0);
 		setSpecialHolidayHours(0);
 		setRegularHolidayHours(0);
-		setNightDifferentialHours(0);
 		setTotalUndertimeHours(0);
 		setTotalAbsentDays(0);
 	};
@@ -1013,6 +1085,7 @@ export default function GenerateSlip() {
 						? { 
 							...e, 
 							hasSlipForPeriod: true,
+							payrollWorkflowStatus: "awaiting_checker",
 							lastSlipGenerated: new Date().toLocaleDateString('en-US', { 
 								year: 'numeric', 
 								month: 'short', 
@@ -1230,10 +1303,8 @@ export default function GenerateSlip() {
 		const absentDays = activeAttendanceSummary.absentDays;
 		const attendanceDays = activeAttendanceSummary.attendanceDays;
 		const leaveDays = activeAttendanceSummary.leaveDays;
-		const currentRestDayHours = attendanceOverride?.restDayHours ?? restDayHours;
 		const currentSpecialHolidayHours = attendanceOverride?.specialHolidayHours ?? specialHolidayHours;
 		const currentRegularHolidayHours = attendanceOverride?.regularHolidayHours ?? regularHolidayHours;
-		const currentNightDifferentialHours = attendanceOverride?.nightDifferentialHours ?? nightDifferentialHours;
 
 		setIsCalculating(true);
 		try {
@@ -1255,14 +1326,12 @@ export default function GenerateSlip() {
 					leave_days: leaveDays,
 					regular_hours: regularHours,
 					overtime_hours: overtimeHours,
-					rest_day_hours: currentRestDayHours,
 					special_holiday_hours: currentSpecialHolidayHours,
 					regular_holiday_hours: currentRegularHolidayHours,
-					night_differential_hours: currentNightDifferentialHours,
 					undertime_hours: undertimeHours,
 					absent_days: absentDays,
-					sales_commission: activeEmployee.monthlySalary ? (activeEmployee.monthlySalary * (activeEmployee.salesCommissionRate ?? 0)) : 0,
-					performance_bonus: activeEmployee.monthlySalary ? (activeEmployee.monthlySalary * (activeEmployee.performanceBonusRate ?? 0)) : 0,
+					sales_commission: (activeEmployee.monthlyEquivalentSalary ?? ((activeEmployee.dailySalary ?? activeEmployee.dailyRate ?? 0) * (selectedPeriod.workingDays || 26))) * (activeEmployee.salesCommissionRate ?? 0),
+					performance_bonus: (activeEmployee.monthlyEquivalentSalary ?? ((activeEmployee.dailySalary ?? activeEmployee.dailyRate ?? 0) * (selectedPeriod.workingDays || 26))) * (activeEmployee.performanceBonusRate ?? 0),
 					other_allowances: activeEmployee.otherAllowances ?? 0,
 				}),
 			});
@@ -1346,16 +1415,14 @@ export default function GenerateSlip() {
 				leave_days:       leaveDays,
 				absent_days:      absentDays,
 				overtime_hours:   totalOvertimeHours,
-				rest_day_hours:   restDayHours,
 				special_holiday_hours: specialHolidayHours,
 				regular_holiday_hours: regularHolidayHours,
-				night_differential_hours: nightDifferentialHours,
 				undertime_hours:  clampNonNegative(totalUndertimeHours),
 				// Extra earnings — appended as custom components by the service
 				salesCommission:  payrollBreakdown.earnings.salesCommission,
 				performanceBonus: payrollBreakdown.earnings.performanceBonus,
 				otherAllowances:  payrollBreakdown.earnings.otherAllowances,
-				notes: `Generated payslip for period ${selectedPeriod.month}. Regular: ${totalRegularHours}h, OT: ${totalOvertimeHours}h, Rest Day: ${restDayHours}h, Special Holiday: ${specialHolidayHours}h, Regular Holiday: ${regularHolidayHours}h, Night Diff: ${nightDifferentialHours}h, Undertime: ${totalUndertimeHours}h, Absent: ${absentDays} day(s)`,
+				notes: `Generated payslip for period ${selectedPeriod.month}. Regular: ${totalRegularHours}h, OT: ${totalOvertimeHours}h, Special Holiday: ${specialHolidayHours}h, Regular Holiday: ${regularHolidayHours}h, Undertime: ${totalUndertimeHours}h, Absent: ${absentDays} day(s)`,
 			};
 
 			const response = await fetch('/api/hr/payroll', {
@@ -1383,6 +1450,7 @@ export default function GenerateSlip() {
 						? { 
 							...e, 
 							hasSlipForPeriod: true,
+							payrollWorkflowStatus: "awaiting_checker",
 							lastSlipGenerated: new Date().toLocaleDateString('en-US', { 
 								year: 'numeric', 
 								month: 'short', 
@@ -1637,29 +1705,34 @@ export default function GenerateSlip() {
 						<div className="w-full lg:w-auto">
 							<div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
 								<label className="text-sm font-medium text-gray-600 dark:text-gray-300">Payroll Period</label>
-								<select
-									value={selectedPeriodIndex}
-									onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
+								<button
+									type="button"
+									onClick={() => setIsPeriodModalOpen(true)}
 									disabled={isLoadingPeriods || payrollPeriods.length === 0}
-									aria-label="Select payroll period"
-									className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white inline-block disabled:opacity-50"
+									aria-label="Open payroll period picker"
+									className="min-w-64 h-14 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 text-left disabled:opacity-50 disabled:cursor-not-allowed hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
 								>
-									{isLoadingPeriods ? (
-										<option>Loading periods...</option>
-									) : payrollPeriods.length === 0 ? (
-										<option>No periods available</option>
-									) : (
-										payrollPeriods.map((period, index) => (
-											<option key={index} value={index}>
-												{period.month} {period.attendanceStatus === "finalized" ? "✓" : ""}
-											</option>
-										))
-									)}
-								</select>
+									<div className="flex items-center justify-between gap-3">
+										<div className="min-w-0">
+											<p className="text-sm font-semibold text-gray-900 dark:text-white truncate leading-tight">
+												{isLoadingPeriods
+													? "Loading periods..."
+													: selectedPeriod
+														? selectedPeriod.month
+														: "No periods available"}
+											</p>
+										</div>
+										<div className="shrink-0">
+											<svg className="size-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+											</svg>
+										</div>
+									</div>
+								</button>
 								<button
 									onClick={handleGenerateAll}
 									disabled={selectedPendingEmployees.length === 0 || isGenerating}
-									className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+									className="h-14 px-5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
 									title={selectedPendingEmployees.length === 0 ? "Select employees first" : `Generate ${selectedPendingEmployees.length} payslips`}
 								>
 									<CalculatorIcon className="size-4" />
@@ -1693,7 +1766,7 @@ export default function GenerateSlip() {
 								</th>
 								<th className="px-6 py-3 text-left">Employee</th>
 								<th className="px-6 py-3 text-left">Position</th>
-								<th className="px-6 py-3 text-left">Base Salary</th>
+								<th className="px-6 py-3 text-left">Base Rate</th>
 								<th className="px-6 py-3 text-left">Status</th>
 								<th className="px-6 py-3 text-center">Action</th>
 							</tr>
@@ -1747,18 +1820,29 @@ export default function GenerateSlip() {
 									</td>
 									<td className="px-6 py-4 text-gray-700 dark:text-gray-300">{employee.position}</td>
 									<td className="px-6 py-4 text-gray-900 dark:text-white font-semibold">
-										{employee.monthlySalary ? formatPHP(employee.monthlySalary) : 
-										 employee.dailyRate ? formatPHP(employee.dailyRate) + "/day" :
+										{(employee.dailySalary ?? employee.dailyRate) ? formatPHP(employee.dailySalary ?? employee.dailyRate ?? 0) + "/day" : 
 										 employee.hourlyRate ? formatPHP(employee.hourlyRate) + "/hr" : "N/A"}
 									</td>
 									<td className="px-6 py-4">
-										{employee.hasSlipForPeriod ? (
-											<span className="inline-flex items-center px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-xs font-semibold">
-												Generated
-											</span>
-										) : (
+										{!employee.hasSlipForPeriod || employee.payrollWorkflowStatus === "pending" ? (
 											<span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs font-semibold">
 												Pending
+											</span>
+										) : employee.payrollWorkflowStatus === "awaiting_checker" ? (
+											<span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs font-semibold">
+												Awaiting Finance
+											</span>
+										) : employee.payrollWorkflowStatus === "awaiting_final_approval" ? (
+											<span className="inline-flex items-center px-2 py-1 rounded-full bg-sky-100 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 text-xs font-semibold">
+												Awaiting Owner
+											</span>
+										) : employee.payrollWorkflowStatus === "ready_for_disbursement" ? (
+											<span className="inline-flex items-center px-2 py-1 rounded-full bg-violet-100 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 text-xs font-semibold">
+												Ready to Disburse
+											</span>
+										) : (
+											<span className="inline-flex items-center px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-xs font-semibold">
+												Paid
 											</span>
 										)}
 									</td>
@@ -1842,6 +1926,113 @@ export default function GenerateSlip() {
 				</div>
 			</div>
 
+			{isPeriodModalOpen && createPortal(
+				<div
+					className="fixed inset-0 z-999999 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+					onClick={() => {
+						setIsPeriodModalOpen(false);
+						setPeriodSearch("");
+					}}
+				>
+					<div
+						className="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl overflow-hidden"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<div className="flex items-start justify-between gap-4 p-5 border-b border-gray-100 dark:border-gray-800 bg-linear-to-r from-slate-50 to-white dark:from-gray-900 dark:to-gray-900">
+							<div>
+								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Payroll Period</h3>
+								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Choose the period for calculation and payslip generation.</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => {
+									setIsPeriodModalOpen(false);
+									setPeriodSearch("");
+								}}
+								className="text-2xl leading-none text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+								aria-label="Close period picker"
+							>
+								×
+							</button>
+						</div>
+
+						<div className="p-5 space-y-4">
+							<div className="relative">
+								<svg className="size-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+								</svg>
+								<input
+									type="text"
+									value={periodSearch}
+									onChange={(event) => setPeriodSearch(event.target.value)}
+									placeholder="Search period (month or date)"
+									className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 pl-9 pr-3 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
+								/>
+							</div>
+
+							<div className="max-h-[60vh] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20 p-2 space-y-2">
+								{filteredPayrollPeriods.length === 0 ? (
+									<div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
+										No payroll periods found.
+									</div>
+								) : (
+									filteredPayrollPeriods.map((period) => {
+										const actualIndex = payrollPeriods.findIndex((candidate) => candidate === period);
+										const isSelected = actualIndex === selectedPeriodIndex;
+
+										return (
+											<button
+												key={`${period.month}-${period.startDate}-${period.endDate}`}
+												type="button"
+												onClick={() => handlePeriodSelect(actualIndex)}
+												className={`w-full text-left px-4 py-3 rounded-xl border transition-all cursor-pointer ${
+													isSelected
+														? "bg-blue-50 border-blue-200 shadow-sm dark:bg-blue-900/20 dark:border-blue-800"
+														: "bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm hover:-translate-y-px dark:bg-gray-900 dark:border-gray-800 dark:hover:border-blue-700"
+												}`}
+											>
+												<div className="flex items-start justify-between gap-3">
+													<div className="min-w-0">
+														<p className="text-sm font-semibold text-gray-900 dark:text-white">{period.month}</p>
+														<p className="text-sm text-gray-700 dark:text-gray-300 mt-1 font-medium">{period.startDate} to {period.endDate}</p>
+														<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{period.workingDays} working days</p>
+													</div>
+													<div className="shrink-0 flex items-center gap-2">
+														<span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${attendanceStatusBadgeClasses[period.attendanceStatus]}`}>
+															{attendanceStatusLabel[period.attendanceStatus]}
+														</span>
+														<svg className="size-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+														</svg>
+														{isSelected && (
+															<CheckIcon className="size-4 text-blue-600 dark:text-blue-400" />
+														)}
+													</div>
+												</div>
+											</button>
+										);
+									})
+								)}
+							</div>
+						</div>
+
+						<div className="flex justify-end p-5 border-t border-gray-100 dark:border-gray-800">
+							<button
+								type="button"
+								onClick={() => {
+									setIsPeriodModalOpen(false);
+									setPeriodSearch("");
+								}}
+								className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+							>
+								Done
+							</button>
+						</div>
+					</div>
+				</div>,
+				document.body
+			)}
+
 			{/* Generation Modal - Continued in next part due to length */}
 			{selectedEmployee && createPortal(
 				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
@@ -1884,10 +2075,9 @@ export default function GenerateSlip() {
 								<p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Pay Configuration</p>
 								<div className="space-y-2 text-sm">
 									<div className="flex justify-between">
-										<span className="text-gray-600 dark:text-gray-400">Base Salary:</span>
+										<span className="text-gray-600 dark:text-gray-400">Base Rate:</span>
 										<span className="font-semibold text-gray-900 dark:text-white">
-											{selectedEmployee.monthlySalary ? formatPHP(selectedEmployee.monthlySalary) + "/mo" : 
-											 selectedEmployee.dailyRate ? formatPHP(selectedEmployee.dailyRate) + "/day" :
+											{(selectedEmployee.dailySalary ?? selectedEmployee.dailyRate) ? formatPHP(selectedEmployee.dailySalary ?? selectedEmployee.dailyRate ?? 0) + "/day" : 
 											 selectedEmployee.hourlyRate ? formatPHP(selectedEmployee.hourlyRate) + "/hr" : "N/A"}
 										</span>
 									</div>
@@ -1931,7 +2121,7 @@ export default function GenerateSlip() {
 										✓ Regular, overtime, undertime, and absent days are auto-calculated from attendance ({selectedPeriod.startDate} to {selectedPeriod.endDate})
 									</p>
 									<p className="text-xs text-blue-500 dark:text-blue-300 mt-1">
-										Rest day, holiday, and night differential hours are auto-filled from attendance/holiday data and can still be edited.
+										Holiday hours are auto-filled from attendance/holiday data and can still be edited.
 									</p>
 								</div>
 								<button
@@ -2030,22 +2220,6 @@ export default function GenerateSlip() {
 
 								<div>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-										Rest Day Hours
-									</label>
-									<input
-										type="number"
-										min="0"
-										step="0.5"
-										value={restDayHours}
-										onChange={(e) => setRestDayHours(Number(e.target.value) || 0)}
-										className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-										placeholder="0"
-									/>
-										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled, editable override</p>
-								</div>
-
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 										Special Holiday Hours
 									</label>
 									<input
@@ -2076,21 +2250,6 @@ export default function GenerateSlip() {
 										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled from holiday calendar, editable override</p>
 								</div>
 
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-										Night Differential Hours
-									</label>
-									<input
-										type="number"
-										min="0"
-										step="0.5"
-										value={nightDifferentialHours}
-										onChange={(e) => setNightDifferentialHours(Number(e.target.value) || 0)}
-										className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-										placeholder="0"
-									/>
-										<p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Auto-filled, editable override</p>
-								</div>
 							</div>
 						</div>
 
@@ -2123,20 +2282,12 @@ export default function GenerateSlip() {
 											<span className="text-lg font-bold text-green-600 dark:text-green-400">{formatHours(payrollBreakdown.hours.overtimeHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Rest Day Hours</span>
-											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.restDayHours)}</span>
-										</div>
-										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Special Holiday Hours</span>
 											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.specialHolidayHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Regular Holiday Hours</span>
 											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.regularHolidayHours)}</span>
-										</div>
-										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Night Diff Hours</span>
-											<span className="text-lg font-bold text-blue-600 dark:text-blue-400">{formatHours(payrollBreakdown.hours.nightDifferentialHours)}</span>
 										</div>
 										<div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
 											<span className="text-gray-600 dark:text-gray-400 block mb-1 text-xs">Undertime</span>
@@ -2161,12 +2312,6 @@ export default function GenerateSlip() {
 											<span className="text-gray-600 dark:text-gray-400">Overtime Pay</span>
 											<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.overtimePay)}</span>
 										</div>
-										{payrollBreakdown.earnings.restDayPay > 0 && (
-											<div className="flex items-center justify-between">
-												<span className="text-gray-600 dark:text-gray-400">Rest Day Pay</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.restDayPay)}</span>
-											</div>
-										)}
 										{payrollBreakdown.earnings.specialHolidayPay > 0 && (
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Special Holiday Pay</span>
@@ -2177,12 +2322,6 @@ export default function GenerateSlip() {
 											<div className="flex items-center justify-between">
 												<span className="text-gray-600 dark:text-gray-400">Regular Holiday Pay</span>
 												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.regularHolidayPay)}</span>
-											</div>
-										)}
-										{payrollBreakdown.earnings.nightDifferentialPay > 0 && (
-											<div className="flex items-center justify-between">
-												<span className="text-gray-600 dark:text-gray-400">Night Differential Pay</span>
-												<span className="text-green-600 dark:text-green-400 font-medium">+{formatPHP(payrollBreakdown.earnings.nightDifferentialPay)}</span>
 											</div>
 										)}
 										{payrollBreakdown.earnings.salesCommission > 0 && (

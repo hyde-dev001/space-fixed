@@ -10,6 +10,7 @@ import type { StockRequestApproval } from "@/types/procurement";
 
 type DisplayStatus = "Pending" | "Approved" | "Rejected" | "Needs Details";
 type MetricColor = "success" | "warning" | "info";
+const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface RequestFormState {
 	inventoryItemId: string;
@@ -40,6 +41,31 @@ function getDisplayStatus(status: StockRequestApproval["status"]): DisplayStatus
 // Map API priority (lowercase) → display label
 function getDisplayPriority(priority: StockRequestApproval["priority"]): string {
 	return priority.charAt(0).toUpperCase() + priority.slice(1);
+}
+
+function hasSizeSystemPrefix(value: string): boolean {
+	const normalized = value.trim().toUpperCase();
+	return SIZE_SYSTEMS.some((system) => normalized.startsWith(`${system} `));
+}
+
+function formatRequestedSizeLabel(size: string, sizeSystem?: string): string {
+	const rawSize = (size ?? "").trim();
+	if (!rawSize) return "";
+	if (hasSizeSystemPrefix(rawSize)) return rawSize;
+
+	const normalizedSystem = (sizeSystem ?? "").trim().toUpperCase();
+	if (SIZE_SYSTEMS.includes(normalizedSystem as typeof SIZE_SYSTEMS[number])) {
+		return `${normalizedSystem} ${rawSize}`;
+	}
+
+	return rawSize;
+}
+
+function formatRequestedSizeDisplay(value: string): string {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "";
+	if (hasSizeSystemPrefix(trimmed)) return trimmed;
+	return `Size ${trimmed}`;
 }
 
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
@@ -443,8 +469,8 @@ export default function StockRequest() {
 								>
 									<option value="">— All sizes —</option>
 									{selectedItem.sizes.map((s) => (
-										<option key={s.id} value={s.size}>
-											Size {s.size} — {s.quantity} in stock
+											<option key={s.id} value={formatRequestedSizeLabel(String(s.size), s.size_system)}>
+												{formatRequestedSizeDisplay(formatRequestedSizeLabel(String(s.size), s.size_system))} — {s.quantity} in stock
 										</option>
 									))}
 								</select>
@@ -554,7 +580,7 @@ export default function StockRequest() {
 						{viewingRequest.requested_size && (
 							<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
 								<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">Size {viewingRequest.requested_size}</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{formatRequestedSizeDisplay(viewingRequest.requested_size)}</p>
 							</div>
 						)}
 

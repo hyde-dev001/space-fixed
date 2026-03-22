@@ -97,6 +97,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         // Finance approval actions
         Route::post('/{id}/approve', [RepairServiceController::class, 'financeApprove'])->name('finance.repair-price-changes.approve');
         Route::post('/{id}/reject', [RepairServiceController::class, 'financeReject'])->name('finance.repair-price-changes.reject');
+        Route::post('/{id}/approve-final', [RepairServiceController::class, 'financeApproveFinal'])->name('finance.repair-price-changes.approve-final');
     });
 });
 
@@ -108,10 +109,10 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  */
 Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'role_or_permission:Shop Owner|approve-payroll|access-payslip-approval|access-approval-workflow', 'shop.isolation'])->group(function () {
     Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
-    Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->name('finance.payslip_approval.show');
-    Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->name('finance.payslip_approval.approve');
-    Route::post('/{id}/reject', [FinancePayslipApprovalController::class, 'rejectPayslip'])->name('finance.payslip_approval.reject');
-    Route::post('/{id}/final-approve', [FinancePayslipApprovalController::class, 'finalApprovePayslip'])->name('finance.payslip_approval.final_approve');
+    Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->whereNumber('id')->name('finance.payslip_approval.show');
+    Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->whereNumber('id')->name('finance.payslip_approval.approve');
+    Route::post('/{id}/reject', [FinancePayslipApprovalController::class, 'rejectPayslip'])->whereNumber('id')->name('finance.payslip_approval.reject');
+    Route::post('/{id}/final-approve', [FinancePayslipApprovalController::class, 'finalApprovePayslip'])->whereNumber('id')->name('finance.payslip_approval.final_approve');
     Route::post('/disburse', [PayrollController::class, 'process'])->name('finance.payslip_approval.disburse');
     Route::post('/batch/preview', [FinancePayslipApprovalController::class, 'batchApprovalPreview'])->name('finance.payslip_approval.batch_preview');
     Route::post('/batch/approve', [FinancePayslipApprovalController::class, 'batchApprove'])->name('finance.payslip_approval.batch_approve');

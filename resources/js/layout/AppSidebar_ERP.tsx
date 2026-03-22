@@ -199,7 +199,7 @@ const financeItems: NavItem[] = [
         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
       </svg>
     ),
-    name: "Pricing Approvals",
+    name: "Approvals Pages",
     subItems: [
       {
         name: "Repair Pricing Approval",
@@ -234,6 +234,31 @@ const financeItems: NavItem[] = [
           </svg>
         ),
       },
+      {
+        name: "Refund Approval",
+        route: "finance.index",
+        params: { section: "refund-approvals" },
+        extraPaths: ["/finance?refund-approvals", "/finance?section=refund-approvals"],
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+        ),
+      },
+      {
+        name: "Payslip Approvals",
+        route: "finance.index",
+        params: { section: "payslip-approvals" },
+        extraPaths: ["/finance?payslip-approvals", "/finance?section=payslip-approvals"],
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 8V7a2 2 0 0 0-2-2h-4V3H9v2H5a2 2 0 0 0-2 2v1"></path>
+            <rect x="3" y="8" width="18" height="13" rx="2"></rect>
+            <path d="M16 3v4"></path>
+            <path d="M8 3v4"></path>
+          </svg>
+        ),
+      },
     ],
   },
   {
@@ -246,31 +271,6 @@ const financeItems: NavItem[] = [
     name: "Expenses",
     route: "finance.index",
     params: { section: "expense-tracking" },
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-      </svg>
-    ),
-    name: "Refund Approval",
-    route: "finance.index",
-    params: { section: "refund-approvals" },
-    extraPaths: ["/finance?refund-approvals", "/finance?section=refund-approvals"],
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 8V7a2 2 0 0 0-2-2h-4V3H9v2H5a2 2 0 0 0-2 2v1"></path>
-        <rect x="3" y="8" width="18" height="13" rx="2"></rect>
-        <path d="M16 3v4"></path>
-        <path d="M8 3v4"></path>
-      </svg>
-    ),
-    name: "Payslip Approvals",
-    route: "finance.index",
-    params: { section: "payslip-approvals" },
-    extraPaths: ["/finance?payslip-approvals", "/finance?section=payslip-approvals"],
   },
   // REMOVED: Enterprise features not needed for SMEs
   // Financial Reporting - Data shown in Dashboard
@@ -1051,9 +1051,16 @@ const AppSidebar_ERP: React.FC = () => {
         return permissions.includes('access-finance-expenses');
       }
       
-      // Pricing Approvals - check simplified permissions and filter submenu
-      if (item.name === "Pricing Approvals") {
-        const hasAnyPricingPermission = permissions.includes('access-repair-price-approval') || permissions.includes('access-shoe-price-approval');
+      // Approvals Pages - check simplified permissions and filter submenu
+      if (item.name === "Approvals Pages") {
+        const hasAnyPricingPermission =
+          permissions.includes('access-repair-price-approval') ||
+          permissions.includes('access-shoe-price-approval') ||
+          permissions.includes('access-refund-approval') ||
+          roles.includes('Shop Owner') ||
+          role === 'Shop Owner' ||
+          permissions.includes('access-payslip-approval') ||
+          permissions.includes('access-approval-workflow');
         
         if (hasAnyPricingPermission && item.subItems) {
           // Filter submenu items based on specific permissions
@@ -1067,21 +1074,17 @@ const AppSidebar_ERP: React.FC = () => {
             if (subItem.name === "Purchase Request Approval") {
               return permissions.includes('access-shoe-price-approval') || permissions.includes('access-repair-price-approval');
             }
+            if (subItem.name === "Refund Approval") {
+              return permissions.includes('access-refund-approval');
+            }
+            if (subItem.name === "Payslip Approvals") {
+              return roles.includes('Shop Owner') || role === 'Shop Owner' || permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
+            }
             return false;
           });
         }
         
-        return hasAnyPricingPermission;
-      }
-      
-      // Refund Approval - check simplified permission
-      if (item.route === "finance.index" && item.params?.section === "refund-approvals") {
-        return permissions.includes('access-refund-approval');
-      }
-      
-      // Payslip Approvals - checker and final approver both need access
-      if (item.route === "finance.index" && item.params?.section === "payslip-approvals") {
-        return roles.includes('Shop Owner') || role === 'Shop Owner' || permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
+        return hasAnyPricingPermission && item.subItems.length > 0;
       }
       
       // Don't show items without matching permissions

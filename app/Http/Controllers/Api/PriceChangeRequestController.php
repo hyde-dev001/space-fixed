@@ -5,14 +5,19 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PriceChangeRequest;
 use App\Models\Product;
+use App\Models\User;
 use App\Enums\PriceChangeStatus;
 use App\Services\NotificationService;
+use App\Services\PriceChangeApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class PriceChangeRequestController extends Controller
 {
+    public function __construct(
+        private PriceChangeApprovalService $priceChangeApprovalService
+    ) {}
     /**
      * Calculate metrics for shop owner or finance
      */
@@ -21,11 +26,26 @@ class PriceChangeRequestController extends Controller
         $query = PriceChangeRequest::where('shop_owner_id', $shopOwnerId);
 
         if ($role === 'shop_owner') {
+            $ownerPendingQuery = (clone $query)
+                ->where('status', 'finance_approved')
+                ->where(function ($q) {
+                    // Legacy 2-step requests
+                    $q->whereNull('approval_workflow_version')
+                        ->orWhere('approval_workflow_version', '!=', 'v4_multi_level')
+                        // 4-step requests: only level 2 belongs to shop owner
+                        ->orWhere(function ($v4) {
+                            $v4->where('approval_workflow_version', 'v4_multi_level')
+                                ->where('current_approval_level', 2);
+                        });
+                });
+
             return [
-                'pending' => (clone $query)->where('status', 'finance_approved')->count(),
+                'pending' => $ownerPendingQuery->count(),
                 'approved' => (clone $query)->where('status', 'owner_approved')->count(),
                 'rejected' => (clone $query)->where('status', 'owner_rejected')->count(),
-                'total' => $query->whereIn('status', ['finance_approved', 'owner_approved', 'owner_rejected'])->count(),
+                'total' => $ownerPendingQuery->count()
+                    + (clone $query)->where('status', 'owner_approved')->count()
+                    + (clone $query)->where('status', 'owner_rejected')->count(),
             ];
         }
 
@@ -147,6 +167,24 @@ class PriceChangeRequestController extends Controller
                 ])
                 ->log('Price change request submitted');
 
+            // Create 4-step approval workflow
+            try {
+                $shopOwnerUser = $this->resolveShopOwnerApproverUser((int) $shopOwnerId);
+                if ($shopOwnerUser) {
+                    $this->priceChangeApprovalService->createPriceChangeApproval(
+                        $priceChangeRequest,
+                        $shopOwnerUser,
+                        $actor
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to create price change approval workflow', [
+                    'price_change_id' => $priceChangeRequest->id,
+                    'error' => $e->getMessage()
+                ]);
+                // Continue despite error - request is still created
+            }
+
             DB::commit();
 
             return response()->json([
@@ -174,7 +212,7 @@ class PriceChangeRequestController extends Controller
         $status = $request->query('status', 'all');
         $shopOwnerId = auth()->user()->shop_owner_id;
 
-        $query = PriceChangeRequest::with(['product', 'requester', 'financeReviewer', 'ownerReviewer'])
+        $query = PriceChangeRequest::with(['product', 'requester', 'financeReviewer', 'ownerReviewer', 'approval'])
             ->where('shop_owner_id', $shopOwnerId)
             ->orderBy('created_at', 'desc');
 
@@ -183,6 +221,12 @@ class PriceChangeRequestController extends Controller
         }
 
         $requests = $query->get();
+
+        // Heal legacy finalized records where status moved to owner_approved
+        // but product price was not yet applied.
+        $requests->each(function ($request) {
+            $this->reconcileFinalizedProductPrice($request);
+        });
 
         return response()->json([
             'success' => true,
@@ -213,6 +257,16 @@ class PriceChangeRequestController extends Controller
         $requests = PriceChangeRequest::with(['product', 'requester', 'financeReviewer'])
             ->where('shop_owner_id', $shopOwner->id)
             ->where('status', 'finance_approved')
+            ->where(function ($q) {
+                // Legacy 2-step requests
+                $q->whereNull('approval_workflow_version')
+                    ->orWhere('approval_workflow_version', '!=', 'v4_multi_level')
+                    // 4-step requests: only level 2 is owner action step
+                    ->orWhere(function ($v4) {
+                        $v4->where('approval_workflow_version', 'v4_multi_level')
+                            ->where('current_approval_level', 2);
+                    });
+            })
             ->orderBy('finance_reviewed_at', 'desc')
             ->get();
 
@@ -238,11 +292,32 @@ class PriceChangeRequestController extends Controller
         }
 
         // Fetch all requests that have been reviewed by Finance (approved/rejected by owner or pending owner review)
-        $requests = PriceChangeRequest::with(['product', 'requester', 'financeReviewer', 'ownerReviewer'])
+        $requests = PriceChangeRequest::with(['product', 'requester', 'financeReviewer', 'ownerReviewer', 'approval'])
             ->where('shop_owner_id', $shopOwner->id)
-            ->whereIn('status', ['finance_approved', 'owner_approved', 'owner_rejected'])
+            ->where(function ($q) {
+                // Keep approved/rejected history
+                $q->whereIn('status', ['owner_approved', 'owner_rejected'])
+                    // Pending owner-action bucket (legacy + v4 level 2 only)
+                    ->orWhere(function ($pendingOwner) {
+                        $pendingOwner->where('status', 'finance_approved')
+                            ->where(function ($w) {
+                                $w->whereNull('approval_workflow_version')
+                                    ->orWhere('approval_workflow_version', '!=', 'v4_multi_level')
+                                    ->orWhere(function ($v4) {
+                                        $v4->where('approval_workflow_version', 'v4_multi_level')
+                                            ->where('current_approval_level', 2);
+                                    });
+                            });
+                    });
+            })
             ->orderBy('created_at', 'desc')
             ->get();
+
+        // Heal legacy finalized records where status moved to owner_approved
+        // but product price was not yet applied.
+        $requests->each(function ($request) {
+            $this->reconcileFinalizedProductPrice($request);
+        });
 
         return response()->json([
             'success' => true,
@@ -261,6 +336,91 @@ class PriceChangeRequestController extends Controller
 
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
         $actor = Auth::guard('user')->user() ?? Auth::user();
+
+        // New 4-step workflow
+        if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
+            DB::beginTransaction();
+            try {
+                $result = $this->priceChangeApprovalService->approvePriceChange(
+                    $priceChangeRequest,
+                    $actor,
+                    $request->notes
+                );
+
+                if (!$result['success']) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => $result['message'] ?? 'Failed to approve price change',
+                        'approval_level' => $priceChangeRequest->current_approval_level,
+                    ], 400);
+                }
+
+                $isFinal = (bool) ($result['is_final'] ?? false);
+
+                if ($isFinal) {
+                    $product = Product::find($priceChangeRequest->product_id);
+                    if (!$product) {
+                        throw new \RuntimeException('Product not found for final price application');
+                    }
+
+                    $oldPrice = $product->price;
+                    $product->update([
+                        'price' => $priceChangeRequest->proposed_price,
+                    ]);
+
+                    activity()
+                        ->causedBy($actor)
+                        ->performedOn($product)
+                        ->event('updated')
+                        ->withProperties([
+                            'product_name' => $product->product_name ?? $priceChangeRequest->product_name,
+                            'old_price' => $oldPrice,
+                            'new_price' => $priceChangeRequest->proposed_price,
+                            'price_change_request_id' => $priceChangeRequest->id,
+                            'approval_level' => 'Finance Final',
+                            'notes' => $request->notes,
+                        ])
+                        ->log('Product price change final approval by Finance - price applied');
+                }
+
+                // Activity log for approval at specific level
+                activity()
+                    ->causedBy($actor)
+                    ->performedOn($priceChangeRequest)
+                    ->event('updated')
+                    ->withProperties([
+                        'approval_level' => $priceChangeRequest->current_approval_level,
+                        'status' => $priceChangeRequest->status,
+                        'is_final' => $isFinal,
+                        'notes' => $request->notes,
+                    ])
+                    ->log('Price change approved at finance level ' . $priceChangeRequest->current_approval_level);
+
+                DB::commit();
+
+                $shopOwnerId = $priceChangeRequest->shop_owner_id;
+                $metrics = $this->calculateMetrics($shopOwnerId, 'finance');
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $isFinal ? 'Price change approved and applied successfully' : 'Price change forwarded to next approver',
+                    'data' => $priceChangeRequest->fresh()->load(['product', 'requester', 'approval']),
+                    'metrics' => $metrics,
+                    'is_final' => $isFinal,
+                    'approval_level' => $priceChangeRequest->current_approval_level,
+                ]);
+            } catch (\Throwable $e) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to apply final approved price: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
+        // Legacy 2-step workflow
         $oldValues = [
             'status' => $priceChangeRequest->status,
             'finance_reviewed_by' => $priceChangeRequest->finance_reviewed_by,
@@ -360,6 +520,48 @@ class PriceChangeRequestController extends Controller
         ]);
 
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+        $actor = Auth::guard('user')->user() ?? Auth::user();
+
+        // New 4-step workflow
+        if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
+            $result = $this->priceChangeApprovalService->rejectPriceChange(
+                $priceChangeRequest,
+                $actor,
+                $request->reason
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Failed to reject price change',
+                    'rejection_level' => $priceChangeRequest->current_approval_level,
+                ], 400);
+            }
+
+            activity()
+                ->causedBy($actor)
+                ->performedOn($priceChangeRequest)
+                ->event('updated')
+                ->withProperties([
+                    'rejection_level' => $priceChangeRequest->current_approval_level,
+                    'status' => $priceChangeRequest->status,
+                    'reason' => $request->reason,
+                ])
+                ->log('Price change rejected at finance level ' . $priceChangeRequest->current_approval_level);
+
+            $shopOwnerId = $priceChangeRequest->shop_owner_id;
+            $metrics = $this->calculateMetrics($shopOwnerId, 'finance');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Price change request rejected',
+                'data' => $priceChangeRequest->fresh()->load(['product', 'requester', 'approval']),
+                'metrics' => $metrics,
+                'rejection_level' => $priceChangeRequest->current_approval_level,
+            ]);
+        }
+
+        // Legacy 2-step workflow
 
         // Check if already finalized
         if ($priceChangeRequest->status === 'finance_approved') {
@@ -434,12 +636,61 @@ class PriceChangeRequestController extends Controller
     }
 
     /**
-     * Shop owner gives final approval (applies price change)
+     * Shop owner gives approval (at level 2 in 4-step, or final in legacy)
      */
     public function ownerApprove($id)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+
+        // New 4-step workflow
+        if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
+            $approver = $this->resolveShopOwnerApproverUser((int) $shopOwner->id);
+            if (!$approver) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop owner user record not found',
+                ], 400);
+            }
+
+            $result = $this->priceChangeApprovalService->approvePriceChange(
+                $priceChangeRequest,
+                $approver,
+                null
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Failed to approve price change',
+                    'approval_level' => $priceChangeRequest->current_approval_level,
+                ], 400);
+            }
+
+            activity()
+                ->causedBy($shopOwner)
+                ->performedOn($priceChangeRequest)
+                ->event('updated')
+                ->withProperties([
+                    'approval_level' => $priceChangeRequest->current_approval_level,
+                    'status' => $priceChangeRequest->status,
+                    'is_final' => $result['is_final'] ?? false,
+                ])
+                ->log('Price change approved at shop owner level ' . $priceChangeRequest->current_approval_level);
+
+            $metrics = $this->calculateMetrics($shopOwner->id, 'shop_owner');
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['is_final'] ?? false ? 'Approval forwarded to Finance final review' : 'Price change approved by Shop Owner',
+                'data' => $priceChangeRequest->fresh()->load(['product', 'requester', 'approval']),
+                'metrics' => $metrics,
+                'is_final' => $result['is_final'] ?? false,
+                'approval_level' => $priceChangeRequest->current_approval_level,
+            ]);
+        }
+
+        // Legacy 2-step workflow
 
         // Check if already finalized
         if ($priceChangeRequest->status === 'owner_approved') {
@@ -543,6 +794,54 @@ class PriceChangeRequestController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+
+        // New 4-step workflow
+        if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
+            $approver = $this->resolveShopOwnerApproverUser((int) $shopOwner->id);
+            if (!$approver) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop owner user record not found',
+                ], 400);
+            }
+
+            $result = $this->priceChangeApprovalService->rejectPriceChange(
+                $priceChangeRequest,
+                $approver,
+                $request->reason
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Failed to reject price change',
+                    'rejection_level' => $priceChangeRequest->current_approval_level,
+                ], 400);
+            }
+
+            activity()
+                ->causedBy($shopOwner)
+                ->performedOn($priceChangeRequest)
+                ->event('updated')
+                ->withProperties([
+                    'rejection_level' => $priceChangeRequest->current_approval_level,
+                    'status' => $priceChangeRequest->status,
+                    'reason' => $request->reason,
+                ])
+                ->log('Price change rejected at shop owner level ' . $priceChangeRequest->current_approval_level);
+
+            $metrics = $this->calculateMetrics($shopOwner->id, 'shop_owner');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Price change request rejected',
+                'data' => $priceChangeRequest->fresh()->load(['product', 'requester', 'approval']),
+                'metrics' => $metrics,
+                'rejection_level' => $priceChangeRequest->current_approval_level,
+            ]);
+        }
+
+        // Legacy 2-step workflow
 
         // Check if already finalized
         if ($priceChangeRequest->status === 'owner_approved') {
@@ -703,5 +1002,49 @@ class PriceChangeRequestController extends Controller
                 'message' => 'Failed to cancel request',
             ], 500);
         }
+    }
+
+    private function resolveShopOwnerApproverUser(int $shopOwnerId): ?User
+    {
+        // Preferred: any ERP user account linked to this shop owner record.
+        $linkedUser = User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($linkedUser) {
+            return $linkedUser;
+        }
+
+        // Backward-compatibility fallback for environments where IDs were coupled.
+        return User::find($shopOwnerId);
+    }
+
+    private function reconcileFinalizedProductPrice(PriceChangeRequest $priceChangeRequest): void
+    {
+        $statusValue = $priceChangeRequest->status instanceof PriceChangeStatus
+            ? $priceChangeRequest->status->value
+            : (string) $priceChangeRequest->status;
+
+        $isFinalizedV4 = $priceChangeRequest->approval_workflow_version === 'v4_multi_level'
+            && (int) ($priceChangeRequest->current_approval_level ?? 0) >= 4
+            && $statusValue === 'owner_approved';
+
+        if (!$isFinalizedV4) {
+            return;
+        }
+
+        $product = $priceChangeRequest->product ?: Product::find($priceChangeRequest->product_id);
+        if (!$product) {
+            return;
+        }
+
+        if ((float) $product->price === (float) $priceChangeRequest->proposed_price) {
+            return;
+        }
+
+        $product->update([
+            'price' => $priceChangeRequest->proposed_price,
+        ]);
     }
 }

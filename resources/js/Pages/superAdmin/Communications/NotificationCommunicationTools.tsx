@@ -686,7 +686,6 @@ export default function NotificationCommunicationTools() {
 
   const handleAnnouncementSubmit = (announcement: Omit<Announcement, 'id' | 'createdAt'>) => {
     // Handle announcement submission
-    console.log('Announcement submitted:', announcement);
     setShowAnnouncementForm(false);
   };
 

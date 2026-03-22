@@ -223,13 +223,18 @@ export default function ERPPricingAndServices() {
 
   const handleEditClick = (item: ServiceItem) => {
     setSelectedService(item);
-    setEditFormData({ price: item.price, reason: "" });
+    const digits = item.price.replace(/\D/g, "");
+    setEditFormData({ price: digits, reason: "" });
     setEditModalOpen(true);
   };
 
   const handleSaveEdit = async () => {
+    if (!selectedService) return;
+
+    const original = selectedService.price.replace(/\D/g, "");
+
     // Check if there are any changes
-    if (editFormData.price === selectedService?.price) {
+    if (editFormData.price === original) {
       Swal.fire({
         title: "No Changes",
         text: "Please make changes before saving.",
@@ -265,12 +270,12 @@ export default function ERPPricingAndServices() {
 
     if (result.isConfirmed) {
       try {
-        // Remove peso sign and parse price
-        const priceValue = editFormData.price.replace(/[₱,]/g, '');
+        const priceValue = editFormData.price;
         
         const response = await axios.put(`/api/repair-services/${selectedService?.id}`, {
           price: priceValue,
           status: "Under Review",
+          reason: editFormData.reason,
         });
 
         if (response.data.success) {
@@ -291,6 +296,11 @@ export default function ERPPricingAndServices() {
         });
       }
     }
+  };
+
+  const parsePrice = (value: string) => {
+    const numeric = Number((value || "").replace(/[^\d.]/g, ""));
+    return Number.isFinite(numeric) ? numeric : 0;
   };
 
   const handleAddService = async () => {
@@ -379,11 +389,6 @@ export default function ERPPricingAndServices() {
             <p className="text-gray-600 dark:text-gray-400">
               Manage repair service pricing and submit for approval.
             </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <button onClick={() => setAddModalOpen(true)} className="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700">
-              Add Repair Service
-            </button>
           </div>
         </div>
 
@@ -756,52 +761,81 @@ export default function ERPPricingAndServices() {
                 </button>
               </div>
               <div className="p-6 space-y-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Service Name</p>
-                  <input
-                    type="text"
-                    value={selectedService.name}
-                    disabled
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category</p>
-                    <input
-                      type="text"
-                      value={selectedService.category}
-                      disabled
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Price</p>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      step="1"
-                      value={editFormData.price}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value === '' || /^\d+$/.test(value)) {
-                          setEditFormData({ ...editFormData, price: value });
-                        }
-                      }}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for Change</p>
-                  <textarea
-                    value={editFormData.reason}
-                    onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
-                    placeholder="Enter reason for price change..."
-                    rows={3}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 resize-none transition"
-                  />
-                </div>
+                {(() => {
+                  const currentPrice = parsePrice(selectedService.price);
+                  const proposedPrice = parsePrice(editFormData.price);
+                  const priceDiff = proposedPrice - currentPrice;
+                  const pct = currentPrice > 0 ? (priceDiff / currentPrice) * 100 : 0;
+                  const hasChange = editFormData.price !== "" && proposedPrice !== currentPrice;
+
+                  return (
+                    <>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Service Name</p>
+                        <input
+                          type="text"
+                          value={selectedService.name}
+                          disabled
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category</p>
+                          <input
+                            type="text"
+                            value={selectedService.category}
+                            disabled
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
+                          />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Proposed New Price *</p>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">₱</span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              step="1"
+                              value={editFormData.price}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d+$/.test(value)) {
+                                  setEditFormData({ ...editFormData, price: value });
+                                }
+                              }}
+                              className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {hasChange && (
+                        <div className={`rounded-xl px-4 py-3 border ${priceDiff >= 0 ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Price Change:</span>
+                            <span className={`text-xl font-semibold ${priceDiff >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                              {priceDiff >= 0 ? '↑' : '↓'} {priceDiff >= 0 ? '+' : '-'}₱{Math.abs(priceDiff).toLocaleString()} ({priceDiff >= 0 ? '+' : ''}{pct.toFixed(1)}%)
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for Change *</p>
+                        <textarea
+                          value={editFormData.reason}
+                          onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
+                          placeholder="Explain why this price change is needed (e.g., market adjustment, material costs, seasonal update)..."
+                          rows={3}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 resize-none transition"
+                        />
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">This reason will be reviewed by the finance team.</p>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
                 <button

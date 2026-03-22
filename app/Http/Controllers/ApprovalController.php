@@ -8,11 +8,13 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Approval;
 use App\Models\ApprovalHistory;
 use App\Services\NotificationService;
+use App\Services\ApprovalService;
 
 class ApprovalController extends Controller
 {
     public function __construct(
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private ApprovalService $approvalService
     ) {}
     
     /**
@@ -115,12 +117,8 @@ class ApprovalController extends Controller
             
             $approvals = $approvals->merge($expenses);
 
-            // 2. Get approvals from the approvals table (for other types)
-            $approvalRecords = Approval::where('shop_owner_id', $shopOwnerId)
-                ->where('status', 'pending')
-                ->with(['requestedBy', 'approvableType'])
-                ->orderBy('created_at', 'desc')
-                ->get()
+            // 2. Get approvals from the approvals table (for other types) using ApprovalService with role-based filtering
+            $approvalRecords = $this->approvalService->getPendingApprovalsForUser($user)
                 ->map(function ($approval) {
                     return [
                         'id' => $approval->id,
@@ -133,6 +131,8 @@ class ApprovalController extends Controller
                         'status' => $approval->status,
                         'current_level' => $approval->current_level,
                         'total_levels' => $approval->total_levels,
+                        'current_approver_role' => $approval->current_approver_role,
+                        'approval_progress' => "{$approval->current_level}/{$approval->total_levels}",
                         'metadata' => $approval->metadata ? json_decode($approval->metadata, true) : null
                     ];
                 });
@@ -346,58 +346,33 @@ class ApprovalController extends Controller
                 return response()->json(['error' => 'Approval request not found or already processed'], 404);
             }
 
-            // Check approval limit
-            $approvalLimit = $user->approval_limit;
-            
-            // If approval_limit is null, user has unlimited approval authority (e.g., Finance Manager)
-            // If approval_limit is set, check if it's sufficient
-            if ($approvalLimit !== null && $approval->amount > $approvalLimit) {
+            // Use ApprovalService to handle approval transition
+            $result = $this->approvalService->approve(
+                $approval,
+                $user,
+                $request->comments
+            );
+
+            if (!$result['success']) {
                 DB::rollBack();
                 return response()->json([
-                    'error' => 'Insufficient approval authority',
-                    'details' => [
-                        'transaction_amount' => (float) $approval->amount,
-                        'your_approval_limit' => (float) $approvalLimit,
-                        'required_approver' => 'This transaction requires approval from a user with higher authority'
-                    ]
+                    'error' => $result['message'],
+                    'details' => $result
                 ], 403);
             }
 
-            // Record in history
-            ApprovalHistory::create([
-                'approval_id' => $approval->id,
-                'level' => $approval->current_level,
-                'reviewer_id' => $user->id,
-                'action' => 'approved',
-                'comments' => $request->comments
-            ]);
-
-            // Check if this is the final approval level
-            if ($approval->current_level >= $approval->total_levels) {
-                // Final approval - update status to approved
-                $approval->update([
-                    'status' => 'approved',
-                    'reviewed_by' => $user->id,
-                    'reviewed_at' => now(),
-                    'comments' => $request->comments
-                ]);
-
-                // TODO: Trigger the actual approval action (e.g., post journal entry, approve expense)
-                // This would depend on the approvable_type and approvable_id
-                $this->executeApprovalAction($approval);
-            } else {
-                // Move to next approval level
-                $approval->update([
-                    'current_level' => $approval->current_level + 1,
-                    'comments' => $request->comments
-                ]);
+            // TODO: Trigger the actual approval action (e.g., post journal entry, approve expense)
+            // This would depend on the approvable_type and approvable_id
+            if ($result['is_final'] ?? false) {
+                $this->executeApprovalAction($result['approval']);
             }
 
             DB::commit();
 
             return response()->json([
-                'message' => 'Request approved successfully',
-                'approval' => $approval
+                'message' => $result['message'],
+                'approval' => $result['approval'],
+                'is_final' => $result['is_final'] ?? false
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -486,47 +461,28 @@ class ApprovalController extends Controller
                 return response()->json(['error' => 'Approval request not found or already processed'], 404);
             }
 
-            // Check approval limit (same authority required to reject as to approve)
-            $approvalLimit = $user->approval_limit;
-            
-            // If approval_limit is null, user has unlimited approval authority (e.g., Finance Manager)
-            // If approval_limit is set, check if it's sufficient
-            if ($approvalLimit !== null && $approval->amount > $approvalLimit) {
+            // Use ApprovalService to handle rejection
+            $result = $this->approvalService->reject(
+                $approval,
+                $user,
+                $request->comments
+            );
+
+            if (!$result['success']) {
                 DB::rollBack();
                 return response()->json([
-                    'error' => 'Insufficient approval authority',
-                    'details' => [
-                        'transaction_amount' => (float) $approval->amount,
-                        'your_approval_limit' => (float) $approvalLimit,
-                        'required_approver' => 'This transaction requires approval/rejection from a user with higher authority'
-                    ]
+                    'error' => $result['message'],
+                    'details' => $result
                 ], 403);
             }
-
-            // Record in history
-            ApprovalHistory::create([
-                'approval_id' => $approval->id,
-                'level' => $approval->current_level,
-                'reviewer_id' => $user->id,
-                'action' => 'rejected',
-                'comments' => $request->comments
-            ]);
-
-            // Update approval status
-            $approval->update([
-                'status' => 'rejected',
-                'reviewed_by' => $user->id,
-                'reviewed_at' => now(),
-                'comments' => $request->comments
-            ]);
 
             // TODO: Trigger rejection action if needed (e.g., notify requester)
 
             DB::commit();
 
             return response()->json([
-                'message' => 'Request rejected',
-                'approval' => $approval
+                'message' => $result['message'],
+                'approval' => $result['approval']
             ]);
         } catch (\Exception $e) {
             DB::rollBack();

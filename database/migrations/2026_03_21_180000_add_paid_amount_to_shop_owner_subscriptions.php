@@ -17,12 +17,22 @@ return new class extends Migration
         });
 
         // Backfill current records so amount is preserved after future plan changes.
-        DB::table('shop_owner_subscriptions as s')
-            ->leftJoin('premium_plans as p', 'p.id', '=', 's.premium_plan_id')
-            ->whereNull('s.paid_amount')
-            ->update([
-                's.paid_amount' => DB::raw('COALESCE(p.price, 0)'),
-            ]);
+        // Use a sqlite-compatible statement in tests and a joined update elsewhere.
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement("UPDATE shop_owner_subscriptions
+                SET paid_amount = COALESCE(
+                    (SELECT price FROM premium_plans WHERE premium_plans.id = shop_owner_subscriptions.premium_plan_id),
+                    0
+                )
+                WHERE paid_amount IS NULL");
+        } else {
+            DB::table('shop_owner_subscriptions as s')
+                ->leftJoin('premium_plans as p', 'p.id', '=', 's.premium_plan_id')
+                ->whereNull('s.paid_amount')
+                ->update([
+                    's.paid_amount' => DB::raw('COALESCE(p.price, 0)'),
+                ]);
+        }
     }
 
     /**
