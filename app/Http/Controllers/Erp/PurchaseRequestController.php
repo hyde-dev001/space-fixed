@@ -7,6 +7,7 @@ use App\Models\PurchaseRequest;
 use App\Http\Requests\StorePurchaseRequestRequest;
 use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
+use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,11 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 class PurchaseRequestController extends Controller
 {
     use AuthorizesRequests;
+
+    public function __construct(
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
+    ) {}
+
     /**
      * Display a listing of purchase requests with filters.
      */
@@ -237,7 +243,12 @@ class PurchaseRequestController extends Controller
         }
 
         try {
-            $purchaseRequest->approve(Auth::id(), $request->approval_notes);
+            $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPurchaseRequest(
+                (int) $purchaseRequest->shop_owner_id,
+                (float) $purchaseRequest->total_cost
+            );
+
+            $purchaseRequest->approve(Auth::id(), $request->approval_notes, null, $requiresOwnerApproval);
 
             return response()->json([
                 'message' => 'Purchase request approved successfully.',

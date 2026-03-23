@@ -104,19 +104,19 @@ const APPROVAL_ITEMS: ApprovalItemConfig[] = [
 		key: 'price_approval',
 		title: 'Price Approvals',
 		description: 'Require approval for staff-initiated price changes above your limit.',
-		helper: 'Set the amount where pricing changes move into your approval queue.',
+		helper: 'When disabled, owner approval is skipped and finance review remains as configured.',
 	},
 	{
 		key: 'purchase_request_approval',
 		title: 'Purchase Request Approval',
 		description: 'Require approval for purchase requests that exceed your threshold.',
-		helper: 'High-value procurement requests will require owner approval when enabled.',
+		helper: 'When disabled, owner approval is skipped and finance checks continue to apply.',
 	},
 	{
 		key: 'repair_reject_approval',
 		title: 'Repair Reject Approval',
 		description: 'Require approval before high-value repair rejections are finalized.',
-		helper: 'Use this to review expensive rejected repairs before they are closed.',
+		helper: 'When disabled, owner approval is skipped for this workflow.',
 	},
 ];
 

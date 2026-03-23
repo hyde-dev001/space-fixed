@@ -179,6 +179,8 @@ export default function StockMovement() {
 						</div>
 						<div className="sm:w-56">
 							<select
+								title="Filter by movement action type"
+								aria-label="Filter stock movement by action type"
 								value={trackFilter}
 								onChange={(event) => {
 									setTrackFilter(event.target.value as MovementTrack | "All");

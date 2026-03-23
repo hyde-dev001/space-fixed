@@ -182,7 +182,7 @@ export default function RequestApproval() {
 	const pendingRequests = requests.filter((request) => request.status === "pending").length;
 	const approvedRequests = requests.filter((request) => request.status === "accepted").length;
 
-	const itemsPerPage = 7;
+	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredRequests.length / itemsPerPage));
 	const currentSafePage = Math.min(currentPage, totalPages);
 	const startIndex = (currentSafePage - 1) * itemsPerPage;
@@ -316,14 +316,14 @@ export default function RequestApproval() {
 
 	return (
 		<AppLayoutERP hideHeader={isReviewModalOpen}>
-			<Head title="Request Material Approval - Inventory - Solespace" />
+			<Head title="Repair Material Request Approval - Inventory - Solespace" />
 
 			{isReviewModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
-						<h1 className="text-2xl font-semibold mb-1">Request Material Approval</h1>
+						<h1 className="text-2xl font-semibold mb-1">Repair Material Request Approval</h1>
 						<p className="text-gray-600 dark:text-gray-400">Review and approve material requests submitted by repair accounts</p>
 					</div>
 					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">

@@ -1,4 +1,4 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
@@ -228,7 +228,7 @@ export default function StockRequest() {
 		}
 
 		try {
-			const created = await stockRequestApi.create({
+			const created = await stockRequestApi.createFromInventory({
 				inventory_item_id: Number(formData.inventoryItemId),
 				quantity_needed:   parsedQty,
 				priority:          formData.priority,
@@ -241,14 +241,19 @@ export default function StockRequest() {
 			setIsCreateModalOpen(false);
 			setCurrentPage(1);
 
-			await Swal.fire({
+			const result = await Swal.fire({
 				icon: "success",
 				title: "Request submitted",
-				text: "Stock request has been sent to Procurement for approval.",
+				text: "Stock replenishment request has been sent to Procurement for approval.",
+				showCancelButton: true,
+				confirmButtonText: "Go to Approval Queue",
+				cancelButtonText: "Stay here",
 				confirmButtonColor: "#2563eb",
-				timer: 1500,
-				showConfirmButton: false,
 			});
+
+			if (result.isConfirmed) {
+				router.visit("/erp/procurement/stock-request-approval");
+			}
 		} catch {
 			await Swal.fire({
 				icon: "error",
@@ -263,14 +268,14 @@ export default function StockRequest() {
 
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
-			<Head title="Stock Request - Solespace" />
+			<Head title="Stock Replenishment Request - Solespace" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
-						<h1 className="text-2xl font-semibold mb-1">Stock Request</h1>
-						<p className="text-gray-600 dark:text-gray-400">Create and track stock requests to Procurement for out-of-stock items</p>
+						<h1 className="text-2xl font-semibold mb-1">Stock Replenishment Request</h1>
+						<p className="text-gray-600 dark:text-gray-400">Create and track replenishment requests to Procurement for low or out-of-stock items</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<button
@@ -283,15 +288,15 @@ export default function StockRequest() {
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-					<MetricCard title="Total Requests"    value={totalRequests}   description="All stock requests created"             icon={ClipboardIcon}  color="info" />
+					<MetricCard title="Total Requests"    value={totalRequests}   description="All replenishment requests created"     icon={ClipboardIcon}  color="info" />
 					<MetricCard title="Pending Approval"  value={pendingRequests}  description="Requests currently waiting review"    icon={ClockIcon}      color="warning" />
 					<MetricCard title="Approved Requests" value={approvedRequests} description="Requests approved for procurement"    icon={CheckCircleIcon} color="success" />
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4">
-						<h2 className="text-lg font-semibold">Stock Request Table</h2>
-						<p className="text-sm text-gray-500">View request status and track updates from Procurement</p>
+						<h2 className="text-lg font-semibold">Replenishment Request Table</h2>
+						<p className="text-sm text-gray-500">View replenishment request status and track updates from Procurement</p>
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">

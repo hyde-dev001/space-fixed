@@ -517,6 +517,7 @@ const MyRepairs: React.FC = () => {
       const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
       const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
       const pendingRepairId   = sessionStorage.getItem('pendingRepairId');
+      const parsedPendingRepairId = pendingRepairId ? Number(pendingRepairId) : null;
 
       // Always clean up URL params and session storage
       if (isPaymongoSuccess || isPaymongoFailed) {
@@ -526,12 +527,19 @@ const MyRepairs: React.FC = () => {
       if (isPaymongoFailed) {
         sessionStorage.removeItem('pendingRepairId');
         fetchRepairs();
-        Swal.fire({
+        const retryResult = await Swal.fire({
           icon: 'error',
           title: 'Payment Not Completed',
-          text: 'You did not finish the payment. You can try again from My Repairs.',
+          text: 'You did not finish the payment. Create a new payment session to try again.',
+          showCancelButton: !!parsedPendingRepairId,
+          confirmButtonText: 'Create New Payment Session',
+          cancelButtonText: 'Close',
           confirmButtonColor: '#000000',
         });
+
+        if (retryResult.isConfirmed && parsedPendingRepairId && Number.isFinite(parsedPendingRepairId)) {
+          await handlePayNow(parsedPendingRepairId);
+        }
         return;
       }
 
@@ -569,6 +577,8 @@ const MyRepairs: React.FC = () => {
 
             if (result.success && result.payment_verified) break;
 
+            if (response.status === 410) break;
+
             // Stop retrying on hard errors (network, server crash, wrong ID)
             if (response.status >= 500 || response.status === 404) break;
 
@@ -588,6 +598,20 @@ const MyRepairs: React.FC = () => {
               timer: 3000,
               timerProgressBar: true,
             });
+          } else if (result?.expired) {
+            const retryResult = await Swal.fire({
+              icon: 'warning',
+              title: 'Payment Session Expired',
+              text: 'Your payment session expired. Create a new payment session to continue.',
+              showCancelButton: !!parsedPendingRepairId,
+              confirmButtonText: 'Create New Payment Session',
+              cancelButtonText: 'Close',
+              confirmButtonColor: '#000000',
+            });
+
+            if (retryResult.isConfirmed && parsedPendingRepairId && Number.isFinite(parsedPendingRepairId)) {
+              await handlePayNow(parsedPendingRepairId);
+            }
           } else {
             Swal.fire({
               icon: 'warning',
@@ -778,8 +802,8 @@ const MyRepairs: React.FC = () => {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-      // Create PayMongo payment link for simulation
-      const response = await fetch('/api/paymongo-proxy', {
+      // Create dedicated retry session and persist fresh payment link metadata.
+      const response = await fetch(`/api/customer/repairs/${orderId}/retry-payment-session`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -787,9 +811,6 @@ const MyRepairs: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
         },
-        body: JSON.stringify({
-          repair_request_id: orderId,
-        }),
       });
 
       if (!response.ok) {
@@ -802,23 +823,10 @@ const MyRepairs: React.FC = () => {
 
       const paymentData = await response.json();
       const checkoutUrl = paymentData.checkout_url;
-      const linkId = paymentData.link_id;
 
-      if (!checkoutUrl || !linkId) {
+      if (!checkoutUrl) {
         throw new Error('Incomplete payment data received from PayMongo');
       }
-
-      // Update repair order with PayMongo link ID
-      await fetch(`/api/customer/repairs/${orderId}/update-payment-link`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrfToken || '',
-        },
-        body: JSON.stringify({ paymongo_link_id: linkId }),
-      });
 
       // Store repair info so we can verify on return
       sessionStorage.setItem('pendingRepairId', orderId.toString());

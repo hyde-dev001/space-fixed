@@ -1,4 +1,4 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
@@ -142,6 +142,7 @@ export default function StockRequest() {
 	};
 
 	useEffect(() => {
+		fetchRequests();
 		fetchMetrics();
 	}, []);
 
@@ -186,7 +187,15 @@ export default function StockRequest() {
 	};
 
 	const handleAccept = async (request: StockRequestApproval) => {
-		if (request.status === "accepted") return;
+		if (!["pending", "needs_details"].includes(request.status)) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot approve",
+				text: "Only pending or needs-details requests can be approved.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
 
 		const result = await Swal.fire({
 			title: "Approve request?",
@@ -203,24 +212,37 @@ export default function StockRequest() {
 
 		try {
 			await stockRequestApi.approve(request.id);
-			await Swal.fire({
+			const success = await Swal.fire({
 				title: "Approved",
 				text: "Request has been approved and is ready for supplier sourcing.",
 				icon: "success",
-				timer: 1500,
-				showConfirmButton: false,
+				showCancelButton: true,
+				confirmButtonText: "Create Purchase Request",
+				cancelButtonText: "Stay here",
+				confirmButtonColor: "#2563eb",
 			});
+			if (success.isConfirmed) {
+				router.visit("/erp/procurement/purchase-request");
+			}
 			setViewingRequest(null);
 			fetchRequests();
 			fetchMetrics();
-		} catch (error) {
+		} catch (error: any) {
 			console.error("Failed to accept request:", error);
-			Swal.fire("Error", "Failed to accept request", "error");
+			Swal.fire("Error", error?.response?.data?.message || "Failed to accept request", "error");
 		}
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
-		if (request.status === "rejected") return;
+		if (!["pending", "needs_details"].includes(request.status)) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot reject",
+				text: "Only pending or needs-details requests can be rejected.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
 
 		const result = await Swal.fire({
 			title: "Reject request?",
@@ -254,13 +276,23 @@ export default function StockRequest() {
 			setViewingRequest(null);
 			fetchRequests();
 			fetchMetrics();
-		} catch (error) {
+		} catch (error: any) {
 			console.error("Failed to reject request:", error);
-			Swal.fire("Error", "Failed to reject request", "error");
+			Swal.fire("Error", error?.response?.data?.message || "Failed to reject request", "error");
 		}
 	};
 
 	const handleAskDetails = async (request: StockRequestApproval) => {
+		if (request.status !== "pending") {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot request details",
+				text: "You can only request details for pending requests.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
 		const result = await Swal.fire({
 			title: "Request more details",
 			input: "textarea",
@@ -293,9 +325,9 @@ export default function StockRequest() {
 			});
 			setViewingRequest(null);
 			fetchRequests();
-		} catch (error) {
+		} catch (error: any) {
 			console.error("Failed to request details:", error);
-			Swal.fire("Error", "Failed to send details request", "error");
+			Swal.fire("Error", error?.response?.data?.message || "Failed to send details request", "error");
 		}
 	};
 
@@ -303,14 +335,14 @@ export default function StockRequest() {
 
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
-			<Head title="Stock Request - Solespace" />
+			<Head title="Stock Replenishment Approval - Solespace" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
-						<h1 className="text-2xl font-semibold mb-1">Stock Request Approval</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review out-of-stock requests from Inventory and decide next action for sourcing</p>
+						<h1 className="text-2xl font-semibold mb-1">Stock Replenishment Approval</h1>
+						<p className="text-gray-600 dark:text-gray-400">Review Inventory replenishment requests and decide next sourcing action</p>
 					</div>
 					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">Inventory to Procurement</span>
 				</div>
@@ -537,20 +569,21 @@ export default function StockRequest() {
 						<div className="flex flex-wrap gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
 							<button
 								onClick={() => handleAccept(viewingRequest)}
-								disabled={viewingRequest.status === "accepted"}
+								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status)}
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Approve
 							</button>
 							<button
 								onClick={() => handleAskDetails(viewingRequest)}
+								disabled={viewingRequest.status !== "pending"}
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium transition-colors"
 							>
 								Ask Details
 							</button>
 							<button
 								onClick={() => handleReject(viewingRequest)}
-								disabled={viewingRequest.status === "rejected"}
+								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status)}
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Reject

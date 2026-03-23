@@ -1,4 +1,4 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useMemo, useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
@@ -225,8 +225,16 @@ export default function PurchaseRequest() {
 	};
 
 	useEffect(() => {
+		fetchPurchaseRequests();
+		fetchSuppliers();
+		fetchAcceptedStockRequests();
 		fetchMetrics();
 	}, []);
+
+	const handleOpenCreateModal = async () => {
+		await fetchAcceptedStockRequests();
+		setIsCreateModalOpen(true);
+	};
 
 	// Inventory item IDs that already have an active (non-rejected) PR
 	const activeInventoryItemIds = useMemo(() => {
@@ -330,14 +338,19 @@ export default function PurchaseRequest() {
 			await fetchPurchaseRequests();
 			await fetchMetrics();
 
-			await Swal.fire({
+			const result = await Swal.fire({
 				icon: "success",
 				title: "Sent to Finance",
 				text: `${newPR.pr_number} has been submitted for finance approval.`,
+				showCancelButton: true,
+				confirmButtonText: "Go to Purchase Orders",
+				cancelButtonText: "Stay here",
 				confirmButtonColor: "#2563eb",
-				timer: 2000,
-				showConfirmButton: false,
 			});
+
+			if (result.isConfirmed) {
+				router.visit("/erp/procurement/purchase-orders");
+			}
 		} catch (error: any) {
 			console.error("Error creating purchase request:", error);
 			console.error("Error response:", error.response?.data);
@@ -365,17 +378,17 @@ export default function PurchaseRequest() {
 
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
-			<Head title="Purchase Request - Solespace" />
+			<Head title="Purchase Request (Replenishment) - Solespace" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
-						<h1 className="text-2xl font-semibold mb-1">Purchase Request</h1>
-						<p className="text-gray-600 dark:text-gray-400">Build PR using selected supplier, set quantity and cost, then submit to Finance</p>
+						<h1 className="text-2xl font-semibold mb-1">Purchase Request (Replenishment)</h1>
+						<p className="text-gray-600 dark:text-gray-400">Build PR from approved replenishment requests, then submit to Finance</p>
 					</div>
 					<button
-						onClick={() => setIsCreateModalOpen(true)}
+						onClick={handleOpenCreateModal}
 						className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
 					>
 						+ New PR

@@ -32,7 +32,116 @@ interface CheckoutData {
   payment_method: string;
 }
 
+interface UserAddress {
+  id: number;
+  name?: string;
+  phone?: string;
+  address_line?: string;
+  region?: string;
+  province?: string;
+  city?: string;
+  barangay?: string;
+  postal_code?: string;
+  full_address?: string;
+  is_default?: boolean;
+}
+
+interface ShippingEstimateData {
+  distance_km: number;
+  base_fee: number;
+  min_fee: number;
+  max_fee: number;
+  distance_label?: string;
+  customer_notice?: string;
+  pay_after_order_notice?: string;
+}
+
 type PaymentMethod = 'paymongo' | 'cod';
+
+const PH_REGION_OPTIONS = [
+  'Abra',
+  'Agusan del Norte',
+  'Agusan del Sur',
+  'Aklan',
+  'Albay',
+  'Antique',
+  'Apayao',
+  'Aurora',
+  'Basilan',
+  'Bataan',
+  'Batanes',
+  'Batangas',
+  'Benguet',
+  'Biliran',
+  'Bohol',
+  'Bukidnon',
+  'Bulacan',
+  'Cagayan',
+  'Camarines Norte',
+  'Camarines Sur',
+  'Camiguin',
+  'Capiz',
+  'Catanduanes',
+  'Cavite',
+  'Cebu',
+  'Cotabato',
+  'Compostela Valley',
+  'Davao del Norte',
+  'Davao del Sur',
+  'Davao Occidental',
+  'Davao Oriental',
+  'Dinagat Islands',
+  'Eastern Samar',
+  'Guimaras',
+  'Ifugao',
+  'Ilocos Norte',
+  'Ilocos Sur',
+  'Iloilo',
+  'Isabela',
+  'Kalinga',
+  'La Union',
+  'Laguna',
+  'Lanao del Norte',
+  'Lanao del Sur',
+  'Leyte',
+  'Maguindanao',
+  'Marinduque',
+  'Masbate',
+  'Metro Manila',
+  'Misamis Occidental',
+  'Misamis Oriental',
+  'Mountain Province',
+  'Negros Occidental',
+  'Negros Oriental',
+  'Northern Samar',
+  'Nueva Ecija',
+  'Nueva Vizcaya',
+  'Occidental Mindoro',
+  'Oriental Mindoro',
+  'Palawan',
+  'Pampanga',
+  'Pangasinan',
+  'Quezon',
+  'Quirino',
+  'Rizal',
+  'Romblon',
+  'Samar',
+  'Sarangani',
+  'Siquijor',
+  'Sorsogon',
+  'South Cotabato',
+  'Southern Leyte',
+  'Sultan Kudarat',
+  'Sulu',
+  'Surigao del Norte',
+  'Surigao del Sur',
+  'Tarlac',
+  'Tawi-Tawi',
+  'Zambales',
+  'Zamboanga del Norte',
+  'Zamboanga del Sur',
+  'Zamboanga Sibugay',
+];
 
 const Payment: React.FC = () => {
   const { auth } = usePage().props as any;
@@ -74,6 +183,235 @@ const Payment: React.FC = () => {
   const [billingCity, setBillingCity] = useState('');
   const [billingRegion, setBillingRegion] = useState('');
   const [saveAddressForLater, setSaveAddressForLater] = useState(true);
+  const [userAddresses, setUserAddresses] = useState<UserAddress[]>([]);
+  const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
+  const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [addressSheetMode, setAddressSheetMode] = useState<'list' | 'form'>('list');
+  const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const [isRegionPickerOpen, setIsRegionPickerOpen] = useState(false);
+  const [regionSearch, setRegionSearch] = useState('');
+  const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
+  const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
+  const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
+  const [paymentRecovery, setPaymentRecovery] = useState<{
+    scope: 'order' | 'repair';
+    id: number;
+    reason: 'expired' | 'failed';
+  } | null>(null);
+  const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
+
+  const filteredRegions = PH_REGION_OPTIONS.filter((region) => region.toLowerCase().includes(regionSearch.trim().toLowerCase()));
+
+  const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
+    if (!addr) return '';
+    if (addr.full_address) return addr.full_address;
+    return [addr.address_line, addr.barangay, addr.city, addr.province || addr.region, addr.postal_code].filter(Boolean).join(', ');
+  };
+
+  const applySelectedAddress = (addr: UserAddress) => {
+    setCustomerName(addr.name || '');
+    setCustomerPhone(addr.phone || '');
+    setShippingAddressLine(addr.address_line || '');
+    setShippingRegion(addr.region || '');
+    setShippingCity(addr.city || '');
+    setShippingBarangay(addr.barangay || '');
+    setShippingPostalCode(addr.postal_code || '');
+    setCheckoutData((prev) => prev
+      ? {
+          ...prev,
+          address_id: addr.id,
+          shipping_region: addr.region || null,
+          shipping_province: addr.province || addr.region || null,
+          shipping_city: addr.city || null,
+          shipping_barangay: addr.barangay || null,
+          shipping_postal_code: addr.postal_code || null,
+          shipping_address_line: addr.address_line || null,
+        }
+      : prev);
+  };
+
+  const openAddressSheet = async () => {
+    setAddressSheetMode('list');
+    setEditingAddressId(null);
+    setIsRegionPickerOpen(false);
+    setRegionSearch('');
+
+    if (!user) {
+      setIsAddressSheetOpen(true);
+      return;
+    }
+
+    setIsAddressSheetOpen(true);
+    setIsAddressLoading(true);
+    try {
+      const response = await fetch('/api/user/addresses', {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const addresses: UserAddress[] = data.addresses || [];
+        setUserAddresses(addresses);
+      }
+    } catch (error) {
+      console.warn('Failed to load addresses for selector:', error);
+    } finally {
+      setIsAddressLoading(false);
+    }
+  };
+
+  const handleUseAddressFromForm = async () => {
+    if (!customerName || !customerPhone || !shippingAddressLine || !shippingBarangay || !shippingCity || !shippingRegion || !shippingPostalCode) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Missing fields',
+        text: 'Please fill all required address fields.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (!user) {
+      setIsAddressSheetOpen(false);
+      setAddressSheetMode('list');
+      return;
+    }
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const isEditingAddress = editingAddressId !== null;
+      const targetUrl = isEditingAddress ? `/api/user/addresses/${editingAddressId}` : '/api/user/addresses';
+      const response = await fetch(targetUrl, {
+        method: isEditingAddress ? 'PUT' : 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: customerName,
+          phone: customerPhone,
+          address_line: shippingAddressLine,
+          region: shippingRegion,
+          province: shippingRegion,
+          city: shippingCity,
+          barangay: shippingBarangay,
+          postal_code: shippingPostalCode,
+          is_default: userAddresses.length === 0,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save address');
+      }
+
+      const data = await response.json();
+      const createdAddress: UserAddress | undefined = data.address;
+      if (createdAddress) {
+        setUserAddresses((prev) => {
+          if (isEditingAddress) {
+            return prev.map((addr) => (addr.id === createdAddress.id ? createdAddress : addr));
+          }
+          return [createdAddress, ...prev];
+        });
+        applySelectedAddress(createdAddress);
+      }
+
+      setEditingAddressId(null);
+      setIsAddressSheetOpen(false);
+      setAddressSheetMode('list');
+    } catch (error) {
+      console.warn('Failed to save address from sheet:', error);
+      setEditingAddressId(null);
+      setIsAddressSheetOpen(false);
+      setAddressSheetMode('list');
+    }
+  };
+
+  const handleEditAddressFromList = (addr: UserAddress) => {
+    setEditingAddressId(addr.id);
+    setCustomerName(addr.name || '');
+    setCustomerPhone(addr.phone || '');
+    setShippingAddressLine(addr.address_line || '');
+    setShippingRegion(addr.region || '');
+    setShippingCity(addr.city || '');
+    setShippingBarangay(addr.barangay || '');
+    setShippingPostalCode(addr.postal_code || '');
+    setAddressSheetMode('form');
+    setIsRegionPickerOpen(false);
+    setRegionSearch('');
+  };
+
+  const handleDeleteAddressFromForm = async () => {
+    if (!user || editingAddressId === null) return;
+
+    const confirm = await Swal.fire({
+      icon: 'warning',
+      title: 'Delete this address?',
+      text: 'This action cannot be undone.',
+      showCancelButton: true,
+      confirmButtonText: 'Delete',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#111827',
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch(`/api/user/addresses/${editingAddressId}`, {
+        method: 'DELETE',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete address');
+      }
+
+      const deletedId = editingAddressId;
+      const nextAddresses = userAddresses.filter((addr) => addr.id !== deletedId);
+      setUserAddresses(nextAddresses);
+
+      if (checkoutData?.address_id === deletedId) {
+        if (nextAddresses.length > 0) {
+          const nextDefault = nextAddresses.find((addr) => addr.is_default) || nextAddresses[0];
+          applySelectedAddress(nextDefault);
+        } else {
+          setCheckoutData((prev) => (prev ? { ...prev, address_id: null } : prev));
+          setShippingAddressLine('');
+          setShippingRegion('');
+          setShippingCity('');
+          setShippingBarangay('');
+          setShippingPostalCode('');
+        }
+      }
+
+      setEditingAddressId(null);
+      setAddressSheetMode('list');
+    } catch (error) {
+      console.warn('Failed to delete address:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Delete failed',
+        text: 'Unable to delete this address right now. Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
 
   useEffect(() => {
     const loadCheckoutData = async () => {
@@ -260,6 +598,39 @@ const Payment: React.FC = () => {
     loadCheckoutData();
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isFailed = params.get('paymongo_failed') === '1';
+    const isExpired = params.get('paymongo_expired') === '1' || params.get('expired') === '1';
+
+    if (!isFailed && !isExpired) {
+      return;
+    }
+
+    const pendingOrderId = Number(sessionStorage.getItem('pendingOrderId') || '0');
+    const pendingRepairId = Number(sessionStorage.getItem('pendingRepairId') || repairIdParam || '0');
+
+    if (isRepairPayment && Number.isFinite(pendingRepairId) && pendingRepairId > 0) {
+      setPaymentRecovery({
+        scope: 'repair',
+        id: pendingRepairId,
+        reason: isExpired ? 'expired' : 'failed',
+      });
+    } else if (Number.isFinite(pendingOrderId) && pendingOrderId > 0) {
+      setPaymentRecovery({
+        scope: 'order',
+        id: pendingOrderId,
+        reason: isExpired ? 'expired' : 'failed',
+      });
+    }
+
+    params.delete('paymongo_failed');
+    params.delete('paymongo_expired');
+    params.delete('expired');
+    const queryString = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${queryString ? `?${queryString}` : ''}`);
+  }, [isRepairPayment, repairIdParam]);
+
   // Load saved user address and pre-fill form
   useEffect(() => {
     const loadSavedAddress = async () => {
@@ -275,18 +646,14 @@ const Payment: React.FC = () => {
 
         if (response.ok) {
           const data = await response.json();
-          if (data.addresses && data.addresses.length > 0) {
+          const addresses: UserAddress[] = data.addresses || [];
+          setUserAddresses(addresses);
+          if (addresses.length > 0) {
             // Find default address or use first one
-            const defaultAddress = data.addresses.find((addr: any) => addr.is_default) || data.addresses[0];
+            const defaultAddress = addresses.find((addr: UserAddress) => addr.is_default) || addresses[0];
             
             if (defaultAddress) {
-              setCustomerName(defaultAddress.name || '');
-              setCustomerPhone(defaultAddress.phone || '');
-              setShippingAddressLine(defaultAddress.address_line || '');
-              setShippingRegion(defaultAddress.region || '');
-              setShippingCity(defaultAddress.city || '');
-              setShippingBarangay(defaultAddress.barangay || '');
-              setShippingPostalCode(defaultAddress.postal_code || '');
+              applySelectedAddress(defaultAddress);
             }
           }
         }
@@ -301,6 +668,127 @@ const Payment: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!checkoutData || isPremiumPayment || isRepairPayment) {
+      setShippingEstimate(null);
+      setIsShippingEstimateLoading(false);
+      setShippingEstimateReason(null);
+      return;
+    }
+
+    const city = shippingCity.trim();
+    const region = shippingRegion.trim();
+
+    if (!city || !region) {
+      setShippingEstimate(null);
+      setIsShippingEstimateLoading(false);
+      setShippingEstimateReason('Enter city and region to see estimated shipping fee.');
+      return;
+    }
+
+    const itemPids = checkoutData.items
+      .map((item) => Number(item.pid))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+
+    if (itemPids.length === 0) {
+      setShippingEstimate(null);
+      setIsShippingEstimateLoading(false);
+      setShippingEstimateReason('Unable to resolve product location for shipping estimate.');
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setIsShippingEstimateLoading(true);
+
+      try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const response = await fetch('/api/shipping/estimate', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({
+            item_pids: itemPids,
+            shipping_address_line: shippingAddressLine,
+            shipping_barangay: shippingBarangay,
+            shipping_city: city,
+            shipping_region: region,
+            shipping_postal_code: shippingPostalCode,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          let serverReason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
+          try {
+            const errorData = await response.json();
+            serverReason = errorData?.reason || errorData?.message || serverReason;
+          } catch {
+            // Keep the default message when response is not JSON.
+          }
+
+          if (response.status === 429) {
+            serverReason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
+          }
+
+          if (response.status === 419) {
+            serverReason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
+          }
+
+          setShippingEstimate(null);
+          setShippingEstimateReason(serverReason);
+          return;
+        }
+
+        const data = await response.json();
+        if (data?.has_estimate) {
+          setShippingEstimate({
+            distance_km: Number(data.distance_km || 0),
+            base_fee: Number(data.base_fee || 0),
+            min_fee: Number(data.min_fee || 0),
+            max_fee: Number(data.max_fee || 0),
+            distance_label: data.distance_label,
+            customer_notice: data.customer_notice,
+            pay_after_order_notice: data.pay_after_order_notice,
+          });
+          setShippingEstimateReason(null);
+        } else {
+          setShippingEstimate(null);
+          setShippingEstimateReason(data?.reason || 'Estimated shipping is currently unavailable.');
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setShippingEstimate(null);
+          setShippingEstimateReason('Network issue while calculating shipping estimate. Please check your connection and try again.');
+          console.warn('Shipping estimate lookup failed:', error);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsShippingEstimateLoading(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [
+    checkoutData,
+    isPremiumPayment,
+    isRepairPayment,
+    shippingAddressLine,
+    shippingBarangay,
+    shippingCity,
+    shippingRegion,
+    shippingPostalCode,
+  ]);
 
   // Validate postal code - only integers, no "e" or special characters
   const handlePostalCodeChange = (value: string, setter: (val: string) => void) => {
@@ -347,6 +835,63 @@ const Payment: React.FC = () => {
     } catch (error) {
       console.warn('Unable to save address:', error);
       // Don't fail - order was already created
+    }
+  };
+
+  const handleCreateNewPaymentSession = async () => {
+    if (!paymentRecovery?.id || isRecoveryCreating) {
+      return;
+    }
+
+    setIsRecoveryCreating(true);
+    setPayError(null);
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const endpoint = paymentRecovery.scope === 'repair'
+        ? `/api/customer/repairs/${paymentRecovery.id}/retry-payment-session`
+        : `/api/orders/${paymentRecovery.id}/retry-payment-session`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || 'Failed to create a new payment session.');
+      }
+
+      const checkoutUrl = data?.checkout_url;
+      if (!checkoutUrl) {
+        throw new Error('Incomplete payment data received from PayMongo');
+      }
+
+      if (paymentRecovery.scope === 'repair') {
+        sessionStorage.setItem('pendingRepairId', String(paymentRecovery.id));
+      } else {
+        sessionStorage.setItem('pendingOrderId', String(paymentRecovery.id));
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (error: any) {
+      const message = error?.message || 'Unable to create a new payment session.';
+      setPayError(message);
+
+      Swal.fire({
+        icon: 'error',
+        title: 'Unable to Create Session',
+        text: message,
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setIsRecoveryCreating(false);
     }
   };
 
@@ -439,8 +984,8 @@ const Payment: React.FC = () => {
         return;
       }
 
-      // Now create PayMongo payment link
-      const response = await fetch('/api/paymongo-proxy', {
+      // Create a dedicated payment retry session that also persists fresh link metadata.
+      const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -448,9 +993,6 @@ const Payment: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
         },
-        body: JSON.stringify({
-          order_id: orderId,
-        }),
       });
 
       if (!response.ok) {
@@ -463,23 +1005,10 @@ const Payment: React.FC = () => {
 
       const paymentData = await response.json();
       const checkoutUrl = paymentData.checkout_url;
-      const linkId = paymentData.link_id;
 
-      if (!checkoutUrl || !linkId) {
+      if (!checkoutUrl) {
         throw new Error('Incomplete payment data received from PayMongo');
       }
-
-      // Update order with PayMongo link ID
-      await fetch(`/api/orders/${orderId}/update-payment-link`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrfToken || '',
-        },
-        body: JSON.stringify({ paymongo_link_id: linkId }),
-      });
 
       // Redirect to PayMongo payment page
       window.location.href = checkoutUrl;
@@ -505,17 +1034,50 @@ const Payment: React.FC = () => {
   const subtotal = checkoutData.total_amount;
   const shipping = 0; // Will be updated based on shipping method
   const total = subtotal + shipping;
+  const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);
+  const hasShippingEstimate = Boolean(shippingEstimate);
+  const estimatedShippingRange = hasShippingEstimate
+    ? `₱${(shippingEstimate?.min_fee ?? 0).toLocaleString()} - ₱${(shippingEstimate?.max_fee ?? 0).toLocaleString()}`
+    : '';
+  const shippingSummaryValue = hasShippingEstimate ? `${estimatedShippingRange} (estimated)` : 'To be calculated after order';
+  const shippingCarrierNote = shippingEstimate?.customer_notice
+    || 'Final fee will be confirmed after order via Lalamove or J&T (third-party carrier).';
+  const shippingPayLaterNotice = shippingEstimate?.pay_after_order_notice
+    || 'Shipping is not included in your checkout total and will be paid upon delivery of your order';
+  const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
+    .filter(Boolean)
+    .join(', ');
+  const deliveryName = customerName || user?.name || 'No delivery name yet';
+  const deliveryPhone = customerPhone || user?.phone || 'No phone yet';
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Head title="Payment" />
 
-      {!isPremiumPayment && <Navigation />}
+      {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
 
-      <main className={`flex-1 ${!isPremiumPayment ? 'pt-24 lg:pt-28' : ''}`}>
-        <div className="max-w-7xl mx-auto py-12 px-6 text-black">
+      <main className={`flex-1 ${!isPremiumPayment ? 'xl:pt-28' : ''}`}>
+        <div className="max-w-7xl mx-auto py-0 xl:py-12 px-0 xl:px-6 text-black">
+          {paymentRecovery && (
+            <div className="mx-4 xl:mx-0 mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-medium text-amber-900 mb-2">
+                {paymentRecovery.reason === 'expired'
+                  ? 'Payment session expired. Create a new payment session to continue.'
+                  : 'Payment was not completed. You can create a new payment session and try again.'}
+              </p>
+              <button
+                type="button"
+                onClick={handleCreateNewPaymentSession}
+                disabled={isRecoveryCreating}
+                className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isRecoveryCreating ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
+              >
+                {isRecoveryCreating ? 'Creating...' : 'Create New Payment Session'}
+              </button>
+            </div>
+          )}
+
           {isPremiumPayment && (
-            <div className="mb-6">
+            <div className="mb-6 px-4 xl:px-0 pt-4 xl:pt-0">
               <Link
                 href="/shop-owner/premium-benefits"
                 className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 hover:text-gray-900"
@@ -524,7 +1086,431 @@ const Payment: React.FC = () => {
               </Link>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+
+          <div className="xl:hidden min-h-screen bg-white pb-0">
+            <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="text-black text-xl leading-none"
+                aria-label="Go back"
+              >
+                &larr;
+              </button>
+              <h1 className="text-2xl font-semibold text-black">Order summary</h1>
+              <div className="w-6" />
+            </div>
+
+            <button
+              type="button"
+              onClick={openAddressSheet}
+              className="w-full text-left bg-white px-4 py-4 border-b border-gray-200"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold text-black truncate">{deliveryName} ({deliveryPhone})</p>
+                  <p className="text-sm text-gray-700 mt-1 line-clamp-2">
+                    {fullShippingAddress || 'Add your shipping address in Contact and delivery details below.'}
+                  </p>
+                </div>
+                <span className="text-gray-400 text-xl">&rsaquo;</span>
+              </div>
+            </button>
+
+            <div className="mt-2 bg-white px-4 py-4 border-y border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-3xl font-semibold text-black">Your order</h2>
+              </div>
+
+              <div className="space-y-4">
+                {checkoutData.items.map((item) => (
+                  <div key={item.id} className="flex gap-3">
+                    <div className="w-24 h-24 rounded-lg bg-gray-100 overflow-hidden shrink-0 border border-gray-200">
+                      {item.image ? (
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                      ) : isPremiumPayment ? (
+                        <div className="flex h-full w-full items-center justify-center bg-slate-900 text-[10px] font-semibold tracking-wide text-white">
+                          SOLESPACE
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-black line-clamp-2">{item.name}</p>
+                      <p className="text-xs text-gray-600 mt-1">Qty: {item.qty}</p>
+                      {item.size && <p className="text-xs text-gray-600">Size: {item.size}</p>}
+                      {item.color && <p className="text-xs text-gray-600">Color: {item.color}</p>}
+                      <p className="text-2xl font-bold text-gray-900 mt-2">₱{(item.price * item.qty).toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-xl bg-gray-100 px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-gray-700">Shipping fee</span>
+                <div className="text-sm">
+                  <span className="font-semibold text-black">
+                    {isShippingEstimateLoading
+                      ? 'Calculating...'
+                      : hasShippingEstimate
+                        ? estimatedShippingRange
+                        : 'To be calculated'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2 bg-white px-4 py-5 border-y border-gray-200">
+              <h3 className="text-3xl font-semibold text-black mb-4">Order summary</h3>
+
+              <div className="space-y-3 text-base">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-black">Product subtotal</span>
+                  <span className="font-semibold text-black">₱{subtotal.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between pl-4">
+                  <span className="text-gray-700">Product total</span>
+                  <span className="text-gray-700">₱{subtotal.toLocaleString()}</span>
+                </div>
+
+                <div className="pt-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-gray-700">Shipping</span>
+                    <span className="text-black text-right max-w-[65%] wrap-break-word">{shippingSummaryValue}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4 mt-4 flex items-center justify-between">
+                  <span className="text-2xl font-semibold text-black">Total</span>
+                  <span className="text-4xl font-bold text-black">₱{total.toLocaleString()}</span>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="mt-2 bg-white px-4 py-5 border-y border-gray-200">
+              <h3 className="text-3xl font-semibold text-black mb-4">Payment method</h3>
+
+              {!isPremiumPayment && (
+                <label
+                  className={`flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
+                    selectedPaymentMethod === 'cod' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex min-w-11 items-center justify-center rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                      COD
+                    </span>
+                    <div>
+                      <p className="text-base font-medium text-black leading-tight">Cash on delivery</p>
+                      <p className="text-xs text-gray-500 mt-1">Pay when your order arrives</p>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="mobile-payment-method"
+                    value="cod"
+                    checked={selectedPaymentMethod === 'cod'}
+                    onChange={() => setSelectedPaymentMethod('cod')}
+                    className="h-5 w-5 accent-indigo-600"
+                  />
+                </label>
+              )}
+
+              <label
+                className={`mt-3 flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
+                  selectedPaymentMethod === 'paymongo' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex min-w-14 items-center justify-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                    Online
+                  </span>
+                  <div>
+                    <p className="text-base font-medium text-black leading-tight">PayMongo card/e-wallet</p>
+                    <p className="text-xs text-gray-500 mt-1">Card, GCash, and Maya checkout</p>
+                  </div>
+                </div>
+                <input
+                  type="radio"
+                  name="mobile-payment-method"
+                  value="paymongo"
+                  checked={selectedPaymentMethod === 'paymongo'}
+                  onChange={() => setSelectedPaymentMethod('paymongo')}
+                  className="h-5 w-5 accent-indigo-600"
+                />
+              </label>
+
+              <div className="pt-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">Supported</p>
+                <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 w-fit">
+                  <span className="inline-flex items-center justify-center w-10 h-7 bg-gray-50 rounded border border-gray-200">
+                    <img src="/images/payment-logo/visa.png" alt="Visa" className="w-7 h-4 object-contain" />
+                  </span>
+                  <span className="inline-flex items-center justify-center w-10 h-7 bg-gray-50 rounded border border-gray-200">
+                    <img src="/images/payment-logo/GCASH.png" alt="GCash" className="w-7 h-4 object-contain" />
+                  </span>
+                  <span className="inline-flex items-center justify-center w-10 h-7 bg-gray-50 rounded border border-gray-200">
+                    <img src="/images/payment-logo/MAYA.png" alt="Maya" className="w-7 h-4 object-contain" />
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="bg-white px-4 py-4 border-y border-gray-200 text-sm text-gray-700">
+              By placing an order, you agree to the Terms of Use and Sale and acknowledge that you have read the Privacy Policy.
+            </div>
+
+            {payError && (
+              <div className="mt-2 mx-4 p-4 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
+                {payError}
+              </div>
+            )}
+
+            {isAddressSheetOpen && (
+              <div className="fixed inset-0 z-40 bg-white overflow-y-auto">
+                <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (addressSheetMode === 'form') {
+                        setEditingAddressId(null);
+                        setIsRegionPickerOpen(false);
+                        setRegionSearch('');
+                        setAddressSheetMode('list');
+                        return;
+                      }
+                      setIsRegionPickerOpen(false);
+                      setRegionSearch('');
+                      setIsAddressSheetOpen(false);
+                    }}
+                    className="text-black text-2xl leading-none"
+                    aria-label="Close address selector"
+                  >
+                    &larr;
+                  </button>
+                  <h2 className="text-2xl font-semibold text-black">{addressSheetMode === 'form' ? (editingAddressId ? 'Edit address' : 'Add address') : 'Your addresses'}</h2>
+                  <div className="w-6" />
+                </div>
+
+                {addressSheetMode === 'list' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingAddressId(null);
+                        setAddressSheetMode('form');
+                      }}
+                      className="w-full px-4 py-5 border-b border-gray-200 flex items-center justify-between text-left"
+                    >
+                      <span className="text-2xl text-gray-500 leading-none">+</span>
+                      <span className="ml-3 flex-1 text-2xl font-medium text-black">Add address</span>
+                      <span className="text-2xl text-gray-400 leading-none">&rsaquo;</span>
+                    </button>
+
+                    {isAddressLoading ? (
+                      <div className="px-4 py-6 text-base text-gray-600">Loading addresses...</div>
+                    ) : userAddresses.length === 0 ? (
+                      <div className="px-4 py-6 text-base text-gray-600">
+                        No saved addresses yet. Tap "Add address" to add one.
+                      </div>
+                    ) : (
+                      <div>
+                        {userAddresses.map((addr) => {
+                          const isSelected = checkoutData?.address_id === addr.id;
+                          return (
+                            <div
+                              key={addr.id}
+                              className={`w-full px-4 py-5 border-b border-gray-200 ${isSelected ? 'bg-gray-50' : 'bg-white'}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    applySelectedAddress(addr);
+                                    setIsAddressSheetOpen(false);
+                                  }}
+                                  className="min-w-0 text-left flex-1"
+                                >
+                                  <p className="text-2xl font-semibold text-black">{addr.name || 'Unnamed address'}</p>
+                                  <p className="text-base text-gray-700 mt-1">{addr.phone || 'No phone'}</p>
+                                  <p className="text-base text-gray-700 mt-2 leading-relaxed">{formatAddressDisplay(addr)}</p>
+                                  {addr.is_default && (
+                                    <span className="inline-flex mt-3 rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Default</span>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditAddressFromList(addr);
+                                  }}
+                                  className="text-gray-900 text-base font-semibold shrink-0 hover:text-black"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="px-4 py-5 space-y-3">
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      value={customerEmail}
+                      onChange={e => setCustomerEmail(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Full name"
+                      value={customerName}
+                      onChange={e => setCustomerName(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="House No., Street, Subdivision / Building"
+                      value={shippingAddressLine}
+                      onChange={e => setShippingAddressLine(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Barangay, Landmarks, Optional (LBC Branch)"
+                      value={shippingBarangay}
+                      onChange={e => setShippingBarangay(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        placeholder="Postal code"
+                        value={shippingPostalCode}
+                        onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                      />
+                      <input
+                        type="text"
+                        placeholder="City"
+                        value={shippingCity}
+                        onChange={e => setShippingCity(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-left text-black bg-white flex items-center justify-between"
+                      title="Region"
+                      aria-label="Region"
+                      onClick={() => setIsRegionPickerOpen(true)}
+                    >
+                      <span className={shippingRegion ? 'text-black' : 'text-gray-500'}>{shippingRegion || 'Select Region'}</span>
+                      <span className="text-gray-500 text-base leading-none">&#9662;</span>
+                    </button>
+                    <input
+                      type="tel"
+                      placeholder="Phone"
+                      value={customerPhone}
+                      onChange={e => setCustomerPhone(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleUseAddressFromForm}
+                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white"
+                    >
+                      {editingAddressId ? 'Save changes' : 'Use this address'}
+                    </button>
+
+                    {editingAddressId && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteAddressFromForm}
+                        className="w-full mt-2 rounded-lg border border-red-200 bg-red-50 py-3 text-base font-semibold text-red-700"
+                      >
+                        Delete address
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {isRegionPickerOpen && addressSheetMode === 'form' && (
+                  <div
+                    className="fixed inset-0 z-50 bg-black/40 flex items-end"
+                    onClick={() => {
+                      setIsRegionPickerOpen(false);
+                      setRegionSearch('');
+                    }}
+                  >
+                    <div
+                      className="w-full max-h-[82vh] bg-white rounded-t-2xl shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="px-4 pt-4 pb-3 border-b border-gray-200 flex items-center justify-between gap-3">
+                        <h3 className="text-lg font-semibold text-black">Select Region</h3>
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-gray-600"
+                          onClick={() => {
+                            setIsRegionPickerOpen(false);
+                            setRegionSearch('');
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div className="p-4 border-b border-gray-100">
+                        <input
+                          type="text"
+                          placeholder="Search region"
+                          title="Search region"
+                          aria-label="Search region"
+                          value={regionSearch}
+                          onChange={(e) => setRegionSearch(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        />
+                      </div>
+
+                      <div className="max-h-[56vh] overflow-y-auto py-1">
+                        {filteredRegions.length === 0 ? (
+                          <p className="px-4 py-6 text-sm text-gray-600">No regions found.</p>
+                        ) : (
+                          filteredRegions.map((region) => {
+                            const isSelected = shippingRegion === region;
+                            return (
+                              <button
+                                key={region}
+                                type="button"
+                                onClick={() => {
+                                  setShippingRegion(region);
+                                  setIsRegionPickerOpen(false);
+                                  setRegionSearch('');
+                                }}
+                                className={`w-full px-4 py-3 text-left text-sm border-b border-gray-100 ${isSelected ? 'bg-gray-100 font-medium text-black' : 'bg-white text-gray-800'}`}
+                              >
+                                {region}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
             {/* Left: Payment Form (span 2 on md) */}
             <div className="md:col-span-2">
               {/* Contact Section */}
@@ -630,90 +1616,11 @@ const Payment: React.FC = () => {
 
                       <div>
                         <label className="block text-sm text-black mb-2">Region</label>
-                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
-                      <option value="">Select Region</option>
-                      <option value="Abra">Abra</option>
-                      <option value="Agusan del Norte">Agusan del Norte</option>
-                      <option value="Agusan del Sur">Agusan del Sur</option>
-                      <option value="Aklan">Aklan</option>
-                      <option value="Albay">Albay</option>
-                      <option value="Antique">Antique</option>
-                      <option value="Apayao">Apayao</option>
-                      <option value="Aurora">Aurora</option>
-                      <option value="Basilan">Basilan</option>
-                      <option value="Bataan">Bataan</option>
-                      <option value="Batanes">Batanes</option>
-                      <option value="Batangas">Batangas</option>
-                      <option value="Benguet">Benguet</option>
-                      <option value="Biliran">Biliran</option>
-                      <option value="Bohol">Bohol</option>
-                      <option value="Bukidnon">Bukidnon</option>
-                      <option value="Bulacan">Bulacan</option>
-                      <option value="Cagayan">Cagayan</option>
-                      <option value="Camarines Norte">Camarines Norte</option>
-                      <option value="Camarines Sur">Camarines Sur</option>
-                      <option value="Camiguin">Camiguin</option>
-                      <option value="Capiz">Capiz</option>
-                      <option value="Catanduanes">Catanduanes</option>
-                      <option value="Cavite">Cavite</option>
-                      <option value="Cebu">Cebu</option>
-                      <option value="Cotabato">Cotabato</option>
-                      <option value="Compostela Valley">Compostela Valley</option>
-                      <option value="Davao del Norte">Davao del Norte</option>
-                      <option value="Davao del Sur">Davao del Sur</option>
-                      <option value="Davao Occidental">Davao Occidental</option>
-                      <option value="Davao Oriental">Davao Oriental</option>
-                      <option value="Dinagat Islands">Dinagat Islands</option>
-                      <option value="Eastern Samar">Eastern Samar</option>
-                      <option value="Guimaras">Guimaras</option>
-                      <option value="Ifugao">Ifugao</option>
-                      <option value="Ilocos Norte">Ilocos Norte</option>
-                      <option value="Ilocos Sur">Ilocos Sur</option>
-                      <option value="Iloilo">Iloilo</option>
-                      <option value="Isabela">Isabela</option>
-                      <option value="Kalinga">Kalinga</option>
-                      <option value="La Union">La Union</option>
-                      <option value="Laguna">Laguna</option>
-                      <option value="Lanao del Norte">Lanao del Norte</option>
-                      <option value="Lanao del Sur">Lanao del Sur</option>
-                      <option value="Leyte">Leyte</option>
-                      <option value="Maguindanao">Maguindanao</option>
-                      <option value="Marinduque">Marinduque</option>
-                      <option value="Masbate">Masbate</option>
-                      <option value="Metro Manila">Metro Manila</option>
-                      <option value="Misamis Occidental">Misamis Occidental</option>
-                      <option value="Misamis Oriental">Misamis Oriental</option>
-                      <option value="Mountain Province">Mountain Province</option>
-                      <option value="Negros Occidental">Negros Occidental</option>
-                      <option value="Negros Oriental">Negros Oriental</option>
-                      <option value="Northern Samar">Northern Samar</option>
-                      <option value="Nueva Ecija">Nueva Ecija</option>
-                      <option value="Nueva Vizcaya">Nueva Vizcaya</option>
-                      <option value="Occidental Mindoro">Occidental Mindoro</option>
-                      <option value="Oriental Mindoro">Oriental Mindoro</option>
-                      <option value="Palawan">Palawan</option>
-                      <option value="Pampanga">Pampanga</option>
-                      <option value="Pangasinan">Pangasinan</option>
-                      <option value="Quezon">Quezon</option>
-                      <option value="Quirino">Quirino</option>
-                      <option value="Rizal">Rizal</option>
-                      <option value="Romblon">Romblon</option>
-                      <option value="Samar">Samar</option>
-                      <option value="Sarangani">Sarangani</option>
-                      <option value="Siquijor">Siquijor</option>
-                      <option value="Sorsogon">Sorsogon</option>
-                      <option value="South Cotabato">South Cotabato</option>
-                      <option value="Southern Leyte">Southern Leyte</option>
-                      <option value="Sultan Kudarat">Sultan Kudarat</option>
-                      <option value="Sulu">Sulu</option>
-                      <option value="Surigao del Norte">Surigao del Norte</option>
-                      <option value="Surigao del Sur">Surigao del Sur</option>
-                      <option value="Tarlac">Tarlac</option>
-                      <option value="Tawi-Tawi">Tawi-Tawi</option>
-                      <option value="Zambales">Zambales</option>
-                      <option value="Zamboanga del Norte">Zamboanga del Norte</option>
-                      <option value="Zamboanga del Sur">Zamboanga del Sur</option>
-                      <option value="Zamboanga Sibugay">Zamboanga Sibugay</option>
+                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white" title="Region" aria-label="Region" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
+                          <option value="">Select Region</option>
+                          {PH_REGION_OPTIONS.map((region) => (
+                            <option key={region} value={region}>{region}</option>
+                          ))}
                         </select>
                       </div>
                     </>
@@ -732,21 +1639,23 @@ const Payment: React.FC = () => {
                   </div>
 
                   {/* Save info */}
-                  <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-3">
                     <input 
                       type="checkbox" 
+                      title="Save my information for faster checkout"
+                      aria-label="Save my information for faster checkout"
                       checked={saveAddressForLater}
                       onChange={e => setSaveAddressForLater(e.target.checked)}
                       className="w-4 h-4" 
                     />
                     <span className="text-sm text-black">Save my information for a faster checkout</span>
-                  </div>
+                  </label>
 
                   {/* Text notification */}
-                  <div className="flex items-center gap-3">
-                    <input type="checkbox" className="w-4 h-4" />
+                  <label className="flex items-center gap-3">
+                    <input type="checkbox" title="Text me with news and offers" aria-label="Text me with news and offers" className="w-4 h-4" />
                     <span className="text-sm text-black">Text me with news and offers</span>
-                  </div>
+                  </label>
                 </div>
               </div>
 
@@ -792,21 +1701,21 @@ const Payment: React.FC = () => {
                 <div className="w-full">
                 {selectedPaymentMethod === 'paymongo' ? (
                   <>
-                    <div className="border border-gray-400 rounded-t p-3 mb-0" style={{ borderBottom: 'none' }}>
+                    <div className="border border-gray-400 border-b-0 rounded-t p-3 mb-0">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-black">Secure Payments via PayMongo</span>
                         <div className="flex items-center gap-2">
                           {/* Visa */}
                           <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
-                            <img src="/images/payment-logo/visa.png" alt="Visa" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
+                            <img src="/images/payment-logo/visa.png" alt="Visa" className="w-6 h-4 object-contain" />
                           </span>
                           {/* GCash */}
                           <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
-                            <img src="/images/payment-logo/GCASH.png" alt="GCash" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
+                            <img src="/images/payment-logo/GCASH.png" alt="GCash" className="w-6 h-4 object-contain" />
                           </span>
                           {/* Maya */}
                           <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
-                            <img src="/images/payment-logo/MAYA.png" alt="Maya" style={{ width: '26px', height: '16px', objectFit: 'contain' }} />
+                            <img src="/images/payment-logo/MAYA.png" alt="Maya" className="w-6 h-4 object-contain" />
                           </span>
                         </div>
                       </div>
@@ -1003,9 +1912,13 @@ const Payment: React.FC = () => {
                     <span className="text-gray-600">Subtotal</span>
                     <span className="text-black font-medium">₱{subtotal.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Shipping</span>
-                    <span className="text-black">Calculated by carrier</span>
+                  <div className="text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-gray-600">Shipping</span>
+                      <span className="text-black text-right font-medium max-w-[70%] wrap-break-word">{shippingSummaryValue}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>
                   </div>
                 </div>
 
@@ -1022,11 +1935,29 @@ const Payment: React.FC = () => {
               </div>
             </aside>
           </div>
+
+          <div className="xl:hidden sticky bottom-0 z-30 border-t border-gray-200 bg-white">
+            <div className="px-4 py-3 flex items-end justify-between">
+              <div>
+                <p className="text-sm text-black">Total ({itemCount} item{itemCount > 1 ? 's' : ''})</p>
+                <p className="text-3xl font-bold text-gray-900">₱{total.toLocaleString()}</p>
+              </div>
+              <button
+                onClick={handlePayNow}
+                disabled={isProcessing}
+                className={`px-6 py-3 rounded-full text-base font-semibold text-white transition-colors ${
+                  isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                }`}
+              >
+                {isProcessing ? 'Processing...' : selectedPaymentMethod === 'cod' ? 'Place order' : 'Continue to payment'}
+              </button>
+            </div>
+          </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 bg-gray-100 text-slate-900">
+      <footer className="hidden xl:block mt-12 bg-gray-100 text-slate-900">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="border-t border-gray-300 pt-6 text-xs text-slate-700 flex items-center justify-between">
             <div>© 2024 SOLESPACE. All rights reserved.</div>

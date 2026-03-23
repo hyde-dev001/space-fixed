@@ -611,6 +611,8 @@ export default function PurchaseOrders() {
 									<button
 										onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
 										disabled={currentPage === 1}
+										title="Previous page"
+										aria-label="Go to previous page"
 										className="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
 									>
 										<ChevronLeftIcon className="w-5 h-5" />
@@ -618,6 +620,8 @@ export default function PurchaseOrders() {
 									<button
 										onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
 										disabled={currentPage === totalPages}
+										title="Next page"
+										aria-label="Go to next page"
 										className="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
 									>
 										<ChevronRightIcon className="w-5 h-5" />
@@ -635,13 +639,15 @@ export default function PurchaseOrders() {
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create Purchase Order</h2>
-							<button onClick={closeCreateModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+							<button onClick={closeCreateModal} title="Close create purchase order modal" aria-label="Close create purchase order modal" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
 						</div>
 
 						<div className="p-6 space-y-4">
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Select Approved PR *</label>
 								<select
+									title="Select approved purchase request"
+									aria-label="Select approved purchase request"
 									value={formData.selectedPrId || ""}
 									onChange={(event) => setFormData((prev) => ({ ...prev, selectedPrId: event.target.value ? Number(event.target.value) : null }))}
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
@@ -672,6 +678,8 @@ export default function PurchaseOrders() {
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Expected Delivery Date *</label>
 									<input
 										type="date"
+										title="Expected delivery date"
+										aria-label="Expected delivery date"
 										value={formData.expectedDeliveryDate}
 										onChange={(event) => setFormData((prev) => ({ ...prev, expectedDeliveryDate: event.target.value }))}
 										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
@@ -680,6 +688,8 @@ export default function PurchaseOrders() {
 								<div>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Payment Terms *</label>
 									<select
+										title="Payment terms"
+										aria-label="Payment terms"
 										value={formData.paymentTerms}
 										onChange={(event) => setFormData((prev) => ({ ...prev, paymentTerms: event.target.value }))}
 										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
@@ -719,7 +729,7 @@ export default function PurchaseOrders() {
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Purchase Order Details</h2>
-							<button onClick={() => setViewingOrder(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+							<button onClick={() => setViewingOrder(null)} title="Close purchase order details modal" aria-label="Close purchase order details modal" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
 						</div>
 
 						<div className="p-6 space-y-4">
@@ -816,7 +826,7 @@ export default function PurchaseOrders() {
 								<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Goods Receipt Verification</h2>
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{receivingOrder.po_number} — {receivingOrder.product_name}</p>
 							</div>
-							<button onClick={() => setReceivingOrder(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+							<button onClick={() => setReceivingOrder(null)} title="Close goods receipt modal" aria-label="Close goods receipt modal" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
 						</div>
 
 						<div className="p-6 space-y-4">
@@ -837,6 +847,8 @@ export default function PurchaseOrders() {
 									</label>
 									<input
 										type="number"
+										title="Received quantity"
+										aria-label="Received quantity"
 										min={0}
 										max={receivingOrder.quantity}
 										value={receivingData.receivedQuantity}
@@ -851,6 +863,8 @@ export default function PurchaseOrders() {
 									</label>
 									<input
 										type="number"
+										title="Defective or damaged quantity"
+										aria-label="Defective or damaged quantity"
 										min={0}
 										max={Number(receivingData.receivedQuantity) || 0}
 										value={receivingData.defectiveQuantity}
@@ -881,6 +895,8 @@ export default function PurchaseOrders() {
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Actual Delivery Date *</label>
 								<input
 									type="date"
+									title="Actual delivery date"
+									aria-label="Actual delivery date"
 									value={receivingData.actualDeliveryDate}
 									onChange={(e) => setReceivingData((prev) => ({ ...prev, actualDeliveryDate: e.target.value }))}
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"

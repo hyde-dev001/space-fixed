@@ -17,6 +17,7 @@ import {
 } from '@/types/procurement';
 
 const BASE_URL = '/api/erp/procurement/stock-requests';
+const INVENTORY_BASE_URL = '/api/erp/inventory/request-material-approvals';
 
 export const stockRequestApi = {
     /**
@@ -90,6 +91,20 @@ export const stockRequestApi = {
         notes?: string;
     }): Promise<StockRequestApproval> {
         const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(BASE_URL, data);
+        return (response.data as any).stock_request ?? response.data;
+    },
+
+    /**
+     * Create a new stock request from Inventory module endpoint
+     */
+    async createFromInventory(data: {
+        inventory_item_id: number;
+        quantity_needed: number;
+        priority: string;
+        requested_size?: string;
+        notes?: string;
+    }): Promise<StockRequestApproval> {
+        const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(INVENTORY_BASE_URL, data);
         return (response.data as any).stock_request ?? response.data;
     },
 };

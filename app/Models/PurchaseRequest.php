@@ -175,16 +175,22 @@ class PurchaseRequest extends Model
         return $this->save();
     }
 
-    public function approve(int $userId, ?string $notes = null, ?string $role = null): bool
+    public function approve(int $userId, ?string $notes = null, ?string $role = null, bool $requiresOwnerApproval = true): bool
     {
         // Finance approval - moves to pending shop owner
         if ($this->status === 'pending_finance') {
-            $this->status = 'pending_shop_owner';
+            $this->status = $requiresOwnerApproval ? 'pending_shop_owner' : 'approved';
             $this->reviewed_by = $userId;
             $this->reviewed_date = now();
+
+            if (!$requiresOwnerApproval) {
+                $this->approved_by = $userId;
+                $this->approved_date = now();
+            }
             
             if ($notes) {
-                $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . "Finance: " . $notes;
+                $financePrefix = $requiresOwnerApproval ? 'Finance: ' : 'Finance Final: ';
+                $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . $financePrefix . $notes;
             }
 
             return $this->save();

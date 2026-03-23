@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
@@ -89,8 +89,10 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
   
   // Review system state
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -110,6 +112,19 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
       checkReviewEligibility();
     }
   }, [shop.id, isAuthenticated]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setShowMoreActions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, []);
 
   const fetchReviews = async () => {
     try {
@@ -248,6 +263,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   };
 
   const shopStatus = checkIfOpen();
+  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`;
+  const selectionSummary = selectedPackageId
+    ? '(1 package selected)'
+    : selectedServices.length > 0
+      ? `(${selectedServices.length} service${selectedServices.length !== 1 ? 's' : ''} selected)`
+      : '';
 
   const getServiceDescriptionLines = (description: string) => {
     const normalized = description
@@ -342,6 +363,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             onMouseLeave={() => interactive && setHoverRating(0)}
             className={`${interactive ? 'cursor-pointer' : 'cursor-default'} transition-colors`}
             disabled={!interactive}
+            aria-label={interactive ? `Rate ${star} star${star !== 1 ? 's' : ''}` : `${rating} star rating`}
+            title={interactive ? `Rate ${star} star${star !== 1 ? 's' : ''}` : `${rating} star rating`}
           >
             <svg
               className={`w-5 h-5 ${
@@ -366,9 +389,30 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
       <div className="min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
-        <div className="max-w-6xl mx-auto px-6 lg:px-12 py-12 lg:py-20">
+        <div className="lg:hidden max-w-6xl mx-auto px-4 md:px-6 pt-4 md:pt-5">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined' && window.history.length > 1) {
+                window.history.back();
+                return;
+              }
+
+              window.location.href = '/repair';
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-black shadow-sm hover:bg-gray-50 transition-colors"
+            aria-label="Go back"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+            Back
+          </button>
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 md:px-6 lg:px-12 pt-8 md:pt-10 lg:pt-12 pb-28 md:pb-32 lg:py-20">
           {/* Shop Cover Image - Full Width Hero */}
-          <div className="relative h-64 md:h-80 bg-gray-200 overflow-hidden rounded-2xl mb-8 shadow-lg">
+          <div className="relative h-52 md:h-64 lg:h-80 bg-gray-200 overflow-hidden rounded-2xl mb-6 lg:mb-8 shadow-lg">
             <img
               src={shop.image}
               alt={shop.name}
@@ -378,18 +422,18 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                 target.src = '/images/shop/shop.jpg';
               }}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+            <div className="absolute inset-0 bg-linear-to-t from-black/50 to-transparent"></div>
             
             {/* Shop Name Overlay */}
-            <div className="absolute bottom-8 left-8">
-              <Link href={`/shop-profile/${shop.id}`} className="text-5xl font-bold text-white hover:text-gray-200 transition-colors inline-block drop-shadow-lg">
+            <div className="absolute bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 lg:bottom-8 lg:left-8 lg:right-auto">
+              <Link href={`/shop-profile/${shop.id}`} className="text-3xl md:text-4xl lg:text-5xl leading-[0.95] font-bold text-white hover:text-gray-200 transition-colors inline-block drop-shadow-lg wrap-break-word max-w-full">
                 {shop.name}
               </Link>
-              <div className="flex items-center gap-2 text-white mt-3">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <div className="flex items-start md:items-center gap-2 text-white mt-2 md:mt-3 max-w-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 md:w-5 md:h-5 mt-0.5 md:mt-0 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                 </svg>
-                <span className="text-lg font-medium">{shop.location}</span>
+                <span className="text-sm md:text-base lg:text-lg font-medium leading-snug wrap-break-word">{shop.location}</span>
               </div>
             </div>
 
@@ -397,62 +441,85 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           </div>
 
           {/* Shop Description */}
-          <div className="mb-12">
-            <p className="text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
+          <div className="mb-8 lg:mb-12">
+            <p className="text-base lg:text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
           </div>
 
           {/* Info Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 mb-8 lg:mb-10">
             {/* Shop Information */}
-            <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between gap-3 mb-6">
+            <div className="bg-linear-to-br from-gray-50 to-white rounded-3xl p-4 sm:p-5 md:p-6 lg:p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 md:mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 lg:w-6 lg:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                   </div>
-                  <h3 className="text-2xl font-bold text-black">Shop Information</h3>
+                  <h3 className="text-xl lg:text-2xl font-bold text-black">Shop Information</h3>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   <Link
                     href={`/message/${shop.id}`}
-                    className="px-6 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all"
+                    className="px-4 lg:px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all flex-1 sm:flex-none text-center"
                   >
                     Message
                   </Link>
                   {isAuthenticated && (
-                    <button
-                      type="button"
-                      onClick={() => setShowReportModal(true)}
-                      className="px-4 py-2 border border-red-300 rounded-lg text-sm font-semibold text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all"
-                    >
-                      Report
-                    </button>
+                    <div className="relative" ref={actionMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowMoreActions((prev) => !prev)}
+                        className="h-10.5 w-10.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-black hover:text-white hover:border-black transition-all inline-flex items-center justify-center"
+                        aria-label="More actions"
+                        aria-haspopup="menu"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="5" r="1.5" />
+                          <circle cx="12" cy="12" r="1.5" />
+                          <circle cx="12" cy="19" r="1.5" />
+                        </svg>
+                      </button>
+
+                      {showMoreActions && (
+                        <div className="absolute right-0 top-full mt-2 w-36 rounded-xl border border-gray-200 bg-white shadow-lg p-1.5 z-20">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowReportModal(true);
+                              setShowMoreActions(false);
+                            }}
+                            className="w-full px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            Report
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
-              <div className="space-y-5 text-sm text-gray-700">
-                <div className="flex items-start gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <div className="space-y-3 md:space-y-4 text-sm text-gray-700">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                   </svg>
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-bold text-black mb-1">Location</div>
-                    <div className={`${shop.location === 'Location not specified' || shop.location === 'Not specified' ? 'text-gray-400 italic' : 'text-gray-600'}`}>
+                    <div className={`leading-6 wrap-break-word ${shop.location === 'Location not specified' || shop.location === 'Not specified' ? 'text-gray-400 italic' : 'text-gray-600'}`}>
                       {shop.location || 'Location not specified'}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                   </svg>
                   <div className="flex-1">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-start sm:items-center justify-between gap-2 mb-2.5">
                       <div className="font-bold text-black">Hours</div>
                       {shop.hours && shop.hours.length > 0 && (
-                        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                        <span className={`text-[11px] sm:text-xs font-semibold px-2.5 sm:px-3 py-1 rounded-full whitespace-nowrap ${
                           shopStatus.isOpen 
                             ? 'bg-green-100 text-green-800' 
                             : 'bg-red-100 text-red-800'
@@ -462,15 +529,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       )}
                     </div>
                     {shop.hours && shop.hours.length > 0 ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         {shop.hours.map((schedule, index) => (
                           <div 
                             key={index} 
-                            className={`flex justify-between items-center text-sm ${
+                            className={`grid grid-cols-[84px_minmax(0,1fr)] sm:grid-cols-[100px_minmax(0,1fr)] items-start gap-2 text-[13px] sm:text-sm ${
                               schedule.day === shopStatus.currentDay ? 'font-semibold' : ''
                             }`}
                           >
-                            <span className={`w-24 ${
+                            <span className={`leading-5 ${
                               schedule.day === shopStatus.currentDay 
                                 ? 'text-black' 
                                 : 'text-gray-700'
@@ -481,9 +548,9 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                               )}
                             </span>
                             {schedule.is_closed ? (
-                              <span className="text-gray-400 italic">Closed</span>
+                              <span className="text-gray-400 italic leading-5">Closed</span>
                             ) : (
-                              <span className={schedule.day === shopStatus.currentDay ? 'text-blue-600' : 'text-gray-600'}>
+                              <span className={`leading-5 wrap-break-word ${schedule.day === shopStatus.currentDay ? 'text-blue-600' : 'text-gray-600'}`}>
                                 {schedule.open} - {schedule.close}
                               </span>
                             )}
@@ -495,45 +562,45 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     )}
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                   </svg>
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-bold text-black mb-1">Phone</div>
-                    <a href={`tel:${shop.phone}`} className="text-black hover:text-gray-600 transition-colors underline">{shop.phone}</a>
+                    <a href={`tel:${shop.phone}`} className="text-black hover:text-gray-600 transition-colors underline break-all leading-6">{shop.phone}</a>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                   </svg>
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-bold text-black mb-1">Email</div>
-                    <a href={`mailto:${shop.email}`} className="text-black hover:text-gray-600 transition-colors underline">{shop.email}</a>
+                    <a href={`mailto:${shop.email}`} className="text-black hover:text-gray-600 transition-colors underline break-all leading-6">{shop.email}</a>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Shop Rating */}
-            <div className="bg-gradient-to-br from-yellow-50 to-white rounded-2xl p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="bg-linear-to-br from-yellow-50 to-white rounded-2xl p-5 md:p-6 lg:p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-white fill-white" viewBox="0 0 24 24">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 lg:w-6 lg:h-6 text-white fill-white" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
                 </div>
-                <h3 className="text-2xl font-bold text-black">Customer Rating</h3>
+                <h3 className="text-xl lg:text-2xl font-bold text-black">Customer Rating</h3>
               </div>
               {reviewStats.total_reviews > 0 ? (
-                <div className="flex items-center gap-8">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:gap-8">
                   <div>
                     <div className="flex items-baseline gap-3 mb-2">
-                      <span className="text-6xl font-bold text-black">
+                      <span className="text-5xl lg:text-6xl font-bold text-black">
                         {reviewStats.average_rating.toFixed(1)}
                       </span>
-                      <span className="text-4xl text-yellow-400">⭐</span>
+                      <span className="text-3xl lg:text-4xl text-yellow-400">⭐</span>
                     </div>
                     <span className="text-sm text-gray-600">
                       Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
@@ -554,11 +621,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           </div>
 
           {/* Repair Services Section */}
-          <div className="mb-12">
+          <div className="mb-10 lg:mb-12">
             <div className="mb-8">
-              <h2 className="text-3xl font-bold text-black mb-5">Packages</h2>
+              <h2 className="text-2xl lg:text-3xl font-bold text-black mb-5">Packages</h2>
               {repairPackages && repairPackages.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 overflow-x-auto md:overflow-visible pb-2 md:pb-0 snap-x snap-mandatory md:snap-none">
                   {repairPackages.map((pkg) => {
                     const isSelected = selectedPackageId === pkg.id;
 
@@ -567,20 +634,20 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         key={pkg.id}
                         type="button"
                         onClick={() => handlePackageToggle(pkg.id)}
-                        className={`bg-white rounded-2xl p-6 border-2 transition-all h-full cursor-pointer w-full text-left ${
+                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 md:w-full md:min-w-0 h-62.5 sm:h-65 md:h-full shrink-0 bg-white rounded-2xl p-5 lg:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
                           isSelected
                             ? 'border-black shadow-md'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
                         }`}
                       >
                         <div className="flex flex-col h-full">
-                          <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-start justify-between gap-2 lg:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
                               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium inline-block mb-2">
                                 Package
                               </span>
-                              <h3 className="text-lg font-bold text-black">{pkg.name}</h3>
-                              <p className="text-sm text-gray-600 mt-1">{pkg.description || 'Repair package offer'}</p>
+                              <h3 className="text-base lg:text-lg font-bold text-black leading-snug wrap-break-word">{pkg.name}</h3>
+                              <p className="text-sm text-gray-600 mt-1 leading-5 wrap-break-word">{pkg.description || 'Repair package offer'}</p>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                               isSelected
@@ -596,9 +663,9 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                             <p>Save ₱{Number(pkg.savings_amount || 0).toLocaleString()}</p>
                           </div>
 
-                          <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between">
-                            <span className="text-2xl font-bold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
-                            <span className="text-xs text-gray-500">Bundle offer</span>
+                          <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between gap-3">
+                            <span className="text-xl lg:text-2xl font-bold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
+                            <span className="text-xs text-gray-500 text-right">Bundle offer</span>
                           </div>
                         </div>
                       </button>
@@ -612,16 +679,16 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               )}
             </div>
 
-            <div className="rounded-3xl border border-gray-200 bg-gray-50/60 p-6 md:p-8 shadow-sm transition-all duration-300">
-              <div className="flex items-center justify-between gap-3 mb-8">
-                <h2 className="text-3xl font-bold text-black">Individual Services</h2>
-                <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-6 lg:mb-8">
+                <h2 className="text-2xl lg:text-3xl font-bold text-black">Individual Services</h2>
+                <span className="inline-flex items-center gap-2 text-[11px] lg:text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
                   Choose one or more
                 </span>
               </div>
 
               {repairServices && repairServices.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 overflow-x-auto md:overflow-visible pb-2 md:pb-0 snap-x snap-mandatory md:snap-none">
                   {repairServices.map((service) => {
                     const descriptionLines = getServiceDescriptionLines(service.description);
                     const isSelected = selectedServices.includes(service.id);
@@ -629,7 +696,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     return (
                       <div
                         key={service.id}
-                        className={`bg-white rounded-2xl p-6 border-2 transition-all h-full ${
+                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 md:w-full md:min-w-0 h-62.5 sm:h-65 md:h-full shrink-0 bg-white rounded-2xl p-5 lg:p-6 border-2 transition-all snap-start ${
                           isSelected
                             ? 'border-black shadow-md'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
@@ -637,11 +704,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         onClick={() => handleServiceToggle(service.id)}
                       >
                         <div className="flex flex-col h-full">
-                          <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-start justify-between gap-2 lg:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2">
-                                <h3 className="text-lg font-bold text-black">{service.title}</h3>
-                                <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
+                              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 mb-2">
+                                <h3 className="text-base lg:text-lg font-bold text-black leading-snug wrap-break-word min-w-0">{service.title}</h3>
+                                <span className="text-[11px] lg:text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap shrink-0">
                                   {service.category}
                                 </span>
                               </div>
@@ -668,8 +735,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           </ul>
 
                           <div className="mt-auto pt-4 border-t border-gray-200">
-                            <div className="flex items-center justify-between">
-                              <div className="text-2xl font-bold text-black">{service.price}</div>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xl lg:text-2xl font-bold text-black">{service.price}</div>
                               <div className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <circle cx="12" cy="12" r="10" />
@@ -698,20 +765,20 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
           {/* Request Service Button */}
           <Link
-            href={`/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`}
+            href={requestRepairHref}
             onClick={handleRequestRepair}
-            className="block w-full bg-black text-white py-5 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-xl shadow-xl hover:shadow-2xl text-center mb-16"
+            className="hidden lg:block w-full bg-black text-white py-5 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-xl shadow-xl hover:shadow-2xl text-center mb-16"
           >
-            Request Repair Service {selectedPackageId ? '(1 package selected)' : selectedServices.length > 0 ? `(${selectedServices.length} service${selectedServices.length !== 1 ? 's' : ''} selected)` : ''}
+            Request Repair Service {selectionSummary}
           </Link>
 
           {/* Reviews and Comments Section */}
-          <div id="reviews" className="border-t border-gray-200 pt-16">
-            <div className="mb-12">
-              <h2 className="text-4xl font-bold text-black mb-6">Customer Reviews</h2>
+          <div id="reviews" className="border-t border-gray-200 pt-12 lg:pt-16">
+            <div className="mb-10 lg:mb-12">
+              <h2 className="text-3xl lg:text-4xl font-bold text-black mb-5 lg:mb-6">Customer Reviews</h2>
               <div className="flex items-center gap-6">
-                <div className="flex items-center gap-4">
-                  <span className="text-6xl font-bold text-black">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                  <span className="text-5xl lg:text-6xl font-bold text-black leading-none">
                     {reviewStats.average_rating > 0 ? reviewStats.average_rating.toFixed(1) : shop.rating}
                   </span>
                   <div>
@@ -727,15 +794,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             </div>
 
             {/* Write a Review Section */}
-            <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-10 mb-12 border border-gray-100 shadow-sm hover:shadow-md transition-all">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="bg-linear-to-br from-gray-50 to-white rounded-2xl p-5 md:p-7 lg:p-10 mb-10 lg:mb-12 border border-gray-100 shadow-sm hover:shadow-md transition-all">
+              <div className="flex items-center gap-3 mb-6 lg:mb-8">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 lg:w-6 lg:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                   </svg>
                 </div>
-                <h3 className="text-3xl font-bold text-black">Share Your Experience</h3>
+                <h3 className="text-2xl lg:text-3xl font-bold text-black">Share Your Experience</h3>
               </div>
 
               {/* Eligibility Messages */}
@@ -780,10 +847,10 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
               <div className="mb-8">
                 <label className="block text-base font-bold text-black mb-4">Your Rating</label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {renderStars(userRating, true, setUserRating)}
                   {userRating > 0 && (
-                    <span className="ml-4 text-sm text-gray-600 flex items-center">
+                    <span className="text-sm text-gray-600 flex items-center">
                       {userRating === 5 ? 'Excellent!' : userRating === 4 ? 'Great!' : userRating === 3 ? 'Good' : userRating === 2 ? 'Fair' : 'Poor'}
                     </span>
                   )}
@@ -812,7 +879,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           <img
                             src={group.preview}
                             alt="Review photo"
-                            className="w-full h-32 object-cover rounded-xl border-2 border-gray-200 shadow-sm"
+                            className="w-full h-24 md:h-28 lg:h-32 object-cover rounded-xl border-2 border-gray-200 shadow-sm"
                           />
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/photo:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-2">
                             {imageUploadGroups.length < 5 && (
@@ -836,7 +903,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           </div>
                         </div>
                       ) : (
-                        <label className="w-full h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-black hover:bg-gray-50 transition-all bg-white">
+                        <label className="w-full h-24 md:h-28 lg:h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-black hover:bg-gray-50 transition-all bg-white">
                           <input
                             type="file"
                             accept="image/*"
@@ -860,7 +927,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               <button
                 onClick={handleSubmitReview}
                 disabled={!canReview || isSubmittingReview}
-                className={`px-10 py-4 rounded-2xl font-bold text-lg shadow-lg transition-all ${
+                className={`w-full sm:w-auto px-8 lg:px-10 py-4 rounded-2xl font-bold text-base lg:text-lg shadow-lg transition-all ${
                   canReview && !isSubmittingReview
                     ? 'bg-black text-white hover:bg-gray-900 hover:shadow-xl active:scale-[0.98] cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -880,20 +947,20 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                 <p className="text-gray-500 text-lg">No reviews yet. Be the first to review this shop!</p>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4 lg:space-y-6">
                 {reviews.map((review) => (
-                  <div key={review.id} className="bg-gradient-to-br from-white to-gray-50 rounded-2xl p-8 border border-gray-100 hover:shadow-lg transition-all">
-                    <div className="flex items-start gap-6">
+                  <div key={review.id} className="bg-linear-to-br from-white to-gray-50 rounded-2xl p-5 lg:p-8 border border-gray-100 hover:shadow-lg transition-all">
+                    <div className="flex items-start gap-4 lg:gap-6">
                       {/* User Avatar */}
-                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center shadow-md">
-                        <span className="text-2xl font-bold text-gray-600">
+                      <div className="w-14 h-14 lg:w-20 lg:h-20 rounded-2xl bg-linear-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                        <span className="text-xl lg:text-2xl font-bold text-gray-600">
                           {review.user_name.charAt(0).toUpperCase()}
                         </span>
                       </div>
                       
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-3 flex-wrap">
-                          <h4 className="font-bold text-black text-xl">{review.user_name}</h4>
+                          <h4 className="font-bold text-black text-lg lg:text-xl">{review.user_name}</h4>
                           {review.verified && (
                             <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
                               <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -918,17 +985,17 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           </span>
                         </div>
                         
-                        <p className="text-gray-700 leading-relaxed text-base mb-4">{review.comment}</p>
+                        <p className="text-gray-700 leading-relaxed text-sm lg:text-base mb-4">{review.comment}</p>
                         
                         {/* Review Images */}
                         {review.images && review.images.length > 0 && (
-                          <div className="flex gap-2 mt-4">
+                          <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
                             {review.images.map((image, index) => (
                               <img
                                 key={index}
                                 src={image}
                                 alt={`Review photo ${index + 1}`}
-                                className="w-24 h-24 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:scale-105 transition-transform shadow-sm"
+                                className="w-20 h-20 lg:w-24 lg:h-24 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:scale-105 transition-transform shadow-sm shrink-0"
                                 onClick={() => setEnlargedImage(image)}
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement;
@@ -948,10 +1015,43 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
         </div>
       </div>
 
+        <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] lg:hidden">
+          <Link
+            href={`/shop-profile/${shop.id}`}
+            className="flex w-15 shrink-0 flex-col items-center justify-center gap-0.5 py-2.5 text-gray-600 hover:text-black transition-colors"
+            aria-label="Visit shop"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 22V12h6v10" />
+            </svg>
+            <span className="text-[10px] font-medium">Shop</span>
+          </Link>
+
+          <Link
+            href={isAuthenticated ? `/message/${shop.id}` : '/login'}
+            className="flex w-15 shrink-0 flex-col items-center justify-center gap-0.5 border-l border-gray-200 py-2.5 text-gray-600 hover:text-black transition-colors"
+            aria-label="Message"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" />
+            </svg>
+            <span className="text-[10px] font-medium">Chat</span>
+          </Link>
+
+          <Link
+            href={requestRepairHref}
+            onClick={handleRequestRepair}
+            className="flex-1 border-l border-gray-200 bg-black text-white py-3.5 px-4 text-center text-[11px] font-bold uppercase tracking-wider hover:bg-gray-900 transition-colors"
+          >
+            Request Repair {selectedPackageId ? '(Package)' : selectedServices.length > 0 ? `(${selectedServices.length})` : ''}
+          </Link>
+        </div>
+
         {/* Image Lightbox Modal */}
         {enlargedImage && (
           <div
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-fadeIn"
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-fadeIn"
             onClick={() => setEnlargedImage(null)}
           >
             <div
@@ -961,11 +1061,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               <img
                 src={enlargedImage}
                 alt="Enlarged review"
-                className="w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl"
+                className="w-full max-h-[80vh] md:max-h-[85vh] object-contain rounded-2xl shadow-2xl"
               />
               <button
                 onClick={() => setEnlargedImage(null)}
-                className="absolute -top-4 -right-4 w-12 h-12 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all shadow-xl"
+                className="absolute top-2 right-2 md:-top-4 md:-right-4 w-10 h-10 md:w-12 md:h-12 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all shadow-xl"
                 type="button"
                 title="Close"
               >

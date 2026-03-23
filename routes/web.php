@@ -925,6 +925,10 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     Route::post('{id}/verify-payment', [\App\Http\Controllers\Api\RepairRequestController::class, 'verifyPayment'])
         ->middleware('throttle:20,1');
 
+    // Retry payment session creation with fresh PayMongo checkout URL
+    Route::post('{id}/retry-payment-session', [\App\Http\Controllers\Api\RepairRequestController::class, 'retryPaymentSession'])
+        ->middleware('throttle:20,1');
+
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
     Route::get('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'getRepairReview']);

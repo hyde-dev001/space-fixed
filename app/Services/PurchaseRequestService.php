@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Log;
 
 class PurchaseRequestService
 {
+    public function __construct(
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
+    ) {}
+
     /**
      * Create a new purchase request.
      */
@@ -107,7 +111,12 @@ class PurchaseRequestService
                 throw new \Exception('Purchase request cannot be approved in its current state.');
             }
 
-            $purchaseRequest->approve($userId, $notes);
+            $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPurchaseRequest(
+                (int) $purchaseRequest->shop_owner_id,
+                (float) $purchaseRequest->total_cost
+            );
+
+            $purchaseRequest->approve($userId, $notes, null, $requiresOwnerApproval);
 
             // Check if auto PO generation is enabled
             $settings = ProcurementSettings::getForShopOwner($purchaseRequest->shop_owner_id);

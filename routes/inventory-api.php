@@ -108,6 +108,7 @@ Route::middleware([
     Route::prefix('request-material-approvals')->group(function () {
         Route::get('/', [StockRequestApprovalController::class, 'index'])->name('inventory.request-material-approvals.index');
         Route::get('/metrics', [StockRequestApprovalController::class, 'getMetrics'])->name('inventory.request-material-approvals.metrics');
+        Route::post('/', [StockRequestApprovalController::class, 'store'])->name('inventory.request-material-approvals.store');
         Route::get('/{id}', [StockRequestApprovalController::class, 'show'])->name('inventory.request-material-approvals.show');
         Route::post('/{id}/approve', [StockRequestApprovalController::class, 'approve'])->name('inventory.request-material-approvals.approve');
         Route::post('/{id}/reject', [StockRequestApprovalController::class, 'reject'])->name('inventory.request-material-approvals.reject');

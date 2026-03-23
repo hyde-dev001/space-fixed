@@ -309,6 +309,12 @@ function PriceApprovalContent() {
     setViewModalOpen(true);
   };
 
+  const isOwnerStepSkippedBySettings = (request: PriceRequest) => {
+    return request.status === 'owner_approved'
+      && !!request.financeReviewedBy
+      && !request.ownerReviewedBy;
+  };
+
   const calculatePriceChange = (current: string, requested: string) => {
     const currentNum = parseFloat(current.replace(/[₱,]/g, ""));
     const requestedNum = parseFloat(requested.replace(/[₱,]/g, ""));
@@ -651,6 +657,7 @@ function PriceApprovalContent() {
                   paginatedRequests.map((request) => {
                     const { change, percentage } = calculatePriceChange(request.currentPrice, request.requestedPrice);
                     const isIncrease = change > 0;
+                    const ownerStepSkippedBySettings = isOwnerStepSkippedBySettings(request);
 
                     return (
                       <tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
@@ -670,6 +677,11 @@ function PriceApprovalContent() {
                                     : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                                 }`}>
                                   {request.type === 'shoe' ? 'Shoe Product' : 'Repair Service'}
+                                </span>
+                              )}
+                              {ownerStepSkippedBySettings && (
+                                <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                                  Owner step skipped by settings
                                 </span>
                               )}
                             </div>
@@ -699,6 +711,11 @@ function PriceApprovalContent() {
                             <span className="text-xs text-gray-500 dark:text-gray-400">
                               {request.financeReviewedAt}
                             </span>
+                            {ownerStepSkippedBySettings && (
+                              <span className="text-xs text-indigo-700 dark:text-indigo-300">
+                                Owner step skipped by settings
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-4">
@@ -798,6 +815,11 @@ function PriceApprovalContent() {
                       Approved & Applied
                     </span>
                   )}
+                  {isOwnerStepSkippedBySettings(selectedRequest) && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                      Owner step skipped by settings
+                    </span>
+                  )}
                   {selectedRequest.status === 'owner_rejected' && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
                       <XIcon className="w-3 h-3" />
@@ -813,6 +835,8 @@ function PriceApprovalContent() {
                 </div>
                 <button
                   onClick={() => setViewModalOpen(false)}
+                  title="Close details modal"
+                  aria-label="Close details modal"
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   <CloseIcon className="w-5 h-5" />
@@ -945,7 +969,9 @@ function PriceApprovalContent() {
                 ) : selectedRequest.status === 'owner_approved' ? (
                   /* Show finalized status for approved items */
                   <div className="flex-1 px-4 py-3 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-semibold text-center">
-                    ✓ Price Change Applied - Request Finalized
+                    {isOwnerStepSkippedBySettings(selectedRequest)
+                      ? '✓ Price Change Applied - Finalized by Finance (Owner step skipped by settings)'
+                      : '✓ Price Change Applied - Request Finalized'}
                   </div>
                 ) : selectedRequest.status === 'owner_rejected' ? (
                   /* Show rejected status */

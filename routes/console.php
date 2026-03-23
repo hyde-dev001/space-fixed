@@ -63,3 +63,9 @@ Schedule::job(new GenerateProcurementReportJob())
     ->withoutOverlapping()
     ->onOneServer();
 
+// Payment lifecycle: expire stale unpaid sessions and release reservations.
+Schedule::command('payments:expire-stale')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+

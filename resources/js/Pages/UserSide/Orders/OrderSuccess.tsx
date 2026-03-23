@@ -16,30 +16,64 @@ export default function OrderSuccess() {
   const [loading, setLoading] = useState(true);
   const [failed,  setFailed]  = useState(false);
   const [message, setMessage] = useState('Verifying your payment with PayMongo...');
+  const [pendingOrderId, setPendingOrderId] = useState<number | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetryPaymentSession = async () => {
+    if (!pendingOrderId || retrying) {
+      return;
+    }
+
+    try {
+      setRetrying(true);
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch(`/api/orders/${pendingOrderId}/retry-payment-session`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+        },
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result?.checkout_url) {
+        throw new Error(result?.message || 'Failed to create retry payment session.');
+      }
+
+      sessionStorage.setItem('pendingOrderId', String(pendingOrderId));
+      window.location.href = result.checkout_url;
+    } catch (error) {
+      setRetrying(false);
+      setMessage(error instanceof Error ? error.message : 'Failed to retry payment session.');
+    }
+  };
 
   useEffect(() => {
     const run = async () => {
       const urlParams         = new URLSearchParams(window.location.search);
       const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
       const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
-      const pendingOrderId    = sessionStorage.getItem('pendingOrderId');
+      const pendingOrderIdRaw = sessionStorage.getItem('pendingOrderId');
+      const parsedPendingOrderId = pendingOrderIdRaw ? Number(pendingOrderIdRaw) : null;
+
+      if (parsedPendingOrderId && !Number.isNaN(parsedPendingOrderId)) {
+        setPendingOrderId(parsedPendingOrderId);
+      }
 
       window.history.replaceState({}, '', '/order-success');
 
       if (isPaymongoFailed) {
-        sessionStorage.removeItem('pendingOrderId');
         setFailed(true);
         setLoading(false);
-        setTimeout(() => router.visit('/my-orders'), 4000);
         return;
       }
 
-      if (!pendingOrderId || !isPaymongoSuccess) {
+      if (!pendingOrderIdRaw || !isPaymongoSuccess) {
         router.visit('/my-orders');
         return;
       }
-
-      sessionStorage.removeItem('pendingOrderId');
 
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -51,7 +85,7 @@ export default function OrderSuccess() {
         let data: any = null;
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-          const res = await fetch(`/api/orders/${pendingOrderId}/verify-payment`, {
+          const res = await fetch(`/api/orders/${pendingOrderIdRaw}/verify-payment`, {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -64,6 +98,10 @@ export default function OrderSuccess() {
 
           if (data.success && data.payment_verified) break;
 
+          if (res.status === 410) {
+            break;
+          }
+
           if (res.status >= 500 || res.status === 404) break;
 
           if (attempt < MAX_ATTEMPTS) {
@@ -72,10 +110,15 @@ export default function OrderSuccess() {
         }
 
         if (data?.success && data?.payment_verified) {
+          sessionStorage.removeItem('pendingOrderId');
           setOrder(data.order);
           setMessage('Payment confirmed!');
         } else {
-          setMessage(data?.message || 'Payment could not be verified.');
+          if (data?.expired) {
+            setMessage('Payment session expired. Please retry checkout to generate a new payment session.');
+          } else {
+            setMessage(data?.message || 'Payment could not be verified.');
+          }
           setFailed(true);
         }
       } catch (e) {
@@ -108,10 +151,20 @@ export default function OrderSuccess() {
               </div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">Payment Not Completed</h1>
               <p className="text-gray-600 mb-6">{message}</p>
-              <p className="text-sm text-gray-500 mb-6">Redirecting you to My Orders...</p>
-              <Link href="/my-orders" className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-black hover:bg-gray-800 transition-colors">
-                Go to My Orders
-              </Link>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                {pendingOrderId && (
+                  <button
+                    onClick={handleRetryPaymentSession}
+                    disabled={retrying}
+                    className={`inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white transition-colors ${retrying ? 'bg-gray-400 cursor-not-allowed' : 'bg-black hover:bg-gray-800'}`}
+                  >
+                    {retrying ? 'Retrying...' : 'Retry Payment'}
+                  </button>
+                )}
+                <Link href="/my-orders" className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                  Go to My Orders
+                </Link>
+              </div>
             </>
           ) : (
             <>

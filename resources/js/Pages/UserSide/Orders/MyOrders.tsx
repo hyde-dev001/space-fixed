@@ -20,6 +20,7 @@ type Order = {
   order_number: string;
   status: string;
   payment_status?: string;
+  payment_method?: string;
   total_amount: number;
   created_at: string;
   shop_id?: number | null;
@@ -61,6 +62,7 @@ const MyOrders: React.FC = () => {
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('');
   const [refundNote, setRefundNote] = useState<string>('');
+  const [retryingOrderId, setRetryingOrderId] = useState<number | null>(null);
 
   const mapStatusToTab = (status: string): OrderTab => {
     switch (status) {
@@ -204,6 +206,42 @@ const MyOrders: React.FC = () => {
     }
   };
 
+  const retryOrderPaymentSession = async (orderId: number) => {
+    if (retryingOrderId === orderId) {
+      return;
+    }
+
+    try {
+      setRetryingOrderId(orderId);
+      const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data?.checkout_url) {
+        throw new Error(data?.message || 'Unable to create a new payment session.');
+      }
+
+      sessionStorage.setItem('pendingOrderId', String(orderId));
+      window.location.href = data.checkout_url;
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Retry Failed',
+        text: error instanceof Error ? error.message : 'Unable to retry payment right now.',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setRetryingOrderId(null);
+    }
+  };
+
   const cancelOrder = async (orderId: number, reason?: string, note?: string, orderItemId?: number | null) => {
     // If no reason provided, fall back to a simple confirmation (backwards-compatible)
     if (!reason) {
@@ -320,6 +358,16 @@ const MyOrders: React.FC = () => {
     if (status === 'shipped') return orders.filter(o => o.status === 'shipped' || o.status === 'to_ship').length;
     if (status === 'completed') return orders.filter(o => o.status === 'completed' || o.status === 'delivered').length;
     return orders.filter(o => o.status === status).length;
+  };
+
+  const canRetryOnlinePayment = (order: Order): boolean => {
+    const paymentMethod = String(order.payment_method || '').toLowerCase();
+    const isCod = paymentMethod === 'cod' || paymentMethod === 'cash_on_delivery' || paymentMethod === 'cash on delivery';
+    if (isCod) {
+      return false;
+    }
+
+    return order.payment_status !== 'paid' && order.payment_status !== 'completed';
   };
 
   const filteredOrders = selectedTab === 'all' 
@@ -750,19 +798,30 @@ const MyOrders: React.FC = () => {
                       {/* Order Actions */}
                       <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
                         {order.status === 'pending' && (
-                          <button
-                            onClick={() => {
-                              const shouldCancelWholeOrder = (order.items?.length || 0) === 1;
-                              setCancelTargetOrderId(order.id);
-                              setCancelTargetOrderItemId(shouldCancelWholeOrder ? null : item.id);
-                              setSelectedReason('');
-                              setCancelNote('');
-                              setShowCancelModal(true);
-                            }}
-                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
-                          >
-                            CANCEL ORDER
-                          </button>
+                          <>
+                            {canRetryOnlinePayment(order) && (
+                              <button
+                                onClick={() => retryOrderPaymentSession(order.id)}
+                                disabled={retryingOrderId === order.id}
+                                className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${retryingOrderId === order.id ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-800'}`}
+                              >
+                                {retryingOrderId === order.id ? 'RETRYING...' : 'RETRY PAYMENT'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                const shouldCancelWholeOrder = (order.items?.length || 0) === 1;
+                                setCancelTargetOrderId(order.id);
+                                setCancelTargetOrderItemId(shouldCancelWholeOrder ? null : item.id);
+                                setSelectedReason('');
+                                setCancelNote('');
+                                setShowCancelModal(true);
+                              }}
+                              className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                            >
+                              CANCEL ORDER
+                            </button>
+                          </>
                         )}
                         {(order.status === 'shipped' || order.status === 'to_ship') && (
                           <button

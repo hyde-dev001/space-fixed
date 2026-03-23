@@ -176,6 +176,45 @@ class PriceChangeApprovalWorkflowTest extends TestCase
         $this->assertSame('rejected', $approval->status->value ?? $approval->status);
     }
 
+    public function test_same_shop_finance_user_cannot_approve_owner_stage(): void
+    {
+        $priceChange = $this->createWorkflowBoundPriceChange();
+
+        // Level 1 (Finance) approval should succeed and move workflow to owner stage.
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
+                'notes' => 'Finance initial review approved',
+            ])
+            ->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'approval_level' => 2,
+            ]);
+
+        $priceChange->refresh();
+        $this->assertSame(2, $priceChange->current_approval_level);
+        $this->assertSame('finance_approved', $priceChange->status->value ?? $priceChange->status);
+
+        // Regression guard: another finance user from same shop cannot bypass owner stage.
+        $blockedAttempt = $this->actingAs($this->financeSecond, 'user')
+            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
+                'notes' => 'Attempt to bypass owner stage',
+            ]);
+
+        $blockedAttempt->assertStatus(400)
+            ->assertJson([
+                'success' => false,
+            ]);
+
+        $priceChange->refresh();
+        $this->assertSame(2, $priceChange->current_approval_level);
+        $this->assertSame('finance_approved', $priceChange->status->value ?? $priceChange->status);
+
+        $approval = Approval::findOrFail($priceChange->approval_id);
+        $this->assertSame(2, (int) $approval->current_level);
+        $this->assertSame('shop_owner', (string) $approval->current_approver_role);
+    }
+
     private function createWorkflowBoundPriceChange(): PriceChangeRequest
     {
         $product = Product::create([

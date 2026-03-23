@@ -298,13 +298,13 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
         <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-5 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
           {/* Header row */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+          <div className="mb-4 flex items-center justify-between gap-3 sm:mb-5">
             <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Repair</div>
             <div className="relative" ref={sortMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsSortOpen((prev) => !prev)}
-                className="flex items-center gap-2 text-sm text-black/80"
+                className="flex items-center gap-1.5 text-xs font-medium text-black/80 sm:gap-2 sm:text-sm"
               >
                 <span>
                   <span className="font-semibold">Sort by:</span>{' '}
@@ -350,8 +350,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
             </div>
           )}
 
-          <h1 className="mb-4 hidden text-4xl font-bold tracking-tight text-black uppercase xl:block xl:text-5xl 2xl:text-6xl">ALL REPAIR SERVICES</h1>
-          <p className="mb-10 hidden max-w-3xl text-base font-light leading-relaxed text-black/65 xl:block">
+          <h1 className="mb-2 text-[clamp(1.75rem,6vw,2.6rem)] font-bold tracking-tight text-black uppercase xl:hidden">ALL REPAIR SERVICES</h1>
+          <p className="mb-8 max-w-3xl text-sm leading-relaxed text-black/65 sm:text-base xl:hidden">
             Browse our curated collection of repair shops. Click a shop card to view details and request service.
           </p>
 

@@ -12,6 +12,7 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
+use App\Services\PaymentSettlementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -122,6 +123,24 @@ class CheckoutController extends Controller
 
         return null;
     }
+
+    private function filterOrderColumns(array $payload): array
+    {
+        static $orderColumns = null;
+
+        if ($orderColumns === null) {
+            $orderColumns = Schema::getColumnListing('orders');
+        }
+
+        $allowed = array_flip($orderColumns);
+
+        return array_filter(
+            $payload,
+            static fn ($value, $key) => isset($allowed[$key]),
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
     /**
      * Create order from cart items
      */
@@ -265,9 +284,15 @@ class CheckoutController extends Controller
                         ->where('shop_owner_id', $shopOwnerId)
                         ->where('total_amount', $expectedTotal)
                         ->where('status', 'pending')
+                        ->where('payment_status', 'pending')
+                        ->whereNull('payment_expired_at')
                         ->where('created_at', '>=', now()->subMinutes(5))
                         ->latest()
                         ->first();
+
+                    if ($existingOrder && $existingOrder->payment_expires_at && now()->greaterThan($existingOrder->payment_expires_at)) {
+                        $existingOrder = null;
+                    }
 
                     if ($existingOrder) {
                         Log::info('Duplicate order prevented – returning existing pending order', [
@@ -286,7 +311,7 @@ class CheckoutController extends Controller
                     }
 
                     // Create the order
-                    $order = Order::create([
+                    $orderPayload = [
                         'shop_owner_id' => $shopOwnerId,
                         'customer_id' => $customerId,
                         'order_number' => Order::generateOrderNumber(),
@@ -306,7 +331,18 @@ class CheckoutController extends Controller
                         'shipping_barangay' => $validated['shipping_barangay'] ?? null,
                         'shipping_postal_code' => $validated['shipping_postal_code'] ?? null,
                         'shipping_address_line' => $validated['shipping_address_line'] ?? null,
-                    ]);
+                    ];
+
+                    $paymentLifecyclePayload = [
+                        'payment_link_created_at' => now(),
+                        'payment_expires_at' => now()->addHour(),
+                        'payment_failed_at' => null,
+                        'payment_failure_reason' => null,
+                        'payment_expired_at' => null,
+                        'payment_released_at' => null,
+                    ];
+
+                    $order = Order::create($this->filterOrderColumns(array_merge($orderPayload, $paymentLifecyclePayload)));
 
                     // Create order items and reduce stock
                     foreach ($shopItems as $shopItem) {
@@ -515,8 +551,8 @@ class CheckoutController extends Controller
                             $systemMessage .= $productLines->join("\n") . "\n";
                         }
                         $systemMessage .= "**Total:** ₱" . number_format($orderTotal, 2) . "\n";
-                        $systemMessage .= "**Status:** Processing\n\n";
-                        $systemMessage .= "Thank you for your order! We'll notify you once your items are ready for shipment.";
+                            $systemMessage .= "**Status:** Pending Payment\n\n";
+                            $systemMessage .= "Thank you for your order! Please complete payment to start processing.";
 
                         $messageRecord = \App\Models\ConversationMessage::create([
                             'conversation_id' => $conversation->id,
@@ -591,22 +627,6 @@ class CheckoutController extends Controller
                 }
 
                 DB::commit();
-
-                // Auto-generate invoices AFTER successful order creation (optional feature)
-                foreach ($createdOrders as $createdOrderData) {
-                    try {
-                        $order = Order::with('items')->find($createdOrderData['id']);
-                        if ($order) {
-                            $this->autoGenerateInvoice($order);
-                        }
-                    } catch (\Exception $e) {
-                        // Log but don't fail - invoice generation is optional
-                        Log::warning('Failed to auto-generate invoice for order', [
-                            'order_id' => $createdOrderData['id'],
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-                }
 
                 // Clear user's cart after successful order
                 if ($customerId) {
@@ -726,9 +746,14 @@ class CheckoutController extends Controller
                 ->where('customer_id', $user->id)
                 ->firstOrFail();
 
-            $order->update([
+            $order->update($this->filterOrderColumns([
                 'paymongo_link_id' => $validated['paymongo_link_id'],
-            ]);
+                'payment_link_created_at' => now(),
+                'payment_expires_at' => now()->addHour(),
+                'payment_failed_at' => null,
+                'payment_failure_reason' => null,
+                'payment_expired_at' => null,
+            ]));
 
             Log::info('Order updated with PayMongo link ID', [
                 'order_id' => $order->id,
@@ -751,12 +776,177 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Create a fresh PayMongo checkout session for an existing unpaid order.
+     */
+    public function retryPaymentSession(Request $request, $orderId)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
+            $order = Order::with('shopOwner')
+                ->where('id', $orderId)
+                ->where('customer_id', $user->id)
+                ->first();
+
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found',
+                ], 404);
+            }
+
+            $paymentStatus = $order->payment_status instanceof \BackedEnum
+                ? $order->payment_status->value
+                : (string) $order->payment_status;
+
+            if (in_array($paymentStatus, ['paid', 'completed', 'refunded'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order is already paid',
+                ], 409);
+            }
+
+            $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
+            if (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This is a Cash on Delivery order and does not require online payment.',
+                ], 409);
+            }
+
+            $orderStatus = $order->status instanceof \BackedEnum
+                ? $order->status->value
+                : (string) $order->status;
+
+            if ($orderStatus === 'cancelled') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This order was cancelled. Please checkout again to create a new order.',
+                ], 409);
+            }
+
+            $apiKey = $order->shopOwner?->paymongo_secret_key;
+            if (!$apiKey) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'shop_payment_not_configured',
+                    'message' => 'This shop has not set up payment processing yet. Please contact the shop owner.',
+                ], 503);
+            }
+
+            $amount = (float) $order->total_amount;
+            if ($amount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid payable amount',
+                ], 422);
+            }
+
+            $description = 'SoleSpace Order #' . $order->order_number;
+            $successUrl = url('/order-success') . '?paymongo_success=1';
+            $failedUrl = url('/order-success') . '?paymongo_failed=1';
+
+            $paymentResponse = \Illuminate\Support\Facades\Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+                'data' => [
+                    'attributes' => [
+                        'success_url' => $successUrl,
+                        'cancel_url' => $failedUrl,
+                        'description' => $description,
+                        'send_email_receipt' => false,
+                        'show_description' => true,
+                        'show_line_items' => true,
+                        'line_items' => [[
+                            'currency' => 'PHP',
+                            'amount' => (int) round($amount * 100),
+                            'name' => $description,
+                            'quantity' => 1,
+                        ]],
+                        'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
+                    ],
+                ],
+            ]);
+
+            if ($paymentResponse->failed()) {
+                $errorMsg = $paymentResponse->json('message') ?? $paymentResponse->json('error') ?? 'PayMongo API failed';
+                $errors = $paymentResponse->json('errors');
+
+                Log::error('Order retry payment session creation failed', [
+                    'order_id' => $order->id,
+                    'status' => $paymentResponse->status(),
+                    'message' => $errorMsg,
+                    'errors' => $errors,
+                    'response' => $paymentResponse->json(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $errors[0]['detail'] ?? $errorMsg ?? 'Failed to create payment session',
+                ], $paymentResponse->status());
+            }
+
+            $responseData = $paymentResponse->json();
+            $checkoutUrl = $responseData['data']['attributes']['checkout_url'] ?? null;
+            $linkId = $responseData['data']['id'] ?? null;
+
+            if (!$checkoutUrl || !$linkId) {
+                Log::error('Order retry payment session missing checkout data', [
+                    'order_id' => $order->id,
+                    'response' => $responseData,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Incomplete payment session response',
+                ], 500);
+            }
+
+            $order->update($this->filterOrderColumns([
+                'paymongo_link_id' => $linkId,
+                'payment_link_created_at' => now(),
+                'payment_expires_at' => now()->addHour(),
+                'payment_failed_at' => null,
+                'payment_failure_reason' => null,
+                'payment_expired_at' => null,
+            ]));
+
+            return response()->json([
+                'success' => true,
+                'checkout_url' => $checkoutUrl,
+                'link_id' => $linkId,
+                'order_id' => $order->id,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Retry payment session failed for order', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create retry payment session',
+            ], 500);
+        }
+    }
+
+    /**
      * Verify order payment status directly with PayMongo API.
      * Called when the customer lands on /order-success after checkout.
      */
     public function verifyPayment(Request $request, $orderId)
     {
         try {
+            $settlementService = app(PaymentSettlementService::class);
+
             $user = Auth::guard('user')->user();
             if (!$user) {
                 return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
@@ -779,6 +969,19 @@ class CheckoutController extends Controller
                     'already_paid'     => true,
                     'order'            => $order,
                 ]);
+            }
+
+            $isExpired = $settlementService->isOrderExpired($order);
+
+            if ($isExpired) {
+                $settlementService->recordOrderPaymentFailure($order, 'paymongo_session_expired');
+
+                return response()->json([
+                    'success' => false,
+                    'payment_verified' => false,
+                    'expired' => true,
+                    'message' => 'Payment session expired. Please create a new payment session.',
+                ], 410);
             }
 
             if (!$order->paymongo_link_id) {
@@ -836,6 +1039,24 @@ class CheckoutController extends Controller
             ]);
 
             if (!$isVerified) {
+                $statusSignals = array_filter([
+                    strtolower((string) $paymentStatus),
+                    strtolower((string) $firstPaymentStatus),
+                ]);
+
+                $isFailed = in_array('failed', $statusSignals, true);
+                $isExpiredSignal = in_array('expired', $statusSignals, true);
+                $isCancelled = in_array('cancelled', $statusSignals, true) || in_array('canceled', $statusSignals, true);
+
+                if ($isFailed || $isExpiredSignal || $isCancelled) {
+                    $settlementService->recordOrderPaymentFailure(
+                        $order,
+                        $isExpiredSignal
+                            ? 'paymongo_session_expired'
+                            : ($isCancelled ? 'paymongo_payment_cancelled' : 'paymongo_payment_failed')
+                    );
+                }
+
                 return response()->json([
                     'success'          => false,
                     'payment_verified' => false,
@@ -844,24 +1065,44 @@ class CheckoutController extends Controller
                 ]);
             }
 
-            // Mark order as paid
-            $order->update([
-                'payment_status'       => 'paid',
-                'paymongo_payment_id'  => $paymentId,
-                'paid_at'              => now(),
-            ]);
+            $settlement = $settlementService->settleOrderPaid($order, (string) $paymentId);
+            $result = $settlement['result'] ?? 'settled';
+            $settledOrder = $settlement['model'] ?? $order;
+
+            if ($result === 'expired') {
+                return response()->json([
+                    'success' => false,
+                    'payment_verified' => false,
+                    'expired' => true,
+                    'message' => 'Payment session expired. Please create a new payment session.',
+                ], 410);
+            }
+
+            // Downstream progression is unlocked only after payment is verified.
+            try {
+                if ($result === 'settled' && !$settledOrder->invoice_generated && !$settledOrder->invoice_id) {
+                    $settledOrder->loadMissing('items');
+                    $this->autoGenerateInvoice($settledOrder);
+                }
+            } catch (\Exception $invoiceError) {
+                Log::warning('Failed to auto-generate invoice after payment verification', [
+                    'order_id' => $settledOrder->id,
+                    'error' => $invoiceError->getMessage(),
+                ]);
+            }
 
             Log::info('Order payment verified via PayMongo API', [
-                'order_id'   => $order->id,
-                'order_num'  => $order->order_number,
-                'link_id'    => $order->paymongo_link_id,
+                'order_id'   => $settledOrder->id,
+                'order_num'  => $settledOrder->order_number,
+                'link_id'    => $settledOrder->paymongo_link_id,
                 'payment_id' => $paymentId,
+                'result'     => $result,
             ]);
 
             return response()->json([
                 'success'          => true,
                 'payment_verified' => true,
-                'order'            => $order->fresh(),
+                'order'            => $settledOrder->fresh(),
             ]);
         } catch (\Exception $e) {
             Log::error('Order payment verification error', [
@@ -936,6 +1177,32 @@ class CheckoutController extends Controller
             return $order->invoice;
         }
 
+        // Keep fulfillment progression blocked for online payments until paid.
+        $paymentMethod = strtolower((string) ($order->payment_method ?? 'paymongo'));
+        $onlinePaymentMethods = [
+            'paymongo',
+            'paypal',
+            'stripe',
+            'gcash',
+            'maya',
+            'online',
+            'card',
+            'credit_card',
+            'debit_card',
+            'bank_transfer'
+        ];
+
+        if (in_array($paymentMethod, $onlinePaymentMethods, true) && $order->payment_status !== 'paid') {
+            Log::info('Skipping invoice generation for unpaid online order reservation', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'payment_method' => $paymentMethod,
+                'payment_status' => $order->payment_status,
+            ]);
+
+            return null;
+        }
+
         try {
             // Generate invoice reference
             $prefix = 'INV';
@@ -945,20 +1212,6 @@ class CheckoutController extends Controller
 
             // Determine invoice status based on payment method
             $paymentMethod = strtolower($order->payment_method ?? 'paymongo');
-
-            // Online payment methods - mark as paid immediately
-            $onlinePaymentMethods = [
-                'paymongo',
-                'paypal',
-                'stripe',
-                'gcash',
-                'maya',
-                'online',
-                'card',
-                'credit_card',
-                'debit_card',
-                'bank_transfer'
-            ];
 
             $invoiceStatus = 'sent'; // default
             $paymentDate = null;
@@ -1029,7 +1282,7 @@ class CheckoutController extends Controller
                         'unit_price' => $orderItem->price,
                         'tax_rate' => 12.00,
                         'amount' => $orderItem->subtotal,
-                        'account_id' => $revenueAccount?->id,
+                        'account_id' => null,
                     ]);
                 }
             }

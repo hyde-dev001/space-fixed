@@ -166,9 +166,14 @@ class Approval extends Model
                     'access-repair-price-approval',
                     'approve-expenses',
                 ]),
-            'shop_owner' => $this->isMatchingShopOwner($user)
-                || $this->userHasRoleSafe($user, 'shop-owner')
-                || $this->userHasRoleSafe($user, 'Shop Owner'),
+            'shop_owner' => $this->isExactShopOwnerIdentity($user)
+                || (
+                    $this->isLinkedToApprovalShop($user)
+                    && (
+                        $this->userHasRoleSafe($user, 'shop-owner')
+                        || $this->userHasRoleSafe($user, 'Shop Owner')
+                    )
+                ),
             'finance_final' => (
                 $user->hasRole('Finance Manager')
                 || $user->hasRole('finance-manager')
@@ -212,21 +217,20 @@ class Approval extends Model
         }
     }
 
-    private function isMatchingShopOwner($user): bool
+    private function isExactShopOwnerIdentity($user): bool
     {
         $userId = (int) ($user->id ?? 0);
+        $approvalShopOwnerId = (int) $this->shop_owner_id;
+
+        return $userId > 0 && $userId === $approvalShopOwnerId;
+    }
+
+    private function isLinkedToApprovalShop($user): bool
+    {
         $linkedShopOwnerId = (int) ($user->shop_owner_id ?? 0);
         $approvalShopOwnerId = (int) $this->shop_owner_id;
 
-        if ($userId > 0 && $userId === $approvalShopOwnerId) {
-            return true;
-        }
-
-        if ($linkedShopOwnerId > 0 && $linkedShopOwnerId === $approvalShopOwnerId) {
-            return true;
-        }
-
-        return false;
+        return $linkedShopOwnerId > 0 && $linkedShopOwnerId === $approvalShopOwnerId;
     }
 
     /**

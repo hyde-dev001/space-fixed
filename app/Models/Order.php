@@ -28,6 +28,15 @@ class Order extends Model
         'customer_address',
         'payment_method',
         'payment_status',
+        'paymongo_link_id',
+        'paymongo_payment_id',
+        'paid_at',
+        'payment_link_created_at',
+        'payment_expires_at',
+        'payment_failed_at',
+        'payment_failure_reason',
+        'payment_expired_at',
+        'payment_released_at',
         'invoice_generated',
         'invoice_id',
         // Structured address fields
@@ -57,7 +66,27 @@ class Order extends Model
         'invoice_generated' => 'boolean',
         'pickup_enabled' => 'boolean',
         'pickup_enabled_at' => 'datetime',
+        'payment_link_created_at' => 'datetime',
+        'payment_expires_at' => 'datetime',
+        'payment_failed_at' => 'datetime',
+        'payment_expired_at' => 'datetime',
+        'payment_released_at' => 'datetime',
+        'paid_at' => 'datetime',
     ];
+
+    public function scopePayable($query)
+    {
+        return $query
+            ->where('payment_status', 'pending')
+            ->whereNull('payment_expired_at');
+    }
+
+    public function scopeExpiredPayable($query)
+    {
+        return $query->payable()
+            ->whereNotNull('payment_expires_at')
+            ->where('payment_expires_at', '<=', now());
+    }
 
     /**
      * Get the order items

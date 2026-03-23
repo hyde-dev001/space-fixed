@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\RepairRequest;
-use App\Models\Finance\Invoice;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Services\NotificationService;
+use App\Services\PaymentSettlementService;
 use App\Enums\NotificationType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -124,47 +124,50 @@ class PaymongoWebhookController extends Controller
      */
     private function handleOrderPayment($order, $paymentId)
     {
-        // Update order payment status
-        $order->update([
-            'payment_status' => 'paid',
-            'paymongo_payment_id' => $paymentId,
-            'paid_at' => now(),
-        ]);
+        $settlement = app(PaymentSettlementService::class)
+            ->settleOrderPaid($order, (string) $paymentId);
+
+        $result = $settlement['result'] ?? 'settled';
+        $settledOrder = $settlement['model'] ?? $order;
+
+        if ($result === 'already_settled') {
+            Log::info('Order payment webhook ignored (already paid)', [
+                'order_id' => $settledOrder->id,
+                'order_number' => $settledOrder->order_number,
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json(['message' => 'Already paid'], 200);
+        }
+
+        if ($result === 'expired') {
+            Log::warning('Late paid webhook ignored for expired order payment session', [
+                'order_id' => $settledOrder->id,
+                'order_number' => $settledOrder->order_number,
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json(['message' => 'Expired payment session'], 200);
+        }
 
         // Log payment processing
         activity()
-            ->performedOn($order)
+            ->performedOn($settledOrder)
             ->withProperties([
-                'order_number' => $order->order_number,
-                'customer_name' => $order->customer_name ?? 'N/A',
-                'amount_paid' => $order->total_amount,
+                'order_number' => $settledOrder->order_number,
+                'customer_name' => $settledOrder->customer_name ?? 'N/A',
+                'amount_paid' => $settledOrder->total_amount,
                 'payment_id' => $paymentId,
                 'payment_method' => 'PayMongo',
                 'payment_status' => 'paid',
             ])
-            ->log("Order payment processed: {$order->order_number} - ₱{$order->total_amount}");
-
-        // Update associated invoice to paid status if exists
-        if ($order->invoice_id) {
-            $invoice = Invoice::find($order->invoice_id);
-            if ($invoice && $invoice->status !== 'paid') {
-                $invoice->update([
-                    'status' => 'paid',
-                    'payment_date' => now(),
-                    'payment_method' => 'paymongo',
-                ]);
-                
-                Log::info('Invoice marked as paid', [
-                    'invoice_id' => $invoice->id,
-                    'invoice_reference' => $invoice->reference,
-                ]);
-            }
-        }
+            ->log("Order payment processed: {$settledOrder->order_number} - ₱{$settledOrder->total_amount}");
 
         Log::info('Order payment confirmed', [
-            'order_id' => $order->id,
-            'order_number' => $order->order_number,
+            'order_id' => $settledOrder->id,
+            'order_number' => $settledOrder->order_number,
             'payment_id' => $paymentId,
+            'result' => $result,
         ]);
 
         // You can also send confirmation email here
@@ -178,60 +181,67 @@ class PaymongoWebhookController extends Controller
      */
     private function handleRepairPayment($repairRequest, $paymentId)
     {
-        $policy = strtolower((string) ($repairRequest->payment_policy ?? 'deposit_50'));
-        if ($policy !== 'deposit_50') {
-            $policy = 'full_upfront';
+        $settlement = app(PaymentSettlementService::class)
+            ->settleRepairPaid($repairRequest, (string) $paymentId);
+
+        $result = $settlement['result'] ?? 'settled';
+        $settledRepair = $settlement['model'] ?? $repairRequest;
+
+        if ($result === 'already_settled') {
+            Log::info('Repair payment webhook ignored (already completed)', [
+                'repair_id' => $settledRepair->id,
+                'request_id' => $settledRepair->request_id,
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json(['message' => 'Already completed'], 200);
         }
 
-        $repairRequest->update([
-            'paymongo_payment_id'  => $paymentId,
-            'payment_completed_at' => now(),
-        ]);
+        if ($result === 'expired') {
+            Log::warning('Late paid webhook ignored for expired repair payment session', [
+                'repair_id' => $settledRepair->id,
+                'request_id' => $settledRepair->request_id,
+                'payment_id' => $paymentId,
+            ]);
 
-        if ($policy === 'full_upfront') {
-            // Single upfront payment → fully settled immediately
-            $repairRequest->update(['payment_status' => 'completed']);
-            if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {
-                $repairRequest->update(['status' => 'owner_approval_pending']);
-            } else {
-                $repairRequest->update(['status' => 'pending']);
-            }
-            $phaseLabel = 'full upfront payment';
-        } else {
-            // deposit_50 (default): two-phase logic
-            $isDepositPhase = in_array($repairRequest->payment_status ?? 'pending', ['pending', null]);
-            $repairRequest->update(['payment_status' => $isDepositPhase ? 'paid' : 'completed']);
-
-            if ($isDepositPhase) {
-                if ($repairRequest->is_high_value && $repairRequest->requires_owner_approval) {
-                    $repairRequest->update(['status' => 'owner_approval_pending']);
-                } else {
-                    $repairRequest->update(['status' => 'pending']);
-                }
-                $phaseLabel = 'deposit (50%)';
-            } else {
-                $phaseLabel = 'remaining balance (50%)';
-            }
+            return response()->json(['message' => 'Expired payment session'], 200);
         }
+
+        if ($result === 'not_due') {
+            Log::info('Repair payment webhook ignored (no payable phase due)', [
+                'repair_id' => $settledRepair->id,
+                'request_id' => $settledRepair->request_id,
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json(['message' => 'No payable phase due'], 200);
+        }
+
+        $phase = (string) ($settlement['phase'] ?? '');
+        $phaseLabel = $phase === 'full_upfront'
+            ? 'full upfront payment'
+            : ($phase === 'remaining_balance' ? 'remaining balance (50%)' : 'deposit (50%)');
+        $policy = (string) ($settlement['policy'] ?? 'deposit_50');
 
         activity()
-            ->performedOn($repairRequest)
+            ->performedOn($settledRepair)
             ->withProperties([
-                'request_id'     => $repairRequest->request_id,
+                'request_id'     => $settledRepair->request_id,
                 'policy'         => $policy,
                 'phase'          => $phaseLabel,
                 'payment_id'     => $paymentId,
                 'payment_method' => 'PayMongo',
-                'payment_status' => $repairRequest->fresh()->payment_status,
+                'payment_status' => $settledRepair->fresh()->payment_status,
             ])
-            ->log("Repair payment processed ({$phaseLabel}): {$repairRequest->request_id}");
+            ->log("Repair payment processed ({$phaseLabel}): {$settledRepair->request_id}");
 
         Log::info("Repair payment webhook handled", [
-            'repair_id'  => $repairRequest->id,
-            'request_id' => $repairRequest->request_id,
+            'repair_id'  => $settledRepair->id,
+            'request_id' => $settledRepair->request_id,
             'policy'     => $policy,
             'phase'      => $phaseLabel,
             'payment_id' => $paymentId,
+            'result'     => $result,
         ]);
 
         return response()->json(['message' => 'Repair payment processed'], 200);
@@ -250,6 +260,7 @@ class PaymongoWebhookController extends Controller
         }
 
         $order = Order::where('paymongo_link_id', $paymentLinkId)->first();
+        $settlementService = app(PaymentSettlementService::class);
 
         if ($order) {
             Log::info('Payment failed for order', [
@@ -257,8 +268,22 @@ class PaymongoWebhookController extends Controller
                 'order_number' => $order->order_number,
             ]);
 
-            // Optionally update order status or send notification
-            // $order->update(['payment_status' => 'failed']);
+            $settlementService->recordOrderPaymentFailure($order, 'paymongo_payment_failed');
+
+            return response()->json(['message' => 'Order payment failure recorded'], 200);
+        }
+
+        $repairRequest = RepairRequest::where('paymongo_link_id', $paymentLinkId)->first();
+
+        if ($repairRequest) {
+            Log::info('Payment failed for repair request', [
+                'repair_id' => $repairRequest->id,
+                'request_id' => $repairRequest->request_id,
+            ]);
+
+            $settlementService->recordRepairPaymentFailure($repairRequest, 'paymongo_payment_failed');
+
+            return response()->json(['message' => 'Repair payment failure recorded'], 200);
         }
 
         return response()->json(['message' => 'Payment failure recorded'], 200);

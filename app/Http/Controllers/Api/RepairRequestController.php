@@ -14,9 +14,15 @@ use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\PaymentSettlementService;
+use App\Services\ShopOwnerApprovalPolicyService;
 
 class RepairRequestController extends Controller
 {
+    public function __construct(
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
+    ) {}
+
     public function store(Request $request)
     {
         if (!Auth::guard('user')->check()) {
@@ -222,7 +228,16 @@ class RepairRequestController extends Controller
             // Get shop owner for high value check
             $shopOwner = ShopOwner::find($request->shop_owner_id);
             $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
-            $requiresOwnerApproval = $isHighValue && $shopOwner && $shopOwner->require_two_way_approval;
+            $requiresOwnerApprovalByPolicy = $shopOwner
+                ? $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject((int) $shopOwner->id, (float) $requestTotal)
+                : false;
+            $requiresOwnerApproval = $shopOwner
+                && $shopOwner->require_two_way_approval
+                && $requiresOwnerApprovalByPolicy;
+
+            if ($requiresOwnerApprovalByPolicy) {
+                $isHighValue = true;
+            }
             
             // Determine intake delivery method and address
             // 'walk_in' = customer brings shoes to shop
@@ -1109,9 +1124,39 @@ class RepairRequestController extends Controller
                 ], 422);
             }
 
+            $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+
+            if ($this->isRepairPaymentSettled($repair, $policy)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair is already fully paid'
+                ], 409);
+            }
+
+            if (!$repair->payment_enabled) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment is not enabled for this repair request yet.'
+                ], 409);
+            }
+
+            if (!$this->isRepairPaymentDueNow($repair, $policy)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair has no payable phase right now.'
+                ], 409);
+            }
+
+            $nextPaymentStatus = $this->nextRepairPaymentStatusForRetry($repair, $policy);
+
             $repair->update([
                 'paymongo_link_id' => $request->paymongo_link_id,
-                'payment_link_created_at' => now()
+                'payment_link_created_at' => now(),
+                'payment_expires_at' => now()->addHour(),
+                'payment_failed_at' => null,
+                'payment_failure_reason' => null,
+                'payment_expired_at' => null,
+                'payment_status' => $nextPaymentStatus,
             ]);
 
             \Log::info('Payment link updated for repair', [
@@ -1139,6 +1184,186 @@ class RepairRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update payment link: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a fresh PayMongo checkout session for an existing unpaid repair request.
+     */
+    public function retryPaymentSession(Request $request, $id)
+    {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $repair = RepairRequest::with('shopOwner')
+                ->where('id', $id)
+                ->forCustomer($user->id)
+                ->first();
+
+            if (!$repair) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found'
+                ], 404);
+            }
+
+            $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+
+            if ($this->isRepairPaymentSettled($repair, $policy)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair is already fully paid'
+                ], 409);
+            }
+
+            if ((string) $repair->status === 'cancelled') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair request is cancelled and cannot be paid.'
+                ], 409);
+            }
+
+            if (!$repair->payment_enabled) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment is not enabled for this repair request yet.'
+                ], 409);
+            }
+
+            if (!$this->isRepairPaymentDueNow($repair, $policy)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair has no payable phase right now.'
+                ], 409);
+            }
+
+            $apiKey = $repair->shopOwner?->paymongo_secret_key;
+            if (!$apiKey) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'shop_payment_not_configured',
+                    'message' => 'This shop has not set up payment processing yet. Please contact the shop owner.',
+                ], 503);
+            }
+
+            $chargeTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
+            if ($chargeTotal <= 0) {
+                $chargeTotal = (float) (($repair->package_price ?? 0) + ($repair->add_ons_total ?? 0));
+            }
+
+            $isRemainingBalancePhase = $this->isRepairRemainingBalancePhase($repair);
+            if ($policy === 'full_upfront') {
+                $amount = $chargeTotal;
+                $phase = 'full payment';
+            } else {
+                $amount = max(1.0, round($chargeTotal / 2, 2));
+                $phase = $isRemainingBalancePhase ? 'remaining balance' : 'down payment';
+            }
+
+            if ($amount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid payable amount',
+                ], 422);
+            }
+
+            $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
+            $successUrl = url('/my-repairs') . '?paymongo_success=1';
+            $failedUrl = url('/my-repairs') . '?paymongo_failed=1';
+
+            $paymentResponse = \Illuminate\Support\Facades\Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+                'data' => [
+                    'attributes' => [
+                        'success_url' => $successUrl,
+                        'cancel_url' => $failedUrl,
+                        'description' => $description,
+                        'send_email_receipt' => false,
+                        'show_description' => true,
+                        'show_line_items' => true,
+                        'line_items' => [[
+                            'currency' => 'PHP',
+                            'amount' => (int) round($amount * 100),
+                            'name' => $description,
+                            'quantity' => 1,
+                        ]],
+                        'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
+                    ],
+                ],
+            ]);
+
+            if ($paymentResponse->failed()) {
+                $errorMsg = $paymentResponse->json('message') ?? $paymentResponse->json('error') ?? 'PayMongo API failed';
+                $errors = $paymentResponse->json('errors');
+
+                \Log::error('Repair retry payment session creation failed', [
+                    'repair_id' => $repair->id,
+                    'status' => $paymentResponse->status(),
+                    'message' => $errorMsg,
+                    'errors' => $errors,
+                    'response' => $paymentResponse->json(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $errors[0]['detail'] ?? $errorMsg ?? 'Failed to create payment session',
+                ], $paymentResponse->status());
+            }
+
+            $responseData = $paymentResponse->json();
+            $checkoutUrl = $responseData['data']['attributes']['checkout_url'] ?? null;
+            $linkId = $responseData['data']['id'] ?? null;
+
+            if (!$checkoutUrl || !$linkId) {
+                \Log::error('Repair retry payment session missing checkout data', [
+                    'repair_id' => $repair->id,
+                    'response' => $responseData,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Incomplete payment session response',
+                ], 500);
+            }
+
+            $nextPaymentStatus = $this->nextRepairPaymentStatusForRetry($repair, $policy);
+
+            $repair->update([
+                'paymongo_link_id' => $linkId,
+                'payment_link_created_at' => now(),
+                'payment_expires_at' => now()->addHour(),
+                'payment_failed_at' => null,
+                'payment_failure_reason' => null,
+                'payment_expired_at' => null,
+                'payment_status' => $nextPaymentStatus,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'checkout_url' => $checkoutUrl,
+                'link_id' => $linkId,
+                'repair_id' => $repair->id,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Retry payment session failed for repair', [
+                'repair_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create retry payment session',
             ], 500);
         }
     }
@@ -1353,37 +1578,20 @@ class RepairRequestController extends Controller
      */
     private function applyPaymentCompletion(RepairRequest $repair, string $paymentId): void
     {
-        $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+        $settlement = app(PaymentSettlementService::class)
+            ->settleRepairPaid($repair, $paymentId);
 
-        $repair->update([
-            'paymongo_payment_id'  => $paymentId,
-            'payment_completed_at' => now(),
-        ]);
+        if (($settlement['result'] ?? null) !== 'settled') {
+            return;
+        }
 
-        if ($policy === 'full_upfront') {
-            // Single upfront payment – mark fully paid immediately
-            $repair->update(['payment_status' => 'completed']);
-            if ($repair->is_high_value && $repair->requires_owner_approval) {
-                $repair->update(['status' => 'owner_approval_pending']);
-            } else {
-                $repair->update(['status' => 'pending']);
-            }
+        $phase = (string) ($settlement['phase'] ?? '');
+        if ($phase === 'full_upfront') {
             \Log::info('Full-upfront payment applied for repair: ' . $repair->request_id);
-        } else {
-            // deposit_50 (default): two-phase logic
-            $isDepositPhase = in_array($repair->payment_status ?? 'pending', ['pending', null]);
-            $repair->update(['payment_status' => $isDepositPhase ? 'paid' : 'completed']);
-
-            if ($isDepositPhase) {
-                if ($repair->is_high_value && $repair->requires_owner_approval) {
-                    $repair->update(['status' => 'owner_approval_pending']);
-                } else {
-                    $repair->update(['status' => 'pending']);
-                }
-                \Log::info('Deposit (50%) payment applied for repair: ' . $repair->request_id);
-            } else {
-                \Log::info('Remaining-balance (50%) payment applied for repair: ' . $repair->request_id);
-            }
+        } elseif ($phase === 'deposit_50') {
+            \Log::info('Deposit (50%) payment applied for repair: ' . $repair->request_id);
+        } elseif ($phase === 'remaining_balance') {
+            \Log::info('Remaining-balance (50%) payment applied for repair: ' . $repair->request_id);
         }
     }
 
@@ -1394,6 +1602,8 @@ class RepairRequestController extends Controller
      */
     public function verifyPayment(Request $request, $id)
     {
+        $settlementService = app(PaymentSettlementService::class);
+
         $user = Auth::guard('user')->user();
         if (!$user) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
@@ -1410,9 +1620,8 @@ class RepairRequestController extends Controller
         // Idempotent: skip verification if truly fully paid.
         // For deposit_50: 'paid' = only the deposit was paid, 'completed' = both payments done.
         // For full_upfront: a single 'paid' should be treated as fully paid.
-        $normalizedPolicy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
-        $isFullyPaid = $repair->payment_status === 'completed' ||
-            ($normalizedPolicy === 'full_upfront' && $repair->payment_status === 'paid');
+        $normalizedPolicy = $settlementService->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+        $isFullyPaid = $settlementService->isRepairSettled($repair, $normalizedPolicy);
 
         if ($isFullyPaid) {
             return response()->json([
@@ -1421,6 +1630,42 @@ class RepairRequestController extends Controller
                 'already_paid'     => true,
                 'data'             => $repair->fresh(['services', 'shopOwner', 'repairer']),
             ]);
+        }
+
+        if (
+            $normalizedPolicy === 'deposit_50'
+            && (string) $repair->payment_status === 'paid'
+            && !$this->isRepairRemainingBalancePhase($repair)
+        ) {
+            return response()->json([
+                'success' => true,
+                'payment_verified' => true,
+                'already_paid' => true,
+                'partial_paid' => true,
+                'message' => 'Initial deposit is already paid. Remaining balance is payable when the repair is ready for pickup.',
+                'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
+            ]);
+        }
+
+        $isExpired = $settlementService->isRepairExpired($repair, $normalizedPolicy);
+
+        if ($isExpired) {
+            $settlementService->recordRepairPaymentFailure($repair, 'paymongo_session_expired');
+
+            return response()->json([
+                'success'          => false,
+                'payment_verified' => false,
+                'expired'          => true,
+                'message'          => 'Payment session expired. Please create a new payment session.',
+            ], 410);
+        }
+
+        if (!$settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'message' => 'No payable repair phase is currently due.',
+            ], 409);
         }
 
         if (!$repair->paymongo_link_id) {
@@ -1487,6 +1732,24 @@ class RepairRequestController extends Controller
         $isVerified = ($paymentStatus === 'paid') || ($firstPaymentStatus === 'paid');
 
         if (!$isVerified) {
+            $statusSignals = array_filter([
+                strtolower((string) $paymentStatus),
+                strtolower((string) $firstPaymentStatus),
+            ]);
+
+            $isFailed = in_array('failed', $statusSignals, true);
+            $isExpiredSignal = in_array('expired', $statusSignals, true);
+            $isCancelled = in_array('cancelled', $statusSignals, true) || in_array('canceled', $statusSignals, true);
+
+            if ($isFailed || $isExpiredSignal || $isCancelled) {
+                $settlementService->recordRepairPaymentFailure(
+                    $repair,
+                    $isExpiredSignal
+                        ? 'paymongo_session_expired'
+                        : ($isCancelled ? 'paymongo_payment_cancelled' : 'paymongo_payment_failed')
+                );
+            }
+
             return response()->json([
                 'success'          => false,
                 'payment_verified' => false,
@@ -1496,12 +1759,31 @@ class RepairRequestController extends Controller
         }
 
         // Payment confirmed — apply policy-aware completion
-        $this->applyPaymentCompletion($repair, $paymentId);
+        $settlement = $settlementService->settleRepairPaid($repair, $paymentId);
+        $settlementResult = $settlement['result'] ?? 'settled';
+
+        if ($settlementResult === 'expired') {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'expired' => true,
+                'message' => 'Payment session expired. Please create a new payment session.',
+            ], 410);
+        }
+
+        if ($settlementResult === 'not_due') {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'message' => 'No payable repair phase is currently due.',
+            ], 409);
+        }
 
         \Log::info('Payment verified via PayMongo API for repair: ' . $repair->request_id, [
             'policy'     => $normalizedPolicy,
             'link_id'    => $repair->paymongo_link_id,
             'payment_id' => $paymentId,
+            'result'     => $settlementResult,
         ]);
 
         return response()->json([
@@ -1568,9 +1850,42 @@ class RepairRequestController extends Controller
 
     private function normalizeRepairPaymentPolicy(?string $policy): string
     {
-        $normalized = strtolower(trim((string) $policy));
+        return app(PaymentSettlementService::class)->normalizeRepairPaymentPolicy($policy);
+    }
 
-        return $normalized === 'deposit_50' ? 'deposit_50' : 'full_upfront';
+    private function isRepairRemainingBalancePhase(RepairRequest $repair): bool
+    {
+        return in_array((string) $repair->status, ['ready_for_pickup', 'ready-for-pickup'], true);
+    }
+
+    private function isRepairPaymentSettled(RepairRequest $repair, string $policy): bool
+    {
+        return app(PaymentSettlementService::class)->isRepairSettled($repair, $policy);
+    }
+
+    private function isRepairPaymentDueNow(RepairRequest $repair, string $policy): bool
+    {
+        return app(PaymentSettlementService::class)->isRepairPaymentDueNow($repair, $policy);
+    }
+
+    private function isRepairPaymentSessionExpired(RepairRequest $repair, string $policy): bool
+    {
+        return app(PaymentSettlementService::class)->isRepairExpired($repair, $policy);
+    }
+
+    private function nextRepairPaymentStatusForRetry(RepairRequest $repair, string $policy): string
+    {
+        $currentStatus = (string) ($repair->payment_status ?? 'pending');
+
+        if (in_array($currentStatus, ['failed', 'expired', ''], true)) {
+            if ($policy === 'deposit_50' && $this->isRepairRemainingBalancePhase($repair)) {
+                return 'paid';
+            }
+
+            return 'pending';
+        }
+
+        return $currentStatus;
     }
 
     private function calculateRepairPricingSnapshot(RepairRequest $repair): array

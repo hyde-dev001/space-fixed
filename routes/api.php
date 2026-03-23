@@ -287,8 +287,12 @@ Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\
     ->middleware(['web', 'auth:user', 'throttle:20,1']);
 Route::post('/orders/{id}/verify-payment', [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment'])
     ->middleware(['web', 'auth:user', 'throttle:20,1']);
+Route::post('/orders/{id}/retry-payment-session', [\App\Http\Controllers\UserSide\CheckoutController::class, 'retryPaymentSession'])
+    ->middleware(['web', 'auth:user', 'throttle:20,1']);
 Route::get('/orders/{id}/details', [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails'])
     ->middleware(['web', 'auth:user', 'throttle:20,1']);
+Route::post('/shipping/estimate', [\App\Http\Controllers\UserSide\ShippingEstimateController::class, 'estimate'])
+    ->middleware(['throttle:120,1']);
 
 /**
  * Staff/Manager Customer Management API

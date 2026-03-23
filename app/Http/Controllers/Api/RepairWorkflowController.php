@@ -16,12 +16,16 @@ use App\Events\LowStockAlert;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
+use App\Services\ShopOwnerApprovalPolicyService;
 
 class RepairWorkflowController extends Controller
 {
     protected $notificationService;
 
-    public function __construct(NotificationService $notificationService)
+    public function __construct(
+        NotificationService $notificationService,
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
+    )
     {
         $this->notificationService = $notificationService;
     }
@@ -96,7 +100,15 @@ class RepairWorkflowController extends Controller
             }
             
             $isHighValue = $repairRequest->total >= $shopOwner->high_value_threshold;
-            $requiresOwnerApproval = $isHighValue && $shopOwner->require_two_way_approval;
+            $requiresOwnerApprovalByPolicy = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
+                (int) $shopOwner->id,
+                (float) $repairRequest->total
+            );
+            $requiresOwnerApproval = $shopOwner->require_two_way_approval && $requiresOwnerApprovalByPolicy;
+
+            if ($requiresOwnerApprovalByPolicy) {
+                $isHighValue = true;
+            }
             
             $repairRequest->update([
                 'is_high_value' => $isHighValue,

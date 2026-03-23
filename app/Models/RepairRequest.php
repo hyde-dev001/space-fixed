@@ -43,8 +43,12 @@ class RepairRequest extends Model
         'paymongo_link_id',
         'paymongo_payment_id',
         'payment_link_created_at',
+        'payment_expires_at',
         'payment_completed_at',
         'payment_status',
+        'payment_failed_at',
+        'payment_failure_reason',
+        'payment_expired_at',
         'payment_enabled',
         'payment_enabled_at',
         'payment_enabled_by',
@@ -105,7 +109,10 @@ class RepairRequest extends Model
         'manager_reviewed_at' => 'datetime',
         'owner_reviewed_at' => 'datetime',
         'payment_link_created_at' => 'datetime',
+        'payment_expires_at' => 'datetime',
         'payment_completed_at' => 'datetime',
+        'payment_failed_at' => 'datetime',
+        'payment_expired_at' => 'datetime',
         'payment_enabled_at' => 'datetime',
         'pickup_enabled_at' => 'datetime',
         'total' => 'decimal:2',
@@ -240,6 +247,20 @@ class RepairRequest extends Model
     public function scopePendingManagerReview($query)
     {
         return $query->where('status', 'repairer_rejected');
+    }
+
+    public function scopePayable($query)
+    {
+        return $query
+            ->where('payment_status', 'pending')
+            ->whereNull('payment_expired_at');
+    }
+
+    public function scopeExpiredPayable($query)
+    {
+        return $query->payable()
+            ->whereNotNull('payment_expires_at')
+            ->where('payment_expires_at', '<=', now());
     }
 
     protected static function booted(): void

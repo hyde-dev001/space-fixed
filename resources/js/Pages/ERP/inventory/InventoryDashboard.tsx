@@ -133,7 +133,7 @@ export default function ERPInventoryOverview() {
   });
 
   // Pagination
-  const itemsPerPage = 7;
+  const itemsPerPage = 8;
   const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
@@ -320,6 +320,8 @@ export default function ERPInventoryOverview() {
             </div>
             <div className="sm:w-48">
               <select
+                title="Filter by category"
+                aria-label="Filter inventory by category"
                 value={categoryFilter}
                 onChange={(e) => {
                   setCategoryFilter(e.target.value);
@@ -334,6 +336,8 @@ export default function ERPInventoryOverview() {
             </div>
             <div className="sm:w-48">
               <select
+                title="Filter by stock status"
+                aria-label="Filter inventory by stock status"
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -460,6 +464,8 @@ export default function ERPInventoryOverview() {
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Inventory Item Details</h2>
                 <button
                   onClick={() => setViewModalOpen(false)}
+                  title="Close inventory item details"
+                  aria-label="Close inventory item details"
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   <CloseIcon className="w-5 h-5" />
