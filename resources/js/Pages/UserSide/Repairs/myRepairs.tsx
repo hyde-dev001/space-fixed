@@ -444,7 +444,7 @@ const MyRepairs: React.FC = () => {
 
     if (value === 'accepted') return 'pending';
     if (value === 'progress') return 'in_progress';
-    if (value === 'pickup' || value === 'ready') return 'ready_for_pickup';
+    if (value === 'pickup' || value === 'ready' || value === 'shipped') return 'ready_for_pickup';
 
     if (
       value === 'new_request' ||
@@ -1112,14 +1112,14 @@ const MyRepairs: React.FC = () => {
     }
 
     const result = await Swal.fire({
-      title: switchingToWalkIn ? 'Switch to Customer Pick-up at Shop?' : 'Switch to Customer Courier Pickup?',
+      title: switchingToWalkIn ? 'Change to Pick-up at Shop?' : 'Switch to Customer Courier Pickup?',
       html: `
         <p class="text-gray-700 mb-2">You are changing this order from <strong>${getReturnMethodLabel(order)}</strong> to <strong>${switchingToWalkIn ? 'Customer Pick-up at Shop' : 'Customer Arranges Courier Pickup'}</strong>.</p>
         <p class="text-gray-700">${switchingToWalkIn ? 'You will pick up your repaired shoes from the shop.' : 'You will arrange Lalamove/courier to pick up your repaired shoes from the shop.'}</p>
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: switchingToWalkIn ? 'Yes, switch to shop pick-up' : 'Yes, switch to courier pick-up',
+      confirmButtonText: switchingToWalkIn ? 'Yes, change to pick-up at shop' : 'Yes, switch to courier pick-up',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
@@ -1298,6 +1298,11 @@ const MyRepairs: React.FC = () => {
         order.status === 'owner_approved'
       ).length;
     }
+    if (status === 'ready_for_pickup') {
+      return orders.filter(order =>
+        order.status === 'ready_for_pickup' || order.status === 'shipped'
+      ).length;
+    }
     return orders.filter(order => order.status === status).length;
   };
 
@@ -1313,6 +1318,9 @@ const MyRepairs: React.FC = () => {
              order.status === 'waiting_customer_confirmation' ||
              order.status === 'owner_approval_pending' ||
              order.status === 'owner_approved';
+    }
+    if (selectedTab === 'ready_for_pickup') {
+      return order.status === 'ready_for_pickup' || order.status === 'shipped';
     }
     return order.status === selectedTab;
   });
@@ -1831,7 +1839,7 @@ const MyRepairs: React.FC = () => {
                           disabled={processingPayment}
                           className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
                         >
-                          SWITCH TO SHOP PICK-UP
+                          CHANGE TO PICK-UP AT SHOP
                         </button>
                       )}
                       {canSwitchDeliveryMethod(order) && getReturnMethod(order) === 'walk_in' && (

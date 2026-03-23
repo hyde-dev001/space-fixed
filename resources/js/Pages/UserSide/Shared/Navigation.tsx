@@ -199,6 +199,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     '/services': 'services',
     '/services/product-image-spin-tutorial': 'services',
     '/register': 'login', // Register page should highlight ACCOUNT
+    '/user/register': 'login', // User register page should highlight ACCOUNT
     '/login': 'login', // Login page should highlight ACCOUNT
     '/user/login': 'login', // User login page should highlight ACCOUNT
     '/forgot-password': 'login', // Forgot password page should highlight ACCOUNT
@@ -261,6 +262,25 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     // Special case for shop owner registration pages
     activeIndex = navItems.findIndex(item => item.route === 'services');
   }
+
+  const mobileNavLinkClasses = (isActive: boolean) =>
+    `block text-[11px] uppercase tracking-[0.22em] transition-all duration-300 ease-in-out ${
+      isActive ? 'font-semibold text-gray-900' : 'font-medium text-gray-500 hover:text-gray-700'
+    }`;
+
+  const isMobileHomeActive = currentRoute === 'landing';
+  const isMobileProductsActive = currentRoute === 'products' && !currentCategory;
+  const isMobileMenActive = currentRoute === 'products' && currentCategory === 'men';
+  const isMobileWomenActive = currentRoute === 'products' && currentCategory === 'women';
+  const isMobileKidsActive = currentRoute === 'products' && currentCategory === 'kids';
+  const isMobileSportsActive = currentRoute === 'products' && currentCategory === 'sports';
+  const isMobileRepairActive = currentRoute === 'repair';
+  const isMobileServicesActive = currentRoute === 'services';
+  const isMobileAccountActive = currentRoute === 'login';
+
+  const isMyOrdersActive = cleanUrl.startsWith('/my-orders');
+  const isMyRepairsActive = cleanUrl.startsWith('/my-repairs');
+  const isMyProfileActive = cleanUrl.startsWith('/customer-profile');
 
   // Function to update underline position
   const updateUnderlinePosition = (index: number) => {
@@ -1062,14 +1082,14 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   />
                 </form>
                 <div className="mt-4 space-y-3.5 pb-1">
-                  <Link href={route('landing')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Home</Link>
-                  <Link href={route('products')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Products</Link>
-                  <Link href={route('products', { category: 'men' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Men</Link>
-                  <Link href={route('products', { category: 'women' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Women</Link>
-                  <Link href={route('products', { category: 'kids' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Kids</Link>
-                  <Link href={route('products', { category: 'sports' })} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Sports</Link>
-                  <Link href={route('repair')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Repair</Link>
-                  <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Services</Link>
+                  <Link href={route('landing')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileHomeActive)}>Home</Link>
+                  <Link href={route('products')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileProductsActive)}>Products</Link>
+                  <Link href={route('products', { category: 'men' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileMenActive)}>Men</Link>
+                  <Link href={route('products', { category: 'women' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileWomenActive)}>Women</Link>
+                  <Link href={route('products', { category: 'kids' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileKidsActive)}>Kids</Link>
+                  <Link href={route('products', { category: 'sports' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileSportsActive)}>Sports</Link>
+                  <Link href={route('repair')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileRepairActive)}>Repair</Link>
+                  <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileServicesActive)}>Services</Link>
                   {isAuthenticated ? (
                     <button
                       type="button"
@@ -1083,8 +1103,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </button>
                   ) : (
                     <>
-                      <Link href={route('login')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Login</Link>
-                      <Link href={route('register')} onClick={() => setMobileMenuOpen(false)} className="block text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 transition-all duration-300 ease-in-out hover:text-gray-700">Register</Link>
+                      <Link href={route('login')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileAccountActive)}>Login</Link>
+                      <Link href={route('register')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileAccountActive)}>Register</Link>
                     </>
                   )}
                 </div>
@@ -1095,7 +1115,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   <>
                     <Link
                       href="/my-orders"
-                      className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
+                        isMyOrdersActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                      }`}
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1105,7 +1127,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </Link>
                     <Link
                       href="/my-repairs"
-                      className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
+                        isMyRepairsActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                      }`}
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1116,7 +1140,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </Link>
                     <Link
                       href="/customer-profile"
-                      className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
+                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
+                        isMyProfileActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                      }`}
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

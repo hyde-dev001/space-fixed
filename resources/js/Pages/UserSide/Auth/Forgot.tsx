@@ -5,6 +5,7 @@ import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
 import { MailIcon } from '../../../icons/index';
+import Swal from '@/Pages/UserSide/Shared/UserModal';
 
 interface FormErrors {
 	email?: string;
@@ -20,9 +21,9 @@ export default function Forgot() {
 		const newErrors: FormErrors = {};
 
 		if (!email.trim()) {
-			newErrors.email = 'Email is required';
+			newErrors.email = 'Enter your email address.';
 		} else if (!/\S+@\S+\.\S+/.test(email)) {
-			newErrors.email = 'Email is invalid';
+			newErrors.email = 'Enter a valid email address.';
 		}
 
 		setErrors(newErrors);
@@ -38,9 +39,23 @@ export default function Forgot() {
 		router.post(route('password.otp.send'), {
 			email: email.trim(),
 		}, {
+			onSuccess: () => {
+				Swal.fire({
+					icon: 'success',
+					title: 'Code sent',
+					text: 'Check your email for the verification code.',
+					confirmButtonColor: '#000000',
+				});
+			},
 			onError: (err) => {
 				setErrors({
-					email: (err.email as string) || 'Unable to send OTP. Please try again.',
+					email: (err.email as string) || 'Unable to send the code. Please try again.',
+				});
+				Swal.fire({
+					icon: 'error',
+					title: 'Unable to send code',
+					text: (err.email as string) || 'Please verify your email and try again.',
+					confirmButtonColor: '#000000',
 				});
 				setIsLoading(false);
 			},
@@ -60,10 +75,10 @@ export default function Forgot() {
 				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
 					<div className="text-center mb-12">
 						<h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							FORGOT PASSWORD
+							RESET PASSWORD
 						</h1>
 						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							Enter your account email and we will send you a reset link.
+							Enter your account email and we’ll send a 6-digit verification code.
 						</p>
 					</div>
 
@@ -97,7 +112,7 @@ export default function Forgot() {
 									disabled={isLoading}
 									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									{isLoading ? 'Sending...' : 'Send OTP'}
+									{isLoading ? 'Sending code...' : 'Send code'}
 								</button>
 							</Form>
 

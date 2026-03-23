@@ -69,7 +69,17 @@ class RepairServiceController extends Controller
         $shopPayload = null;
         if ($request->filled('shop_id')) {
             $shopOwner = ShopOwner::query()
-                ->select('id', 'business_name', 'business_address', 'shop_address', 'city_state', 'country')
+                ->select(
+                    'id',
+                    'business_name',
+                    'business_address',
+                    'shop_address',
+                    'city_state',
+                    'postal_code',
+                    'country',
+                    'shop_latitude',
+                    'shop_longitude'
+                )
                 ->find((int) $request->shop_id);
 
             if ($shopOwner) {
@@ -81,6 +91,13 @@ class RepairServiceController extends Controller
                     'id' => $shopOwner->id,
                     'name' => $shopOwner->business_name,
                     'address' => $primaryAddress,
+                    'shop_address' => $shopOwner->shop_address,
+                    'business_address' => $shopOwner->business_address,
+                    'city_state' => $shopOwner->city_state,
+                    'postal_code' => $shopOwner->postal_code,
+                    'country' => $shopOwner->country,
+                    'latitude' => $shopOwner->shop_latitude,
+                    'longitude' => $shopOwner->shop_longitude,
                     'location' => $location,
                 ];
             }

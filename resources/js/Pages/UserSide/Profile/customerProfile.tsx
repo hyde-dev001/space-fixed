@@ -116,7 +116,12 @@ const CustomerProfile: React.FC = () => {
 				setIsSubmitting(false);
 				setPhotoFile(null);
 				const errorMsg = errors.profile_photo || 'Failed to upload photo. Please try again.';
-				window.alert(errorMsg);
+				Swal.fire({
+					icon: 'error',
+					title: 'Photo upload failed',
+					text: errorMsg,
+					confirmButtonColor: '#111827',
+				});
 			},
 		});
 	};
@@ -202,11 +207,21 @@ const CustomerProfile: React.FC = () => {
 	const handlePasswordSubmit = (event: React.FormEvent) => {
 		event.preventDefault();
 		if (!currentPassword || !newPassword || !confirmPassword) {
-			window.alert('Please fill in all password fields.');
+			Swal.fire({
+				icon: 'warning',
+				title: 'Missing fields',
+				text: 'Please fill in all password fields.',
+				confirmButtonColor: '#111827',
+			});
 			return;
 		}
 		if (newPassword !== confirmPassword) {
-			window.alert('New password and confirmation do not match.');
+			Swal.fire({
+				icon: 'error',
+				title: 'Password mismatch',
+				text: 'New password and confirmation do not match.',
+				confirmButtonColor: '#111827',
+			});
 			return;
 		}
 
@@ -222,14 +237,29 @@ const CustomerProfile: React.FC = () => {
 				setNewPassword('');
 				setConfirmPassword('');
 				setIsSubmitting(false);
-				window.alert('Password updated successfully!');
+				Swal.fire({
+					icon: 'success',
+					title: 'Password updated',
+					text: 'Your password has been updated successfully.',
+					confirmButtonColor: '#111827',
+				});
 			},
 			onError: (errors) => {
 				setIsSubmitting(false);
 				if (errors.current_password) {
-					window.alert(errors.current_password);
+					Swal.fire({
+						icon: 'error',
+						title: 'Password update failed',
+						text: errors.current_password,
+						confirmButtonColor: '#111827',
+					});
 				} else {
-					window.alert('Password update failed. Please check your input.');
+					Swal.fire({
+						icon: 'error',
+						title: 'Password update failed',
+						text: 'Please check your input and try again.',
+						confirmButtonColor: '#111827',
+					});
 				}
 			},
 		});
@@ -302,10 +332,20 @@ const CustomerProfile: React.FC = () => {
 	// Show flash messages
 	useEffect(() => {
 		if (flash?.success) {
-			window.alert(flash.success);
+			Swal.fire({
+				icon: 'success',
+				title: 'Success',
+				text: flash.success,
+				confirmButtonColor: '#111827',
+			});
 		}
 		if (flash?.error) {
-			window.alert(flash.error);
+			Swal.fire({
+				icon: 'error',
+				title: 'Error',
+				text: flash.error,
+				confirmButtonColor: '#111827',
+			});
 		}
 	}, [flash]);
 

@@ -443,6 +443,16 @@ export default function JobOrdersPage() {
     return 'Online Payment';
   };
 
+  const isCodOrder = (order: Pick<Order, 'paymentMethod'>) => {
+    const normalized = (order.paymentMethod || '').toLowerCase();
+    return normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery';
+  };
+
+  const isOrderPaid = (order: Pick<Order, 'paymentStatus'>) => {
+    const normalized = (order.paymentStatus || '').toLowerCase();
+    return normalized === 'paid' || normalized === 'completed';
+  };
+
   const handleProcessOrder = async (order: Order) => {
     const result = await Swal.fire({
       title: "Process this order?",
@@ -1128,9 +1138,20 @@ export default function JobOrdersPage() {
                         <span className="text-sm font-medium text-gray-900 dark:text-white">{order.total}</span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                          </span>
+                          {isCodOrder(order) && (
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              isOrderPaid(order)
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                            }`}>
+                              {isOrderPaid(order) ? 'COD Paid' : 'COD Pending'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.eta || '-'}</span>
@@ -1457,7 +1478,11 @@ export default function JobOrdersPage() {
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Status</p>
-                    <p className="text-sm text-gray-900 dark:text-white capitalize">{viewOrder.paymentStatus || '-'}</p>
+                    <p className="text-sm text-gray-900 dark:text-white capitalize">
+                      {isCodOrder(viewOrder)
+                        ? (isOrderPaid(viewOrder) ? 'Paid (COD)' : 'Pending (COD)')
+                        : (viewOrder.paymentStatus || '-')}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>

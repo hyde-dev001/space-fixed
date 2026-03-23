@@ -1,10 +1,11 @@
 import { Head, router, usePage } from "@inertiajs/react";
 import { useMemo, useState, useEffect } from "react";
 import type { ComponentType } from "react";
-import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { purchaseRequestApi, supplierApi, type PurchaseRequest as PurchaseRequestType, type Supplier } from "@/services/procurementApi";
 import { stockRequestApi } from "@/services/stockRequestApi";
+import { workflowFeedback } from "@/utils/workflowFeedback";
+import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDraft";
 import type { StockRequestApproval } from "@/types/procurement";
 
 type RequestPriority = "high" | "medium" | "low";
@@ -35,6 +36,8 @@ const initialFormState: PurchaseRequestFormState = {
 	justification: "",
 	inventoryItemId: "",
 };
+
+const PURCHASE_REQUEST_DRAFT_KEY = "erp.purchase-request.create-modal.draft";
 
 const formatPriority = (priority: string): string => {
 	const map: Record<string, string> = {
@@ -173,6 +176,19 @@ export default function PurchaseRequest() {
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestType | null>(null);
 	const [formData, setFormData] = useState<PurchaseRequestFormState>(initialFormState);
 	const [metrics, setMetrics] = useState({ total_requests: 0, pending_finance: 0, approved: 0 });
+	const isCreateFormDirty = useMemo(
+		() =>
+			formData.stockRequestId !== initialFormState.stockRequestId ||
+			formData.productName.trim() !== initialFormState.productName ||
+			formData.requestedSize.trim() !== initialFormState.requestedSize ||
+			formData.supplierId !== initialFormState.supplierId ||
+			formData.quantity.trim() !== initialFormState.quantity ||
+			formData.unitCost.trim() !== initialFormState.unitCost ||
+			formData.priority !== initialFormState.priority ||
+			formData.justification.trim() !== initialFormState.justification ||
+			formData.inventoryItemId !== initialFormState.inventoryItemId,
+		[formData],
+	);
 
 	// Fetch purchase requests
 	const fetchPurchaseRequests = async () => {
@@ -182,12 +198,10 @@ export default function PurchaseRequest() {
 			setPurchaseRequests(response.data || []);
 		} catch (error) {
 			console.error("Error fetching purchase requests:", error);
-			await Swal.fire({
-				icon: "error",
-				title: "Error",
-				text: "Failed to load purchase requests. Please try again.",
-				confirmButtonColor: "#2563eb",
-			});
+			const shouldRetry = await workflowFeedback.errorWithRetry("Failed to load purchase requests. Please try again.");
+			if (shouldRetry) {
+				await fetchPurchaseRequests();
+			}
 		} finally {
 			setLoading(false);
 		}
@@ -231,8 +245,49 @@ export default function PurchaseRequest() {
 		fetchMetrics();
 	}, []);
 
+	useEffect(() => {
+		if (!isCreateModalOpen) return;
+		if (isCreateFormDirty) {
+			saveModalDraft(PURCHASE_REQUEST_DRAFT_KEY, formData);
+			return;
+		}
+		clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+	}, [formData, isCreateFormDirty, isCreateModalOpen]);
+
+	useEffect(() => {
+		if (!isCreateModalOpen || !isCreateFormDirty) return;
+
+		const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+			event.preventDefault();
+			event.returnValue = "";
+		};
+
+		window.addEventListener("beforeunload", handleBeforeUnload);
+		return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+	}, [isCreateFormDirty, isCreateModalOpen]);
+
 	const handleOpenCreateModal = async () => {
 		await fetchAcceptedStockRequests();
+
+		const savedDraft = loadModalDraft<Partial<PurchaseRequestFormState>>(PURCHASE_REQUEST_DRAFT_KEY);
+		if (savedDraft) {
+			const shouldRestore = await workflowFeedback.confirm({
+				title: "Restore draft?",
+				text: "A saved purchase request draft was found. Restore it before continuing?",
+				confirmButtonText: "Restore draft",
+				cancelButtonText: "Start fresh",
+			});
+
+			if (shouldRestore.isConfirmed) {
+				setFormData({ ...initialFormState, ...savedDraft });
+			} else {
+				clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+				setFormData(initialFormState);
+			}
+		} else {
+			setFormData(initialFormState);
+		}
+
 		setIsCreateModalOpen(true);
 	};
 
@@ -282,25 +337,41 @@ export default function PurchaseRequest() {
 		setFormData(initialFormState);
 	};
 
+	const requestCloseCreateModal = async () => {
+		if (!isCreateFormDirty) {
+			closeCreateModal();
+			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+			return;
+		}
+
+		const confirmClose = await workflowFeedback.confirm({
+			title: "Close with unsaved changes?",
+			text: "Your changes are unsaved. They will be kept as a draft for next time.",
+			confirmButtonText: "Close and keep draft",
+			cancelButtonText: "Keep editing",
+		});
+
+		if (!confirmClose.isConfirmed) return;
+
+		saveModalDraft(PURCHASE_REQUEST_DRAFT_KEY, formData);
+		closeCreateModal();
+	};
+
 	const handleCreatePR = async () => {
 		if (!formData.stockRequestId.trim() || !formData.inventoryItemId.trim() || !formData.supplierId.trim() || !formData.quantity.trim() || !formData.unitCost.trim() || !formData.justification.trim()) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Missing fields",
-				text: "Please select an approved stock request, a supplier, quantity, unit cost, and justification.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning(
+				"Missing fields",
+				"Please select an approved stock request, a supplier, quantity, unit cost, and justification.",
+			);
 			return;
 		}
 
 		if (activeInventoryItemIds.has(formData.inventoryItemId)) {
 			const existingPrNumber = activePrByInventoryItemId[formData.inventoryItemId];
-			await Swal.fire({
-				icon: "error",
-				title: "Duplicate PR",
-				text: `${existingPrNumber} already covers this product. You can only submit a new PR after the existing one is rejected.`,
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.error(
+				`${existingPrNumber} already covers this product. You can only submit a new PR after the existing one is rejected.`,
+				"Duplicate PR",
+			);
 			return;
 		}
 
@@ -308,12 +379,7 @@ export default function PurchaseRequest() {
 		const unitCost = Number(formData.unitCost);
 
 		if (Number.isNaN(quantity) || Number.isNaN(unitCost) || quantity <= 0 || unitCost <= 0) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Invalid quantity or cost",
-				text: "Quantity and unit cost must be greater than zero.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning("Invalid quantity or cost", "Quantity and unit cost must be greater than zero.");
 			return;
 		}
 
@@ -334,18 +400,17 @@ export default function PurchaseRequest() {
 			console.log("Sending purchase request:", requestData);
 			const newPR = await purchaseRequestApi.create(requestData);
 
+			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
 			closeCreateModal();
 			await fetchPurchaseRequests();
 			await fetchMetrics();
 
-			const result = await Swal.fire({
-				icon: "success",
+			const result = await workflowFeedback.success({
 				title: "Sent to Finance",
 				text: `${newPR.pr_number} has been submitted for finance approval.`,
 				showCancelButton: true,
 				confirmButtonText: "Go to Purchase Orders",
 				cancelButtonText: "Stay here",
-				confirmButtonColor: "#2563eb",
 			});
 
 			if (result.isConfirmed) {
@@ -363,12 +428,7 @@ export default function PurchaseRequest() {
 				errorMessage = error.response.data.message;
 			}
 			
-			await Swal.fire({
-				icon: "error",
-				title: "Error",
-				text: errorMessage,
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.error(errorMessage);
 		} finally {
 			setLoading(false);
 		}
@@ -522,11 +582,25 @@ export default function PurchaseRequest() {
 
 			{isCreateModalOpen && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close create purchase request modal" className="absolute inset-0 bg-black/50" onClick={closeCreateModal} />
+					<button
+						type="button"
+						aria-label="Close create purchase request modal"
+						className="absolute inset-0 bg-black/50"
+						onClick={() => {
+							void requestCloseCreateModal();
+						}}
+					/>
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Purchase Request Builder</h2>
-							<button onClick={closeCreateModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+							<button
+								onClick={() => {
+									void requestCloseCreateModal();
+								}}
+								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+							>
+								×
+							</button>
 						</div>
 
 						<div className="p-6 space-y-4">
@@ -668,7 +742,14 @@ export default function PurchaseRequest() {
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-							<button onClick={closeCreateModal} className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+							<button
+								onClick={() => {
+									void requestCloseCreateModal();
+								}}
+								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+							>
+								Cancel
+							</button>
 							<button
 								onClick={handleCreatePR}
 								disabled={!!(formData.inventoryItemId && activeInventoryItemIds.has(formData.inventoryItemId))}

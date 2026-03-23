@@ -6,7 +6,8 @@ use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class ProductInventoryTest extends TestCase
@@ -19,10 +20,14 @@ class ProductInventoryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        Permission::findOrCreate('access-product-inventory', 'user');
         
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
-        Sanctum::actingAs($this->user);
+        $this->user->givePermissionTo('access-product-inventory');
+        $this->actingAs($this->user, 'user');
     }
 
     /** @test */

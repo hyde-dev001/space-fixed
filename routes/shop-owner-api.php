@@ -162,6 +162,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::post('/{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup'])->name('shop_owner.repairs.mark-ready');
         Route::post('/{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup'])->name('shop_owner.repairs.activate-pickup');
         Route::post('/{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair'])->name('shop_owner.repairs.activate-payment');
+        Route::post('/{id}/mark-paid-in-shop', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markPaidInShop'])->name('shop_owner.repairs.mark-paid-in-shop');
         Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals'])->name('shop_owner.repairs.high-value-pending');
         Route::post('/{id}/approve-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveHighValueRepair'])->name('shop_owner.repairs.approve-high-value');
         Route::post('/{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair'])->name('shop_owner.repairs.reject-high-value');

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { route } from 'ziggy-js';
 import Navigation from '../Shared/Navigation';
 import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
-import { LockIcon } from '../../../icons/index';
+import Swal from '../Shared/UserModal';
 
 interface FormErrors {
 	password?: string;
@@ -29,17 +30,23 @@ export default function NewPassword() {
 	const [isLoading, setIsLoading] = useState(false);
 	const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
+	useEffect(() => {
+		if (!email) {
+			router.visit(route('password.request'));
+		}
+	}, [email]);
+
 	const validateForm = (): boolean => {
 		const newErrors: FormErrors = {};
 
 		if (!formData.password) {
-			newErrors.password = 'Password is required';
+			newErrors.password = 'Enter a new password.';
 		} else if (formData.password.length < 8) {
 			newErrors.password = 'Password must be at least 8 characters';
 		}
 
 		if (!formData.confirmPassword) {
-			newErrors.confirmPassword = 'Please confirm your password';
+			newErrors.confirmPassword = 'Confirm your new password.';
 		} else if (formData.password !== formData.confirmPassword) {
 			newErrors.confirmPassword = 'Passwords do not match';
 		}
@@ -59,6 +66,17 @@ export default function NewPassword() {
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 
+		if (!email) {
+			Swal.fire({
+				icon: 'error',
+				title: 'Reset session expired',
+				text: 'Please request a new verification code to reset your password.',
+				confirmButtonColor: '#000000',
+			});
+			router.visit(route('password.request'));
+			return;
+		}
+
 		if (!validateForm()) return;
 
 		setIsLoading(true);
@@ -67,10 +85,24 @@ export default function NewPassword() {
 			password: formData.password,
 			password_confirmation: formData.confirmPassword,
 		}, {
+			onSuccess: () => {
+				Swal.fire({
+					icon: 'success',
+					title: 'Password updated',
+					text: 'Your password has been reset successfully.',
+					confirmButtonColor: '#000000',
+				});
+			},
 			onError: (err) => {
 				setErrors({
 					password: (err.password as string) || undefined,
 					confirmPassword: (err.password_confirmation as string) || undefined,
+				});
+				Swal.fire({
+					icon: 'error',
+					title: 'Reset failed',
+					text: (err.password as string) || (err.password_confirmation as string) || 'Please check your input and try again.',
+					confirmButtonColor: '#000000',
 				});
 				setIsLoading(false);
 			},
@@ -90,7 +122,7 @@ export default function NewPassword() {
 				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
 					<div className="text-center mb-12">
 						<h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							CREATE NEW PASSWORD
+							SET NEW PASSWORD
 						</h1>
 						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
 							Set a new password for {email || 'your account'}.
@@ -103,7 +135,9 @@ export default function NewPassword() {
 								<div className="relative">
 									<Label htmlFor="password">New Password</Label>
 									<div className="relative">
-										<LockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+										<svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V9a5 5 0 00-10 0v2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+										</svg>
 										<Input
 											type="password"
 											id="password"
@@ -120,7 +154,9 @@ export default function NewPassword() {
 								<div className="relative">
 									<Label htmlFor="confirmPassword">Confirm Password</Label>
 									<div className="relative">
-										<LockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+										<svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V9a5 5 0 00-10 0v2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+										</svg>
 										<Input
 											type="password"
 											id="confirmPassword"
@@ -139,18 +175,18 @@ export default function NewPassword() {
 									disabled={isLoading}
 									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									{isLoading ? 'Updating...' : 'Update Password'}
+									{isLoading ? 'Resetting password...' : 'Reset password'}
 								</button>
 							</Form>
 
 							<div className="mt-6 text-center space-y-2">
 								<p className="text-gray-600">
-									Need to verify OTP again?{' '}
+									Need to verify your code again?{' '}
 									<Link
 										href={route('password.otp', { email })}
 										className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
 									>
-										Go back
+										Back to verify code
 									</Link>
 								</p>
 							</div>

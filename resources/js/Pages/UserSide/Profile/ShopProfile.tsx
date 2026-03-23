@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
+import { navigateBackOr } from '../Shared/backNavigation';
 
 interface Product {
   id: number;
@@ -400,12 +401,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
   };
 
   const handleBackNavigation = () => {
-    if (window.history.length > 1) {
-      window.history.back();
-      return;
-    }
-
-    window.location.href = '/';
+    navigateBackOr('/');
   };
 
   return (

@@ -31,10 +31,10 @@ export default function UserLogin() {
     if (flash.success) {
       Swal.fire({
         icon: 'success',
-        title: '🎉 Account Activated!',
+        title: 'Account activated',
         text: flash.success,
         confirmButtonColor: '#000000',
-        confirmButtonText: 'Log In Now',
+        confirmButtonText: 'Sign in now',
       });
     }
   }, [flash.success]);
@@ -53,10 +53,11 @@ export default function UserLogin() {
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
+    const normalizedEmail = formData.email.trim();
 
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
-    if (!formData.password) newErrors.password = 'Password is required';
+    if (!normalizedEmail) newErrors.email = 'Enter your email address.';
+    else if (!/\S+@\S+\.\S+/.test(normalizedEmail)) newErrors.email = 'Enter a valid email address.';
+    if (!formData.password) newErrors.password = 'Enter your password.';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -81,13 +82,13 @@ export default function UserLogin() {
     setIsLoading(true);
 
     router.post('/user/login', {
-      email: formData.email,
+      email: formData.email.trim(),
       password: formData.password,
     }, {
       onSuccess: (page: any) => {
         Swal.fire({
           icon: 'success',
-          title: 'Login Successful!',
+          title: 'Signed in',
           text: 'Welcome back!',
           confirmButtonColor: '#000000',
           timer: 1500,
@@ -102,8 +103,8 @@ export default function UserLogin() {
         
         Swal.fire({
           icon: 'error',
-          title: 'Login Failed',
-          text: errors.email || errors.password || 'Invalid credentials. Please try again.',
+          title: 'Sign-in failed',
+          text: errors.email || errors.password || 'Email or password is incorrect. Please try again.',
           confirmButtonColor: '#ef4444',
         });
       },
@@ -122,7 +123,7 @@ export default function UserLogin() {
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-50 sm:pt-24 lg:pt-32 pb-16 sm:pb-24">
         <div className="text-center mb-10 sm:mb-10 lg:mb-12">
           <h1 className="text-[42px] leading-[1.02] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-5 tracking-tight">
-            USER SIGN IN
+            SIGN IN
           </h1>
           <p className="text-[18px] sm:text-lg lg:text-xl text-gray-600 max-w-[320px] sm:max-w-2xl mx-auto leading-snug font-light">
             Glad to see you again. Sign in to continue.
@@ -190,7 +191,7 @@ export default function UserLogin() {
                 disabled={isLoading}
                 className="w-full rounded-xl px-10 py-3.5 bg-black text-white font-semibold uppercase tracking-[0.2em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'Signing In...' : 'Sign In'}
+                {isLoading ? 'Signing in...' : 'Sign in'}
               </button>
             </Form>
 
@@ -201,7 +202,7 @@ export default function UserLogin() {
                   href={route("register")}
                   className="text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
                 >
-                  Register here
+                  Create account
                 </Link>
               </p>
             </div>

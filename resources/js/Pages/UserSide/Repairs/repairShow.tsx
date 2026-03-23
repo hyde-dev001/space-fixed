@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
+import { navigateBackOr } from '../Shared/backNavigation';
 
 interface ShopHours {
   day: string;
@@ -105,6 +106,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [reviewEligibility, setReviewEligibility] = useState<any>(null);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
+  const createImageUploadGroup = () => ({
+    id: Math.random().toString(36).slice(2, 11),
+    file: null,
+    preview: '',
+  });
+
   // Fetch reviews and check eligibility on mount
   useEffect(() => {
     fetchReviews();
@@ -201,11 +208,18 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImageUploadGroups(prev => 
-          prev.map(group => 
-            group.id === id ? {id, file, preview: reader.result as string} : group
-          )
-        );
+        setImageUploadGroups((prev) => {
+          const updatedGroups = prev.map((group) =>
+            group.id === id ? { id, file, preview: reader.result as string } : group
+          );
+
+          const hasEmptySlot = updatedGroups.some((group) => !group.preview);
+          if (!hasEmptySlot && updatedGroups.length < 5) {
+            return [...updatedGroups, createImageUploadGroup()];
+          }
+
+          return updatedGroups;
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -213,13 +227,24 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
   const addImageUploadBox = () => {
     if (imageUploadGroups.length < 5) {
-      const newId = Math.random().toString(36).substr(2, 9);
-      setImageUploadGroups(prev => [...prev, {id: newId, file: null, preview: ''}]);
+      setImageUploadGroups((prev) => [...prev, createImageUploadGroup()]);
     }
   };
 
   const removeImageBox = (id: string) => {
-    setImageUploadGroups(prev => prev.filter(group => group.id !== id));
+    setImageUploadGroups((prev) => {
+      const filtered = prev.filter((group) => group.id !== id);
+      if (filtered.length === 0) {
+        return [{ id: '0', file: null, preview: '' }];
+      }
+
+      const hasEmptySlot = filtered.some((group) => !group.preview);
+      if (!hasEmptySlot && filtered.length < 5) {
+        return [...filtered, createImageUploadGroup()];
+      }
+
+      return filtered;
+    });
   };
 
   // Check if shop is currently open
@@ -389,30 +414,18 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
       <div className="min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
-        <div className="lg:hidden max-w-6xl mx-auto px-4 md:px-6 pt-4 md:pt-5">
-          <button
-            type="button"
-            onClick={() => {
-              if (typeof window !== 'undefined' && window.history.length > 1) {
-                window.history.back();
-                return;
-              }
-
-              window.location.href = '/repair';
-            }}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-black shadow-sm hover:bg-gray-50 transition-colors"
-            aria-label="Go back"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-        </div>
-
-        <div className="max-w-6xl mx-auto px-4 md:px-6 lg:px-12 pt-8 md:pt-10 lg:pt-12 pb-28 md:pb-32 lg:py-20">
+        <div className="max-w-6xl mx-auto px-4 xl:px-12 pt-18 xl:pt-24 pb-28 xl:py-20">
           {/* Shop Cover Image - Full Width Hero */}
-          <div className="relative h-52 md:h-64 lg:h-80 bg-gray-200 overflow-hidden rounded-2xl mb-6 lg:mb-8 shadow-lg">
+          <div className="relative h-52 xl:h-80 bg-gray-200 overflow-hidden rounded-2xl mb-6 xl:mb-8 shadow-lg">
+            <button
+              type="button"
+              onClick={() => navigateBackOr('/repair')}
+              className="xl:hidden absolute top-3 left-3 z-30 inline-flex items-center justify-center px-2 py-1 text-[30px] text-white font-normal leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.45)] hover:text-gray-200 transition-colors"
+              aria-label="Go back"
+            >
+              {'<'}
+            </button>
+
             <img
               src={shop.image}
               alt={shop.name}
@@ -425,15 +438,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             <div className="absolute inset-0 bg-linear-to-t from-black/50 to-transparent"></div>
             
             {/* Shop Name Overlay */}
-            <div className="absolute bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 lg:bottom-8 lg:left-8 lg:right-auto">
-              <Link href={`/shop-profile/${shop.id}`} className="text-3xl md:text-4xl lg:text-5xl leading-[0.95] font-bold text-white hover:text-gray-200 transition-colors inline-block drop-shadow-lg wrap-break-word max-w-full">
+            <div className="absolute bottom-4 left-4 right-4 xl:bottom-8 xl:left-8 xl:right-auto">
+              <Link href={`/shop-profile/${shop.id}`} className="text-3xl xl:text-5xl leading-[0.95] font-bold text-white hover:text-gray-200 transition-colors inline-block drop-shadow-lg wrap-break-word max-w-full">
                 {shop.name}
               </Link>
-              <div className="flex items-start md:items-center gap-2 text-white mt-2 md:mt-3 max-w-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 md:w-5 md:h-5 mt-0.5 md:mt-0 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <div className="flex items-start xl:items-center gap-2 text-white mt-2 xl:mt-3 max-w-full">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 xl:w-5 xl:h-5 mt-0.5 xl:mt-0 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                 </svg>
-                <span className="text-sm md:text-base lg:text-lg font-medium leading-snug wrap-break-word">{shop.location}</span>
+                <span className="text-sm xl:text-lg font-medium leading-snug wrap-break-word">{shop.location}</span>
               </div>
             </div>
 
@@ -441,27 +454,27 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           </div>
 
           {/* Shop Description */}
-          <div className="mb-8 lg:mb-12">
-            <p className="text-base lg:text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
+          <div className="mb-8 xl:mb-12">
+            <p className="text-base xl:text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
           </div>
 
           {/* Info Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 mb-8 lg:mb-10">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-6 mb-8 xl:mb-10">
             {/* Shop Information */}
-            <div className="bg-linear-to-br from-gray-50 to-white rounded-3xl p-4 sm:p-5 md:p-6 lg:p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 md:mb-6">
+            <div className="bg-linear-to-br from-gray-50 to-white rounded-3xl p-4 sm:p-5 xl:p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 xl:mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 lg:w-6 lg:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <div className="w-10 h-10 xl:w-12 xl:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                   </div>
-                  <h3 className="text-xl lg:text-2xl font-bold text-black">Shop Information</h3>
+                  <h3 className="text-xl xl:text-2xl font-bold text-black">Shop Information</h3>
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <Link
                     href={`/message/${shop.id}`}
-                    className="px-4 lg:px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all flex-1 sm:flex-none text-center"
+                    className="px-4 xl:px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all flex-1 sm:flex-none text-center"
                   >
                     Message
                   </Link>
@@ -489,7 +502,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                               setShowReportModal(true);
                               setShowMoreActions(false);
                             }}
-                            className="w-full px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            className="w-full px-3 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                           >
                             Report
                           </button>
@@ -499,8 +512,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   )}
                 </div>
               </div>
-              <div className="space-y-3 md:space-y-4 text-sm text-gray-700">
-                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+              <div className="space-y-3 xl:space-y-4 text-sm text-gray-700">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                   </svg>
@@ -511,7 +524,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                   </svg>
@@ -522,7 +535,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         <span className={`text-[11px] sm:text-xs font-semibold px-2.5 sm:px-3 py-1 rounded-full whitespace-nowrap ${
                           shopStatus.isOpen 
                             ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
+                            : 'bg-gray-200 text-gray-700'
                         }`}>
                           {shopStatus.message}
                         </span>
@@ -562,7 +575,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     )}
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                   </svg>
@@ -571,7 +584,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     <a href={`tel:${shop.phone}`} className="text-black hover:text-gray-600 transition-colors underline break-all leading-6">{shop.phone}</a>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 md:p-4">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                   </svg>
@@ -584,23 +597,23 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             </div>
 
             {/* Shop Rating */}
-            <div className="bg-linear-to-br from-yellow-50 to-white rounded-2xl p-5 md:p-6 lg:p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="bg-linear-to-br from-yellow-50 to-white rounded-2xl p-5 xl:p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 lg:w-6 lg:h-6 text-white fill-white" viewBox="0 0 24 24">
+                <div className="w-10 h-10 xl:w-12 xl:h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
                 </div>
-                <h3 className="text-xl lg:text-2xl font-bold text-black">Customer Rating</h3>
+                <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
               </div>
               {reviewStats.total_reviews > 0 ? (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:gap-8">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 xl:gap-8">
                   <div>
                     <div className="flex items-baseline gap-3 mb-2">
-                      <span className="text-5xl lg:text-6xl font-bold text-black">
+                      <span className="text-5xl xl:text-6xl font-bold text-black">
                         {reviewStats.average_rating.toFixed(1)}
                       </span>
-                      <span className="text-3xl lg:text-4xl text-yellow-400">⭐</span>
+                      <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
                     </div>
                     <span className="text-sm text-gray-600">
                       Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
@@ -621,11 +634,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           </div>
 
           {/* Repair Services Section */}
-          <div className="mb-10 lg:mb-12">
+          <div className="mb-10 xl:mb-12">
             <div className="mb-8">
-              <h2 className="text-2xl lg:text-3xl font-bold text-black mb-5">Packages</h2>
+              <h2 className="text-2xl xl:text-3xl font-bold text-black mb-5">Packages</h2>
               {repairPackages && repairPackages.length > 0 ? (
-                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 overflow-x-auto md:overflow-visible pb-2 md:pb-0 snap-x snap-mandatory md:snap-none">
+                <div className="flex xl:grid xl:grid-cols-3 gap-4 xl:gap-6 overflow-x-auto xl:overflow-visible pb-2 xl:pb-0 snap-x snap-mandatory xl:snap-none">
                   {repairPackages.map((pkg) => {
                     const isSelected = selectedPackageId === pkg.id;
 
@@ -634,19 +647,19 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         key={pkg.id}
                         type="button"
                         onClick={() => handlePackageToggle(pkg.id)}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 md:w-full md:min-w-0 h-62.5 sm:h-65 md:h-full shrink-0 bg-white rounded-2xl p-5 lg:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
+                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
                           isSelected
                             ? 'border-black shadow-md'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
                         }`}
                       >
                         <div className="flex flex-col h-full">
-                          <div className="flex items-start justify-between gap-2 lg:gap-3 mb-3">
+                          <div className="flex items-start justify-between gap-2 xl:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
                               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium inline-block mb-2">
                                 Package
                               </span>
-                              <h3 className="text-base lg:text-lg font-bold text-black leading-snug wrap-break-word">{pkg.name}</h3>
+                              <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word">{pkg.name}</h3>
                               <p className="text-sm text-gray-600 mt-1 leading-5 wrap-break-word">{pkg.description || 'Repair package offer'}</p>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
@@ -664,7 +677,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           </div>
 
                           <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between gap-3">
-                            <span className="text-xl lg:text-2xl font-bold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
+                            <span className="text-xl xl:text-2xl font-bold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
                             <span className="text-xs text-gray-500 text-right">Bundle offer</span>
                           </div>
                         </div>
@@ -680,15 +693,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             </div>
 
             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-6 lg:mb-8">
-                <h2 className="text-2xl lg:text-3xl font-bold text-black">Individual Services</h2>
-                <span className="inline-flex items-center gap-2 text-[11px] lg:text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-6 xl:mb-8">
+                <h2 className="text-2xl xl:text-3xl font-bold text-black">Individual Services</h2>
+                <span className="inline-flex items-center gap-2 text-[11px] xl:text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
                   Choose one or more
                 </span>
               </div>
 
               {repairServices && repairServices.length > 0 ? (
-                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 overflow-x-auto md:overflow-visible pb-2 md:pb-0 snap-x snap-mandatory md:snap-none">
+                <div className="flex xl:grid xl:grid-cols-3 gap-4 xl:gap-6 overflow-x-auto xl:overflow-visible pb-2 xl:pb-0 snap-x snap-mandatory xl:snap-none">
                   {repairServices.map((service) => {
                     const descriptionLines = getServiceDescriptionLines(service.description);
                     const isSelected = selectedServices.includes(service.id);
@@ -696,7 +709,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     return (
                       <div
                         key={service.id}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 md:w-full md:min-w-0 h-62.5 sm:h-65 md:h-full shrink-0 bg-white rounded-2xl p-5 lg:p-6 border-2 transition-all snap-start ${
+                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all snap-start ${
                           isSelected
                             ? 'border-black shadow-md'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
@@ -704,11 +717,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         onClick={() => handleServiceToggle(service.id)}
                       >
                         <div className="flex flex-col h-full">
-                          <div className="flex items-start justify-between gap-2 lg:gap-3 mb-3">
+                          <div className="flex items-start justify-between gap-2 xl:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
                               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 mb-2">
-                                <h3 className="text-base lg:text-lg font-bold text-black leading-snug wrap-break-word min-w-0">{service.title}</h3>
-                                <span className="text-[11px] lg:text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap shrink-0">
+                                <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word min-w-0">{service.title}</h3>
+                                <span className="text-[11px] xl:text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap shrink-0">
                                   {service.category}
                                 </span>
                               </div>
@@ -736,7 +749,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
                           <div className="mt-auto pt-4 border-t border-gray-200">
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xl lg:text-2xl font-bold text-black">{service.price}</div>
+                              <div className="text-xl xl:text-2xl font-bold text-black">{service.price}</div>
                               <div className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <circle cx="12" cy="12" r="10" />
@@ -767,18 +780,18 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           <Link
             href={requestRepairHref}
             onClick={handleRequestRepair}
-            className="hidden lg:block w-full bg-black text-white py-5 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-xl shadow-xl hover:shadow-2xl text-center mb-16"
+            className="hidden xl:block w-full bg-black text-white py-5 rounded-2xl hover:bg-gray-900 active:scale-[0.98] transition-all font-bold text-xl shadow-xl hover:shadow-2xl text-center mb-16"
           >
             Request Repair Service {selectionSummary}
           </Link>
 
           {/* Reviews and Comments Section */}
-          <div id="reviews" className="border-t border-gray-200 pt-12 lg:pt-16">
-            <div className="mb-10 lg:mb-12">
-              <h2 className="text-3xl lg:text-4xl font-bold text-black mb-5 lg:mb-6">Customer Reviews</h2>
+          <div id="reviews" className="border-t border-gray-200 pt-12 xl:pt-16">
+            <div className="mb-10 xl:mb-12">
+              <h2 className="text-3xl xl:text-4xl font-bold text-black mb-5 xl:mb-6">Customer Reviews</h2>
               <div className="flex items-center gap-6">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                  <span className="text-5xl lg:text-6xl font-bold text-black leading-none">
+                  <span className="text-5xl xl:text-6xl font-bold text-black leading-none">
                     {reviewStats.average_rating > 0 ? reviewStats.average_rating.toFixed(1) : shop.rating}
                   </span>
                   <div>
@@ -794,15 +807,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             </div>
 
             {/* Write a Review Section */}
-            <div className="bg-linear-to-br from-gray-50 to-white rounded-2xl p-5 md:p-7 lg:p-10 mb-10 lg:mb-12 border border-gray-100 shadow-sm hover:shadow-md transition-all">
-              <div className="flex items-center gap-3 mb-6 lg:mb-8">
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 lg:w-6 lg:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="bg-linear-to-br from-gray-50 to-white rounded-2xl p-5 xl:p-10 mb-10 xl:mb-12 border border-gray-100 shadow-sm hover:shadow-md transition-all">
+              <div className="flex items-center gap-3 mb-6 xl:mb-8">
+                <div className="w-10 h-10 xl:w-12 xl:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                   </svg>
                 </div>
-                <h3 className="text-2xl lg:text-3xl font-bold text-black">Share Your Experience</h3>
+                <h3 className="text-2xl xl:text-3xl font-bold text-black">Share Your Experience</h3>
               </div>
 
               {/* Eligibility Messages */}
@@ -871,7 +884,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               <div className="mb-8">
                 <label className="block text-base font-bold text-black mb-4">Photos (Optional)</label>
                 <p className="text-sm text-gray-600 mb-4">Share photos of your repaired shoes to help others</p>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <p className="text-xs text-gray-500 mb-3">Tip: After you upload one photo, another upload slot appears automatically (up to 5).</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
                   {imageUploadGroups.map((group) => (
                     <div key={group.id} className="relative group/photo">
                       {group.preview ? (
@@ -879,13 +893,13 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           <img
                             src={group.preview}
                             alt="Review photo"
-                            className="w-full h-24 md:h-28 lg:h-32 object-cover rounded-xl border-2 border-gray-200 shadow-sm"
+                            className="w-full h-24 md:h-28 xl:h-32 object-cover rounded-xl border-2 border-gray-200 shadow-sm"
                           />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/photo:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-2">
+                          <div className="absolute inset-0 bg-black/60 opacity-100 xl:opacity-0 xl:group-hover/photo:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-2">
                             {imageUploadGroups.length < 5 && (
                               <button
                                 onClick={addImageUploadBox}
-                                className="w-10 h-10 bg-black hover:bg-gray-800 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110"
+                                className="w-11 h-11 md:w-12 md:h-12 bg-black hover:bg-gray-800 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110"
                                 type="button"
                                 title="Add more photos"
                               >
@@ -894,7 +908,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                             )}
                             <button
                               onClick={() => removeImageBox(group.id)}
-                              className="w-10 h-10 bg-red-600 hover:bg-red-700 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110"
+                              className="w-11 h-11 md:w-12 md:h-12 bg-gray-800 hover:bg-black rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110"
                               type="button"
                               title="Remove photo"
                             >
@@ -903,7 +917,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           </div>
                         </div>
                       ) : (
-                        <label className="w-full h-24 md:h-28 lg:h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-black hover:bg-gray-50 transition-all bg-white">
+                        <label className="w-full h-24 md:h-28 xl:h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-black hover:bg-gray-50 transition-all bg-white">
                           <input
                             type="file"
                             accept="image/*"
@@ -916,7 +930,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                             <polyline points="17 8 12 3 7 8" />
                             <line x1="12" y1="3" x2="12" y2="15" />
                           </svg>
-                          <span className="text-xs text-gray-500 font-medium">Upload</span>
+                          <span className="text-xs text-gray-500 font-medium">Tap to upload</span>
                         </label>
                       )}
                     </div>
@@ -927,7 +941,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               <button
                 onClick={handleSubmitReview}
                 disabled={!canReview || isSubmittingReview}
-                className={`w-full sm:w-auto px-8 lg:px-10 py-4 rounded-2xl font-bold text-base lg:text-lg shadow-lg transition-all ${
+                className={`w-full sm:w-auto px-8 xl:px-10 py-4 rounded-2xl font-bold text-base xl:text-lg shadow-lg transition-all ${
                   canReview && !isSubmittingReview
                     ? 'bg-black text-white hover:bg-gray-900 hover:shadow-xl active:scale-[0.98] cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -947,20 +961,20 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                 <p className="text-gray-500 text-lg">No reviews yet. Be the first to review this shop!</p>
               </div>
             ) : (
-              <div className="space-y-4 lg:space-y-6">
+              <div className="space-y-4 xl:space-y-6">
                 {reviews.map((review) => (
-                  <div key={review.id} className="bg-linear-to-br from-white to-gray-50 rounded-2xl p-5 lg:p-8 border border-gray-100 hover:shadow-lg transition-all">
-                    <div className="flex items-start gap-4 lg:gap-6">
+                  <div key={review.id} className="bg-linear-to-br from-white to-gray-50 rounded-2xl p-5 xl:p-8 border border-gray-100 hover:shadow-lg transition-all">
+                    <div className="flex items-start gap-4 xl:gap-6">
                       {/* User Avatar */}
-                      <div className="w-14 h-14 lg:w-20 lg:h-20 rounded-2xl bg-linear-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
-                        <span className="text-xl lg:text-2xl font-bold text-gray-600">
+                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-linear-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                        <span className="text-xl xl:text-2xl font-bold text-gray-600">
                           {review.user_name.charAt(0).toUpperCase()}
                         </span>
                       </div>
                       
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-3 flex-wrap">
-                          <h4 className="font-bold text-black text-lg lg:text-xl">{review.user_name}</h4>
+                          <h4 className="font-bold text-black text-lg xl:text-xl">{review.user_name}</h4>
                           {review.verified && (
                             <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
                               <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -985,7 +999,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                           </span>
                         </div>
                         
-                        <p className="text-gray-700 leading-relaxed text-sm lg:text-base mb-4">{review.comment}</p>
+                        <p className="text-gray-700 leading-relaxed text-sm xl:text-base mb-4">{review.comment}</p>
                         
                         {/* Review Images */}
                         {review.images && review.images.length > 0 && (
@@ -995,7 +1009,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                                 key={index}
                                 src={image}
                                 alt={`Review photo ${index + 1}`}
-                                className="w-20 h-20 lg:w-24 lg:h-24 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:scale-105 transition-transform shadow-sm shrink-0"
+                                className="w-20 h-20 xl:w-24 xl:h-24 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:scale-105 transition-transform shadow-sm shrink-0"
                                 onClick={() => setEnlargedImage(image)}
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement;
@@ -1015,7 +1029,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
         </div>
       </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] lg:hidden">
+        <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] xl:hidden">
           <Link
             href={`/shop-profile/${shop.id}`}
             className="flex w-15 shrink-0 flex-col items-center justify-center gap-0.5 py-2.5 text-gray-600 hover:text-black transition-colors"
@@ -1051,7 +1065,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
         {/* Image Lightbox Modal */}
         {enlargedImage && (
           <div
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-fadeIn"
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 xl:p-6 animate-fadeIn"
             onClick={() => setEnlargedImage(null)}
           >
             <div
@@ -1061,11 +1075,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               <img
                 src={enlargedImage}
                 alt="Enlarged review"
-                className="w-full max-h-[80vh] md:max-h-[85vh] object-contain rounded-2xl shadow-2xl"
+                className="w-full max-h-[80vh] xl:max-h-[85vh] object-contain rounded-2xl shadow-2xl"
               />
               <button
                 onClick={() => setEnlargedImage(null)}
-                className="absolute top-2 right-2 md:-top-4 md:-right-4 w-10 h-10 md:w-12 md:h-12 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all shadow-xl"
+                className="absolute top-2 right-2 xl:-top-4 xl:-right-4 w-10 h-10 xl:w-12 xl:h-12 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all shadow-xl"
                 type="button"
                 title="Close"
               >

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
@@ -9,6 +9,7 @@ type CartItem = {
   id: string;
   name: string;
   price: number;
+  compare_at_price?: number;
   size?: string;
   color?: string;
   qty: number;
@@ -16,6 +17,15 @@ type CartItem = {
   stock_quantity?: number;
   pid?: string;
   options?: any;
+  shop_id?: string | number;
+  shop_owner_id?: string | number;
+  shop_name?: string;
+};
+
+type ShopGroup = {
+  shopKey: string;
+  shopName: string;
+  items: CartItem[];
 };
 
 const Checkout: React.FC = () => {
@@ -28,8 +38,13 @@ const Checkout: React.FC = () => {
   const [isPaying, setIsPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [payLink, setPayLink] = useState<string>('');
+  const [recoveryOrderId, setRecoveryOrderId] = useState<number | null>(null);
+  const [recoveryReason, setRecoveryReason] = useState<'expired' | 'failed' | null>(null);
+  const [isCreatingRecoverySession, setIsCreatingRecoverySession] = useState(false);
   const [qtyUpdating, setQtyUpdating] = useState<Record<string, boolean>>({});
   const qtyUpdatingRef = useRef<Record<string, boolean>>({});
+  const [showMobileDetails, setShowMobileDetails] = useState(false);
+  const [orderNote, setOrderNote] = useState('');
   
   // Customer information
   const [customerName, setCustomerName] = useState('');
@@ -60,10 +75,43 @@ const Checkout: React.FC = () => {
   // Payment method state
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'Online'>('COD');
 
+  const parseOptions = (rawOptions: any) => {
+    if (!rawOptions) return {};
+    if (typeof rawOptions === 'string') {
+      try {
+        return JSON.parse(rawOptions);
+      } catch {
+        return {};
+      }
+    }
+    return rawOptions;
+  };
+
   const subtotal = items.filter(item => selectedItems.has(item.id)).reduce((s, it) => s + it.price * it.qty, 0);
   const FREE_SHIP_THRESHOLD = 4400;
   const freeShipRemaining = Math.max(0, Math.round(FREE_SHIP_THRESHOLD - subtotal));
   const progressPct = FREE_SHIP_THRESHOLD > 0 ? Math.min(100, Math.round((subtotal / FREE_SHIP_THRESHOLD) * 100)) : 0;
+
+  const shopGroups = useMemo<ShopGroup[]>(() => {
+    const groups = new Map<string, ShopGroup>();
+
+    items.forEach((item) => {
+      const rawShopKey = item.shop_id || item.shop_owner_id || item.shop_name || 'general';
+      const shopKey = String(rawShopKey);
+      const shopName = item.shop_name || (shopKey !== 'general' ? `Shop ${shopKey}` : 'Unknown Shop');
+
+      if (!groups.has(shopKey)) {
+        groups.set(shopKey, { shopKey, shopName, items: [] });
+      }
+
+      groups.get(shopKey)?.items.push(item);
+    });
+
+    return Array.from(groups.values());
+  }, [items]);
+
+  const selectedCount = selectedItems.size;
+  const allSelected = items.length > 0 && selectedCount === items.length;
 
   // Load cart function (moved outside useEffect so it can be reused)
   const loadCart = async () => {
@@ -74,22 +122,29 @@ const Checkout: React.FC = () => {
           const cart = raw ? JSON.parse(raw) : [];
           const parsed = (cart || []).map((c: any) => {
             const price = (typeof c.price === 'number') ? c.price : (parseFloat(String(c.price).replace(/[^0-9.-]+/g, '')) || 0);
-            const size = c.size || c.shoe_size || (c.options && c.options.size) || (c.meta && c.meta.size) || (c.attributes && c.attributes.size) || undefined;
-            const color = c.color || (c.options && c.options.color) || undefined;
+            const options = parseOptions(c.options);
+            const size = c.size || c.shoe_size || options.size || (c.meta && c.meta.size) || (c.attributes && c.attributes.size) || undefined;
+            const color = c.color || options.color || undefined;
+            const compareAt = options.compare_at_price !== undefined ? Number(options.compare_at_price) : undefined;
             return { 
               id: String(c.id), 
               name: c.name || '', 
               price, 
+              compare_at_price: Number.isFinite(compareAt) ? compareAt : undefined,
               size,
               color,
               qty: Number(c.qty || 1), 
               image: c.image || undefined,
               stock_quantity: c.stock_quantity || undefined,
-              pid: c.pid || String(c.id)
+              pid: c.pid || String(c.id),
+              options,
+              shop_id: c.shop_id || c.shop_owner_id || c.shop?.id || c.shopOwner?.id || 'general',
+              shop_owner_id: c.shop_owner_id || c.shop_id || c.shop?.id || c.shopOwner?.id || 'general',
+              shop_name: c.shop_name || c.business_name || c.shop?.business_name || c.shopOwner?.business_name || (c.shop_owner_id || c.shop_id || c.shop?.id || c.shopOwner?.id ? `Shop ${c.shop_owner_id || c.shop_id || c.shop?.id || c.shopOwner?.id}` : 'Unknown Shop'),
             };
           });
           setItems(parsed);
-          setSelectedItems(new Set(parsed.map(item => item.id)));
+          setSelectedItems(new Set(parsed.map((item: CartItem) => item.id)));
         } catch (e) {
           setItems([]);
         }
@@ -113,22 +168,27 @@ const Checkout: React.FC = () => {
         if (response.data.items) {
           const parsed = response.data.items.map((item: any) => {
             // Extract color from options if available
-            const options = item.options ? (typeof item.options === 'string' ? JSON.parse(item.options) : item.options) : {};
+            const options = parseOptions(item.options);
+            const compareAt = options.compare_at_price !== undefined ? Number(options.compare_at_price) : undefined;
             return {
               id: String(item.id),
               name: item.name || '',
               price: item.price || 0,
+              compare_at_price: Number.isFinite(compareAt) ? compareAt : undefined,
               size: item.size,
               color: options.color || undefined,
               qty: item.quantity || item.qty || 1,
               image: item.image,
               stock_quantity: item.stock_quantity,
               pid: item.product_id || item.pid,
-              options: item.options, // Keep original options
+              options,
+              shop_id: item.shop_id || item.shop_owner_id || item.product?.shop_owner_id || 'general',
+              shop_owner_id: item.shop_owner_id || item.shop_id || item.product?.shop_owner_id || 'general',
+              shop_name: item.shop_name || item.product?.shop_owner?.business_name || (item.shop_owner_id || item.shop_id || item.product?.shop_owner_id ? `Shop ${item.shop_owner_id || item.shop_id || item.product?.shop_owner_id}` : 'Unknown Shop'),
             };
           });
           setItems(parsed);
-          setSelectedItems(new Set(parsed.map(item => item.id)));
+          setSelectedItems(new Set(parsed.map((item: CartItem) => item.id)));
         }
       } catch (error) {
         console.error('Failed to load cart:', error);
@@ -138,22 +198,29 @@ const Checkout: React.FC = () => {
           const cart = raw ? JSON.parse(raw) : [];
           const parsed = (cart || []).map((c: any) => {
             const price = (typeof c.price === 'number') ? c.price : (parseFloat(String(c.price).replace(/[^0-9.-]+/g, '')) || 0);
-            const size = c.size || undefined;
-            const color = c.color || undefined;
+            const options = parseOptions(c.options);
+            const size = c.size || options.size || undefined;
+            const color = c.color || options.color || undefined;
+            const compareAt = options.compare_at_price !== undefined ? Number(options.compare_at_price) : undefined;
             return { 
               id: String(c.id), 
               name: c.name || '', 
               price, 
+              compare_at_price: Number.isFinite(compareAt) ? compareAt : undefined,
               size,
               color,
               qty: Number(c.qty || 1), 
               image: c.image || undefined,
               stock_quantity: c.stock_quantity || undefined,
-              pid: c.pid || String(c.id)
+              pid: c.pid || String(c.id),
+              options,
+              shop_id: c.shop_id || c.shop_owner_id || c.shop?.id || c.shopOwner?.id || 'general',
+              shop_owner_id: c.shop_owner_id || c.shop_id || c.shop?.id || c.shopOwner?.id || 'general',
+              shop_name: c.shop_name || c.business_name || c.shop?.business_name || c.shopOwner?.business_name || (c.shop_owner_id || c.shop_id || c.shop?.id || c.shopOwner?.id ? `Shop ${c.shop_owner_id || c.shop_id || c.shop?.id || c.shopOwner?.id}` : 'Unknown Shop'),
             };
           });
           setItems(parsed);
-          setSelectedItems(new Set(parsed.map(item => item.id)));
+          setSelectedItems(new Set(parsed.map((item: CartItem) => item.id)));
         } catch (e) {
           setItems([]);
         }
@@ -174,6 +241,22 @@ const Checkout: React.FC = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const paymentSuccess = urlParams.get('payment_success');
     const orderId = urlParams.get('order_id');
+    const paymongoFailed = urlParams.get('paymongo_failed') === '1';
+    const paymongoExpired = urlParams.get('paymongo_expired') === '1' || urlParams.get('expired') === '1';
+
+    if (paymongoFailed || paymongoExpired) {
+      const pendingOrderId = Number(sessionStorage.getItem('pendingOrderId') || '0');
+      if (Number.isFinite(pendingOrderId) && pendingOrderId > 0) {
+        setRecoveryOrderId(pendingOrderId);
+        setRecoveryReason(paymongoExpired ? 'expired' : 'failed');
+      }
+
+      urlParams.delete('paymongo_failed');
+      urlParams.delete('paymongo_expired');
+      urlParams.delete('expired');
+      const queryString = urlParams.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${queryString ? `?${queryString}` : ''}`);
+    }
     
     if (paymentSuccess === 'true' && orderId) {
       // Get the items that were purchased from sessionStorage
@@ -234,6 +317,50 @@ const Checkout: React.FC = () => {
     const storedLink = typeof window !== 'undefined' ? localStorage.getItem('ss_paymongo_link') : '';
     setPayLink(envLink || storedLink || '');
   }, []);
+
+  const handleCreateRecoverySession = async () => {
+    if (!recoveryOrderId || isCreatingRecoverySession) {
+      return;
+    }
+
+    setIsCreatingRecoverySession(true);
+    setPayError(null);
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch(`/api/orders/${recoveryOrderId}/retry-payment-session`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || 'Failed to create a new payment session.');
+      }
+
+      if (!data?.checkout_url) {
+        throw new Error('Incomplete payment data received from PayMongo');
+      }
+
+      sessionStorage.setItem('pendingOrderId', String(recoveryOrderId));
+      window.location.href = data.checkout_url;
+    } catch (error: any) {
+      const message = error?.message || 'Unable to create a new payment session.';
+      setPayError(message);
+      Swal.fire({
+        icon: 'error',
+        title: 'Unable to Create Session',
+        text: message,
+      });
+    } finally {
+      setIsCreatingRecoverySession(false);
+    }
+  };
 
   const increment = async (id: string) => {
     const item = items.find(i => i.id === id);
@@ -914,11 +1041,34 @@ const Checkout: React.FC = () => {
   };
 
   const toggleSelectAll = () => {
-    if (selectedItems.size === items.length) {
+    if (allSelected) {
       setSelectedItems(new Set());
     } else {
       setSelectedItems(new Set(items.map(i => i.id)));
     }
+  };
+
+  const getShopSelectionState = (groupItems: CartItem[]) => {
+    const selectedInShop = groupItems.filter((item) => selectedItems.has(item.id)).length;
+    return {
+      all: groupItems.length > 0 && selectedInShop === groupItems.length,
+      some: selectedInShop > 0 && selectedInShop < groupItems.length,
+      selectedInShop,
+    };
+  };
+
+  const toggleSelectShop = (groupItems: CartItem[]) => {
+    const { all } = getShopSelectionState(groupItems);
+
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      if (all) {
+        groupItems.forEach((item) => next.delete(item.id));
+      } else {
+        groupItems.forEach((item) => next.add(item.id));
+      }
+      return next;
+    });
   };
 
   const handleCheckout = async () => {
@@ -974,6 +1124,7 @@ const Checkout: React.FC = () => {
       shipping_barangay: selectedAddress?.barangay || null,
       shipping_postal_code: selectedAddress?.postal_code || null,
       shipping_address_line: selectedAddress?.address || null,
+      order_note: orderNote,
       payment_method: 'paymongo',
       // Store selected item IDs so we know which items to remove after successful payment
       selected_item_ids: selectedItemIds,
@@ -1007,8 +1158,203 @@ const Checkout: React.FC = () => {
       <Navigation />
 
       <main className="flex-1 pt-24 lg:pt-28">
-        <div className="max-w-7xl mx-auto py-12 px-6 text-black">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+        <div className="max-w-7xl mx-auto py-6 lg:py-12 px-6 text-black">
+        {recoveryOrderId && recoveryReason && (
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm font-medium text-amber-900 mb-2">
+              {recoveryReason === 'expired'
+                ? 'Your payment session expired. Create a new payment session to continue checkout.'
+                : 'Your previous payment was not completed. Create a new payment session to continue checkout.'}
+            </p>
+            <button
+              type="button"
+              onClick={handleCreateRecoverySession}
+              disabled={isCreatingRecoverySession}
+              className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isCreatingRecoverySession ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
+            >
+              {isCreatingRecoverySession ? 'Creating...' : 'Create New Payment Session'}
+            </button>
+          </div>
+        )}
+
+        <div className="lg:hidden">
+          {items.length === 0 ? (
+            <div className="py-20 flex flex-col items-center justify-center text-center text-black">
+              <div className="relative">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l1 5h13l1-4H7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 16a2 2 0 11-4 0 2 2 0 014 0zm-8 0a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <span className="absolute -top-2 -right-2 bg-black text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">{items.length}</span>
+              </div>
+
+              <h2 className="mt-6 text-xl font-semibold text-black">Your cart is empty</h2>
+
+              <Link href="/products" className="mt-6 bg-black text-white px-6 py-3 rounded-md inline-block">Continue shopping</Link>
+            </div>
+          ) : (
+            <>
+              <div className="pb-32 lg:pb-0 pt-0">
+                {shopGroups.map((shopGroup) => {
+                  const shopSelection = getShopSelectionState(shopGroup.items);
+
+                  return (
+                    <div key={shopGroup.shopKey} className="border-b border-gray-100 py-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleSelectShop(shopGroup.items)}
+                        className="w-full mb-3 flex items-center gap-3 px-4 py-2 hover:bg-gray-50 rounded transition-colors"
+                      >
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-all ${
+                          shopSelection.all || shopSelection.some
+                            ? 'bg-[#16233b] text-white shadow-md'
+                            : 'border-2 border-gray-300 bg-white text-transparent'
+                        }`}
+                        aria-label={`Select shop ${shopGroup.shopName}`}
+                        title={`Select shop ${shopGroup.shopName}`}
+                        >
+                          {shopSelection.some && !shopSelection.all ? (
+                            <span className="block h-1 w-2.5 rounded bg-white" />
+                          ) : (
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.414l-8.1 8.1a1 1 0 01-1.414 0L3.296 10.91a1 1 0 111.414-1.414l3.188 3.188 7.393-7.393a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </span>
+
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="truncate text-sm font-bold text-black">{shopGroup.shopName}</p>
+                        </div>
+
+                        <span className="text-xl text-gray-400 shrink-0">›</span>
+                      </button>
+
+                      <div>
+                        {shopGroup.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="border-b border-gray-100 py-3 px-4 flex flex-col"
+                          >
+                            <div className="flex items-start gap-3 mb-3">
+                              <button
+                                type="button"
+                                aria-label={`Select item ${item.name}`}
+                                title={`Select item ${item.name}`}
+                                onClick={() => toggleSelectItem(item.id)}
+                                className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-all ${
+                                  selectedItems.has(item.id)
+                                    ? 'bg-[#16233b] text-white shadow-md'
+                                    : 'border-2 border-gray-300 bg-white text-transparent'
+                                }`}
+                              >
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                  <path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.414l-8.1 8.1a1 1 0 01-1.414 0L3.296 10.91a1 1 0 111.414-1.414l3.188 3.188 7.393-7.393a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+
+                              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                                {item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : null}
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <p className="line-clamp-2 text-sm font-medium text-black leading-tight">{item.name}</p>
+
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-gray-600">
+                                  {item.size && <span>{item.size}</span>}
+                                  {item.color && item.size && <span>•</span>}
+                                  {item.color && <span>{item.color}</span>}
+                                </div>
+
+                                <div className="mt-1.5 flex items-center">
+                                  <span className="text-base font-bold text-black">₱{item.price.toLocaleString()}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 pl-9">
+                              <button onClick={() => removeItemPersist(item.id)} className="text-xs font-medium text-gray-600 hover:text-gray-900">
+                                Remove
+                              </button>
+
+                              <div className="inline-flex items-center border border-gray-300 rounded">
+                                <button 
+                                  onClick={() => decrement(item.id)} 
+                                  className="p-1.5 text-gray-600 hover:bg-gray-50 transition-colors"
+                                  title="Decrease quantity"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                  </svg>
+                                </button>
+                                
+                                <div className="border-l border-r border-gray-300 px-3 py-1.5 text-xs font-semibold text-black min-w-7 text-center">
+                                  {item.qty}
+                                </div>
+                                
+                                <button
+                                  onClick={() => increment(item.id)}
+                                  disabled={qtyUpdating[item.id] || (item.stock_quantity !== undefined && item.qty >= item.stock_quantity)}
+                                  className={`p-1.5 transition-colors ${(qtyUpdating[item.id] || (item.stock_quantity !== undefined && item.qty >= item.stock_quantity)) ? 'text-gray-400 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-50'}`}
+                                  title="Increase quantity"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+
+            </>
+          )}
+        </div>
+
+        {items.length > 0 && (
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white px-4 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
+            <div className="flex items-center gap-3">
+              <button 
+                type="button" 
+                onClick={toggleSelectAll} 
+                className="flex items-center justify-center gap-2 shrink-0"
+              >
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full transition-all ${
+                  allSelected || selectedCount > 0 ? 'bg-[#16233b] text-white shadow-md' : 'border-2 border-gray-300 bg-white text-transparent'
+                }`}>
+                  {selectedCount > 0 && !allSelected ? (
+                    <span className="block h-1 w-2.5 rounded bg-white" />
+                  ) : (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.414l-8.1 8.1a1 1 0 01-1.414 0L3.296 10.91a1 1 0 111.414-1.414l3.188 3.188 7.393-7.393a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </span>
+                <span className={`text-[11px] font-medium transition-colors ${
+                  allSelected || selectedCount > 0 ? 'text-[#16233b]' : 'text-gray-600'
+                }`}>All</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={selectedCount === 0 || isPaying}
+                className={`flex-1 rounded-lg px-4 py-3 text-sm font-bold text-white transition-all ${
+                  selectedCount === 0 || isPaying ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#16233b] hover:bg-[#1a2942] shadow-md'
+                }`}
+              >
+                {isPaying ? 'Placing...' : `Place Order (${selectedCount})`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="hidden lg:grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
           {/* Left: cart items (span 2 on md) */}
           <div className={items.length === 0 ? 'md:col-span-3' : 'md:col-span-2'}>
             <div className={items.length === 0 ? 'rounded bg-white' : 'border border-gray-100 rounded'}>
@@ -1019,6 +1365,8 @@ const Checkout: React.FC = () => {
                       type="checkbox"
                       checked={selectedItems.size === items.length && items.length > 0}
                       onChange={toggleSelectAll}
+                      aria-label="Select all items"
+                      title="Select all items"
                       className="w-4 h-4 rounded border-gray-300 text-black focus:ring-black cursor-pointer"
                     />
                   </div>
@@ -1051,6 +1399,8 @@ const Checkout: React.FC = () => {
                           type="checkbox"
                           checked={selectedItems.has(item.id)}
                           onChange={() => toggleSelectItem(item.id)}
+                          aria-label={`Select item ${item.name}`}
+                          title={`Select item ${item.name}`}
                           className="w-4 h-4 rounded border-gray-300 text-black focus:ring-black cursor-pointer"
                         />
                       </div>
@@ -1111,6 +1461,8 @@ const Checkout: React.FC = () => {
                       <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Your Addresses</h3>
                       <button
                         onClick={() => setShowAddressSelector(false)}
+                        aria-label="Close address selector"
+                        title="Close address selector"
                         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1166,11 +1518,9 @@ const Checkout: React.FC = () => {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>
-                              <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 bg-white dark:bg-gray-800 flex-shrink-0 mt-1" style={{
-                                borderColor: selectedAddressId === address.id ? '#2563eb' : '#d1d5db'
-                              }}>
+                              <div className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${selectedAddressId === address.id ? 'border-blue-600' : 'border-gray-300'} bg-white dark:bg-gray-800`}>
                                 {selectedAddressId === address.id && (
-                                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#2563eb' }} />
+                                  <div className="h-3 w-3 rounded-full bg-blue-600" />
                                 )}
                               </div>
                             </div>
@@ -1211,6 +1561,8 @@ const Checkout: React.FC = () => {
                       <h3 className="text-xl font-bold text-gray-900 dark:text-white">Add New Address</h3>
                       <button
                         onClick={() => setShowAddAddressModal(false)}
+                        aria-label="Close add address modal"
+                        title="Close add address modal"
                         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1370,6 +1722,8 @@ const Checkout: React.FC = () => {
                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Set as default address</label>
                         <button
                           onClick={() => setNewAddressData(prev => ({ ...prev, is_default: !prev.is_default }))}
+                          aria-label="Toggle default address"
+                          title="Toggle default address"
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                             newAddressData.is_default ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
                           }`}
@@ -1414,6 +1768,8 @@ const Checkout: React.FC = () => {
                       <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Address</h3>
                       <button
                         onClick={() => setEditingAddressId(null)}
+                        aria-label="Close edit address modal"
+                        title="Close edit address modal"
                         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1473,7 +1829,7 @@ const Checkout: React.FC = () => {
                           <input
                             type="text"
                             value={editingAddressData.region || ''}
-                            onChange={(e) => setEditingAddressData(prev => ({ ...prev, region: e.target.value }))}
+                            onChange={(e) => setEditingAddressData((prev: any) => ({ ...prev, region: e.target.value }))}
                             className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                             placeholder="Region"
                           />
@@ -1487,7 +1843,7 @@ const Checkout: React.FC = () => {
                           <input
                             type="text"
                             value={editingAddressData.province || ''}
-                            onChange={(e) => setEditingAddressData(prev => ({ ...prev, province: e.target.value }))}
+                            onChange={(e) => setEditingAddressData((prev: any) => ({ ...prev, province: e.target.value }))}
                             className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                             placeholder="Province"
                           />
@@ -1501,7 +1857,7 @@ const Checkout: React.FC = () => {
                           <input
                             type="text"
                             value={editingAddressData.city || ''}
-                            onChange={(e) => setEditingAddressData(prev => ({ ...prev, city: e.target.value }))}
+                            onChange={(e) => setEditingAddressData((prev: any) => ({ ...prev, city: e.target.value }))}
                             className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                             placeholder="City"
                           />
@@ -1515,7 +1871,7 @@ const Checkout: React.FC = () => {
                           <input
                             type="text"
                             value={editingAddressData.barangay || ''}
-                            onChange={(e) => setEditingAddressData(prev => ({ ...prev, barangay: e.target.value }))}
+                            onChange={(e) => setEditingAddressData((prev: any) => ({ ...prev, barangay: e.target.value }))}
                             className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                             placeholder="Barangay"
                           />
@@ -1532,7 +1888,7 @@ const Checkout: React.FC = () => {
                             value={editingAddressData.postal_code || ''}
                             onChange={(e) => {
                               const value = e.target.value.replace(/\D/g, '');
-                              setEditingAddressData(prev => ({ ...prev, postal_code: value }));
+                              setEditingAddressData((prev: any) => ({ ...prev, postal_code: value }));
                             }}
                             className={`w-full px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 outline-none ${
                               editingAddressData.postal_code && !/^\d{4}$/.test(editingAddressData.postal_code)
@@ -1557,7 +1913,7 @@ const Checkout: React.FC = () => {
                         </label>
                         <textarea
                           value={editingAddressData.address_line || ''}
-                          onChange={(e) => setEditingAddressData(prev => ({ ...prev, address_line: e.target.value }))}
+                          onChange={(e) => setEditingAddressData((prev: any) => ({ ...prev, address_line: e.target.value }))}
                           className={`w-full px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 outline-none h-16 resize-none ${
                             editingAddressData.address_line && editingAddressData.address_line.trim().length < 5
                               ? 'border-red-500 focus:ring-red-500'
@@ -1578,7 +1934,9 @@ const Checkout: React.FC = () => {
                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Set as default address</label>
                         <button
                           type="button"
-                          onClick={() => setEditingAddressData(prev => ({ ...prev, is_default: !prev.is_default }))}
+                          onClick={() => setEditingAddressData((prev: any) => ({ ...prev, is_default: !prev.is_default }))}
+                          aria-label="Toggle default address"
+                          title="Toggle default address"
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                             editingAddressData.is_default ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
                           }`}
@@ -1630,7 +1988,12 @@ const Checkout: React.FC = () => {
 
               <p className="text-xs text-black/60 mb-4 leading-relaxed">Shipping fees are not included and are handled by the buyer. The shipping cost depends on the delivery location and will be paid directly by the buyer.</p>
 
-              <textarea placeholder="Order note for carrier pickup branch" className="w-full border rounded p-3 mb-4 text-sm h-24 resize-none text-black" />
+              <textarea
+                placeholder="Order note for carrier pickup branch"
+                value={orderNote}
+                onChange={(e) => setOrderNote(e.target.value)}
+                className="w-full border rounded p-3 mb-4 text-sm h-24 resize-none text-black"
+              />
 
               {payError && (
                 <div className="text-xs text-red-600 mb-3">{payError}</div>
@@ -1638,11 +2001,11 @@ const Checkout: React.FC = () => {
 
               <button
                 onClick={handleCheckout}
-                disabled={selectedItems.size === 0 || isPaying}
-                className={`w-full flex items-center justify-center gap-3 py-3 rounded-md ${selectedItems.size === 0 || isPaying ? 'bg-gray-300 text-gray-600' : 'bg-gray-900 text-white'}`}
+                disabled={selectedCount === 0 || isPaying}
+                className={`w-full flex items-center justify-center gap-3 py-3 rounded-md ${selectedCount === 0 || isPaying ? 'bg-gray-300 text-gray-600' : 'bg-gray-900 text-white'}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11V17M9 14h6"/></svg>
-                {isPaying ? 'Placing Order…' : `Place Order (${selectedItems.size} ${selectedItems.size === 1 ? 'item' : 'items'})`}
+                {isPaying ? 'Placing Order…' : `Place Order (${selectedCount} ${selectedCount === 1 ? 'item' : 'items'})`}
               </button>
             </div>
           </aside>
@@ -1651,7 +2014,9 @@ const Checkout: React.FC = () => {
         </div>
       </main>
 
-      <CheckoutFooter />
+      <div className="hidden md:block">
+        <CheckoutFooter />
+      </div>
     </div>
   );
 };

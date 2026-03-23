@@ -22,9 +22,17 @@ class CartController extends Controller
         }
 
         $cartItems = CartItem::where('user_id', $user->id)
-            ->with('product:id,name,price,stock_quantity,primary')
+            ->with([
+                'product:id,name,price,stock_quantity,primary,shop_owner_id',
+                'product.shopOwner:id,business_name,shop_name,name',
+            ])
             ->get()
             ->map(function ($item) {
+                $shopName = $item->product?->shopOwner?->business_name
+                    ?? $item->product?->shopOwner?->shop_name
+                    ?? $item->product?->shopOwner?->name
+                    ?? 'Shop';
+
                 return [
                     'id' => $item->id,
                     'product_id' => $item->product_id,
@@ -35,6 +43,9 @@ class CartController extends Controller
                     'image' => $item->image,
                     'stock_quantity' => $item->stock_quantity,
                     'options' => $item->options,
+                    'shop_owner_id' => $item->product?->shop_owner_id,
+                    'shop_id' => $item->product?->shop_owner_id,
+                    'shop_name' => $shopName,
                 ];
             });
 

@@ -1619,6 +1619,14 @@ class RepairWorkflowController extends Controller
                         'message' => 'Repair cannot be marked as received in status: ' . $debugRepair->status
                     ], 400);
                 }
+
+                if (!in_array((string) ($debugRepair->payment_status ?? ''), ['paid', 'completed'], true)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payment must be paid before marking shoes as received.'
+                    ], 422);
+                }
                 
                 // Update status
                 $debugRepair->update([
@@ -1681,6 +1689,14 @@ class RepairWorkflowController extends Controller
                     'message' => 'Repair cannot be marked as received in status: ' . $debugRepair->status
                 ], 400);
             }
+
+            if (!in_array((string) ($debugRepair->payment_status ?? ''), ['paid', 'completed'], true)) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment must be paid before marking shoes as received.'
+                ], 422);
+            }
             
             // Update status
             $debugRepair->update([
@@ -1742,12 +1758,21 @@ class RepairWorkflowController extends Controller
                     ], 403);
                 }
                 
-                // Check if status is ready_for_pickup
-                if ($repairRequest->status !== 'ready_for_pickup') {
+                $effectiveReturnMethod = $repairRequest->return_delivery_method
+                    ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
+                $isWalkInReturn = $effectiveReturnMethod === 'walk_in';
+                $allowedStatuses = $isWalkInReturn
+                    ? ['ready_for_pickup', 'ready-for-pickup']
+                    : ['shipped'];
+
+                // Walk-in: ready_for_pickup only. Delivery returns: shipped only.
+                if (!in_array((string) $repairRequest->status, $allowedStatuses, true)) {
                     DB::rollBack();
                     return response()->json([
                         'success' => false,
-                        'message' => 'Pickup can only be activated when repair is ready for pickup'
+                        'message' => $isWalkInReturn
+                            ? 'Receive can only be activated when repair is ready for pickup.'
+                            : 'Receive can only be activated after the repair is shipped.'
                     ], 400);
                 }
                 
@@ -1815,12 +1840,21 @@ class RepairWorkflowController extends Controller
                 ], 403);
             }
             
-            // Check if status is ready_for_pickup
-            if ($repairRequest->status !== 'ready_for_pickup') {
+            $effectiveReturnMethod = $repairRequest->return_delivery_method
+                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
+            $isWalkInReturn = $effectiveReturnMethod === 'walk_in';
+            $allowedStatuses = $isWalkInReturn
+                ? ['ready_for_pickup', 'ready-for-pickup']
+                : ['shipped'];
+
+            // Walk-in: ready_for_pickup only. Delivery returns: shipped only.
+            if (!in_array((string) $repairRequest->status, $allowedStatuses, true)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Pickup can only be activated when repair is ready for pickup'
+                    'message' => $isWalkInReturn
+                        ? 'Receive can only be activated when repair is ready for pickup.'
+                        : 'Receive can only be activated after the repair is shipped.'
                 ], 400);
             }
             
@@ -2180,6 +2214,88 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to activate payment: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark repair payment as paid in-shop (cash/manual).
+     */
+    public function markPaidInShop(Request $request, $id)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+            $user = Auth::guard('user')->user();
+
+            if (!$shopOwner && !$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            if ($shopOwner) {
+                $repairRequest = RepairRequest::where('id', $id)
+                    ->where('shop_owner_id', $shopOwner->id)
+                    ->firstOrFail();
+            } else {
+                $repairRequest = RepairRequest::where('id', $id)
+                    ->where(function ($query) use ($user) {
+                        $query->where('assigned_repairer_id', $user->id)
+                              ->orWhere('shop_owner_id', $user->shop_owner_id);
+                    })
+                    ->firstOrFail();
+            }
+
+            $returnDeliveryMethod = $repairRequest->return_delivery_method
+                ?? ($repairRequest->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup');
+
+            if ($returnDeliveryMethod !== 'walk_in') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'In-shop payment is only available for walk-in return method.'
+                ], 409);
+            }
+
+            $settlement = app(\App\Services\PaymentSettlementService::class)
+                ->settleRepairPaidInShop($repairRequest, 'in_shop_manual_' . now()->timestamp);
+
+            $settlementResult = $settlement['result'] ?? 'settled';
+            $settledRepair = $settlement['model'] ?? $repairRequest;
+
+            if ($settlementResult === 'already_settled') {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payment is already fully settled for this repair.',
+                    'repair' => $settledRepair->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
+
+            if ($settlementResult === 'not_due') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No payable repair phase is currently due for in-shop payment.'
+                ], 409);
+            }
+
+            \Log::info('Repair paid in-shop manually', [
+                'user_id' => $shopOwner ? $shopOwner->id : $user->id,
+                'user_type' => $shopOwner ? 'shop_owner' : 'repairer',
+                'repair_request_id' => $repairRequest->id,
+                'payment_status' => $settledRepair->payment_status,
+                'phase' => $settlement['phase'] ?? null,
+                'policy' => $settlement['policy'] ?? null,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'In-shop payment recorded successfully.',
+                'repair' => $settledRepair->fresh(['user', 'services', 'shopOwner']),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to record in-shop payment: ' . $e->getMessage()
             ], 500);
         }
     }

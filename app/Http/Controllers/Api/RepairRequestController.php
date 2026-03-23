@@ -50,11 +50,11 @@ class RepairRequestController extends Controller
             'total' => 'required|numeric|min:0',
             'preferred_date' => 'nullable|date|after:today',
             'service_type' => 'required|in:pickup,walkin',
-            'pickup_address_line' => 'required_if:service_type,pickup|string|max:255',
-            'pickup_barangay' => 'required_if:service_type,pickup|string|max:255',
-            'pickup_city' => 'required_if:service_type,pickup|string|max:255',
-            'pickup_region' => 'required_if:service_type,pickup|string|max:255',
-            'pickup_postal_code' => 'required_if:service_type,pickup|string|max:10',
+            'pickup_address_line' => 'nullable|string|max:255',
+            'pickup_barangay' => 'nullable|string|max:255',
+            'pickup_city' => 'nullable|string|max:255',
+            'pickup_region' => 'nullable|string|max:255',
+            'pickup_postal_code' => 'nullable|string|max:10',
             'return_delivery_method' => 'nullable|in:walk_in,customer_pickup,shop_delivery',
             'return_address_line' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
             'return_barangay' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
@@ -252,12 +252,37 @@ class RepairRequestController extends Controller
             
             // Build intake delivery address if customer is arranging delivery
             if ($request->service_type === 'pickup') {
+                if (!$shopOwner) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Shop is required when selecting courier delivery to shop.',
+                    ], 422);
+                }
+
+                $shopAddressLine = $shopOwner->shop_address
+                    ?? $shopOwner->business_address
+                    ?? $shopOwner->city_state
+                    ?? 'Shop address unavailable';
+                $shopCityState = (string) ($shopOwner->city_state ?? '');
+                $city = null;
+                $region = null;
+
+                if ($shopCityState !== '') {
+                    $parts = array_values(array_filter(array_map('trim', explode(',', $shopCityState))));
+                    if (count($parts) >= 2) {
+                        $city = $parts[0];
+                        $region = $parts[1];
+                    } else {
+                        $city = $shopCityState;
+                    }
+                }
+
                 $intakeAddress = [
-                    'address_line' => $request->pickup_address_line,
-                    'barangay' => $request->pickup_barangay,
-                    'city' => $request->pickup_city,
-                    'region' => $request->pickup_region,
-                    'postal_code' => $request->pickup_postal_code,
+                    'address_line' => $shopAddressLine,
+                    'barangay' => null,
+                    'city' => $city,
+                    'region' => $region,
+                    'postal_code' => $shopOwner->postal_code,
                 ];
                 
                 // Keep pickup_address for backward compatibility

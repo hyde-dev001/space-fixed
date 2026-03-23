@@ -29,6 +29,12 @@ export default function Otp() {
 	const otpValue = useMemo(() => digits.join(''), [digits]);
 
 	useEffect(() => {
+		if (!email) {
+			router.visit(route('password.request'));
+		}
+	}, [email]);
+
+	useEffect(() => {
 		if (secondsLeft <= 0) return;
 
 		const interval = window.setInterval(() => {
@@ -83,6 +89,10 @@ export default function Otp() {
 
 	const handleResend = () => {
 		if (secondsLeft > 0) return;
+		if (!email) {
+			setErrors('Reset session missing. Please start again from the reset password step.');
+			return;
+		}
 
 		setIsResending(true);
 
@@ -96,13 +106,13 @@ export default function Otp() {
 				inputRefs.current[0]?.focus();
 				Swal.fire({
 					icon: 'success',
-					title: 'OTP Sent',
-					text: 'A new OTP has been sent to your email.',
+					title: 'Code sent',
+					text: 'A new verification code has been sent to your email.',
 					confirmButtonColor: '#000000',
 				});
 			},
 			onError: (err) => {
-				setErrors((err.otp as string) || (err.email as string) || 'Unable to resend OTP. Please try again.');
+				setErrors((err.otp as string) || (err.email as string) || 'Unable to resend the code. Please try again.');
 			},
 			onFinish: () => {
 				setIsResending(false);
@@ -113,8 +123,13 @@ export default function Otp() {
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 
+		if (!email) {
+			setErrors('Reset session missing. Please start again from the reset password step.');
+			return;
+		}
+
 		if (otpValue.length !== OTP_LENGTH) {
-			setErrors('Please enter the complete 6-digit OTP.');
+			setErrors('Please enter the complete 6-digit code.');
 			return;
 		}
 
@@ -123,8 +138,23 @@ export default function Otp() {
 			email,
 			otp: otpValue,
 		}, {
+			onSuccess: () => {
+				Swal.fire({
+					icon: 'success',
+					title: 'Code verified',
+					text: 'You can now set a new password.',
+					confirmButtonColor: '#000000',
+				});
+			},
 			onError: (err) => {
-				setErrors((err.otp as string) || 'Invalid OTP. Please try again.');
+				const message = (err.otp as string) || 'Invalid verification code. Please try again.';
+				setErrors(message);
+				Swal.fire({
+					icon: 'error',
+					title: 'Code verification failed',
+					text: message,
+					confirmButtonColor: '#000000',
+				});
 				setIsLoading(false);
 			},
 			onFinish: () => {
@@ -135,7 +165,7 @@ export default function Otp() {
 
 	return (
 		<>
-			<Head title="Reset Password OTP" />
+			<Head title="Verify Reset Code" />
 
 			<div className="min-h-screen bg-white font-outfit antialiased">
 				<Navigation />
@@ -143,13 +173,13 @@ export default function Otp() {
 				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
 					<div className="text-center mb-12">
 						<h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							RESET YOUR PASSWORD
+							VERIFY CODE
 						</h1>
 						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							A 6 digit email OTP was sent to {email || 'your email'}. Enter that code here to proceed.
+							We sent a 6-digit verification code to {email || 'your email'}. Enter it to continue.
 						</p>
 						{status === 'otp-sent' && (
-							<p className="text-sm text-green-700 mt-4">OTP sent. Please check your inbox and spam folder.</p>
+							<p className="text-sm text-green-700 mt-4">Code sent. Please check your inbox and spam folder.</p>
 						)}
 					</div>
 
@@ -188,14 +218,14 @@ export default function Otp() {
 								</div>
 
 								<div className="text-sm text-gray-600 text-center">
-									Didn't get OTP?{' '}
+									Didn't get a code?{' '}
 									<button
 										type="button"
 										disabled={secondsLeft > 0 || isResending}
 										onClick={handleResend}
 										className="font-semibold text-black hover:text-black/80 disabled:text-gray-400 disabled:cursor-not-allowed"
 									>
-										{secondsLeft > 0 ? `resend OTP in ${formatTime(secondsLeft)}` : (isResending ? 'Sending...' : 'Resend OTP')}
+										{secondsLeft > 0 ? `Resend in ${formatTime(secondsLeft)}` : (isResending ? 'Resending...' : 'Resend code')}
 									</button>
 								</div>
 
@@ -204,7 +234,7 @@ export default function Otp() {
 									disabled={isLoading}
 									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									{isLoading ? 'Verifying...' : 'Verify OTP'}
+									{isLoading ? 'Verifying code...' : 'Verify code'}
 								</button>
 							</Form>
 
@@ -215,7 +245,7 @@ export default function Otp() {
 										href={route('password.request')}
 										className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
 									>
-										Go back
+										Back to reset password
 									</Link>
 								</p>
 							</div>

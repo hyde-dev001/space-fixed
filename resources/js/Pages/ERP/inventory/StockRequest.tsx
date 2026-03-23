@@ -1,10 +1,11 @@
 import { Head, router, usePage } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
-import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { stockRequestApi } from "@/services/stockRequestApi";
 import { inventoryItemAPI } from "@/services/inventoryAPI";
+import { workflowFeedback } from "@/utils/workflowFeedback";
+import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDraft";
 import type { InventoryItem } from "@/types/inventory";
 import type { StockRequestApproval } from "@/types/procurement";
 
@@ -27,6 +28,8 @@ const initialFormState: RequestFormState = {
 	priority: "medium",
 	notes: "",
 };
+
+const STOCK_REQUEST_DRAFT_KEY = "erp.stock-request.create-modal.draft";
 
 // Map API status (lowercase) → display label
 function getDisplayStatus(status: StockRequestApproval["status"]): DisplayStatus {
@@ -162,6 +165,36 @@ export default function StockRequest() {
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [formData, setFormData] = useState<RequestFormState>(initialFormState);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
+	const isCreateFormDirty = useMemo(
+		() =>
+			formData.inventoryItemId !== initialFormState.inventoryItemId ||
+			formData.requestSize !== initialFormState.requestSize ||
+			formData.quantityNeeded.trim() !== initialFormState.quantityNeeded ||
+			formData.priority !== initialFormState.priority ||
+			formData.notes.trim() !== initialFormState.notes,
+		[formData],
+	);
+
+	useEffect(() => {
+		if (!isCreateModalOpen) return;
+		if (isCreateFormDirty) {
+			saveModalDraft(STOCK_REQUEST_DRAFT_KEY, formData);
+			return;
+		}
+		clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+	}, [formData, isCreateFormDirty, isCreateModalOpen]);
+
+	useEffect(() => {
+		if (!isCreateModalOpen || !isCreateFormDirty) return;
+
+		const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+			event.preventDefault();
+			event.returnValue = "";
+		};
+
+		window.addEventListener("beforeunload", handleBeforeUnload);
+		return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+	}, [isCreateFormDirty, isCreateModalOpen]);
 
 	// Derive selected inventory item for stock preview
 	const selectedItem = useMemo(
@@ -207,23 +240,16 @@ export default function StockRequest() {
 
 	const handleCreateRequest = async () => {
 		if (!formData.inventoryItemId || !formData.quantityNeeded.trim() || !formData.notes.trim()) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Missing fields",
-				text: "Please select a product, enter the quantity needed, and add a note.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning(
+				"Missing fields",
+				"Please select a product, enter the quantity needed, and add a note.",
+			);
 			return;
 		}
 
 		const parsedQty = Number(formData.quantityNeeded);
 		if (Number.isNaN(parsedQty) || parsedQty <= 0) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Invalid quantity",
-				text: "Quantity needed must be greater than 0.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning("Invalid quantity", "Quantity needed must be greater than 0.");
 			return;
 		}
 
@@ -237,31 +263,73 @@ export default function StockRequest() {
 			});
 
 			setRequests((prev) => [created, ...prev]);
+			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
 			setFormData(initialFormState);
 			setIsCreateModalOpen(false);
 			setCurrentPage(1);
 
-			const result = await Swal.fire({
-				icon: "success",
+			const result = await workflowFeedback.success({
 				title: "Request submitted",
-				text: "Stock replenishment request has been sent to Procurement for approval.",
+				text: "Stock replenishment request has been submitted to Procurement.",
 				showCancelButton: true,
-				confirmButtonText: "Go to Approval Queue",
+				confirmButtonText: "Open Procurement Queue",
 				cancelButtonText: "Stay here",
-				confirmButtonColor: "#2563eb",
 			});
 
 			if (result.isConfirmed) {
 				router.visit("/erp/procurement/stock-request-approval");
 			}
 		} catch {
-			await Swal.fire({
-				icon: "error",
-				title: "Submission failed",
-				text: "Could not submit the stock request. Please try again.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.error("Could not submit the stock request. Please try again.", "Submission failed");
 		}
+	};
+
+	const handleOpenCreateModal = async () => {
+		const savedDraft = loadModalDraft<Partial<RequestFormState>>(STOCK_REQUEST_DRAFT_KEY);
+
+		if (!savedDraft) {
+			setFormData(initialFormState);
+			setIsCreateModalOpen(true);
+			return;
+		}
+
+		const shouldRestore = await workflowFeedback.confirm({
+			title: "Restore draft?",
+			text: "A saved stock request draft was found. Restore it before continuing?",
+			confirmButtonText: "Restore draft",
+			cancelButtonText: "Start fresh",
+		});
+
+		if (shouldRestore.isConfirmed) {
+			setFormData({ ...initialFormState, ...savedDraft });
+		} else {
+			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+			setFormData(initialFormState);
+		}
+
+		setIsCreateModalOpen(true);
+	};
+
+	const requestCloseCreateModal = async () => {
+		if (!isCreateFormDirty) {
+			setIsCreateModalOpen(false);
+			setFormData(initialFormState);
+			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+			return;
+		}
+
+		const confirmClose = await workflowFeedback.confirm({
+			title: "Close with unsaved changes?",
+			text: "Your changes are unsaved. They will be kept as a draft for next time.",
+			confirmButtonText: "Close and keep draft",
+			cancelButtonText: "Keep editing",
+		});
+
+		if (!confirmClose.isConfirmed) return;
+
+		saveModalDraft(STOCK_REQUEST_DRAFT_KEY, formData);
+		setIsCreateModalOpen(false);
+		setFormData(initialFormState);
 	};
 
 	const isAnyModalOpen = isCreateModalOpen || Boolean(viewingRequest);
@@ -279,7 +347,9 @@ export default function StockRequest() {
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<button
-							onClick={() => setIsCreateModalOpen(true)}
+							onClick={() => {
+								void handleOpenCreateModal();
+							}}
 							className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
 						>
 							+ New Request
@@ -416,12 +486,21 @@ export default function StockRequest() {
 						type="button"
 						aria-label="Close create request modal"
 						className="absolute inset-0 bg-black/50"
-						onClick={() => { setIsCreateModalOpen(false); setFormData(initialFormState); }}
+						onClick={() => {
+							void requestCloseCreateModal();
+						}}
 					/>
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create Stock Request</h2>
-							<button onClick={() => { setIsCreateModalOpen(false); setFormData(initialFormState); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+							<button
+								onClick={() => {
+									void requestCloseCreateModal();
+								}}
+								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+							>
+								×
+							</button>
 						</div>
 
 						<div className="p-6 space-y-4">
@@ -473,9 +552,9 @@ export default function StockRequest() {
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 								>
 									<option value="">— All sizes —</option>
-									{selectedItem.sizes.map((s) => (
-											<option key={s.id} value={formatRequestedSizeLabel(String(s.size), s.size_system)}>
-												{formatRequestedSizeDisplay(formatRequestedSizeLabel(String(s.size), s.size_system))} — {s.quantity} in stock
+									{selectedItem.sizes.map((sizeOption: any) => (
+											<option key={sizeOption.id} value={formatRequestedSizeLabel(String(sizeOption.size), sizeOption.size_system)}>
+												{formatRequestedSizeDisplay(formatRequestedSizeLabel(String(sizeOption.size), sizeOption.size_system))} — {sizeOption.quantity} in stock
 										</option>
 									))}
 								</select>
@@ -523,7 +602,9 @@ export default function StockRequest() {
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
 							<button
-								onClick={() => { setIsCreateModalOpen(false); setFormData(initialFormState); }}
+								onClick={() => {
+									void requestCloseCreateModal();
+								}}
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 							>
 								Cancel

@@ -204,6 +204,7 @@ class RepairerWorkflowTest extends TestCase
                 'final_total' => 750,
                 'status' => 'assigned_to_repairer',
                 'delivery_method' => 'walk_in',
+                'payment_status' => 'paid',
             ]
         );
 

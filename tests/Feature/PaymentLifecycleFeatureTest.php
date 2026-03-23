@@ -222,6 +222,69 @@ class PaymentLifecycleFeatureTest extends TestCase
     }
 
     #[Test]
+    public function cod_order_is_marked_paid_when_customer_confirms_delivery(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $customer = User::factory()->create();
+
+        $order = $this->createOrder($shopOwner, $customer, [
+            'status' => OrderStatus::SHIPPED,
+            'payment_method' => 'cod',
+            'payment_status' => 'pending',
+            'paid_at' => null,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/orders/confirm-delivery', [
+                'order_id' => $order->id,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true);
+
+        $order->refresh();
+
+        $this->assertSame(OrderStatus::DELIVERED, $order->status);
+        $this->assertSame('paid', (string) $order->payment_status);
+        $this->assertNotNull($order->paid_at);
+    }
+
+    #[Test]
+    public function repairer_can_mark_repair_paid_in_shop_for_due_phase(): void
+    {
+        $shopOwner = $this->createShopOwner(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+            'role' => 'STAFF',
+        ]);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'assigned_repairer_id' => $repairer->id,
+            'status' => 'pending',
+            'payment_policy' => 'deposit_50',
+            'payment_status' => 'pending',
+            'payment_expires_at' => now()->subHour(),
+            'payment_expired_at' => now()->subMinutes(30),
+        ]);
+
+        $response = $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/mark-paid-in-shop");
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'In-shop payment recorded successfully.');
+
+        $repair->refresh();
+
+        $this->assertSame('paid', (string) $repair->payment_status);
+        $this->assertNotNull($repair->payment_completed_at);
+        $this->assertNotNull($repair->paymongo_payment_id);
+        $this->assertStringStartsWith('in_shop_manual_', (string) $repair->paymongo_payment_id);
+    }
+
+    #[Test]
     public function cleanup_command_releases_order_stock_once_and_is_idempotent(): void
     {
         $shopOwner = $this->createShopOwner();

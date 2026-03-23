@@ -1010,6 +1010,7 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 
     // Activate payment for specific repair request
     Route::post('{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair']);
+    Route::post('{id}/mark-paid-in-shop', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markPaidInShop']);
 
     // Ship a repair (ready-for-pickup → shipped)
     Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);

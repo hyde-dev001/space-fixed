@@ -32,25 +32,25 @@ export default function Register() {
     const newErrors: FormErrors = {};
 
     if (step === 1) {
-      if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-      if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-      if (!formData.email.trim()) newErrors.email = 'Email is required';
-      else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
-      if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
+      if (!formData.firstName.trim()) newErrors.firstName = 'Enter your first name.';
+      if (!formData.lastName.trim()) newErrors.lastName = 'Enter your last name.';
+      if (!formData.email.trim()) newErrors.email = 'Enter your email address.';
+      else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) newErrors.email = 'Enter a valid email address.';
+      if (!formData.phone.trim()) newErrors.phone = 'Enter your phone number.';
     } else if (step === 2) {
-      if (!formData.age.trim()) newErrors.age = 'Age is required';
-      else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18';
-      if (!formData.address.trim()) newErrors.address = 'Address is required';
-      if (!formData.password) newErrors.password = 'Password is required';
-      else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+      if (!formData.age.trim()) newErrors.age = 'Enter your age.';
+      else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18.';
+      if (!formData.address.trim()) newErrors.address = 'Enter your address.';
+      if (!formData.password) newErrors.password = 'Enter a password.';
+      else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters.';
       else if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
-        newErrors.password = 'Include uppercase, lowercase, and a number';
+        newErrors.password = 'Include uppercase, lowercase, and a number.';
       }
-      if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm password is required';
-      else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+      if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm your password.';
+      else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match.';
     } else if (step === 3) {
-      if (!formData.validId) newErrors.validId = 'Valid ID upload is required';
-      if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions';
+      if (!formData.validId) newErrors.validId = 'Upload a valid ID.';
+      if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions.';
     }
 
     setErrors(newErrors);
@@ -60,23 +60,23 @@ export default function Register() {
   const validateForm = (): { isValid: boolean; errors: FormErrors } => {
     const newErrors: FormErrors = {};
 
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
-    if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!formData.age.trim()) newErrors.age = 'Age is required';
-    else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18';
-    if (!formData.address.trim()) newErrors.address = 'Address is required';
-    if (!formData.password) newErrors.password = 'Password is required';
-    else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+    if (!formData.firstName.trim()) newErrors.firstName = 'Enter your first name.';
+    if (!formData.lastName.trim()) newErrors.lastName = 'Enter your last name.';
+    if (!formData.email.trim()) newErrors.email = 'Enter your email address.';
+    else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) newErrors.email = 'Enter a valid email address.';
+    if (!formData.phone.trim()) newErrors.phone = 'Enter your phone number.';
+    if (!formData.age.trim()) newErrors.age = 'Enter your age.';
+    else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18.';
+    if (!formData.address.trim()) newErrors.address = 'Enter your address.';
+    if (!formData.password) newErrors.password = 'Enter a password.';
+    else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters.';
     else if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
-      newErrors.password = 'Include uppercase, lowercase, and a number';
+      newErrors.password = 'Include uppercase, lowercase, and a number.';
     }
-    if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm password is required';
-    else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-    if (!formData.validId) newErrors.validId = 'Valid ID upload is required';
-    if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions';
+    if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm your password.';
+    else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match.';
+    if (!formData.validId) newErrors.validId = 'Upload a valid ID.';
+    if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions.';
 
     setErrors(newErrors);
     return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
@@ -176,7 +176,7 @@ export default function Register() {
       
       Swal.fire({
         icon: 'error',
-        title: 'Cannot Submit',
+        title: 'Please review your details',
         html: `<p>Please complete the following on step ${errorStep}:</p><ul style="text-align: left; margin-top: 10px;">${errorFields.map(field => `<li><strong>${field}</strong></li>`).join('')}</ul>`,
         confirmButtonColor: '#000000',
       });
@@ -191,7 +191,7 @@ export default function Register() {
       const payload = new FormData();
       payload.append('first_name', formData.firstName);
       payload.append('last_name', formData.lastName);
-      payload.append('email', formData.email);
+      payload.append('email', formData.email.trim());
       payload.append('phone', formData.phone);
       payload.append('age', formData.age);
       payload.append('address', formData.address);
@@ -205,12 +205,12 @@ export default function Register() {
         onSuccess: () => {
           Swal.fire({
             icon: 'success',
-            title: 'Registration Successful!',
+            title: 'Registration successful',
             html: `
               <p>Thank you for registering!</p>
               <p class="mt-3">We've sent a verification email to:</p>
               <p class="font-semibold text-blue-600 mt-2">${formData.email}</p>
-              <p class="text-sm text-gray-600 mt-3">Please check your inbox and click the verification link to complete your registration.</p>
+              <p class="text-sm text-gray-600 mt-3">Check your inbox and click the verification link to finish setup.</p>
             `,
             confirmButtonText: 'OK',
             confirmButtonColor: '#000000',
@@ -238,7 +238,7 @@ export default function Register() {
       Swal.fire({
         icon: 'error',
         title: 'Registration failed',
-        text: 'Please try again.',
+        text: 'Something went wrong. Please try again.',
       });
     } finally {
       setIsLoading(false);
@@ -260,7 +260,7 @@ export default function Register() {
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-16 sm:pt-20 lg:pt-28 pb-16 sm:pb-24">
         <div className="text-center mt-20 sm:mt-0 mb-7 sm:mb-10 lg:mb-12">
           <h1 className="text-[34px] leading-[1.05] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 tracking-tight">
-            REGISTER ACCOUNT
+            CREATE ACCOUNT
           </h1>
           <p className="text-[15px] sm:text-lg lg:text-xl text-gray-600 max-w-sm sm:max-w-2xl mx-auto leading-relaxed font-light">
             Please fill in your details to create an account.
@@ -480,7 +480,7 @@ export default function Register() {
                     disabled={isLoading}
                     className="w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:ml-auto"
                   >
-                    {isLoading ? 'Creating Account...' : 'Register'}
+                    {isLoading ? 'Creating account...' : 'Create account'}
                   </button>
                 )}
               </div>
@@ -493,7 +493,7 @@ export default function Register() {
                   href={route("login")}
                   className="text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
                 >
-                  Sign in here
+                  Sign in
                 </a>
               </p>
             </div>

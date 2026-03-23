@@ -3,6 +3,7 @@ import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
+import { navigateBackOr } from '../Shared/backNavigation';
 
 interface CartItem {
   id: string;
@@ -1049,6 +1050,7 @@ const Payment: React.FC = () => {
     .join(', ');
   const deliveryName = customerName || user?.name || 'No delivery name yet';
   const deliveryPhone = customerPhone || user?.phone || 'No phone yet';
+  const paymentBackFallbackHref = isPremiumPayment ? '/shop-owner/premium-benefits' : '/checkout';
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -1091,7 +1093,7 @@ const Payment: React.FC = () => {
             <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => window.history.back()}
+                onClick={() => navigateBackOr(paymentBackFallbackHref)}
                 className="text-black text-xl leading-none"
                 aria-label="Go back"
               >

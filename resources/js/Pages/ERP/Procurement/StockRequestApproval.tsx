@@ -1,9 +1,9 @@
 import { Head, router, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
-import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { stockRequestApi } from "@/services/stockRequestApi";
+import { workflowFeedback } from "@/utils/workflowFeedback";
 import type { StockRequestApproval, StockRequestMetrics } from "@/types/procurement";
 
 type MetricColor = "success" | "warning" | "info";
@@ -126,7 +126,10 @@ export default function StockRequest() {
 			setRequests(Array.isArray(data) ? data : []);
 		} catch (error) {
 			console.error("Failed to fetch stock requests:", error);
-			Swal.fire("Error", "Failed to load stock requests", "error");
+			const shouldRetry = await workflowFeedback.errorWithRetry("Failed to load stock requests");
+			if (shouldRetry) {
+				await fetchRequests();
+			}
 		} finally {
 			setLoading(false);
 		}
@@ -188,38 +191,26 @@ export default function StockRequest() {
 
 	const handleAccept = async (request: StockRequestApproval) => {
 		if (!["pending", "needs_details"].includes(request.status)) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Cannot approve",
-				text: "Only pending or needs-details requests can be approved.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning("Cannot approve", "Only pending or needs-details requests can be approved.");
 			return;
 		}
 
-		const result = await Swal.fire({
+		const result = await workflowFeedback.confirm({
 			title: "Approve request?",
 			text: `Proceed with supplier sourcing for ${request.product_name}?`,
-			icon: "question",
-			showCancelButton: true,
 			confirmButtonText: "Yes, approve",
-			cancelButtonText: "Cancel",
-			confirmButtonColor: "#2563eb",
-			cancelButtonColor: "#6b7280",
 		});
 
 		if (!result.isConfirmed) return;
 
 		try {
 			await stockRequestApi.approve(request.id);
-			const success = await Swal.fire({
+			const success = await workflowFeedback.success({
 				title: "Approved",
-				text: "Request has been approved and is ready for supplier sourcing.",
-				icon: "success",
+				text: "Request approved and ready for purchase request creation.",
 				showCancelButton: true,
 				confirmButtonText: "Create Purchase Request",
 				cancelButtonText: "Stay here",
-				confirmButtonColor: "#2563eb",
 			});
 			if (success.isConfirmed) {
 				router.visit("/erp/procurement/purchase-request");
@@ -229,22 +220,17 @@ export default function StockRequest() {
 			fetchMetrics();
 		} catch (error: any) {
 			console.error("Failed to accept request:", error);
-			Swal.fire("Error", error?.response?.data?.message || "Failed to accept request", "error");
+			await workflowFeedback.error(error?.response?.data?.message || "Failed to accept request");
 		}
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
 		if (!["pending", "needs_details"].includes(request.status)) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Cannot reject",
-				text: "Only pending or needs-details requests can be rejected.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning("Cannot reject", "Only pending or needs-details requests can be rejected.");
 			return;
 		}
 
-		const result = await Swal.fire({
+		const result = await workflowFeedback.alert({
 			title: "Reject request?",
 			text: `Reject stock request ${request.request_number}?`,
 			input: "textarea",
@@ -266,10 +252,9 @@ export default function StockRequest() {
 
 		try {
 			await stockRequestApi.reject(request.id, { rejection_reason: result.value });
-			await Swal.fire({
+			await workflowFeedback.success({
 				title: "Rejected",
 				text: "Request has been rejected.",
-				icon: "success",
 				timer: 1500,
 				showConfirmButton: false,
 			});
@@ -278,22 +263,17 @@ export default function StockRequest() {
 			fetchMetrics();
 		} catch (error: any) {
 			console.error("Failed to reject request:", error);
-			Swal.fire("Error", error?.response?.data?.message || "Failed to reject request", "error");
+			await workflowFeedback.error(error?.response?.data?.message || "Failed to reject request");
 		}
 	};
 
 	const handleAskDetails = async (request: StockRequestApproval) => {
 		if (request.status !== "pending") {
-			await Swal.fire({
-				icon: "warning",
-				title: "Cannot request details",
-				text: "You can only request details for pending requests.",
-				confirmButtonColor: "#2563eb",
-			});
+			await workflowFeedback.warning("Cannot request details", "You can only request details for pending requests.");
 			return;
 		}
 
-		const result = await Swal.fire({
+		const result = await workflowFeedback.alert({
 			title: "Request more details",
 			input: "textarea",
 			inputLabel: "Message to Inventory",
@@ -302,8 +282,6 @@ export default function StockRequest() {
 			showCancelButton: true,
 			confirmButtonText: "Send request",
 			cancelButtonText: "Cancel",
-			confirmButtonColor: "#2563eb",
-			cancelButtonColor: "#6b7280",
 			inputValidator: (value) => {
 				if (!value || !value.trim()) {
 					return "Please provide a message before sending.";
@@ -316,10 +294,9 @@ export default function StockRequest() {
 
 		try {
 			await stockRequestApi.requestDetails(request.id, { approval_notes: result.value });
-			await Swal.fire({
+			await workflowFeedback.success({
 				title: "Sent",
 				text: "Request for details has been sent to Inventory.",
-				icon: "success",
 				timer: 1500,
 				showConfirmButton: false,
 			});
@@ -327,7 +304,7 @@ export default function StockRequest() {
 			fetchRequests();
 		} catch (error: any) {
 			console.error("Failed to request details:", error);
-			Swal.fire("Error", error?.response?.data?.message || "Failed to send details request", "error");
+			await workflowFeedback.error(error?.response?.data?.message || "Failed to send details request");
 		}
 	};
 
@@ -344,7 +321,6 @@ export default function StockRequest() {
 						<h1 className="text-2xl font-semibold mb-1">Stock Replenishment Approval</h1>
 						<p className="text-gray-600 dark:text-gray-400">Review Inventory replenishment requests and decide next sourcing action</p>
 					</div>
-					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">Inventory to Procurement</span>
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

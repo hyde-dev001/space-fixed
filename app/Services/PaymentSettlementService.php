@@ -50,7 +50,7 @@ class PaymentSettlementService
         ];
     }
 
-    public function settleRepairPaid(RepairRequest $repair, ?string $paymentId = null): array
+    public function settleRepairPaid(RepairRequest $repair, ?string $paymentId = null, bool $ignoreExpiry = false): array
     {
         $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
@@ -70,7 +70,7 @@ class PaymentSettlementService
             ];
         }
 
-        if ($this->isRepairExpired($repair, $policy)) {
+        if (!$ignoreExpiry && $this->isRepairExpired($repair, $policy)) {
             return [
                 'result' => 'expired',
                 'model' => $repair,
@@ -119,6 +119,13 @@ class PaymentSettlementService
             'policy' => $policy,
             'phase' => $isDepositPhase ? 'deposit_50' : 'remaining_balance',
         ];
+    }
+
+    public function settleRepairPaidInShop(RepairRequest $repair, ?string $reference = null): array
+    {
+        $paymentReference = $reference ?? ('in_shop_' . now()->format('YmdHis'));
+
+        return $this->settleRepairPaid($repair, $paymentReference, true);
     }
 
     public function recordOrderPaymentFailure(Order $order, string $reason): array

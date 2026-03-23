@@ -199,7 +199,7 @@ const financeItems: NavItem[] = [
         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
       </svg>
     ),
-    name: "Approvals Pages",
+    name: "Approvals",
     subItems: [
       {
         name: "Repair Pricing Approval",
@@ -222,7 +222,7 @@ const financeItems: NavItem[] = [
         ),
       },
       {
-        name: "Purchase Request Approval",
+        name: "Purchase Request Review",
         route: "finance.index",
         params: { section: "purchase-request-approval" },
         icon: (
@@ -421,7 +421,7 @@ const managerInventoryItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 16l4 4 4-4" />
       </svg>
     ),
-    name: "Upload Stocks",
+    name: "Manage Stock Items",
     route: "erp.inventory.upload-stocks",
   },
   {
@@ -456,7 +456,7 @@ const managerInventoryItems: NavItem[] = [
     <path d="M11 9v6"></path>
       </svg>
     ),
-    name: "Purchase Request",
+    name: "Stock Requests",
     route: "erp.inventory.stock-request",
   },
   {
@@ -468,7 +468,7 @@ const managerInventoryItems: NavItem[] = [
         <path d="M21 3l-7 7"></path>
       </svg>
     ),
-    name: "Request Material Approval",
+    name: "Material Request Queue",
     route: "erp.inventory.request-material-approval",
   },
 ];
@@ -485,7 +485,7 @@ const procurementItems: NavItem[] = [
     <path d="M16 18h5"></path>
       </svg>
     ),
-    name: "Supplier Order Monitoring",
+    name: "Supplier Orders",
     route: "erp.procurement.supplier-order-monitoring",
   },
   {
@@ -496,7 +496,7 @@ const procurementItems: NavItem[] = [
     <path d="M8 13l5-5 2 2-5 5-3 1z"></path>
       </svg>
     ),
-    name: "Purchase Request",
+    name: "Purchase Requests",
     route: "erp.procurement.purchase-request",
   },
   {
@@ -560,7 +560,7 @@ const staffItems: NavItem[] = [
         <path d="M6 6L4 2" />
       </svg>
     ),
-    name: "Job Orders Retail",
+    name: "Retail Job Orders",
     route: "erp.staff.job-orders",
   },
   {
@@ -571,7 +571,7 @@ const staffItems: NavItem[] = [
         <path d="M11 15l1.5 1.5" />
       </svg>
     ),
-    name: "Product Uploader",
+    name: "Product Management",
     route: "erp.staff.products",
   },
   {
@@ -581,7 +581,7 @@ const staffItems: NavItem[] = [
         <line x1="7" y1="7" x2="7.01" y2="7"></line>
       </svg>
     ),
-    name: "Shoe Pricing",
+    name: "Shoe Pricing Requests",
     route: "erp.staff.shoe-pricing",
   },
   {
@@ -635,7 +635,7 @@ const repairItems: NavItem[] = [
         <line x1="7" y1="7" x2="7.01" y2="7"></line>
       </svg>
     ),
-    name: "Repair Pricing",
+    name: "Repair Pricing Requests",
     route: "erp.repairer.pricing-services",
   },
   {
@@ -1064,8 +1064,8 @@ const AppSidebar_ERP: React.FC = () => {
         return permissions.includes('access-finance-expenses');
       }
       
-      // Approvals Pages - check simplified permissions and filter submenu
-      if (item.name === "Approvals Pages") {
+      // Approvals - check simplified permissions and filter submenu
+      if (item.name === "Approvals") {
         const hasAnyPricingPermission =
           permissions.includes('access-repair-price-approval') ||
           permissions.includes('access-shoe-price-approval') ||
@@ -1084,7 +1084,7 @@ const AppSidebar_ERP: React.FC = () => {
             if (subItem.name === "Shoe Pricing Approval") {
               return permissions.includes('access-shoe-price-approval');
             }
-            if (subItem.name === "Purchase Request Approval") {
+            if (subItem.name === "Purchase Request Review") {
               return permissions.includes('access-shoe-price-approval') || permissions.includes('access-repair-price-approval');
             }
             if (subItem.name === "Refund Approval") {

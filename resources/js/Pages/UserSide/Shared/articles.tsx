@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
+import { navigateBackOr } from './backNavigation';
 
 const Articles: React.FC = () => {
 	const [isTagalog, setIsTagalog] = useState(false);
 	const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
 	const fromSource = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('from') : null;
 	const useHistoryBackButton = fromSource === 'premium-benefits' || fromSource === 'product-uploader';
+	const backFallbackHref = fromSource === 'premium-benefits' ? '/shop-owner/premium-benefits' : '/services';
 
 	useEffect(() => {
 		if (!selectedImage) {
@@ -185,7 +187,7 @@ const Articles: React.FC = () => {
 							{useHistoryBackButton ? (
 								<button
 									type="button"
-									onClick={() => window.history.back()}
+									onClick={() => navigateBackOr(backFallbackHref)}
 									className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50"
 								>
 									Back
