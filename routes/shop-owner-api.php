@@ -217,6 +217,8 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/plans', [PremiumCheckoutController::class, 'plans'])->name('shop_owner.premium.plans');
         // Current shop's subscription status
         Route::get('/subscription', [PremiumCheckoutController::class, 'currentSubscription'])->name('shop_owner.premium.subscription');
+        // Toggle auto-renew for the active premium subscription
+        Route::patch('/auto-renew', [PremiumCheckoutController::class, 'toggleAutoRenewal'])->name('shop_owner.premium.auto-renew');
         // Initiate PayMongo checkout for a premium plan
         Route::post('/checkout', [PremiumCheckoutController::class, 'checkout'])->name('shop_owner.premium.checkout');
         // Cancel pending or active subscription (used for manual stop)

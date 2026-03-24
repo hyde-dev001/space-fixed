@@ -3,7 +3,7 @@
 return [
     'procurement' => [
         'category' => 'Procurement',
-        'status' => 'submitted',
+        'status' => 'approved',
         'reference_prefix' => 'PROC-EXP-',
         'description_template' => 'Auto-generated from Purchase Order: :reference',
         'meta_source' => 'purchase_order',

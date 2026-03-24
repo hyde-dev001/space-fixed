@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\Finance\Invoice;
+use App\Models\Finance\InvoiceItem;
 use App\Events\LowStockAlert;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -1792,6 +1794,14 @@ class RepairWorkflowController extends Controller
                         'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
                     ], 422);
                 }
+
+                if ($isWalkInReturn) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'For walk-in returns, only the assigned repairer can mark the repaired shoe as received in-shop.'
+                    ], 403);
+                }
                 
                 // Enable pickup confirmation
                 $repairRequest->update([
@@ -1874,6 +1884,31 @@ class RepairWorkflowController extends Controller
                     'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
                 ], 422);
             }
+
+            if ($isWalkInReturn) {
+                $repairRequest->update([
+                    'status' => 'picked_up',
+                    'picked_up_at' => now(),
+                ]);
+
+                try {
+                    $this->autoGenerateInvoiceForPickedUpRepair($repairRequest);
+                } catch (\Throwable $invoiceError) {
+                    \Log::warning('Failed to auto-generate invoice for in-shop picked-up repair', [
+                        'repair_id' => $repairRequest->id,
+                        'request_id' => $repairRequest->request_id,
+                        'error' => $invoiceError->getMessage(),
+                    ]);
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair marked as received in-shop and completed.',
+                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                ]);
+            }
             
             // Enable pickup confirmation
             $repairRequest->update([
@@ -1920,6 +1955,127 @@ class RepairWorkflowController extends Controller
             'full_upfront' => 'Customer payment must be completed before receive confirmation can be activated.',
             default => 'Customer payment must be completed before receive confirmation can be activated.',
         };
+    }
+
+    private function generateRepairInvoiceReference(): string
+    {
+        do {
+            $reference = 'RINV-' . now()->format('Ymd') . '-' . strtoupper(substr(uniqid('', true), -4));
+        } while (Invoice::where('reference', $reference)->exists());
+
+        return $reference;
+    }
+
+    private function autoGenerateInvoiceForPickedUpRepair(RepairRequest $repair): ?Invoice
+    {
+        if (!$repair->shop_owner_id) {
+            return null;
+        }
+
+        $repair->loadMissing(['services:id,name']);
+
+        $existingInvoice = Invoice::where('shop_id', $repair->shop_owner_id)
+            ->where('job_reference', (string) $repair->request_id)
+            ->first();
+
+        if ($existingInvoice) {
+            return $existingInvoice;
+        }
+
+        $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
+        $finalTotal = (float) ($pricingSnapshot['final_total'] ?? 0);
+
+        if ($finalTotal <= 0) {
+            return null;
+        }
+
+        $paymentStatus = strtolower((string) ($repair->payment_status ?? 'pending'));
+        $isSettled = in_array($paymentStatus, ['paid', 'completed'], true);
+
+        $invoice = Invoice::create([
+            'shop_id' => $repair->shop_owner_id,
+            'reference' => $this->generateRepairInvoiceReference(),
+            'customer_id' => $repair->user_id,
+            'customer_name' => $repair->customer_name,
+            'customer_email' => $repair->email,
+            'date' => now(),
+            'due_date' => $isSettled ? null : now()->addDays(7),
+            'total' => $finalTotal,
+            'tax_amount' => 0,
+            'status' => $isSettled ? 'paid' : 'sent',
+            'payment_date' => $isSettled ? ($repair->payment_completed_at ?? now()) : null,
+            'payment_method' => 'repair_service',
+            'job_reference' => (string) $repair->request_id,
+            'notes' => 'Auto-generated from Repair Request #' . $repair->request_id,
+            'meta' => [
+                'source' => 'repair_request',
+                'repair_request_id' => $repair->id,
+                'repair_request_number' => $repair->request_id,
+                'payment_status' => $repair->payment_status,
+                'generated_on_status' => 'picked_up',
+            ],
+        ]);
+
+        $serviceSummary = $repair->services->pluck('name')->filter()->values()->implode(', ');
+        $description = 'Repair Service #' . $repair->request_id;
+        if ($serviceSummary !== '') {
+            $description .= ' - ' . $serviceSummary;
+        }
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'description' => $description,
+            'quantity' => 1,
+            'unit_price' => $finalTotal,
+            'tax_rate' => 0,
+            'amount' => $finalTotal,
+            'account_id' => null,
+        ]);
+
+        activity()
+            ->performedOn($repair)
+            ->withProperties([
+                'invoice_id' => $invoice->id,
+                'invoice_reference' => $invoice->reference,
+                'repair_request_id' => $repair->id,
+                'repair_request_number' => $repair->request_id,
+                'total' => $finalTotal,
+            ])
+            ->log('Auto-generated invoice for picked-up repair request');
+
+        return $invoice;
+    }
+
+    private function calculateRepairPricingSnapshot(RepairRequest $repair): array
+    {
+        $repair->loadMissing(['materialUsages.inventoryItem:id,price']);
+
+        $materialsTotal = round((float) $repair->materialUsages->sum(function ($usage) {
+            $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
+            return ((int) $usage->quantity_used) * $unitPrice;
+        }), 2);
+
+        $packagePrice = round((float) ($repair->package_price ?? 0), 2);
+        $addOnsTotal = round((float) ($repair->add_ons_total ?? 0), 2);
+        $baseTotal = !is_null($repair->repair_package_id)
+            ? round($packagePrice + $addOnsTotal, 2)
+            : round((float) ($repair->total ?? 0), 2);
+        $finalTotal = round($baseTotal + $materialsTotal, 2);
+
+        $pricingBreakdown = is_array($repair->pricing_breakdown)
+            ? $repair->pricing_breakdown
+            : [];
+
+        $pricingBreakdown['base_total'] = $baseTotal;
+        $pricingBreakdown['materials_total'] = $materialsTotal;
+        $pricingBreakdown['final_total'] = $finalTotal;
+
+        return [
+            'base_total' => $baseTotal,
+            'materials_total' => $materialsTotal,
+            'final_total' => $finalTotal,
+            'pricing_breakdown' => $pricingBreakdown,
+        ];
     }
 
     /**
@@ -2178,13 +2334,26 @@ class RepairWorkflowController extends Controller
                 ]);
             }
             
-            // Verify repair is in a state where payment can be activated
-            // Typically after repairer accepts or during received/in_progress status
+            // Verify repair is in a state where payment can be activated.
+            // Standard: before/while work starts.
+            // Special case: deposit_50 remaining balance at ready_for_pickup for non-walk-in returns.
             $validStatuses = ['repairer_accepted', 'received', 'pending', 'in_progress'];
-            if (!in_array($repairRequest->status, $validStatuses)) {
+            $effectiveReturnMethod = $repairRequest->return_delivery_method
+                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
+            $isWalkInReturn = $effectiveReturnMethod === 'walk_in';
+            $paymentPolicy = (string) ($repairRequest->payment_policy ?? 'deposit_50');
+            $paymentStatus = strtolower((string) ($repairRequest->payment_status ?? 'pending'));
+
+            $isRemainingBalanceActivation =
+                !$isWalkInReturn
+                && in_array((string) $repairRequest->status, ['ready_for_pickup', 'ready-for-pickup'], true)
+                && $paymentPolicy === 'deposit_50'
+                && $paymentStatus === 'paid';
+
+            if (!in_array((string) $repairRequest->status, $validStatuses, true) && !$isRemainingBalanceActivation) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment can only be activated for repairs in accepted, received, pending, or in-progress status'
+                    'message' => 'Payment can only be activated for accepted/received/pending/in-progress repairs, or for deposit 50/50 remaining balance at ready for pickup (courier return).'
                 ], 400);
             }
             
@@ -2247,13 +2416,13 @@ class RepairWorkflowController extends Controller
                     ->firstOrFail();
             }
 
-            $returnDeliveryMethod = $repairRequest->return_delivery_method
-                ?? ($repairRequest->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup');
+            $intakeDeliveryMethod = $repairRequest->intake_delivery_method
+                ?? ($repairRequest->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery');
 
-            if ($returnDeliveryMethod !== 'walk_in') {
+            if ($intakeDeliveryMethod !== 'walk_in') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'In-shop payment is only available for walk-in return method.'
+                    'message' => 'In-shop payment is only available for walk-in intake.'
                 ], 409);
             }
 

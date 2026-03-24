@@ -13,6 +13,8 @@ use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\Finance\Invoice;
+use App\Models\Finance\InvoiceItem;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\ShopOwnerApprovalPolicyService;
@@ -991,40 +993,69 @@ class RepairRequestController extends Controller
      */
     public function confirmPickup(Request $request, $id)
     {
-        $user = Auth::guard('user')->user();
-        
-        if (!$user) {
+        try {
+            $user = Auth::guard('user')->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            DB::beginTransaction();
+
+            $repair = RepairRequest::where('id', $id)
+                ->forCustomer($user->id)
+                ->whereIn('status', ['ready-for-pickup', 'ready_for_pickup', 'shipped'])
+                ->first();
+
+            if (!$repair) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found or not ready for confirmation'
+                ], 404);
+            }
+
+            $repair->update([
+                'status' => 'picked_up',
+                'picked_up_at' => now()
+            ]);
+
+            // Auto-generate invoice on pickup confirmation (one-time).
+            try {
+                $this->autoGenerateInvoiceForPickedUpRepair($repair);
+            } catch (\Throwable $invoiceError) {
+                \Log::warning('Failed to auto-generate invoice for picked-up repair', [
+                    'repair_id' => $repair->id,
+                    'request_id' => $repair->request_id,
+                    'error' => $invoiceError->getMessage(),
+                ]);
+            }
+
+            DB::commit();
+
+            // TODO: Send notification to shop owner/repairer about successful pickup
+            // TODO: Trigger review request email/notification after 24 hours
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pickup confirmed! Thank you for your business. We hope to serve you again.',
+                'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('Error confirming pickup', [
+                'repair_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
-            ], 401);
+                'message' => 'Failed to confirm pickup. Please try again.'
+            ], 500);
         }
-
-        $repair = RepairRequest::where('id', $id)
-            ->forCustomer($user->id)
-            ->whereIn('status', ['ready-for-pickup', 'ready_for_pickup', 'shipped'])
-            ->first();
-
-        if (!$repair) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Repair request not found or not ready for confirmation'
-            ], 404);
-        }
-
-        $repair->update([
-            'status' => 'picked_up',
-            'picked_up_at' => now()
-        ]);
-
-        // TODO: Send notification to shop owner/repairer about successful pickup
-        // TODO: Trigger review request email/notification after 24 hours
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Pickup confirmed! Thank you for your business. We hope to serve you again.',
-            'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
-        ]);
     }
     
     /**
@@ -1911,6 +1942,95 @@ class RepairRequestController extends Controller
         }
 
         return $currentStatus;
+    }
+
+    private function generateRepairInvoiceReference(): string
+    {
+        do {
+            $reference = 'RINV-' . now()->format('Ymd') . '-' . strtoupper(substr(uniqid('', true), -4));
+        } while (Invoice::where('reference', $reference)->exists());
+
+        return $reference;
+    }
+
+    private function autoGenerateInvoiceForPickedUpRepair(RepairRequest $repair): ?Invoice
+    {
+        if (!$repair->shop_owner_id) {
+            return null;
+        }
+
+        $repair->loadMissing(['services:id,name']);
+
+        $existingInvoice = Invoice::where('shop_id', $repair->shop_owner_id)
+            ->where('job_reference', (string) $repair->request_id)
+            ->first();
+
+        if ($existingInvoice) {
+            return $existingInvoice;
+        }
+
+        $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
+        $finalTotal = (float) ($pricingSnapshot['final_total'] ?? 0);
+
+        if ($finalTotal <= 0) {
+            return null;
+        }
+
+        $paymentStatus = strtolower((string) ($repair->payment_status ?? 'pending'));
+        $isSettled = in_array($paymentStatus, ['paid', 'completed'], true);
+
+        $invoice = Invoice::create([
+            'shop_id' => $repair->shop_owner_id,
+            'reference' => $this->generateRepairInvoiceReference(),
+            'customer_id' => $repair->user_id,
+            'customer_name' => $repair->customer_name,
+            'customer_email' => $repair->email,
+            'date' => now(),
+            'due_date' => $isSettled ? null : now()->addDays(7),
+            'total' => $finalTotal,
+            'tax_amount' => 0,
+            'status' => $isSettled ? 'paid' : 'sent',
+            'payment_date' => $isSettled ? ($repair->payment_completed_at ?? now()) : null,
+            'payment_method' => 'repair_service',
+            'job_reference' => (string) $repair->request_id,
+            'notes' => 'Auto-generated from Repair Request #' . $repair->request_id,
+            'meta' => [
+                'source' => 'repair_request',
+                'repair_request_id' => $repair->id,
+                'repair_request_number' => $repair->request_id,
+                'payment_status' => $repair->payment_status,
+                'generated_on_status' => 'picked_up',
+            ],
+        ]);
+
+        $serviceSummary = $repair->services->pluck('name')->filter()->values()->implode(', ');
+        $description = 'Repair Service #' . $repair->request_id;
+        if ($serviceSummary !== '') {
+            $description .= ' - ' . $serviceSummary;
+        }
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'description' => $description,
+            'quantity' => 1,
+            'unit_price' => $finalTotal,
+            'tax_rate' => 0,
+            'amount' => $finalTotal,
+            'account_id' => null,
+        ]);
+
+        activity()
+            ->performedOn($repair)
+            ->withProperties([
+                'invoice_id' => $invoice->id,
+                'invoice_reference' => $invoice->reference,
+                'repair_request_id' => $repair->id,
+                'repair_request_number' => $repair->request_id,
+                'total' => $finalTotal,
+            ])
+            ->log('Auto-generated invoice for picked-up repair request');
+
+        return $invoice;
     }
 
     private function calculateRepairPricingSnapshot(RepairRequest $repair): array

@@ -1,4 +1,4 @@
-import { Head, router, usePage } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -405,17 +405,10 @@ export default function PurchaseRequest() {
 			await fetchPurchaseRequests();
 			await fetchMetrics();
 
-			const result = await workflowFeedback.success({
+			await workflowFeedback.success({
 				title: "Sent to Finance",
 				text: `${newPR.pr_number} has been submitted for finance approval.`,
-				showCancelButton: true,
-				confirmButtonText: "Go to Purchase Orders",
-				cancelButtonText: "Stay here",
 			});
-
-			if (result.isConfirmed) {
-				router.visit("/erp/procurement/purchase-orders");
-			}
 		} catch (error: any) {
 			console.error("Error creating purchase request:", error);
 			console.error("Error response:", error.response?.data);

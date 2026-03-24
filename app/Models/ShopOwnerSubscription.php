@@ -10,12 +10,18 @@ class ShopOwnerSubscription extends Model
 {
     use HasFactory;
 
+    public const AUTO_RENEW_STATUS_ENABLED = 'enabled';
+    public const AUTO_RENEW_STATUS_DISABLED = 'disabled';
+    public const AUTO_RENEW_STATUS_ACTION_REQUIRED = 'action_required';
+
     protected $fillable = [
         'shop_owner_id',
         'premium_plan_id',
         'plan_code',
         'showroom_slot_limit',
         'status',
+        'auto_renew',
+        'auto_renew_status',
         'paymongo_session_id',
         'paymongo_payment_id',
         'paid_amount',
@@ -27,6 +33,7 @@ class ShopOwnerSubscription extends Model
 
     protected $casts = [
         'showroom_slot_limit' => 'integer',
+        'auto_renew' => 'boolean',
         'paid_amount' => 'decimal:2',
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',

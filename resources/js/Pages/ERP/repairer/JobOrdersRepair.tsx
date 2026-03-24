@@ -924,7 +924,7 @@ export default function JobOrdersRepair() {
   };
 
   const getMarkReceivedBlockedMessage = () => {
-    return 'Payment is required before marking shoes as received.';
+    return 'Payment is required before marking shoes as received (collect payment first to prevent errors).';
   };
 
   const isWalkInReturn = (order: Pick<RepairOrder, 'returnDeliveryMethod' | 'serviceType'>) => {
@@ -933,12 +933,16 @@ export default function JobOrdersRepair() {
     return order.serviceType === 'walkin';
   };
 
+  const isWalkInIntake = (order: Pick<RepairOrder, 'serviceType'>) => {
+    return order.serviceType === 'walkin';
+  };
+
   const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
     const policy = order.payment_policy ?? 'deposit_50';
 
     if (order.status === 'cancelled') return false;
-    if (!isWalkInReturn(order)) return false;
+    if (!isWalkInIntake(order)) return false;
     if (status === 'completed') return false;
     if (policy === 'full_upfront') {
       return ['pending', 'failed', 'expired', ''].includes(status);
@@ -955,6 +959,18 @@ export default function JobOrdersRepair() {
       return 'Mark Remaining Paid (In-Shop)';
     }
     return 'Mark Paid (In-Shop)';
+  };
+
+  const canActivateOnlineRemainingBalance = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType' | 'payment_enabled'>) => {
+    const paymentPolicy = order.payment_policy ?? 'deposit_50';
+    const paymentStatus = (order.payment_status ?? '').toLowerCase();
+    const orderStatus = (order.status ?? '').toLowerCase();
+
+    return !isWalkInReturn(order)
+      && paymentPolicy === 'deposit_50'
+      && paymentStatus === 'paid'
+      && (orderStatus === 'ready-for-pickup' || orderStatus === 'ready_for_pickup')
+      && !Boolean(order.payment_enabled);
   };
 
   const isInShopPaymentRecorded = (order: Pick<RepairOrder, 'payment_status' | 'paymongo_payment_id'>) => {
@@ -1239,7 +1255,7 @@ export default function JobOrdersRepair() {
       (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null) ||
       orders.find((order) => String(order.database_id) === orderId) ||
       null;
-    const isWalkInOrder = targetOrder?.serviceType !== 'pickup';
+    const isWalkInOrder = targetOrder ? isWalkInReturn(targetOrder) : false;
 
     if (targetOrder && !isFullyPaidForRelease(targetOrder)) {
       await Swal.fire({
@@ -1252,11 +1268,13 @@ export default function JobOrdersRepair() {
     }
 
     const result = await Swal.fire({
-      title: isWalkInOrder ? 'Activate Receive Confirmation?' : 'Activate Pickup Confirmation?',
-      text: 'This will allow the customer to confirm they have received their item.',
+      title: isWalkInOrder ? 'Mark as Received In-Shop?' : 'Activate Pickup Confirmation?',
+      text: isWalkInOrder
+        ? 'This will mark the repaired shoe as received in-shop and complete the order.'
+        : 'This will allow the customer to confirm they have received their item.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: isWalkInOrder ? 'Enable Receive' : 'Activate',
+      confirmButtonText: isWalkInOrder ? 'Mark Received' : 'Activate',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
@@ -1268,8 +1286,10 @@ export default function JobOrdersRepair() {
       
       if (response.data.success) {
         await Swal.fire({
-          title: isWalkInOrder ? 'Receive Activated!' : 'Pickup Activated!',
-          text: 'Customer can now confirm they received their item.',
+          title: isWalkInOrder ? 'Marked as Received!' : 'Pickup Activated!',
+          text: isWalkInOrder
+            ? 'Repair has been completed as in-shop received.'
+            : 'Customer can now confirm they received their item.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
@@ -1278,7 +1298,7 @@ export default function JobOrdersRepair() {
     } catch (error: any) {
       await Swal.fire({
         title: 'Error',
-        text: error.response?.data?.message || (isWalkInOrder ? 'Failed to activate receive' : 'Failed to activate pickup'),
+        text: error.response?.data?.message || (isWalkInOrder ? 'Failed to mark as received' : 'Failed to activate pickup'),
         icon: 'error',
       });
     }
@@ -1468,7 +1488,7 @@ export default function JobOrdersRepair() {
   };
 
   const handleShipOrder = (order: RepairOrder) => {
-    if (order.serviceType !== 'pickup') {
+    if (isWalkInReturn(order)) {
       Swal.fire({
         title: 'Walk-in pickup order',
         text: 'Walk-in repairs should be handed directly to the customer. Use Receive instead of Ship.',
@@ -1931,7 +1951,7 @@ export default function JobOrdersRepair() {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
+          <div className="h-135 overflow-y-auto overflow-x-hidden">
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3">
@@ -1940,37 +1960,49 @@ export default function JobOrdersRepair() {
                 </div>
               </div>
             ) : (
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+              <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-800">
+              <colgroup>
+                <col className="w-[13%]" />
+                <col className="w-[8%]" />
+                <col className="w-[16%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[10%]" />
+                <col className="w-[9%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Customer
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Item
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Service
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Intake Method
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Price
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Paid
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Created
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Preferred Date
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -1995,16 +2027,16 @@ export default function JobOrdersRepair() {
                         isHighlighted ? 'border-l-4 border-l-black bg-gray-50 dark:bg-gray-900/50' : ''
                       }`}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4">
                         <div className="text-sm">
                           <div className="font-medium text-gray-900 dark:text-white">{order.customer}</div>
-                          <div className="text-gray-500 dark:text-gray-400">{order.phone}</div>
+                          <div className="text-gray-500 dark:text-gray-400 break-all">{order.phone}</div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900 dark:text-white">{order.item}</span>
+                      <td className="px-4 py-4">
+                        <span className="text-sm text-gray-900 dark:text-white wrap-break-word">{order.item}</span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4">
                         <div className="space-y-1">
                           <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">{order.service}</span>
                           {order.packageName && (
@@ -2014,7 +2046,7 @@ export default function JobOrdersRepair() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4">
                         <div className="flex flex-col gap-1">
                           <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
                             {order.status === "new_request"
@@ -2050,13 +2082,13 @@ export default function JobOrdersRepair() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                      <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
                         {formatServiceType(order.serviceType)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
+                      <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium">
                         {order.total}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold">
+                      <td className="px-4 py-4 text-sm font-semibold">
                         {order.payment_status === 'completed' ? (
                           <span className="text-green-600 dark:text-green-400">{order.total}</span>
                         ) : order.payment_status === 'paid' ? (
@@ -2065,16 +2097,16 @@ export default function JobOrdersRepair() {
                           <span className="text-gray-400 dark:text-gray-500">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 wrap-break-word">
                         {order.createdAt}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="px-4 py-4 text-sm wrap-break-word">
                         {order.preferredDate
                           ? <span className="font-medium text-blue-700 dark:text-blue-400">{order.preferredDate}</span>
                           : <span className="text-gray-400 dark:text-gray-500">—</span>}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center gap-2">
+                      <td className="px-4 py-4 text-sm font-medium">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             onClick={() => handleViewOrder(order)}
                             className="inline-flex items-center justify-center p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
@@ -2138,32 +2170,41 @@ export default function JobOrdersRepair() {
                           )}
 
                           {order.status === "ready-for-pickup" && getReturnDeliveryMethod(order) !== "walk_in" && (
-                            <button
-                              onClick={() => handleShipOrder(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                              title="Ship this repair order"
-                            >
-                              Ship
-                            </button>
+                            <>
+                              {canActivateOnlineRemainingBalance(order) && (
+                                <button
+                                  onClick={() => handleActivatePayment(order.database_id)}
+                                  className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                  title="Activate online payment for remaining balance"
+                                >
+                                  Activate Remaining Balance
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleShipOrder(order)}
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                                title="Ship this repair order"
+                              >
+                                Ship
+                              </button>
+                            </>
                           )}
                           {order.status === "ready-for-pickup" && getReturnDeliveryMethod(order) === "walk_in" && (
                             <button
                               onClick={() => handleActivatePickup(String(order.database_id))}
-                              disabled={Boolean(order.pickup_enabled || order.pickup_enabled_at) || !isFullyPaidForRelease(order)}
+                              disabled={!isFullyPaidForRelease(order)}
                               className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                                order.pickup_enabled || order.pickup_enabled_at || !isFullyPaidForRelease(order)
+                                !isFullyPaidForRelease(order)
                                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                   : 'text-white bg-purple-600 hover:bg-purple-700'
                               }`}
                               title={
-                                order.pickup_enabled || order.pickup_enabled_at
-                                  ? 'Receive already activated'
-                                  : !isFullyPaidForRelease(order)
+                                !isFullyPaidForRelease(order)
                                   ? getReleasePaymentBlockedMessage(order)
-                                  : 'Activate customer receive confirmation'
+                                  : 'Mark repaired shoe as received in-shop'
                               }
                             >
-                              {order.pickup_enabled || order.pickup_enabled_at ? '✓ Receive Activated' : 'Receive'}
+                              Mark Received
                             </button>
                           )}
                           {order.status === "shipped" && (
@@ -2738,7 +2779,7 @@ export default function JobOrdersRepair() {
                       title={
                         canMarkReceived(viewOrder)
                           ? 'Mark shoes as received at shop'
-                          : getMarkReceivedBlockedMessage(viewOrder)
+                          : getMarkReceivedBlockedMessage()
                       }
                     >
                       Mark as Received
@@ -2752,7 +2793,7 @@ export default function JobOrdersRepair() {
                         Activate Payment
                       </button>
                     )}
-                    {isWalkInReturn(viewOrder) && (
+                    {isWalkInIntake(viewOrder) && (
                       <button
                         onClick={() => handleMarkPaidInShop(viewOrder)}
                         disabled={!isInShopPaymentDueNow(viewOrder)}
@@ -2790,41 +2831,49 @@ export default function JobOrdersRepair() {
                     {(() => {
                       const isWalkInReturnMethod = getReturnDeliveryMethod(viewOrder) === 'walk_in';
                       const isPickupDelivery = !isWalkInReturnMethod;
-                      const isPickupActivated = Boolean(viewOrder.pickup_enabled || viewOrder.pickup_enabled_at);
                       const canActivateRelease = isFullyPaidForRelease(viewOrder);
 
                       return (
                         <>
                           {isPickupDelivery && (
-                            <button
-                              onClick={() => handleShipOrder(viewOrder)}
-                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-                              title="Ship this repair order"
-                            >
-                              Ship
-                            </button>
+                            <>
+                              {canActivateOnlineRemainingBalance(viewOrder) && (
+                                <button
+                                  onClick={() => handleActivatePayment(viewOrder.database_id)}
+                                  className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
+                                  title="Activate online payment for remaining balance"
+                                >
+                                  Activate Remaining Balance
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleShipOrder(viewOrder)}
+                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                                title="Ship this repair order"
+                              >
+                                Ship
+                              </button>
+                            </>
                           )}
                           {isWalkInReturnMethod && (
                             <button
                               onClick={() => handleActivatePickup(String(viewOrder.database_id))}
-                              disabled={isPickupActivated || !canActivateRelease}
+                              disabled={!canActivateRelease}
                               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                isPickupActivated || !canActivateRelease
+                                !canActivateRelease
                                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                   : 'bg-purple-600 hover:bg-purple-700 text-white'
                               }`}
                               title={
-                                isPickupActivated
-                                  ? 'Receive already activated'
-                                  : !canActivateRelease
+                                !canActivateRelease
                                   ? getReleasePaymentBlockedMessage(viewOrder)
-                                  : 'Activate customer receive confirmation'
+                                  : 'Mark repaired shoe as received in-shop'
                               }
                             >
-                              {isPickupActivated ? '✓ Receive Activated' : 'Receive'}
+                              Mark Received
                             </button>
                           )}
-                          {isWalkInReturn(viewOrder) && (
+                          {isWalkInIntake(viewOrder) && (
                             <button
                               onClick={() => handleMarkPaidInShop(viewOrder)}
                               disabled={!isInShopPaymentDueNow(viewOrder)}

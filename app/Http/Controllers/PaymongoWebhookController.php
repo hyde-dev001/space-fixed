@@ -12,6 +12,7 @@ use App\Enums\NotificationType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class PaymongoWebhookController extends Controller
 {
@@ -401,13 +402,23 @@ class PaymongoWebhookController extends Controller
             $durationDays = max(1, (int) ($locked->premiumPlan?->duration_days ?? 30));
             $endsAt = $startsAt->copy()->addDays($durationDays);
 
-            $locked->update([
+            $updatePayload = [
                 'status'                => 'active',
                 'paymongo_payment_id'   => $paymentId,
                 'paid_amount'           => $paidAmount ?? $locked->paid_amount ?? $locked->premiumPlan?->price,
                 'starts_at'             => $startsAt,
                 'ends_at'               => $endsAt,
-            ]);
+            ];
+
+            if (
+                Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
+                && Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
+            ) {
+                $updatePayload['auto_renew'] = true;
+                $updatePayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
+            }
+
+            $locked->update($updatePayload);
 
             activity()
                 ->performedOn($locked)

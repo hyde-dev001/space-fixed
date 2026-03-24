@@ -1,4 +1,4 @@
-import { Head, router, usePage } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -268,17 +268,10 @@ export default function StockRequest() {
 			setIsCreateModalOpen(false);
 			setCurrentPage(1);
 
-			const result = await workflowFeedback.success({
+			await workflowFeedback.success({
 				title: "Request submitted",
 				text: "Stock replenishment request has been submitted to Procurement.",
-				showCancelButton: true,
-				confirmButtonText: "Open Procurement Queue",
-				cancelButtonText: "Stay here",
 			});
-
-			if (result.isConfirmed) {
-				router.visit("/erp/procurement/stock-request-approval");
-			}
 		} catch {
 			await workflowFeedback.error("Could not submit the stock request. Please try again.", "Submission failed");
 		}

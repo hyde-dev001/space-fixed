@@ -118,3 +118,4 @@ draft | sent | confirmed | in_transit ↝ cancelled
 - Procurement decision states on stock requests: `pending`, `needs_details`, `accepted`, `rejected`
 - PR approval chain: `pending_finance` -> `pending_shop_owner` -> `approved`
 - PO delivery updates inventory and auto-creates finance expense
+- One-time production data fix checklist for historical size labels: [requested-size-label-normalization-checklist.md](requested-size-label-normalization-checklist.md)

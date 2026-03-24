@@ -1,4 +1,4 @@
-import { Head, router, usePage } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -205,16 +205,10 @@ export default function StockRequest() {
 
 		try {
 			await stockRequestApi.approve(request.id);
-			const success = await workflowFeedback.success({
+			await workflowFeedback.success({
 				title: "Approved",
 				text: "Request approved and ready for purchase request creation.",
-				showCancelButton: true,
-				confirmButtonText: "Create Purchase Request",
-				cancelButtonText: "Stay here",
 			});
-			if (success.isConfirmed) {
-				router.visit("/erp/procurement/purchase-request");
-			}
 			setViewingRequest(null);
 			fetchRequests();
 			fetchMetrics();

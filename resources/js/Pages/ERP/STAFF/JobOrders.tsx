@@ -425,14 +425,35 @@ export default function JobOrdersPage() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-      "processing": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-      "shipped": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-      "delivered": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-      "cancelled": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-      "refund": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+      "pending": "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40",
+      "processing": "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40",
+      "shipped": "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40",
+      "delivered": "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40",
+      "cancelled": "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40",
+      "refund": "bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40",
     };
-    return colors[status] || "bg-gray-100 text-gray-800";
+    return colors[status] || "bg-gray-100 text-gray-800 ring-1 ring-inset ring-gray-200";
+  };
+
+  const getPaymentBadgeColor = (order: Pick<Order, 'paymentMethod' | 'paymentStatus'>) => {
+    if (isCodOrder(order)) {
+      return isOrderPaid(order)
+        ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40"
+        : "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40";
+    }
+
+    return "bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-700/40";
+  };
+
+  const getPaymentBadgeLabel = (order: Pick<Order, 'paymentMethod' | 'paymentStatus'>) => {
+    if (isCodOrder(order)) {
+      return isOrderPaid(order) ? 'COD Paid' : 'COD Pending';
+    }
+    return 'Online Paid';
+  };
+
+  const formatStatusLabel = (status: string) => {
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   const getPaymentMethodLabel = (paymentMethod?: string) => {
@@ -451,6 +472,10 @@ export default function JobOrdersPage() {
   const isOrderPaid = (order: Pick<Order, 'paymentStatus'>) => {
     const normalized = (order.paymentStatus || '').toLowerCase();
     return normalized === 'paid' || normalized === 'completed';
+  };
+
+  const isOnlinePaidOrder = (order: Pick<Order, 'paymentMethod' | 'paymentStatus'>) => {
+    return !isCodOrder(order) && isOrderPaid(order);
   };
 
   const handleProcessOrder = async (order: Order) => {
@@ -1059,13 +1084,26 @@ export default function JobOrdersPage() {
           )}
 
           {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800">
+          <div className="h-135 overflow-y-auto overflow-x-auto">
+            <table className="w-full min-w-270 table-fixed">
+              <colgroup>
+                <col className="w-[5%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
+              </colgroup>
+              <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
-                  <th className="px-6 py-4 text-left">
+                  <th className="box-border px-4 py-4 text-left">
                     <input
                       type="checkbox"
+                      title="Select all orders on this page"
+                      aria-label="Select all orders on this page"
                       checked={
                         paginatedOrders.length > 0 &&
                         selectedOrders.length === paginatedOrders.length
@@ -1074,28 +1112,28 @@ export default function JobOrdersPage() {
                       className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
                     />
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Customer
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Product
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Size
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Quantity
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Total
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     ETA
                   </th>
-                  <th className="px-6 py-4 text-center text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Actions
                   </th>
                 </tr>
@@ -1107,57 +1145,57 @@ export default function JobOrdersPage() {
                       key={order.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
                     >
-                      <td className="px-6 py-4">
+                      <td className="box-border px-4 py-4 align-top">
                         <input
                           type="checkbox"
+                          title={`Select order ${order.order_number}`}
+                          aria-label={`Select order ${order.order_number}`}
                           checked={selectedOrders.includes(order.id)}
                           onChange={() => handleSelectOrder(order.id)}
                           className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="box-border px-4 py-4 align-top">
                         <div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">{order.customer}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{order.email}</div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{order.customer}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{order.email}</div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">{order.product}</span>
+                      <td className="box-border px-4 py-4 align-top">
+                        <span className="text-sm text-gray-700 dark:text-gray-300 block truncate">{order.product}</span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="box-border px-4 py-4 text-center align-top">
                         <span className="text-sm text-gray-700 dark:text-gray-300">
                           {order.items && order.items.length > 0
                             ? order.items.map((item: OrderItem) => item.size || '-').join(', ')
                             : '-'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="box-border px-4 py-4 text-center align-top">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.quantity}</span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="box-border px-4 py-4 text-center align-top">
                         <span className="text-sm font-medium text-gray-900 dark:text-white">{order.total}</span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                      <td className="box-border px-4 py-4 align-top">
+                        <div className="flex flex-col items-start gap-2 min-h-12">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(order.status)}`}>
+                            <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
+                            {formatStatusLabel(order.status)}
                           </span>
-                          {isCodOrder(order) && (
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              isOrderPaid(order)
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-                            }`}>
-                              {isOrderPaid(order) ? 'COD Paid' : 'COD Pending'}
+                          {(isCodOrder(order) || isOnlinePaidOrder(order)) && (
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getPaymentBadgeColor(order)}`}>
+                              <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
+                              {getPaymentBadgeLabel(order)}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="box-border px-4 py-4 align-top">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.eta || '-'}</span>
                       </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="box-border px-4 py-4 text-center align-top">
+                        <div className="flex flex-wrap items-center justify-center gap-2">
                           <button
                             onClick={() => handleViewOrder(order)}
                             className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
@@ -1190,7 +1228,7 @@ export default function JobOrdersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center">
+                    <td colSpan={9} className="box-border px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No orders found</p>
                     </td>
                   </tr>

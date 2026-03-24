@@ -450,24 +450,32 @@ class PurchaseOrderController extends Controller
 
         $purchaseOrder->loadMissing('supplier');
 
+        $expensePayload = [
+            'date' => $expenseDate,
+            'category' => $category,
+            'vendor' => $purchaseOrder->supplier?->name,
+            'description' => $description,
+            'amount' => $amount,
+            'tax_amount' => 0,
+            'status' => $status,
+            'shop_id' => $purchaseOrder->shop_owner_id,
+            'meta' => [
+                'source' => $metaSource,
+                'purchase_order_id' => $purchaseOrder->id,
+                'po_number' => $purchaseOrder->po_number,
+                'created_by' => $userId,
+            ],
+        ];
+
+        if ($status === 'approved') {
+            $expensePayload['approved_by'] = $userId;
+            $expensePayload['approved_at'] = now();
+            $expensePayload['approval_notes'] = 'Auto-approved from delivered purchase order.';
+        }
+
         Expense::firstOrCreate(
             ['reference' => $reference],
-            [
-                'date' => $expenseDate,
-                'category' => $category,
-                'vendor' => $purchaseOrder->supplier?->name,
-                'description' => $description,
-                'amount' => $amount,
-                'tax_amount' => 0,
-                'status' => $status,
-                'shop_id' => $purchaseOrder->shop_owner_id,
-                'meta' => [
-                    'source' => $metaSource,
-                    'purchase_order_id' => $purchaseOrder->id,
-                    'po_number' => $purchaseOrder->po_number,
-                    'created_by' => $userId,
-                ],
-            ]
+            $expensePayload
         );
     }
 

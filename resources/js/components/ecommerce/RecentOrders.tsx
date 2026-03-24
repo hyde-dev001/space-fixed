@@ -29,6 +29,7 @@ interface Order {
   total_amount: number;
   status: string;
   created_at: string;
+  items_count?: number;
   order_items?: OrderItem[];
 }
 
@@ -37,6 +38,8 @@ interface RecentOrdersProps {
 }
 
 export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
+  const FALLBACK_PRODUCT_IMAGE = '/images/product/product-01.jpg';
+
   // Format currency
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -80,17 +83,60 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
   };
 
   // Get first product image
+  const normalizeImageUrl = (path: string) => {
+    const trimmed = path.trim();
+
+    if (!trimmed) {
+      return FALLBACK_PRODUCT_IMAGE;
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith('/storage/') || trimmed.startsWith('/images/')) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith('storage/')) {
+      return `/${trimmed}`;
+    }
+
+    return `/storage/${trimmed}`;
+  };
+
   const getFirstProductImage = (order: Order) => {
     const firstItem = order.order_items?.[0];
     if (firstItem?.product?.images) {
       try {
-        const images = JSON.parse(firstItem.product.images);
-        return images[0] || '/images/product/default.jpg';
+        const parsed = JSON.parse(firstItem.product.images);
+
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return normalizeImageUrl(parsed[0]);
+        }
+
+        if (typeof parsed === 'string') {
+          return normalizeImageUrl(parsed);
+        }
+
+        return FALLBACK_PRODUCT_IMAGE;
       } catch {
-        return '/images/product/default.jpg';
+        return normalizeImageUrl(firstItem.product.images);
       }
     }
-    return '/images/product/default.jpg';
+    return FALLBACK_PRODUCT_IMAGE;
+  };
+
+  const getPrimaryOrderLabel = (order: Order) => {
+    return order.order_items?.[0]?.product?.name || 'Order item';
+  };
+
+  const getItemsCount = (order: Order) => {
+    if (typeof order.items_count === 'number') {
+      return order.items_count;
+    }
+
+    return order.order_items?.length || 0;
   };
 
   return (
@@ -199,15 +245,18 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
                         <img
                           src={getFirstProductImage(order)}
                           className="h-[50px] w-[50px] object-cover"
-                          alt={`Order ${order.order_number}`}
+                          alt={getPrimaryOrderLabel(order)}
+                          onError={(e) => {
+                            e.currentTarget.src = FALLBACK_PRODUCT_IMAGE;
+                          }}
                         />
                       </div>
                       <div>
                         <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-                          #{order.order_number}
+                          {getPrimaryOrderLabel(order)}
                         </p>
                         <span className="text-gray-500 text-theme-xs dark:text-gray-400">
-                          {order.order_items?.length || 0} item{order.order_items?.length !== 1 ? 's' : ''}
+                          {getItemsCount(order)} item{getItemsCount(order) !== 1 ? 's' : ''}
                         </span>
                       </div>
                     </div>

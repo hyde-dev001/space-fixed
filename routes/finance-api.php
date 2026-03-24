@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Finance\ExpenseController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\ERP\HR\PayrollController;
+use App\Http\Controllers\ERP\PurchaseRequestController as ErpPurchaseRequestController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 
@@ -43,6 +44,15 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Accessible by users with any Finance permissions (including pricing approvals)
  */
 Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval', 'shop.isolation'])->group(function () {
+
+    // ============================================
+    // PURCHASE REQUEST FINANCE REVIEW
+    // ============================================
+    Route::prefix('purchase-requests')->group(function () {
+        Route::get('/', [ErpPurchaseRequestController::class, 'index'])->name('finance.purchase-requests.index');
+        Route::post('/{id}/approve', [ErpPurchaseRequestController::class, 'approve'])->name('finance.purchase-requests.approve');
+        Route::post('/{id}/reject', [ErpPurchaseRequestController::class, 'reject'])->name('finance.purchase-requests.reject');
+    });
 
     // ============================================
     // EXPENSES

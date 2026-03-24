@@ -130,7 +130,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const fetchPurchaseRequests = async () => {
 		try {
 			setLoading(true);
-			const response = await axios.get('/api/erp/procurement/purchase-requests', {
+			const response = await axios.get('/api/finance/purchase-requests', {
 				params: { status: 'pending_finance', per_page: 100 },
 			});
 			const data = response.data?.data || response.data || [];
@@ -202,7 +202,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 
 		try {
 			await axios.post(
-				`/api/erp/procurement/purchase-requests/${request.id}/approve`,
+				`/api/finance/purchase-requests/${request.id}/approve`,
 				{
 					approval_notes: result.value || undefined,
 				}
@@ -260,7 +260,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 
 		try {
 			await axios.post(
-				`/api/erp/procurement/purchase-requests/${request.id}/reject`,
+				`/api/finance/purchase-requests/${request.id}/reject`,
 				{
 					rejection_reason: String(result.value),
 				}

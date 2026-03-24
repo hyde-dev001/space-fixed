@@ -184,6 +184,8 @@ class PremiumFeatureTest extends TestCase
 
         $this->assertSame('active', $subscription->status);
         $this->assertSame('pay_test_123', $subscription->paymongo_payment_id);
+        $this->assertTrue((bool) $subscription->auto_renew);
+        $this->assertSame(ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED, $subscription->auto_renew_status);
         $this->assertEquals('2026-03-15 10:00:00', $subscription->starts_at?->format('Y-m-d H:i:s'));
         $this->assertEquals('2026-04-14 10:00:00', $subscription->ends_at?->format('Y-m-d H:i:s'));
 
@@ -197,6 +199,8 @@ class PremiumFeatureTest extends TestCase
 
         $this->assertSame('active', $subscription->status);
         $this->assertSame('pay_test_123', $subscription->paymongo_payment_id);
+        $this->assertTrue((bool) $subscription->auto_renew);
+        $this->assertSame(ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED, $subscription->auto_renew_status);
         $this->assertEquals('2026-03-15 10:00:00', $subscription->starts_at?->format('Y-m-d H:i:s'));
         $this->assertEquals('2026-04-14 10:00:00', $subscription->ends_at?->format('Y-m-d H:i:s'));
 
@@ -252,8 +256,52 @@ class PremiumFeatureTest extends TestCase
         $this->assertSame('Premium', $page['props']['shop_settings']['premium']['plan_name'] ?? null);
         $this->assertSame('premium', $page['props']['shop_settings']['premium']['plan_code'] ?? null);
         $this->assertSame(84, $page['props']['shop_settings']['premium']['showroom_slot_limit'] ?? null);
+        $this->assertTrue($page['props']['shop_settings']['premium']['auto_renew'] ?? false);
+        $this->assertSame('enabled', $page['props']['shop_settings']['premium']['auto_renew_status'] ?? null);
 
         Carbon::setTestNow();
+    }
+
+    /** @test */
+    public function active_subscription_auto_renew_can_be_toggled_on_and_off(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $plan = $this->createPlan();
+
+        $subscription = $this->createActiveSubscription($shopOwner, $plan, [
+            'auto_renew' => true,
+            'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner');
+
+        $disable = $this->patchJson('/api/shop-owner/premium/auto-renew', [
+            'enabled' => false,
+        ]);
+
+        $disable->assertOk()
+            ->assertJson([
+                'success' => true,
+            ]);
+
+        $subscription->refresh();
+        $this->assertFalse((bool) $subscription->auto_renew);
+        $this->assertSame(ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED, $subscription->auto_renew_status);
+        $this->assertSame('active', $subscription->status);
+
+        $enable = $this->patchJson('/api/shop-owner/premium/auto-renew', [
+            'enabled' => true,
+        ]);
+
+        $enable->assertOk()
+            ->assertJson([
+                'success' => true,
+            ]);
+
+        $subscription->refresh();
+        $this->assertTrue((bool) $subscription->auto_renew);
+        $this->assertSame(ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED, $subscription->auto_renew_status);
+        $this->assertSame('active', $subscription->status);
     }
 
     /** @test */

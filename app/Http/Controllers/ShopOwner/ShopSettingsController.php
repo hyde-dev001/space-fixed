@@ -112,6 +112,8 @@ class ShopSettingsController extends Controller
                     'has_active' => $latestPremiumSubscription?->status === 'active'
                         && (!$latestPremiumSubscription?->starts_at || $latestPremiumSubscription->starts_at->lte(now()))
                         && (!$latestPremiumSubscription?->ends_at || $latestPremiumSubscription->ends_at->gte(now())),
+                    'auto_renew' => $latestPremiumSubscription?->auto_renew,
+                    'auto_renew_status' => $latestPremiumSubscription?->auto_renew_status,
                     'plan_name' => $latestPremiumSubscription?->premiumPlan?->name,
                     'plan_code' => $latestPremiumSubscription?->plan_code,
                     'showroom_slot_limit' => $latestPremiumSubscription?->showroom_slot_limit,

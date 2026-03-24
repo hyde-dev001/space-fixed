@@ -303,14 +303,12 @@ class PurchaseOrder extends Model
             return true; // All items defective — nothing goes to inventory
         }
 
-        // Increment the overall available_quantity on the parent item
-        $inventoryItem->incrementStock(
-            $netAccepted,
-            'stock_in',
-            "Delivered from PO: {$this->po_number} (received: " . ($this->received_quantity ?? $this->quantity) . ", defective: " . ($this->defective_quantity ?? 0) . ")"
-        );
+        $receivedQuantity = ($this->received_quantity ?? $this->quantity);
+        $defectiveQuantity = ($this->defective_quantity ?? 0);
+        $addedToParent = $netAccepted;
+        $sizeUpdateContext = null;
 
-        // If a specific size was requested, also increment that size's quantity
+        // If a specific size was requested, increment only that size.
         if ($this->requested_size) {
             $requestedSizeRaw = trim((string) $this->requested_size);
             $requestedSizeSystem = 'US';
@@ -337,7 +335,29 @@ class PurchaseOrder extends Model
                     'quantity'    => $netAccepted,
                 ]);
             }
+
+            $sizeUpdateContext = "size {$requestedSizeSystem} {$requestedSizeValue}";
+        } else {
+            // All sizes requested (blank requested_size): apply to every existing size row.
+            $allSizeRows = $inventoryItem->sizes()->get();
+
+            if ($allSizeRows->isNotEmpty()) {
+                foreach ($allSizeRows as $sizeRow) {
+                    $sizeRow->quantity += $netAccepted;
+                    $sizeRow->save();
+                }
+
+                $addedToParent = $netAccepted * $allSizeRows->count();
+                $sizeUpdateContext = "all sizes ({$allSizeRows->count()} rows)";
+            }
         }
+
+        // Increment the overall available_quantity on the parent item.
+        $inventoryItem->incrementStock(
+            $addedToParent,
+            'stock_in',
+            "Delivered from PO: {$this->po_number} (received: {$receivedQuantity}, defective: {$defectiveQuantity}, added: {$addedToParent}" . ($sizeUpdateContext ? ", {$sizeUpdateContext}" : '') . ")"
+        );
 
         return true;
     }

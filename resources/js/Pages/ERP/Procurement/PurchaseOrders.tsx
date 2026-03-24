@@ -839,6 +839,21 @@ export default function PurchaseOrders() {
 								</span>
 							</div>
 
+							{/* All sizes mode indicator */}
+							{!receivingOrder.requested_size && (() => {
+								const rec = Number(receivingData.receivedQuantity) || 0;
+								const def = Number(receivingData.defectiveQuantity) || 0;
+								const net = Math.max(0, rec - def);
+								return (
+									<div className="flex items-center gap-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 px-4 py-3">
+										<svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" /></svg>
+										<span className="text-sm text-purple-700 dark:text-purple-300">
+											All sizes mode: <strong>+{net}</strong> per size
+										</span>
+									</div>
+								);
+							})()}
+
 							<div className="grid grid-cols-2 gap-4">
 								<div>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">

@@ -1235,12 +1235,18 @@ const MyRepairs: React.FC = () => {
       case 'awaiting_parts':
         return '⏳ Awaiting Parts';
       case 'completed':
+        if (getReturnMethod(order) === 'walk_in') {
+          return '✅ Marked received by repairer in-shop';
+        }
         return '✅ Completed - QC Done';
       case 'ready_for_pickup':
         return '📦 Ready for Pickup';
       case 'shipped':
         return '🚚 Shipped - Awaiting Delivery';
       case 'picked_up':
+        if (getReturnMethod(order) === 'walk_in') {
+          return '✅ Marked received by repairer in-shop';
+        }
         return '✅ Completed & Picked Up';
       case 'pending':
         return isPaymentSettled ? 'Payment Received - Ready to Start' : 'Pending - Ready to Start';
@@ -1651,7 +1657,7 @@ const MyRepairs: React.FC = () => {
                             <div>
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">
                                 {(order.status === 'completed' || order.status === 'picked_up') && order.completed_at
-                                  ? 'Completed On'
+                                  ? (getReturnMethod(order) === 'walk_in' ? 'Marked Received On' : 'Completed On')
                                   : 'Preferred Date'}
                               </p>
                               <p className="text-sm text-black font-medium">

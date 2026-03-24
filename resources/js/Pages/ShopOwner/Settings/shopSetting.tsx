@@ -48,6 +48,8 @@ type ShopSettingsPayload = {
 		eligible: boolean;
 		status: 'pending' | 'active' | 'expired' | 'cancelled' | 'failed' | null;
 		has_active: boolean;
+			auto_renew: boolean | null;
+			auto_renew_status: string | null;
 		plan_name: string | null;
 		plan_code: string | null;
 		showroom_slot_limit: number | null;
@@ -179,6 +181,12 @@ const ShopSetting: React.FC = () => {
 	const [keyError, setKeyError] = useState<string | null>(null);
 	const [removingKey, setRemovingKey] = useState(false);
 	const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+	const [autoRenewalEnabled, setAutoRenewalEnabled] = useState(
+		Boolean(shop_settings.premium?.auto_renew ?? shop_settings.premium?.has_active ?? false),
+	);
+	const [savingAutoRenewal, setSavingAutoRenewal] = useState(false);
+	const [autoRenewalError, setAutoRenewalError] = useState<string | null>(null);
+	const [autoRenewalSuccess, setAutoRenewalSuccess] = useState(false);
 	const showWideRepairPaymentPolicy = isIndividual
 		&& (shop_settings.business_type === 'repair' || shop_settings.business_type === 'both');
 	const showWideApprovalLimits = !isIndividual && shop_settings.business_type === 'retail';
@@ -262,6 +270,35 @@ const ShopSetting: React.FC = () => {
 		}
 	};
 
+	const handleToggleAutoRenewal = async (enabled: boolean) => {
+		if (savingAutoRenewal) return;
+
+		const previous = autoRenewalEnabled;
+		setAutoRenewalEnabled(enabled);
+		setSavingAutoRenewal(true);
+		setAutoRenewalError(null);
+		setAutoRenewalSuccess(false);
+
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.patch(
+				'/api/shop-owner/premium/auto-renew',
+				{ enabled },
+				{ headers: { 'X-CSRF-TOKEN': csrfToken || '' } },
+			);
+
+			const persistedValue = Boolean(response?.data?.subscription?.auto_renew ?? enabled);
+			setAutoRenewalEnabled(persistedValue);
+			setAutoRenewalSuccess(true);
+			window.setTimeout(() => setAutoRenewalSuccess(false), 2200);
+		} catch (err: any) {
+			setAutoRenewalEnabled(previous);
+			setAutoRenewalError(err?.response?.data?.message || 'Failed to update auto renewal setting.');
+		} finally {
+			setSavingAutoRenewal(false);
+		}
+	};
+
 	const accountLabel = isIndividual ? 'Individual Account' : 'Business Account';
 	const normalizedBusinessType = (shop_settings.business_type || '').toLowerCase().trim();
 	const hasRepairSignal = normalizedBusinessType.includes('repair') || normalizedBusinessType.includes('service');
@@ -276,6 +313,7 @@ const ShopSetting: React.FC = () => {
 	const premiumStatus = shop_settings.premium?.status;
 	const premiumIsActive = Boolean(shop_settings.premium?.has_active);
 	const premiumIsEligible = Boolean(shop_settings.premium?.eligible);
+	const autoRenewalToggleDisabled = savingAutoRenewal || !premiumIsActive;
 	const formatPremiumDate = (value: string | null) => {
 		if (!value) return null;
 		const date = new Date(value);
@@ -319,6 +357,10 @@ const ShopSetting: React.FC = () => {
 				? 'Premium Inactive'
 				: 'Not Eligible';
 	const showPremiumBadge = premiumIsActive || premiumIsEligible;
+
+	useEffect(() => {
+		setAutoRenewalEnabled(Boolean(shop_settings.premium?.auto_renew ?? shop_settings.premium?.has_active ?? false));
+	}, [shop_settings.premium?.auto_renew, shop_settings.premium?.has_active]);
 
 	const accountFeatures: Array<{ label: string; enabled: boolean }> = [
 		{ label: 'Staff Management', enabled: shop_settings.can_manage_staff },
@@ -797,16 +839,29 @@ const ShopSetting: React.FC = () => {
 								{isIndividual ? <User size={18} className="text-gray-800" /> : <Building2 size={18} className="text-gray-800" />}
 							</div>
 							<div className="min-w-0 flex-1">
-								<div className="mb-1 flex flex-wrap items-center gap-2">
-									<h3 className="text-lg font-semibold text-gray-900">{accountLabel}</h3>
-									<span className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-										{shop_settings.business_type === 'repair' ? <Wrench size={12} /> : <Store size={12} />}
-										{businessTypeLabel}
-									</span>
-									{showPremiumBadge && (
-										<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
-											{premiumBadgeLabel}
+								<div className="mb-1 flex items-start justify-between gap-3">
+									<div className="flex flex-wrap items-center gap-2">
+										<h3 className="text-lg font-semibold text-gray-900">{accountLabel}</h3>
+										<span className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+											{shop_settings.business_type === 'repair' ? <Wrench size={12} /> : <Store size={12} />}
+											{businessTypeLabel}
 										</span>
+										{showPremiumBadge && (
+											<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
+												{premiumBadgeLabel}
+											</span>
+										)}
+									</div>
+									{premiumIsEligible && (
+										<div className="ml-auto flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5">
+											<span className="text-xs font-medium text-gray-700">Auto Renewal</span>
+											<ToggleSwitch
+												enabled={autoRenewalEnabled}
+												onChange={handleToggleAutoRenewal}
+												disabled={autoRenewalToggleDisabled}
+												ariaLabel="Toggle auto renewal subscription"
+											/>
+										</div>
 									)}
 								</div>
 								<p className="truncate text-sm text-gray-700">{shop_settings.business_name || 'Business'}</p>
@@ -820,7 +875,9 @@ const ShopSetting: React.FC = () => {
 											{premiumIsActive
 												? (premiumNextBillingAt
 													? `Next billing on ${premiumNextBillingAt}`
-													: 'Your subscription will automatically renew until cancelled.')
+													: autoRenewalEnabled
+														? 'Your subscription will automatically renew until cancelled.'
+														: 'Auto renewal is turned off. Your subscription will end at the current billing period.')
 												: 'Upgrade to unlock the virtual showroom and image-sequence uploads.'}
 										</p>
 										{shop_settings.premium.showroom_slot_limit ? (
@@ -828,6 +885,17 @@ const ShopSetting: React.FC = () => {
 												Showroom slots: {shop_settings.premium.showroom_slot_limit}
 												{premiumStartsAt ? ` • Started ${premiumStartsAt}` : ''}
 												{premiumNextBillingAt ? ` • Next billing ${premiumNextBillingAt}` : ''}
+											</p>
+										) : null}
+										{premiumIsEligible && !premiumIsActive ? (
+											<p className="mt-2 text-xs text-amber-700">Auto renewal can be changed once your subscription is active.</p>
+										) : null}
+										{autoRenewalError ? (
+											<p className="mt-2 text-xs text-red-600">{autoRenewalError}</p>
+										) : null}
+										{autoRenewalSuccess ? (
+											<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+												<Check size={13} /> Auto renewal preference saved.
 											</p>
 										) : null}
 									</div>

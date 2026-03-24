@@ -52,13 +52,22 @@ class PremiumCheckoutController extends Controller
 
         // Create a pending subscription record before calling PayMongo so we
         // always have a trace even if the gateway call fails.
-        $subscription = ShopOwnerSubscription::create([
+        $hasAutoRenewColumns = $this->hasAutoRenewColumns();
+
+        $subscriptionPayload = [
             'shop_owner_id'       => $shopOwner->id,
             'premium_plan_id'     => $plan->id,
             'plan_code'           => $plan->plan_code,
             'showroom_slot_limit' => $plan->showroom_slot_limit,
             'status'              => 'pending',
-        ]);
+        ];
+
+        if ($hasAutoRenewColumns) {
+            $subscriptionPayload['auto_renew'] = true;
+            $subscriptionPayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
+        }
+
+        $subscription = ShopOwnerSubscription::create($subscriptionPayload);
 
         $successUrl  = route('shop-owner.premium-success', [
             'subscription_id' => $subscription->id,
@@ -203,12 +212,18 @@ class PremiumCheckoutController extends Controller
         $notes = trim((string) ($validated['cancellation_notes'] ?? ''));
         $hasCancellationColumns = Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
             && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes');
+        $hasAutoRenewColumns = $this->hasAutoRenewColumns();
 
         $updatePayload = [
             // Cancellation means stop renewal only. Access remains until the original deadline.
             'status'  => 'cancelled',
             'ends_at' => $effectiveEndsAt,
         ];
+
+        if ($hasAutoRenewColumns) {
+            $updatePayload['auto_renew'] = false;
+            $updatePayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
+        }
 
         if ($hasCancellationColumns) {
             $updatePayload['cancellation_reason'] = $reason !== '' ? $reason : null;
@@ -229,6 +244,70 @@ class PremiumCheckoutController extends Controller
             'message'      => 'Premium subscription cancelled successfully.',
             'subscription' => $subscription->fresh('premiumPlan'),
         ]);
+    }
+
+    /**
+     * Toggle auto-renew for the current active premium subscription.
+     *
+     * PATCH /api/shop-owner/premium/auto-renew
+     * Body: { "enabled": true|false }
+     */
+    public function toggleAutoRenewal(Request $request)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if (!$this->hasAutoRenewColumns()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Auto renewal is not available yet. Please run the latest database migration first.',
+            ], 409);
+        }
+
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+        ]);
+
+        $subscription = ShopOwnerSubscription::with('premiumPlan')
+            ->where('shop_owner_id', $shopOwner->id)
+            ->active()
+            ->latest('updated_at')
+            ->first();
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active premium subscription found.',
+            ], 404);
+        }
+
+        $enabled = (bool) $validated['enabled'];
+
+        $subscription->update([
+            'auto_renew' => $enabled,
+            'auto_renew_status' => $enabled
+                ? ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED
+                : ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED,
+        ]);
+
+        Log::info('Shop owner toggled premium auto-renew', [
+            'shop_owner_id' => $shopOwner->id,
+            'subscription_id' => $subscription->id,
+            'enabled' => $enabled,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $enabled
+                ? 'Auto renewal enabled. Your subscription will renew at period end.'
+                : 'Auto renewal disabled. Your subscription will end at period end.',
+            'subscription' => $subscription->fresh('premiumPlan'),
+        ]);
+    }
+
+    private function hasAutoRenewColumns(): bool
+    {
+        return Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
+            && Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status');
     }
 
     /**
