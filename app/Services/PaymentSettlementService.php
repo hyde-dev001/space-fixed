@@ -87,12 +87,10 @@ class PaymentSettlementService
         ]);
 
         if ($policy === 'full_upfront') {
-            $repair->update(['payment_status' => 'completed']);
-            if ($repair->is_high_value && $repair->requires_owner_approval) {
-                $repair->update(['status' => 'owner_approval_pending']);
-            } else {
-                $repair->update(['status' => 'pending']);
-            }
+            $repair->update([
+                'payment_status' => 'completed',
+                'status' => 'pending',  // Always proceed to pending after payment
+            ]);
 
             return [
                 'result' => 'settled',
@@ -106,11 +104,9 @@ class PaymentSettlementService
         $repair->update(['payment_status' => $isDepositPhase ? 'paid' : 'completed']);
 
         if ($isDepositPhase) {
-            if ($repair->is_high_value && $repair->requires_owner_approval) {
-                $repair->update(['status' => 'owner_approval_pending']);
-            } else {
-                $repair->update(['status' => 'pending']);
-            }
+            // After deposit payment, always proceed to pending status
+            // High-value approval is for rejection decisions only, not payment workflow
+            $repair->update(['status' => 'pending']);
         }
 
         return [

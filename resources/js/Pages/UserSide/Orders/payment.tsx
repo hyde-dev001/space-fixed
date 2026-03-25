@@ -19,6 +19,7 @@ interface CartItem {
 interface CheckoutData {
   items: CartItem[];
   total_amount: number;
+  shipping_fee?: number;
   customer_name: string;
   customer_email: string;
   customer_phone: string;
@@ -684,7 +685,7 @@ const Payment: React.FC = () => {
     if (!city || !region) {
       setShippingEstimate(null);
       setIsShippingEstimateLoading(false);
-      setShippingEstimateReason('Enter city and region to see estimated shipping fee.');
+      setShippingEstimateReason('Enter city and region to calculate shipping fee.');
       return;
     }
 
@@ -761,7 +762,7 @@ const Payment: React.FC = () => {
           setShippingEstimateReason(null);
         } else {
           setShippingEstimate(null);
-          setShippingEstimateReason(data?.reason || 'Estimated shipping is currently unavailable.');
+          setShippingEstimateReason(data?.reason || 'Shipping fee is currently unavailable.');
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -899,6 +900,10 @@ const Payment: React.FC = () => {
   const handlePayNow = async () => {
     if (!checkoutData) return;
 
+    const computedShippingFee = !isPremiumPayment && !isRepairPayment
+      ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
+      : 0;
+
     // Validate required fields
     if (!customerEmail || !customerName || !customerPhone) {
       setPayError('Please fill in all required contact information.');
@@ -922,6 +927,31 @@ const Payment: React.FC = () => {
       return;
     }
 
+    if (!isPremiumPayment && !isRepairPayment) {
+      if (isShippingEstimateLoading) {
+        setPayError('Shipping fee is still being calculated. Please wait a moment.');
+        Swal.fire({
+          icon: 'warning',
+          title: 'Shipping Still Calculating',
+          text: 'Please wait for the shipping fee to finish loading.',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
+      if (!shippingEstimate || computedShippingFee <= 0) {
+        const reason = shippingEstimateReason || 'Unable to compute shipping fee. Please check your address details and try again.';
+        setPayError(reason);
+        Swal.fire({
+          icon: 'warning',
+          title: 'Shipping Fee Unavailable',
+          text: reason,
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+    }
+
     setIsProcessing(true);
     setPayError(null);
 
@@ -932,6 +962,7 @@ const Payment: React.FC = () => {
       const orderData = {
         items: checkoutData.items,
         total_amount: checkoutData.total_amount,
+        shipping_fee: computedShippingFee,
         customer_name: customerName,
         customer_email: customerEmail,
         customer_phone: customerPhone,
@@ -1033,18 +1064,19 @@ const Payment: React.FC = () => {
   }
 
   const subtotal = checkoutData.total_amount;
-  const shipping = 0; // Will be updated based on shipping method
+  const shipping = !isPremiumPayment && !isRepairPayment
+    ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
+    : 0;
   const total = subtotal + shipping;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);
   const hasShippingEstimate = Boolean(shippingEstimate);
-  const estimatedShippingRange = hasShippingEstimate
-    ? `₱${(shippingEstimate?.min_fee ?? 0).toLocaleString()} - ₱${(shippingEstimate?.max_fee ?? 0).toLocaleString()}`
-    : '';
-  const shippingSummaryValue = hasShippingEstimate ? `${estimatedShippingRange} (estimated)` : 'To be calculated after order';
-  const shippingCarrierNote = shippingEstimate?.customer_notice
-    || 'Final fee will be confirmed after order via Lalamove or J&T (third-party carrier).';
-  const shippingPayLaterNotice = shippingEstimate?.pay_after_order_notice
-    || 'Shipping is not included in your checkout total and will be paid upon delivery of your order';
+  const shippingSummaryValue = hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable');
+  const shippingCarrierNote = hasShippingEstimate
+    ? ''
+    : (shippingEstimateReason || 'Complete your delivery address to calculate shipping.');
+  const shippingPayLaterNotice = hasShippingEstimate
+    ? ''
+    : 'Shipping fee must be calculated before you can continue to payment.';
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');
@@ -1154,8 +1186,8 @@ const Payment: React.FC = () => {
                     {isShippingEstimateLoading
                       ? 'Calculating...'
                       : hasShippingEstimate
-                        ? estimatedShippingRange
-                        : 'To be calculated'}
+                        ? `₱${shipping.toLocaleString()}`
+                        : 'Unavailable'}
                   </span>
                 </div>
               </div>
@@ -1179,8 +1211,8 @@ const Payment: React.FC = () => {
                     <span className="text-gray-700">Shipping</span>
                     <span className="text-black text-right max-w-[65%] wrap-break-word">{shippingSummaryValue}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>
-                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>
+                  {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
+                  {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
                 </div>
 
                 <div className="border-t border-gray-200 pt-4 mt-4 flex items-center justify-between">
@@ -1919,8 +1951,8 @@ const Payment: React.FC = () => {
                       <span className="text-gray-600">Shipping</span>
                       <span className="text-black text-right font-medium max-w-[70%] wrap-break-word">{shippingSummaryValue}</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>
+                    {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
+                    {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
                   </div>
                 </div>
 

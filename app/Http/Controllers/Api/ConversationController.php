@@ -331,7 +331,9 @@ class ConversationController extends Controller
         }
 
         // Validate repair is at correct status for payment activation
-        $validStatuses = ['repairer_accepted', 'received', 'completed', 'ready_for_pickup'];
+        // waiting_customer_confirmation = customer has confirmed the repair
+        // repairer_accepted = for backward compatibility with direct payment flow if needed
+        $validStatuses = ['repairer_accepted', 'waiting_customer_confirmation', 'received', 'completed', 'ready_for_pickup'];
         if (!in_array($repairRequest->status, $validStatuses)) {
             return response()->json(['error' => 'Cannot activate payment at current status'], 400);
         }

@@ -359,20 +359,18 @@ export default function JobOrdersPage() {
     return colors[status] || "bg-gray-100 text-gray-800 ring-1 ring-inset ring-gray-200";
   };
 
-  const getPaymentBadgeColor = (order: Pick<Order, 'paymentMethod'>) => {
-    if (isCodOrder(order)) {
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40";
-    }
-
-    return "bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-700/40";
-  };
-
-  const getPaymentBadgeLabel = (order: Pick<Order, 'paymentMethod'>) => {
-    return isCodOrder(order) ? "COD Paid" : "Online Paid";
-  };
-
   const formatStatusLabel = (status: string) => {
     return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  const formatOrderTotal = (total: string | number) => {
+    if (typeof total === 'number' && Number.isFinite(total)) {
+      return `₱${total.toLocaleString()}`;
+    }
+
+    const raw = String(total || '').trim();
+    const parsed = Number.parseFloat(raw.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? `₱${parsed.toLocaleString()}` : raw;
   };
 
   const isCodOrder = (order: Pick<Order, 'paymentMethod'>) => {
@@ -388,7 +386,7 @@ export default function JobOrdersPage() {
   const handleProcessOrder = async (order: Order) => {
     const result = await Swal.fire({
       title: "Process this order?",
-      text: `Order ${order.order_number} for ${order.customer}`,
+      text: `Process this order for ${order.customer}?`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Yes, process",
@@ -429,7 +427,7 @@ export default function JobOrdersPage() {
 
       await Swal.fire({
         title: "Order processed",
-        text: `Order ${order.order_number} is now Processing.`,
+        text: "This order is now Processing.",
         icon: "success",
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
@@ -671,7 +669,7 @@ export default function JobOrdersPage() {
 
       await Swal.fire({
         title: "Success",
-        text: `Order ${selectedOrder.order_number} has been marked as shipped.`,
+        text: "This order has been marked as shipped.",
         icon: "success",
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
@@ -1042,7 +1040,16 @@ export default function JobOrdersPage() {
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.quantity}</span>
                       </td>
                       <td className="box-border px-4 py-4 text-center align-top">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{order.total}</span>
+                        {isOrderPaid(order) && !isCodOrder(order) ? (
+                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                            <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
+                              <PlusIcon className="size-3" />
+                            </span>
+                            {formatOrderTotal(order.total)}
+                          </span>
+                        ) : (
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(order.total)}</span>
+                        )}
                       </td>
                       <td className="box-border px-4 py-4 align-top">
                         <div className="flex flex-col items-start gap-2 min-h-12">
@@ -1050,12 +1057,6 @@ export default function JobOrdersPage() {
                             <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
                             {formatStatusLabel(order.status)}
                           </span>
-                          {isOrderPaid(order) && (
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getPaymentBadgeColor(order)}`}>
-                              <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
-                              {getPaymentBadgeLabel(order)}
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="box-border px-4 py-4 align-top">
@@ -1077,20 +1078,22 @@ export default function JobOrdersPage() {
                             <button
                               type="button"
                               onClick={() => handleProcessOrder(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
                               title="Start processing"
+                              aria-label="Start processing"
                             >
-                              Process
+                              <CheckCircleIcon className="size-5" />
                             </button>
                           )}
                           {order.status === "processing" && (
                             <button
                               type="button"
                               onClick={() => handleShipOrder(order)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
                               title="Mark as shipped"
+                              aria-label="Mark as shipped"
                             >
-                              Ship
+                              <CheckCircleIcon className="size-5" />
                             </button>
                           )}
                           {/* Shipped orders will be completed when customer confirms receipt */}

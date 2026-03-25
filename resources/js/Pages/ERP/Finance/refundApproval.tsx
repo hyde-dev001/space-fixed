@@ -364,6 +364,7 @@ export default function RefundApproval() {
 	const [activeImage, setActiveImage] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState("Pending");
+	const [isActionProcessing, setIsActionProcessing] = useState(false);
 
 	useEffect(() => {
 		const hasRoleAccess = userRole === "Manager" || userRole === "Finance";
@@ -437,15 +438,20 @@ export default function RefundApproval() {
 		});
 
 		if (result.isConfirmed) {
-			setRequests((prev) =>
-				prev.map((r) => (r.id === request.id ? { ...r, status: "Approved" } : r))
-			);
-			Swal.fire({
-				title: "Approved!",
-				text: "The refund request has been approved.",
-				icon: "success",
-				confirmButtonColor: "#2563eb",
-			});
+			setIsActionProcessing(true);
+			try {
+				setRequests((prev) =>
+					prev.map((r) => (r.id === request.id ? { ...r, status: "Approved" } : r))
+				);
+				Swal.fire({
+					title: "Approved!",
+					text: "The refund request has been approved.",
+					icon: "success",
+					confirmButtonColor: "#2563eb",
+				});
+			} finally {
+				setIsActionProcessing(false);
+			}
 		}
 	};
 
@@ -481,17 +487,22 @@ export default function RefundApproval() {
 		});
 
 		if (reason) {
-			setRequests((prev) =>
-				prev.map((r) =>
-					r.id === request.id ? { ...r, status: "Rejected", rejectionReason: reason } : r
-				)
-			);
-			Swal.fire({
-				title: "Rejected",
-				text: "The refund request has been rejected.",
-				icon: "info",
-				confirmButtonColor: "#2563eb",
-			});
+			setIsActionProcessing(true);
+			try {
+				setRequests((prev) =>
+					prev.map((r) =>
+						r.id === request.id ? { ...r, status: "Rejected", rejectionReason: reason } : r
+					)
+				);
+				Swal.fire({
+					title: "Rejected",
+					text: "The refund request has been rejected.",
+					icon: "info",
+					confirmButtonColor: "#2563eb",
+				});
+			} finally {
+				setIsActionProcessing(false);
+			}
 		}
 	};
 
@@ -791,20 +802,21 @@ export default function RefundApproval() {
 						<div className="px-8 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
 							<button
 								onClick={handleCloseModal}
-								className="px-5 py-2.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+								disabled={isActionProcessing}
+								className="px-5 py-2.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Close
 							</button>
 							<button
 								onClick={() => handleApprove(selectedRequest)}
-								disabled={selectedRequest.status !== "Pending"}
+								disabled={selectedRequest.status !== "Pending" || isActionProcessing}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Approve
 							</button>
 							<button
 								onClick={() => handleReject(selectedRequest)}
-								disabled={selectedRequest.status !== "Pending"}
+								disabled={selectedRequest.status !== "Pending" || isActionProcessing}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Reject

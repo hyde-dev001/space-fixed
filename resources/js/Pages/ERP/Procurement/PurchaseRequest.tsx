@@ -399,6 +399,7 @@ export default function PurchaseRequest() {
 
 			console.log("Sending purchase request:", requestData);
 			const newPR = await purchaseRequestApi.create(requestData);
+			const submittedPrNumber = newPR?.pr_number || "Purchase request";
 
 			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
 			closeCreateModal();
@@ -407,7 +408,7 @@ export default function PurchaseRequest() {
 
 			await workflowFeedback.success({
 				title: "Sent to Finance",
-				text: `${newPR.pr_number} has been submitted for finance approval.`,
+				text: `${submittedPrNumber} has been submitted for finance approval.`,
 			});
 		} catch (error: any) {
 			console.error("Error creating purchase request:", error);

@@ -180,6 +180,7 @@ export function LeaveRequests() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
   const [paginationMeta, setPaginationMeta] = useState<any>(null);
+  const [isActionProcessing, setIsActionProcessing] = useState(false);
 
   // Fetch leave requests from API
   useEffect(() => {
@@ -299,6 +300,7 @@ export function LeaveRequests() {
     });
     
     if (result.isConfirmed) {
+      setIsActionProcessing(true);
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
         
@@ -340,6 +342,8 @@ export function LeaveRequests() {
           title: "Approval Failed",
           text: error.message || 'An error occurred while approving the leave request.',
         });
+      } finally {
+        setIsActionProcessing(false);
       }
     }
   };
@@ -360,6 +364,7 @@ export function LeaveRequests() {
       return;
     }
 
+    setIsActionProcessing(true);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
@@ -643,14 +648,16 @@ export function LeaveRequests() {
                         <>
                           <button
                             onClick={() => handleApprove(request)}
-                            className="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                            disabled={isActionProcessing}
+                            className="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Approve"
                           >
                             <CheckCircleIcon className="size-5 text-green-600 dark:text-green-400" />
                           </button>
                           <button
                             onClick={() => handleReject(request)}
-                            className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
+                            disabled={isActionProcessing}
+                            className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Reject"
                           >
                             <AlertIcon className="size-5 text-orange-600 dark:text-orange-400" />
@@ -945,13 +952,15 @@ export function LeaveRequests() {
                       setRequestToReject(null);
                       setRejectionReason("");
                     }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    disabled={isActionProcessing}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleConfirmReject}
-                    className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
+                    disabled={isActionProcessing}
+                    className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                   >
                     Reject Request
                   </button>

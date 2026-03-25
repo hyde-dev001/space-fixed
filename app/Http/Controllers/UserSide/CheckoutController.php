@@ -168,6 +168,7 @@ class CheckoutController extends Controller
                 'items.*.image' => 'nullable|string',
                 'items.*.options' => 'nullable',
                 'total_amount' => 'required|numeric|min:0',
+                'shipping_fee' => 'nullable|numeric|min:0',
                 'customer_name' => 'required|string|max:255',
                 'customer_email' => 'required|email|max:255',
                 'customer_phone' => 'nullable|string|max:20',
@@ -184,6 +185,7 @@ class CheckoutController extends Controller
             ]);
 
             $customerId = $user->id;
+            $requestedShippingFee = max(0.0, round((float) ($validated['shipping_fee'] ?? 0), 2));
 
             // Group items by shop owner (products from same shop go to same order)
             $itemsByShop = [];
@@ -266,6 +268,12 @@ class CheckoutController extends Controller
             }
 
             $createdOrders = [];
+            $shopOwnerIds = array_keys($itemsByShop);
+            $totalShops = count($shopOwnerIds);
+            $cartSubtotal = (float) collect($validated['items'])->sum(fn($item) => ((float) $item['price']) * ((int) $item['qty']));
+            $allocatedShippingFee = 0.0;
+            $shopIndex = 0;
+            $ordersHasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
 
             DB::beginTransaction();
 
@@ -273,20 +281,40 @@ class CheckoutController extends Controller
                 // Create separate order for each shop owner
                 foreach ($itemsByShop as $shopOwnerId => $shopItems) {
                     $orderTotal = 0;
+                    $requestedPaymentMethod = strtolower((string) ($validated['payment_method'] ?? 'paymongo'));
 
                     // Calculate expected total for duplicate check
                     $expectedTotal = collect($shopItems)->sum(fn($si) => $si['item']['price'] * $si['item']['qty']);
+                    $shopIndex++;
+
+                    if ($requestedShippingFee <= 0) {
+                        $shippingFeeForOrder = 0.0;
+                    } elseif ($totalShops === 1 || $cartSubtotal <= 0) {
+                        $shippingFeeForOrder = $requestedShippingFee;
+                    } elseif ($shopIndex === $totalShops) {
+                        $shippingFeeForOrder = max(0.0, round($requestedShippingFee - $allocatedShippingFee, 2));
+                    } else {
+                        $shippingFeeForOrder = round(($expectedTotal / $cartSubtotal) * $requestedShippingFee, 2);
+                    }
+                    $allocatedShippingFee = round($allocatedShippingFee + $shippingFeeForOrder, 2);
 
                     // Duplicate guard: if an identical pending order exists for this
                     // customer + shop within the last 5 minutes, return it instead of
                     // creating a new one (prevents double-orders on retry after 500 errors).
-                    $existingOrder = Order::where('customer_id', $customerId)
+                    $existingOrderQuery = Order::where('customer_id', $customerId)
                         ->where('shop_owner_id', $shopOwnerId)
                         ->where('total_amount', $expectedTotal)
                         ->where('status', 'pending')
                         ->where('payment_status', 'pending')
+                        ->whereRaw('LOWER(COALESCE(payment_method, ?)) = ?', ['paymongo', $requestedPaymentMethod])
                         ->whereNull('payment_expired_at')
-                        ->where('created_at', '>=', now()->subMinutes(5))
+                        ->where('created_at', '>=', now()->subMinutes(5));
+
+                    if ($ordersHasShippingFee) {
+                        $existingOrderQuery->whereRaw('COALESCE(shipping_fee, 0) = ?', [$shippingFeeForOrder]);
+                    }
+
+                    $existingOrder = $existingOrderQuery
                         ->latest()
                         ->first();
 
@@ -304,7 +332,7 @@ class CheckoutController extends Controller
                         $createdOrders[] = [
                             'id'          => $existingOrder->id,
                             'order_number' => $existingOrder->order_number,
-                            'total'       => $existingOrder->total_amount,
+                            'total'       => ((float) $existingOrder->total_amount) + ((float) ($existingOrder->shipping_fee ?? 0)),
                             'items_count' => count($shopItems),
                         ];
                         continue;
@@ -315,7 +343,8 @@ class CheckoutController extends Controller
                         'shop_owner_id' => $shopOwnerId,
                         'customer_id' => $customerId,
                         'order_number' => Order::generateOrderNumber(),
-                        'total_amount' => 0, // Will update after items
+                        'total_amount' => 0, // Item subtotal, updated after items
+                        'shipping_fee' => $shippingFeeForOrder,
                         'status' => 'pending',
                         'customer_name' => $validated['customer_name'],
                         'customer_email' => $validated['customer_email'],
@@ -456,7 +485,7 @@ class CheckoutController extends Controller
                     $createdOrders[] = [
                         'id' => $order->id,
                         'order_number' => $order->order_number,
-                        'total' => $orderTotal,
+                        'total' => $orderTotal + $shippingFeeForOrder,
                         'items_count' => count($shopItems),
                     ];
 
@@ -465,7 +494,9 @@ class CheckoutController extends Controller
                         'order_number' => $order->order_number,
                         'shop_owner_id' => $shopOwnerId,
                         'customer_id' => $customerId,
-                        'total' => $orderTotal,
+                        'total' => $orderTotal + $shippingFeeForOrder,
+                        'item_subtotal' => $orderTotal,
+                        'shipping_fee' => $shippingFeeForOrder,
                     ]);
 
                     // Create or find conversation and send automatic message to customer
@@ -550,7 +581,7 @@ class CheckoutController extends Controller
                             $systemMessage .= "**Products:**\n";
                             $systemMessage .= $productLines->join("\n") . "\n";
                         }
-                        $systemMessage .= "**Total:** ₱" . number_format($orderTotal, 2) . "\n";
+                        $systemMessage .= "**Total:** ₱" . number_format($orderTotal + $shippingFeeForOrder, 2) . "\n";
                             $systemMessage .= "**Status:** Pending Payment\n\n";
                             $systemMessage .= "Thank you for your order! Please complete payment to start processing.";
 
@@ -583,7 +614,7 @@ class CheckoutController extends Controller
                             orderData: [
                                 'order_id' => $order->id,
                                 'order_number' => $order->order_number,
-                                'total' => number_format($orderTotal, 2),
+                                'total' => number_format($orderTotal + $shippingFeeForOrder, 2),
                                 'items_count' => count($shopItems),
                                 'customer_name' => $validated['customer_name'],
                                 'customer_email' => $validated['customer_email'],
@@ -607,7 +638,7 @@ class CheckoutController extends Controller
                             orderData: [
                                 'order_id' => $order->id,
                                 'order_number' => $order->order_number,
-                                'total' => number_format($orderTotal, 2),
+                                'total' => number_format($orderTotal + $shippingFeeForOrder, 2),
                                 'items_count' => count($shopItems),
                                 'customer_name' => $validated['customer_name'],
                                 'customer_email' => $validated['customer_email'],
@@ -688,6 +719,8 @@ class CheckoutController extends Controller
                         'order_number' => $order->order_number,
                         'status' => $order->status,
                         'total_amount' => $order->total_amount,
+                        'shipping_fee' => (float) ($order->shipping_fee ?? 0),
+                        'grand_total' => ((float) $order->total_amount) + ((float) ($order->shipping_fee ?? 0)),
                         'created_at' => $order->created_at->format('Y-m-d H:i:s'),
                         'shop_id' => $order->shopOwner ? $order->shopOwner->id : null,
                         'shop_name' => $order->shopOwner->business_name ?? 'Unknown Shop',
@@ -840,7 +873,7 @@ class CheckoutController extends Controller
                 ], 503);
             }
 
-            $amount = (float) $order->total_amount;
+            $amount = ((float) $order->total_amount) + ((float) ($order->shipping_fee ?? 0));
             if ($amount <= 0) {
                 return response()->json([
                     'success' => false,

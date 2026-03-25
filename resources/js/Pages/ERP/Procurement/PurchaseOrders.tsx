@@ -206,6 +206,8 @@ export default function PurchaseOrders() {
 	};
 
 	useEffect(() => {
+		fetchPurchaseOrders();
+		fetchApprovedPRs();
 		fetchMetrics();
 	}, []);
 
@@ -356,6 +358,17 @@ export default function PurchaseOrders() {
 		}
 		if (defective > received) {
 			await Swal.fire({ icon: "warning", title: "Invalid", text: "Defective quantity cannot exceed received quantity.", confirmButtonColor: "#111827" });
+			return;
+		}
+
+		const hasShortOrDefective = received < receivingOrder.quantity || defective > 0;
+		if (hasShortOrDefective && !receivingData.notes.trim()) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Notes required",
+				text: "Please add notes when delivery is short or has defective items.",
+				confirmButtonColor: "#111827",
+			});
 			return;
 		}
 

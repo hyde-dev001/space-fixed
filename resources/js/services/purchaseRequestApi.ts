@@ -19,6 +19,11 @@ import {
 
 const BASE_URL = '/api/erp/procurement/purchase-requests';
 
+const unwrapPurchaseRequest = (payload: any): PurchaseRequest => {
+    if (payload?.purchase_request) return payload.purchase_request as PurchaseRequest;
+    return payload as PurchaseRequest;
+};
+
 export const purchaseRequestApi = {
     /**
      * Get all purchase requests with optional filters
@@ -42,16 +47,16 @@ export const purchaseRequestApi = {
      * Create a new purchase request
      */
     async create(data: CreatePurchaseRequestPayload): Promise<PurchaseRequest> {
-        const response: AxiosResponse<PurchaseRequest> = await axios.post(BASE_URL, data);
-        return response.data;
+        const response: AxiosResponse<any> = await axios.post(BASE_URL, data);
+        return unwrapPurchaseRequest(response.data);
     },
 
     /**
      * Update an existing purchase request
      */
     async update(id: number, data: UpdatePurchaseRequestPayload): Promise<PurchaseRequest> {
-        const response: AxiosResponse<PurchaseRequest> = await axios.put(`${BASE_URL}/${id}`, data);
-        return response.data;
+        const response: AxiosResponse<any> = await axios.put(`${BASE_URL}/${id}`, data);
+        return unwrapPurchaseRequest(response.data);
     },
 
     /**
@@ -66,32 +71,32 @@ export const purchaseRequestApi = {
      * Submit purchase request to finance for approval
      */
     async submitToFinance(id: number): Promise<PurchaseRequest> {
-        const response: AxiosResponse<PurchaseRequest> = await axios.post(
+        const response: AxiosResponse<any> = await axios.post(
             `${BASE_URL}/${id}/submit-to-finance`
         );
-        return response.data;
+        return unwrapPurchaseRequest(response.data);
     },
 
     /**
      * Approve a purchase request (finance role)
      */
     async approve(id: number, data?: ApprovePurchaseRequestPayload): Promise<PurchaseRequest> {
-        const response: AxiosResponse<PurchaseRequest> = await axios.post(
+        const response: AxiosResponse<any> = await axios.post(
             `${BASE_URL}/${id}/approve`,
             data || {}
         );
-        return response.data;
+        return unwrapPurchaseRequest(response.data);
     },
 
     /**
      * Reject a purchase request
      */
     async reject(id: number, data: RejectPurchaseRequestPayload): Promise<PurchaseRequest> {
-        const response: AxiosResponse<PurchaseRequest> = await axios.post(
+        const response: AxiosResponse<any> = await axios.post(
             `${BASE_URL}/${id}/reject`,
             data
         );
-        return response.data;
+        return unwrapPurchaseRequest(response.data);
     },
 
     /**

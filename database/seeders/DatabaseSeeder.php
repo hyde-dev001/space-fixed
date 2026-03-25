@@ -23,7 +23,6 @@ class DatabaseSeeder extends Seeder
             EmployeeSeeder::class,
             PayrollMasterDataSeeder::class,
             CustomerSeeder::class,
-            ProductSeeder::class,
             PremiumPlanSeeder::class,
             TaxRateSeeder::class,
             PayrollStatutoryTaxRateSeeder::class,

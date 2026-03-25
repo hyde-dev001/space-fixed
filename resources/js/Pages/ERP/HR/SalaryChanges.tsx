@@ -209,6 +209,7 @@ const SalaryChanges: React.FC = () => {
   const [isNewChangeOpen, setIsNewChangeOpen] = useState(false);
   const [isSubmittingNewChange, setIsSubmittingNewChange] = useState(false);
   const [newChangeError, setNewChangeError] = useState<string | null>(null);
+  const [isActionProcessing, setIsActionProcessing] = useState(false);
   const [newChangeForm, setNewChangeForm] = useState({
     employee_id: "",
     new_salary: "",
@@ -373,6 +374,7 @@ const SalaryChanges: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
+    setIsActionProcessing(true);
     try {
       const res = await fetch(`/api/hr/salary-changes/${change.id}/approve`, {
         method: "POST",
@@ -387,6 +389,8 @@ const SalaryChanges: React.FC = () => {
       fetchChanges();
     } catch {
       Swal.fire("Error", "A network error occurred.", "error");
+    } finally {
+      setIsActionProcessing(false);
     }
   };
 
@@ -410,6 +414,7 @@ const SalaryChanges: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
+    setIsActionProcessing(true);
     try {
       const res = await fetch(`/api/hr/salary-changes/${change.id}/reject`, {
         method: "POST",
@@ -424,6 +429,8 @@ const SalaryChanges: React.FC = () => {
       fetchChanges();
     } catch {
       Swal.fire("Error", "A network error occurred.", "error");
+    } finally {
+      setIsActionProcessing(false);
     }
   };
 
@@ -438,6 +445,7 @@ const SalaryChanges: React.FC = () => {
     });
     if (!confirm.isConfirmed) return;
 
+    setIsActionProcessing(true);
     try {
       const res = await fetch(`/api/hr/salary-changes/${change.id}/apply`, {
         method: "POST",
@@ -451,6 +459,8 @@ const SalaryChanges: React.FC = () => {
       fetchChanges();
     } catch {
       Swal.fire("Error", "A network error occurred.", "error");
+    } finally {
+      setIsActionProcessing(false);
     }
   };
 
@@ -465,6 +475,7 @@ const SalaryChanges: React.FC = () => {
     });
     if (!confirm.isConfirmed) return;
 
+    setIsActionProcessing(true);
     try {
       const res = await fetch(`/api/hr/salary-changes/${change.id}/cancel`, {
         method: "POST",
@@ -478,6 +489,8 @@ const SalaryChanges: React.FC = () => {
       fetchChanges();
     } catch {
       Swal.fire("Error", "A network error occurred.", "error");
+    } finally {
+      setIsActionProcessing(false);
     }
   };
 
@@ -644,13 +657,15 @@ const SalaryChanges: React.FC = () => {
                 <>
                   <button
                     onClick={() => handleApprove(change)}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    disabled={isActionProcessing}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => handleReject(change)}
-                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    disabled={isActionProcessing}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     Reject
                   </button>
@@ -659,7 +674,8 @@ const SalaryChanges: React.FC = () => {
               {canApprove && change.status === "approved" && !change.applied_at && (
                 <button
                   onClick={() => handleApply(change)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  disabled={isActionProcessing}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   Apply Now
                 </button>
@@ -667,14 +683,16 @@ const SalaryChanges: React.FC = () => {
               {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                 <button
                   onClick={() => handleCancel(change)}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
+                  disabled={isActionProcessing}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
               )}
               <button
                 onClick={() => setViewChange(null)}
-                className="ml-auto px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                disabled={isActionProcessing}
+                className="ml-auto px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Close
               </button>

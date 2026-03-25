@@ -671,7 +671,7 @@ export default function ProductManagement() {
     if (!canUse360Uploader) {
       Swal.fire({
         title: 'Premium Required',
-        text: 'Shoe Spin Viewer uploads require an active Retail Premium subscription with available showroom slots.',
+        text: 'Shoe Spin Viewer uploads are currently unavailable.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1219,7 +1219,7 @@ export default function ProductManagement() {
     if (show3DShoeModels && product3DFiles.length > 0 && !canUse360Uploader) {
       Swal.fire({
         title: 'Premium Required',
-        text: 'Shoe Spin Viewer uploads require an active Retail Premium subscription with available showroom slots.',
+        text: 'Shoe Spin Viewer uploads are currently unavailable.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1343,7 +1343,7 @@ export default function ProductManagement() {
 
       if (createdProductId && show3DShoeModels && product3DFiles.length > 0) {
         if (!canUse360Uploader) {
-          throw new Error('Active Retail Premium with available showroom slots is required for Shoe Spin Viewer uploads.');
+          throw new Error('Shoe Spin Viewer uploads are currently unavailable.');
         }
 
         if (!colorVariantUploadResult?.firstColorVariantId) {

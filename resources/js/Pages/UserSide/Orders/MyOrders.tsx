@@ -724,10 +724,6 @@ const MyOrders: React.FC = () => {
                           {item.color && <p className="text-sm text-gray-500 mt-1">Color: {item.color}</p>}
                           <p className="text-sm text-gray-500 mt-1">Qty: {item.quantity}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-black text-lg">₱{item.subtotal.toLocaleString()}</p>
-                          <p className="text-xs text-gray-400 mt-1">₱{item.price.toLocaleString()} each</p>
-                        </div>
                       </div>
 
                       {/* Item Total */}
@@ -756,7 +752,7 @@ const MyOrders: React.FC = () => {
                         </div>
                       </div>
 
-                      {(order.status === 'shipped' || order.status === 'to_ship') && (
+                      {['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && (
                         <div className="mt-6 pt-6 border-t border-gray-200">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

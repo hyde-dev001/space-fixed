@@ -164,6 +164,7 @@ export default function RepairPriceApproval() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("pending");
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending");
+  const [isActionProcessing, setIsActionProcessing] = useState(false);
 
   // Fetch repair services from backend
   const fetchServices = async () => {
@@ -318,6 +319,7 @@ export default function RepairPriceApproval() {
     });
 
     if (notes !== undefined) {
+      setIsActionProcessing(true);
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
         const approvalEndpoint = isFinanceFinalStep
@@ -366,6 +368,8 @@ export default function RepairPriceApproval() {
           icon: 'error',
           confirmButtonColor: '#000000',
         });
+      } finally {
+        setIsActionProcessing(false);
       }
     }
   };
@@ -408,6 +412,7 @@ export default function RepairPriceApproval() {
     });
 
     if (reason) {
+      setIsActionProcessing(true);
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
         const response = await fetch(`/api/finance/repair-price-changes/${request.id}/reject`, {
@@ -450,6 +455,8 @@ export default function RepairPriceApproval() {
           icon: 'error',
           confirmButtonColor: '#000000',
         });
+      } finally {
+        setIsActionProcessing(false);
       }
     }
   };
@@ -900,7 +907,8 @@ export default function RepairPriceApproval() {
                         setViewModalOpen(false);
                         handleReject(selectedRequest);
                       }}
-                      className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                      disabled={isActionProcessing}
+                      className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       <XIcon className="w-5 h-5" />
                       Reject
@@ -910,7 +918,8 @@ export default function RepairPriceApproval() {
                         setViewModalOpen(false);
                         handleApprove(selectedRequest);
                       }}
-                      className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                      disabled={isActionProcessing}
+                      className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
                       {selectedRequest.rawStatus === 'Pending Finance Final Approval' ? 'Approve & Apply Price' : 'Approve & Forward'}

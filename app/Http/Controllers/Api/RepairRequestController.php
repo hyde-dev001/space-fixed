@@ -247,6 +247,7 @@ class RepairRequestController extends Controller
             $intakeDeliveryMethod = $request->service_type === 'pickup' ? 'customer_delivery' : 'walk_in';
             $returnDeliveryMethod = $request->return_delivery_method
                 ?: ($intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'customer_pickup');
+            $autoEnableOnlinePayment = $intakeDeliveryMethod === 'walk_in';
             $pickupAddress = null;
             $intakeAddress = null;
             $returnAddress = null;
@@ -347,6 +348,8 @@ class RepairRequestController extends Controller
                 'payment_policy' => $shopOwner
                     ? $this->normalizeRepairPaymentPolicy($shopOwner->repair_payment_policy ?? 'deposit_50')
                     : 'deposit_50',
+                'payment_enabled' => $autoEnableOnlinePayment,
+                'payment_enabled_at' => $autoEnableOnlinePayment ? now() : null,
             ]);
 
             // Attach services
@@ -563,6 +566,17 @@ class RepairRequestController extends Controller
                 'message' => 'Unauthenticated'
             ], 401);
         }
+
+        // Legacy normalization: old payment flows could leave paid repairs stuck in
+        // owner_approval_pending. Owner approval is now only used for rejection workflows.
+        RepairRequest::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'owner_approval_pending')
+            ->whereIn('payment_status', ['paid', 'completed'])
+            ->whereNull('repairer_rejected_at')
+            ->whereNull('manager_decision')
+            ->whereNull('owner_decision')
+            ->update(['status' => 'pending']);
 
         $query = RepairRequest::with(['services', 'shopOwner', 'repairer', 'materialUsages.inventoryItem:id,price'])
             ->forCustomer($user->id);
@@ -939,6 +953,57 @@ class RepairRequestController extends Controller
                 'region' => $validated['return_region'] ?? null,
                 'postal_code' => $validated['return_postal_code'] ?? null,
             ];
+        } else {
+            $existingReturnAddress = is_array($repair->return_address) ? $repair->return_address : null;
+            $hasExistingReturnAddress = $existingReturnAddress
+                && !empty($existingReturnAddress['address_line'])
+                && !empty($existingReturnAddress['barangay'])
+                && !empty($existingReturnAddress['city'])
+                && !empty($existingReturnAddress['region'])
+                && !empty($existingReturnAddress['postal_code']);
+
+            if ($hasExistingReturnAddress) {
+                $updatePayload['return_address'] = $existingReturnAddress;
+            } else {
+                $defaultAddress = $user->defaultAddress()->first();
+
+                if ($defaultAddress) {
+                    $updatePayload['return_address'] = [
+                        'address_line' => $defaultAddress->address_line,
+                        'barangay' => $defaultAddress->barangay,
+                        'city' => $defaultAddress->city,
+                        'region' => $defaultAddress->region,
+                        'postal_code' => $defaultAddress->postal_code,
+                    ];
+                } elseif (is_array($repair->pickup_address)) {
+                    $pickupAddress = $repair->pickup_address;
+                    $hasPickupAddress = !empty($pickupAddress['address_line'])
+                        && !empty($pickupAddress['barangay'])
+                        && !empty($pickupAddress['city'])
+                        && !empty($pickupAddress['region'])
+                        && !empty($pickupAddress['postal_code']);
+
+                    if ($hasPickupAddress) {
+                        $updatePayload['return_address'] = [
+                            'address_line' => $pickupAddress['address_line'],
+                            'barangay' => $pickupAddress['barangay'],
+                            'city' => $pickupAddress['city'],
+                            'region' => $pickupAddress['region'],
+                            'postal_code' => $pickupAddress['postal_code'],
+                        ];
+                    } else {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'No return address found. Please update your delivery address before switching to courier pickup.',
+                        ], 422);
+                    }
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No return address found. Please update your delivery address before switching to courier pickup.',
+                    ], 422);
+                }
+            }
         }
 
         $repair->update($updatePayload);
@@ -1091,43 +1156,18 @@ class RepairRequestController extends Controller
                 ], 400);
             }
 
-            // Check if this is a high-value repair requiring owner approval
-            $requiresOwnerApproval = $repair->is_high_value && $repair->requires_owner_approval;
-            
-            if ($requiresOwnerApproval) {
-                $repair->update([
-                    'status' => 'owner_approval_pending',
-                    'customer_confirmed_at' => now()
-                ]);
-
-                DB::commit();
-
-                // TODO: Notify shop owner of pending high-value approval
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Repair confirmed. Awaiting shop owner approval for high-value repair.',
-                    'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
-                    'requires_owner_approval' => true
-                ]);
-            }
-
-            // Regular repair confirmation (not high-value or doesn't require approval)
+            // Always confirm to pending status (owner approval only applies to rejections, not payment workflow)
             $repair->update([
                 'status' => 'pending',
                 'customer_confirmed_at' => now()
             ]);
 
             DB::commit();
-
-            // TODO: Notify repairer that customer confirmed
-            // Repairer can now start work
-
+            
             return response()->json([
                 'success' => true,
-                'message' => 'Repair confirmed. Status updated to pending.',
+                'message' => 'Repair confirmed. Proceed to payment.',
                 'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
-                'requires_owner_approval' => false
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();

@@ -69,7 +69,7 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
             }
 
             $apiKey = $order->shopOwner?->paymongo_secret_key;
-            $amount = (float) $order->total_amount;
+            $amount = ((float) $order->total_amount) + ((float) ($order->shipping_fee ?? 0));
             $description = 'SoleSpace Order #' . $order->order_number;
         } else {
             $repair = \App\Models\RepairRequest::with('shopOwner')

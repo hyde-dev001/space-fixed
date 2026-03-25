@@ -34,6 +34,11 @@ type RepairOrder = {
   pickupCity?: string;
   pickupRegion?: string;
   pickupPostalCode?: string;
+  returnAddressLine?: string;
+  returnBarangay?: string;
+  returnCity?: string;
+  returnRegion?: string;
+  returnPostalCode?: string;
   selectedServices?: Array<{ name: string; price?: string } | string>;
   conversation_id?: number | null;
   payment_enabled?: boolean;
@@ -323,6 +328,12 @@ const PackageIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const MotorcycleIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 18a2 2 0 100-4 2 2 0 000 4zm14 0a2 2 0 100-4 2 2 0 000 4zM7 16h6l3-5h3M11 16l-2-5h4" />
+  </svg>
+);
+
 // Professional Metric Card Component
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
@@ -564,6 +575,11 @@ export default function JobOrdersRepair() {
           pickupCity: (repair.intake_address || repair.pickup_address)?.city || null,
           pickupRegion: (repair.intake_address || repair.pickup_address)?.region || null,
           pickupPostalCode: (repair.intake_address || repair.pickup_address)?.postal_code || null,
+          returnAddressLine: repair.return_address?.address_line || null,
+          returnBarangay: repair.return_address?.barangay || null,
+          returnCity: repair.return_address?.city || null,
+          returnRegion: repair.return_address?.region || null,
+          returnPostalCode: repair.return_address?.postal_code || null,
           imageUrls: (() => {
             let images = repair.images;
             
@@ -631,6 +647,17 @@ export default function JobOrdersRepair() {
       setViewOrder(latestOrder);
     }
   }, [orders]);
+
+  useEffect(() => {
+    if (!isViewModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isViewModalOpen]);
 
   const canTrackMaterials = (status: RepairOrder["status"] | undefined) => {
     return status === "in-progress" || status === "awaiting_parts";
@@ -919,7 +946,8 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const canMarkReceived = (order: Pick<RepairOrder, 'payment_status'>) => {
+  const canMarkReceived = (order: Pick<RepairOrder, 'payment_status' | 'serviceType'>) => {
+    if (isWalkInIntake(order)) return true;
     return ['paid', 'completed'].includes(order.payment_status ?? '');
   };
 
@@ -1648,7 +1676,19 @@ export default function JobOrdersRepair() {
   };
 
   const getShippingAddress = (order: RepairOrder) => {
-    const parts = [
+    const returnParts = [
+      order.returnAddressLine,
+      order.returnBarangay,
+      order.returnCity,
+      order.returnRegion,
+      order.returnPostalCode,
+    ].filter(Boolean);
+
+    if (returnParts.length) {
+      return returnParts.join(', ');
+    }
+
+    const fallbackParts = [
       order.pickupAddressLine,
       order.pickupBarangay,
       order.pickupCity,
@@ -1656,7 +1696,7 @@ export default function JobOrdersRepair() {
       order.pickupPostalCode,
     ].filter(Boolean);
 
-    return parts.length ? parts.join(', ') : 'No shipping address provided';
+    return fallbackParts.length ? fallbackParts.join(', ') : 'No shipping address provided';
   };
 
   const handleReviewAction = async (action: "accept" | "reject" | "message") => {
@@ -1664,6 +1704,25 @@ export default function JobOrdersRepair() {
 
     if (action === "message") {
       return;
+    }
+
+    if (action === "accept" || action === "reject") {
+      const isAcceptAction = action === "accept";
+      const confirmation = await Swal.fire({
+        title: isAcceptAction ? "Accept Request?" : "Reject Request?",
+        text: isAcceptAction
+          ? "This will move the request forward and open the customer support chat."
+          : "This will proceed to the rejection form where you can select a reason.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: isAcceptAction ? "Yes, accept" : "Yes, continue",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#111827",
+      });
+
+      if (!confirmation.isConfirmed) {
+        return;
+      }
     }
 
     if (action === "accept") {
@@ -2116,37 +2175,15 @@ export default function JobOrdersRepair() {
                           </button>
                           
                           {/* Phase 8: Work Progress Action Buttons */}
-                          {/* Show Start Work only after shoes are received */}
-                          {order.status === "received" && (
+                          {(order.status === "in-progress" || order.status === "completed") && (
                             <button
-                              onClick={() => handleStartWork(order)}
-                              disabled={order.payment_enabled && !['paid', 'completed'].includes(order.payment_status ?? '')}
-                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                                order.payment_enabled && !['paid', 'completed'].includes(order.payment_status ?? '')
-                                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                                  : 'text-white bg-blue-600 hover:bg-blue-700'
-                              }`}
-                              title={
-                                order.payment_enabled && !['paid', 'completed'].includes(order.payment_status ?? '')
-                                  ? 'Waiting for customer payment'
-                                  : 'Start work on this repair'
-                              }
+                              onClick={() => handleMarkReady(String(order.database_id))}
+                              className="inline-flex items-center justify-center p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                              title="Ready for Pickup"
+                              aria-label="Ready for Pickup"
                             >
-                              Start Work
+                              <MotorcycleIcon className="size-5" />
                             </button>
-                          )}
-                          
-                          
-                          {order.status === "in-progress" && (
-                            <>
-                              <button
-                                onClick={() => handleMarkReady(order.database_id)}
-                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                                title="Mark as ready for pickup"
-                              >
-                                Ready for Pickup
-                              </button>
-                            </>
                           )}
                           
                           {order.status === "awaiting_parts" && (
@@ -2159,16 +2196,6 @@ export default function JobOrdersRepair() {
                             </button>
                           )}
                           
-                          {order.status === "completed" && (
-                            <button
-                              onClick={() => handleMarkReady(order.database_id)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                              title="Mark as ready for pickup"
-                            >
-                              Mark Ready for Pickup
-                            </button>
-                          )}
-
                           {order.status === "ready-for-pickup" && getReturnDeliveryMethod(order) !== "walk_in" && (
                             <>
                               {canActivateOnlineRemainingBalance(order) && (
@@ -2182,10 +2209,11 @@ export default function JobOrdersRepair() {
                               )}
                               <button
                                 onClick={() => handleShipOrder(order)}
-                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                                className="inline-flex size-9 items-center justify-center rounded-lg border border-gray-300 bg-gray-50 text-green-500 transition-colors hover:border-green-300 hover:bg-white hover:text-green-600 dark:border-gray-700 dark:bg-gray-900 dark:text-green-400 dark:hover:border-green-500 dark:hover:bg-gray-800"
                                 title="Ship this repair order"
+                                aria-label="Ship this repair order"
                               >
-                                Ship
+                                <CheckCircleIcon className="h-4 w-4" />
                               </button>
                             </>
                           )}
@@ -2307,7 +2335,7 @@ export default function JobOrdersRepair() {
 
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-0">
             <div
               className="absolute inset-0"
               onClick={() => {
@@ -2316,9 +2344,9 @@ export default function JobOrdersRepair() {
               }}
             />
 
-            <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white dark:bg-gray-800 px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700 z-10">
-                <div className="flex items-start justify-between">
+            <div className="relative bg-white dark:bg-gray-800 shadow-2xl w-screen h-screen max-w-none max-h-screen rounded-none overflow-hidden flex flex-col">
+              <div className="sticky top-0 bg-white dark:bg-gray-800 px-4 sm:px-6 pt-5 pb-4 border-b border-gray-200 dark:border-gray-700 z-10">
+                <div className="mx-auto w-full max-w-6xl flex items-start justify-between gap-4">
                   <div>
                     <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Repair Service Details</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Order {viewOrder.id}</p>
@@ -2358,12 +2386,13 @@ export default function JobOrdersRepair() {
                 </div>
               </div>
 
-              <div className="px-6 py-4 space-y-4">
+              <div className="flex-1 overflow-y-auto">
+                <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-10 py-6 space-y-6">
                 {/* Shoe Images */}
                 {((viewOrder.imageUrls && viewOrder.imageUrls.length > 0) || viewOrder.imageUrl) && (
                   <div>
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shoe Images</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Shoe Images</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {(viewOrder.imageUrls && viewOrder.imageUrls.length > 0
                         ? viewOrder.imageUrls
                         : [viewOrder.imageUrl as string]
@@ -2372,17 +2401,13 @@ export default function JobOrdersRepair() {
                           key={`${src}-${index}`}
                           type="button"
                           onClick={() => setEnlargedImage(src)}
-                          className={`group relative rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-shadow ${
-                            index === 0 ? "md:col-span-2 md:row-span-2" : ""
-                          }`}
+                          className="group relative h-52 w-full rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-shadow"
                           title="View image"
                         >
                           <img
                             src={src}
                             alt={`${viewOrder.item} ${index + 1}`}
-                            className={`w-full object-cover transition-transform duration-300 group-hover:scale-[1.02] ${
-                              index === 0 ? "h-64 md:h-72" : "h-32 md:h-32"
-                            }`}
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                         </button>
@@ -2392,7 +2417,7 @@ export default function JobOrdersRepair() {
                 )}
 
                 {/* Customer Info */}
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Customer</p>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.customer}</p>
@@ -2524,6 +2549,7 @@ export default function JobOrdersRepair() {
                   </div>
                 )}
 
+                {viewOrder.status === "in-progress" && (
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Materials Used</p>
@@ -2625,10 +2651,12 @@ export default function JobOrdersRepair() {
                     )}
                   </div>
                 </div>
+                )}
 
                 {/* Pickup Address */}
-                {viewOrder.serviceType === "pickup" && (
+                {viewOrder.serviceType === "pickup" && viewOrder.intakeDeliveryMethod !== 'customer_delivery' && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                       🚚 Customer's Collection Address
                     </p>
@@ -2660,6 +2688,7 @@ export default function JobOrdersRepair() {
                         </div>
                       )}
                     </div>
+                    </>
                   </div>
                 )}
 
@@ -2706,21 +2735,23 @@ export default function JobOrdersRepair() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
 
               {/* Footer */}
-              <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-900/30 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
+              <div className="bg-gray-50 dark:bg-gray-900/30 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="mx-auto w-full max-w-6xl flex flex-wrap items-center justify-between gap-3">
                 {viewOrder.status === "assigned_to_repairer" && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleReviewAction("accept")}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+                      className="px-4 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium transition-colors"
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => handleReviewAction("reject")}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                      className="px-4 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium transition-colors"
                     >
                       Reject
                     </button>
@@ -2730,13 +2761,13 @@ export default function JobOrdersRepair() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleReviewAction("accept")}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+                      className="px-4 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium transition-colors"
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => handleReviewAction("reject")}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                      className="px-4 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium transition-colors"
                     >
                       Reject
                     </button>
@@ -2746,23 +2777,6 @@ export default function JobOrdersRepair() {
                     >
                       Message
                     </button>
-                  </div>
-                )}
-                {/* After acceptance - both pickup and walk-in need to wait for physical receipt */}
-                {(viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation") && (
-                  <div className="flex flex-wrap items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">💬 Request Accepted - Waiting for Shoes</p>
-                      {viewOrder.serviceType === "pickup" ? (
-                        <p className="text-xs text-blue-700 dark:text-blue-400">
-                          Contact customer to confirm details. Arrange pickup service (Lalamove, Grab, Mr. Speedy) to collect shoes from the address provided. Click "Mark as Received" once shoes arrive at your shop.
-                        </p>
-                      ) : (
-                        <p className="text-xs text-blue-700 dark:text-blue-400">
-                          Request accepted! Customer will bring their shoes to your shop. Click "Mark as Received" once the customer drops off the shoes.
-                        </p>
-                      )}
-                    </div>
                   </div>
                 )}
                 
@@ -2784,15 +2798,6 @@ export default function JobOrdersRepair() {
                     >
                       Mark as Received
                     </button>
-                    {!viewOrder.payment_enabled && (
-                      <button
-                        onClick={() => handleActivatePayment(viewOrder.database_id)}
-                        className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
-                        title="Activate payment for this repair"
-                      >
-                        Activate Payment
-                      </button>
-                    )}
                     {isWalkInIntake(viewOrder) && (
                       <button
                         onClick={() => handleMarkPaidInShop(viewOrder)}
@@ -2809,6 +2814,15 @@ export default function JobOrdersRepair() {
                         }
                       >
                         {getMarkPaidInShopLabel(viewOrder)}
+                      </button>
+                    )}
+                    {!viewOrder.payment_enabled && (
+                      <button
+                        onClick={() => handleActivatePayment(viewOrder.database_id)}
+                        className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
+                        title="Activate payment for this repair"
+                      >
+                        Activate Payment
                       </button>
                     )}
                   </div>
@@ -2848,10 +2862,11 @@ export default function JobOrdersRepair() {
                               )}
                               <button
                                 onClick={() => handleShipOrder(viewOrder)}
-                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                                className="inline-flex size-9 items-center justify-center rounded-lg border border-gray-300 bg-gray-50 text-green-500 transition-colors hover:border-green-300 hover:bg-white hover:text-green-600 dark:border-gray-700 dark:bg-gray-900 dark:text-green-400 dark:hover:border-green-500 dark:hover:bg-gray-800"
                                 title="Ship this repair order"
+                                aria-label="Ship this repair order"
                               >
-                                Ship
+                                <CheckCircleIcon className="h-4 w-4" />
                               </button>
                             </>
                           )}
@@ -2928,6 +2943,7 @@ export default function JobOrdersRepair() {
                 >
                   Close
                 </button>
+                </div>
               </div>
             </div>
           </div>

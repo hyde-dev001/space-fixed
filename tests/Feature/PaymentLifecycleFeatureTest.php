@@ -267,6 +267,7 @@ class PaymentLifecycleFeatureTest extends TestCase
             'payment_status' => 'pending',
             'payment_expires_at' => now()->subHour(),
             'payment_expired_at' => now()->subMinutes(30),
+            'intake_delivery_method' => 'walk_in',  // Required for in-shop payment
         ]);
 
         $response = $this->actingAs($repairer, 'user')

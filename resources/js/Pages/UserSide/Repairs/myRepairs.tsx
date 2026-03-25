@@ -1128,9 +1128,60 @@ const MyRepairs: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
+    let returnAddressPayload: Record<string, string> = {};
+
+    if (!switchingToWalkIn) {
+      const fallbackAddress =
+        (order.return_address && typeof order.return_address === 'object' ? order.return_address : null)
+        ?? (order.pickup_address && typeof order.pickup_address === 'object' ? order.pickup_address : null);
+
+      const addressModal = await Swal.fire({
+        title: 'Delivery Address for Courier Pick-up',
+        html: `
+          <div class="space-y-3 text-left">
+            <input id="return_address_line" class="swal2-input m-0!" placeholder="Address line" value="${fallbackAddress?.address_line ?? ''}" />
+            <input id="return_barangay" class="swal2-input m-0!" placeholder="Barangay" value="${fallbackAddress?.barangay ?? ''}" />
+            <input id="return_city" class="swal2-input m-0!" placeholder="City" value="${fallbackAddress?.city ?? ''}" />
+            <input id="return_region" class="swal2-input m-0!" placeholder="Region/Province" value="${fallbackAddress?.region ?? ''}" />
+            <input id="return_postal_code" class="swal2-input m-0!" placeholder="Postal code" value="${fallbackAddress?.postal_code ?? ''}" />
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Save address and continue',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#000000',
+        cancelButtonColor: '#6b7280',
+        focusConfirm: false,
+        preConfirm: () => {
+          const addressLine = (document.getElementById('return_address_line') as HTMLInputElement | null)?.value?.trim() ?? '';
+          const barangay = (document.getElementById('return_barangay') as HTMLInputElement | null)?.value?.trim() ?? '';
+          const city = (document.getElementById('return_city') as HTMLInputElement | null)?.value?.trim() ?? '';
+          const region = (document.getElementById('return_region') as HTMLInputElement | null)?.value?.trim() ?? '';
+          const postalCode = (document.getElementById('return_postal_code') as HTMLInputElement | null)?.value?.trim() ?? '';
+
+          if (!addressLine || !barangay || !city || !region || !postalCode) {
+            Swal.showValidationMessage('Please complete all delivery address fields.');
+            return null;
+          }
+
+          return {
+            return_address_line: addressLine,
+            return_barangay: barangay,
+            return_city: city,
+            return_region: region,
+            return_postal_code: postalCode,
+          };
+        },
+      });
+
+      if (!addressModal.isConfirmed || !addressModal.value) return;
+      returnAddressPayload = addressModal.value;
+    }
+
     try {
       const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
         return_delivery_method: nextMethod,
+        ...returnAddressPayload,
       });
 
       const updatedMethod = response.data?.return_delivery_method ?? nextMethod;
@@ -1739,8 +1790,8 @@ const MyRepairs: React.FC = () => {
                           SET SCHEDULE
                         </button>
                       )}
-                      {/* Chat with Repairer and Pay Now - For Pickup/Delivery Only (Not Walk-in) */}
-                      {order.status === 'repairer_accepted' && order.conversation_id && getIntakeMethod(order) !== 'walk_in' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
+                      {/* Chat with Repairer and Pay Now - For All Delivery Methods */}
+                      {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
                           <Link
                             href={`/customer/conversations?conversation_id=${order.conversation_id}`}

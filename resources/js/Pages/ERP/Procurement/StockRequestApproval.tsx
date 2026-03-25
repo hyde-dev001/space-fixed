@@ -117,6 +117,7 @@ export default function StockRequest() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
+	const [isActionProcessing, setIsActionProcessing] = useState(false);
 
 	const fetchRequests = async () => {
 		try {
@@ -203,6 +204,7 @@ export default function StockRequest() {
 
 		if (!result.isConfirmed) return;
 
+		setIsActionProcessing(true);
 		try {
 			await stockRequestApi.approve(request.id);
 			await workflowFeedback.success({
@@ -215,6 +217,8 @@ export default function StockRequest() {
 		} catch (error: any) {
 			console.error("Failed to accept request:", error);
 			await workflowFeedback.error(error?.response?.data?.message || "Failed to accept request");
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 
@@ -244,6 +248,7 @@ export default function StockRequest() {
 
 		if (!result.isConfirmed || !result.value) return;
 
+		setIsActionProcessing(true);
 		try {
 			await stockRequestApi.reject(request.id, { rejection_reason: result.value });
 			await workflowFeedback.success({
@@ -258,6 +263,8 @@ export default function StockRequest() {
 		} catch (error: any) {
 			console.error("Failed to reject request:", error);
 			await workflowFeedback.error(error?.response?.data?.message || "Failed to reject request");
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 
@@ -286,6 +293,7 @@ export default function StockRequest() {
 
 		if (!result.isConfirmed || !result.value) return;
 
+		setIsActionProcessing(true);
 		try {
 			await stockRequestApi.requestDetails(request.id, { approval_notes: result.value });
 			await workflowFeedback.success({
@@ -299,6 +307,8 @@ export default function StockRequest() {
 		} catch (error: any) {
 			console.error("Failed to request details:", error);
 			await workflowFeedback.error(error?.response?.data?.message || "Failed to send details request");
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 
@@ -539,28 +549,29 @@ export default function StockRequest() {
 						<div className="flex flex-wrap gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
 							<button
 								onClick={() => handleAccept(viewingRequest)}
-								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status)}
+								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Approve
 							</button>
 							<button
 								onClick={() => handleAskDetails(viewingRequest)}
-								disabled={viewingRequest.status !== "pending"}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium transition-colors"
+								disabled={viewingRequest.status !== "pending" || isActionProcessing}
+								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Ask Details
 							</button>
 							<button
 								onClick={() => handleReject(viewingRequest)}
-								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status)}
+								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Reject
 							</button>
 							<button
 								onClick={() => setViewingRequest(null)}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+								disabled={isActionProcessing}
+								className="flex-1 min-w-35 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Close
 							</button>

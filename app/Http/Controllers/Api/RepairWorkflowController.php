@@ -2081,7 +2081,8 @@ class RepairWorkflowController extends Controller
     /**
      * Customer confirms repair (Phase 4)
      * Changes status from repairer_accepted to waiting_customer_confirmation
-     * If high-value, changes to owner_approval_pending instead
+     * Note: For high-value repairs, owner_approval_pending is set AFTER payment (not here)
+     * This allows payment to be enabled first before owner approval
      */
     public function confirmRepair(Request $request, $id)
     {
@@ -2102,10 +2103,10 @@ class RepairWorkflowController extends Controller
                 ->where('status', 'repairer_accepted')
                 ->firstOrFail();
             
-            // Check if this is a high-value repair requiring owner approval
-            $requiresOwnerApproval = $repairRequest->requires_owner_approval ?? false;
-            
-            $newStatus = $requiresOwnerApproval ? 'owner_approval_pending' : 'waiting_customer_confirmation';
+            // Always transition to waiting_customer_confirmation on confirmation
+            // For high-value repairs, transition to owner_approval_pending AFTER payment is completed
+            // This ensures payment can be enabled and processed before owner approval
+            $newStatus = 'waiting_customer_confirmation';
             
             $repairRequest->update([
                 'status' => $newStatus,
@@ -2118,8 +2119,7 @@ class RepairWorkflowController extends Controller
             
             return response()->json([
                 'success' => true,
-                'message' => 'Repair confirmed successfully.',
-                'requires_owner_approval' => $requiresOwnerApproval,
+                'message' => 'Repair confirmed successfully. Proceed to payment.',
                 'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
             ]);
             
@@ -2510,6 +2510,35 @@ class RepairWorkflowController extends Controller
                 ], 422);
             }
 
+            $returnAddress = is_array($repairRequest->return_address) ? $repairRequest->return_address : null;
+            $hasReturnAddress = $returnAddress
+                && !empty($returnAddress['address_line'])
+                && !empty($returnAddress['barangay'])
+                && !empty($returnAddress['city'])
+                && !empty($returnAddress['region'])
+                && !empty($returnAddress['postal_code']);
+
+            if (!$hasReturnAddress) {
+                $defaultAddress = $repairRequest->user?->defaultAddress()->first();
+
+                if ($defaultAddress) {
+                    $repairRequest->update([
+                        'return_address' => [
+                            'address_line' => $defaultAddress->address_line,
+                            'barangay' => $defaultAddress->barangay,
+                            'city' => $defaultAddress->city,
+                            'region' => $defaultAddress->region,
+                            'postal_code' => $defaultAddress->postal_code,
+                        ],
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot ship because customer return address is missing. Ask the customer to set a delivery address first.',
+                    ], 422);
+                }
+            }
+
             if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
                 return response()->json([
                     'success' => false,
@@ -2569,19 +2598,29 @@ class RepairWorkflowController extends Controller
                 'ready-for-pickup', 'picked_up', 'cancelled', 'rejected',
             ])->firstOrFail();
 
-            $repairRequest->update([
+            $updatePayload = [
                 'delivery_method' => $validated['delivery_method'],
                 'intake_delivery_method' => $validated['delivery_method'] === 'walk_in' ? 'walk_in' : 'customer_delivery',
                 'intake_address' => $validated['delivery_method'] === 'walk_in'
                     ? null
                     : ($repairRequest->intake_address ?? $repairRequest->pickup_address),
                 'pickup_address' => $validated['delivery_method'] === 'walk_in' ? null : $repairRequest->pickup_address,
-            ]);
+            ];
+
+            // Auto-enable online payment for walk-in intake
+            if ($validated['delivery_method'] === 'walk_in' && !$repairRequest->payment_enabled) {
+                $updatePayload['payment_enabled'] = true;
+                $updatePayload['payment_enabled_at'] = now();
+                $updatePayload['payment_enabled_by'] = $shopOwner?->id ?? $user?->id;
+            }
+
+            $repairRequest->update($updatePayload);
 
             return response()->json([
                 'success'         => true,
                 'delivery_method' => $repairRequest->delivery_method,
                 'intake_delivery_method' => $repairRequest->intake_delivery_method,
+                'payment_enabled' => (bool) $repairRequest->payment_enabled,
                 'message'         => 'Delivery method updated successfully.',
             ]);
 
