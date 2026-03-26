@@ -5,7 +5,9 @@
     "packageManager": "pnpm@10.32.1",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "test:frontend": "vitest run",
+        "test:frontend:refund": "vitest run resources/js/components/refunds/__tests__/RefundStageBadge.test.tsx"
     },
     "dependencies": {
         "-": "^0.0.1",
@@ -50,6 +52,8 @@
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^16.3.0",
         "@types/react": "^18.3.18",
         "@types/react-dom": "^18.3.5",
         "@types/three": "^0.183.1",
@@ -57,9 +61,11 @@
         "axios": "^1.13.4",
         "concurrently": "^9.0.1",
         "eslint": "^9.19.0",
+        "jsdom": "^27.0.1",
         "laravel-vite-plugin": "^2.0.0",
         "tailwindcss": "^4.0.0",
         "typescript": "~5.7.2",
+        "vitest": "^3.2.4",
         "vite": "^7.0.4",
         "vite-plugin-svgr": "^4.5.0"
     }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\HR\LeaveRequest;
 use App\Models\HR\LeaveBalance;
 use App\Models\Employee;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,40 @@ use Carbon\Carbon;
 
 class LeaveController extends Controller
 {
+    private function normalizedRole(?string $role): string
+    {
+        return strtoupper(str_replace(['_', '-'], ' ', trim((string) $role)));
+    }
+
+    private function isShopOwner(User $user): bool
+    {
+        $role = $this->normalizedRole($user->role ?? '');
+        return $role === 'SHOP OWNER';
+    }
+
+    private function resolveShopOwnerId(User $user): ?int
+    {
+        if ($this->isShopOwner($user)) {
+            return (int) $user->id;
+        }
+
+        return $user->shop_owner_id ? (int) $user->shop_owner_id : null;
+    }
+
+    private function canManageLeaveApprovals(User $user): bool
+    {
+        if ($user->can('access-leave-approvals')) {
+            return true;
+        }
+
+        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['Manager', 'Finance Manager', 'Super Admin', 'Shop Owner'])) {
+            return true;
+        }
+
+        $role = $this->normalizedRole($user->role ?? '');
+        return in_array($role, ['MANAGER', 'FINANCE MANAGER', 'SUPER ADMIN', 'SHOP OWNER'], true);
+    }
+
     /**
      * Get all leave requests for the current user's shop
      */
@@ -26,7 +61,7 @@ class LeaveController extends Controller
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
             
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
             
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
@@ -83,11 +118,15 @@ class LeaveController extends Controller
             }
             
             // Only managers can view pending approvals
-            if (!in_array($user->role, ['MANAGER', 'FINANCE_MANAGER', 'SUPER_ADMIN', 'shop_owner'])) {
+            if (!$this->canManageLeaveApprovals($user)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
             
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             $pendingLeaves = LeaveRequest::where('shop_owner_id', $shopOwnerId)
                 ->where('status', 'pending')
@@ -143,7 +182,11 @@ class LeaveController extends Controller
             ]);
             
             $user = Auth::guard('user')->user();
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             // Verify employee belongs to shop
             $employee = Employee::where('id', $validated['employee_id'])
@@ -236,11 +279,15 @@ class LeaveController extends Controller
             }
             
             // Check if user has permission to approve
-            if (!in_array($user->role, ['MANAGER', 'FINANCE_MANAGER', 'SUPER_ADMIN', 'shop_owner'])) {
+            if (!$this->canManageLeaveApprovals($user)) {
                 return response()->json(['error' => 'Unauthorized to approve leave requests'], 403);
             }
             
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             $leaveRequest = LeaveRequest::where('id', $id)
                 ->where('shop_owner_id', $shopOwnerId)
@@ -311,11 +358,15 @@ class LeaveController extends Controller
             }
             
             // Check if user has permission to reject
-            if (!in_array($user->role, ['MANAGER', 'FINANCE_MANAGER', 'SUPER_ADMIN', 'shop_owner'])) {
+            if (!$this->canManageLeaveApprovals($user)) {
                 return response()->json(['error' => 'Unauthorized to reject leave requests'], 403);
             }
             
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             $leaveRequest = LeaveRequest::where('id', $id)
                 ->where('shop_owner_id', $shopOwnerId)
@@ -359,7 +410,11 @@ class LeaveController extends Controller
     {
         try {
             $user = Auth::guard('user')->user();
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             $leaveRequest = LeaveRequest::where('id', $id)
                 ->where('shop_owner_id', $shopOwnerId)
@@ -385,7 +440,11 @@ class LeaveController extends Controller
     {
         try {
             $user = Auth::guard('user')->user();
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             $leaveRequest = LeaveRequest::where('id', $id)
                 ->where('shop_owner_id', $shopOwnerId)
@@ -420,7 +479,11 @@ class LeaveController extends Controller
     {
         try {
             $user = Auth::guard('user')->user();
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId($user);
+
+            if (!$shopOwnerId) {
+                return response()->json(['error' => 'No shop association found'], 403);
+            }
             
             $year = $request->get('year', date('Y'));
             

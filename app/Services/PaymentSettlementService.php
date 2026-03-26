@@ -5,9 +5,16 @@ namespace App\Services;
 use App\Models\Finance\Invoice;
 use App\Models\Order;
 use App\Models\RepairRequest;
+use App\Enums\NotificationType;
+use Illuminate\Support\Facades\Log;
 
 class PaymentSettlementService
 {
+    public function __construct(
+        private readonly NotificationService $notificationService,
+    ) {
+    }
+
     public function settleOrderPaid(Order $order, ?string $paymentId = null): array
     {
         if ($this->isOrderSettled($order)) {
@@ -143,6 +150,80 @@ class PaymentSettlementService
         }
 
         $order->update($payload);
+
+        return [
+            'result' => 'recorded',
+            'model' => $order->fresh(),
+        ];
+    }
+
+    public function settleOrderRefunded(Order $order, ?string $refundId = null, ?string $reason = null, ?string $note = null): array
+    {
+        if ((string) ($order->payment_status ?? 'pending') === 'refunded') {
+            return [
+                'result' => 'already_refunded',
+                'model' => $order,
+            ];
+        }
+
+        $payload = [
+            'payment_status' => 'refunded',
+            'refunded_at' => now(),
+            'payment_released_at' => now(),
+            'payment_failed_at' => null,
+            'payment_failure_reason' => null,
+            'payment_expired_at' => null,
+        ];
+
+        if ($refundId) {
+            $payload['paymongo_refund_id'] = $refundId;
+        }
+
+        if ($reason !== null) {
+            $payload['refund_reason'] = $reason;
+        }
+
+        if ($note !== null) {
+            $payload['refund_note'] = $note;
+        }
+
+        $order->update($payload);
+
+        try {
+            if ((int) ($order->customer_id ?? 0) > 0) {
+                $this->notificationService->sendToUser(
+                    userId: (int) $order->customer_id,
+                    type: NotificationType::ORDER_STATUS_UPDATE,
+                    title: 'Refund Completed',
+                    message: "Your refund for order #{$order->order_number} has been completed and returned to your original payment method.",
+                    data: [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'refund_id' => $payload['paymongo_refund_id'] ?? null,
+                        'refunded_at' => now()->toDateTimeString(),
+                    ],
+                    actionUrl: '/my-orders?tab=cancelled&highlightOrder=' . $order->id,
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to send refund completed notification', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return [
+            'result' => 'refunded',
+            'model' => $order->fresh(),
+        ];
+    }
+
+    public function recordOrderRefundFailure(Order $order, string $reason): array
+    {
+        $order->update([
+            'payment_failed_at' => now(),
+            'payment_failure_reason' => $reason,
+        ]);
 
         return [
             'result' => 'recorded',

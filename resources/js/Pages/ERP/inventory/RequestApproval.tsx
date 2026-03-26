@@ -188,19 +188,23 @@ export default function RequestApproval() {
 	const startIndex = (currentSafePage - 1) * itemsPerPage;
 	const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
 
-	const upsertRequest = (updatedRequest: StockRequestApproval) => {
-		setRequests((prev) => prev.map((request) => (
-			request.id === updatedRequest.id ? updatedRequest : request
-		)));
-	};
-
 	const handleApprove = async (request: StockRequestApproval) => {
+		if (!(["pending", "needs_details"] as const).includes(request.status)) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot approve",
+				text: "Only pending or needs-details requests can be approved.",
+				confirmButtonColor: "#d97706",
+			});
+			return;
+		}
+
 		try {
 			setActionLoading(true);
-			const updated = await requestMaterialApprovalApi.approve(request.id, {
+			await requestMaterialApprovalApi.approve(request.id, {
 				approval_notes: "Approved by inventory.",
 			});
-			upsertRequest(updated);
+			await loadRequests();
 			setSelectedRequest(null);
 			await Swal.fire({
 				icon: "success",
@@ -221,6 +225,16 @@ export default function RequestApproval() {
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
+		if (!(["pending", "needs_details"] as const).includes(request.status)) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot reject",
+				text: "Only pending or needs-details requests can be rejected.",
+				confirmButtonColor: "#d97706",
+			});
+			return;
+		}
+
 		const result = await Swal.fire({
 			title: "Reject request",
 			input: "textarea",
@@ -243,10 +257,10 @@ export default function RequestApproval() {
 
 		try {
 			setActionLoading(true);
-			const updated = await requestMaterialApprovalApi.reject(request.id, {
+			await requestMaterialApprovalApi.reject(request.id, {
 				rejection_reason: result.value,
 			});
-			upsertRequest(updated);
+			await loadRequests();
 			setSelectedRequest(null);
 			await Swal.fire({
 				icon: "success",
@@ -267,6 +281,16 @@ export default function RequestApproval() {
 	};
 
 	const handleRequestDetails = async (request: StockRequestApproval) => {
+		if (request.status !== "pending") {
+			await Swal.fire({
+				icon: "warning",
+				title: "Cannot request details",
+				text: "You can only request details for pending requests.",
+				confirmButtonColor: "#d97706",
+			});
+			return;
+		}
+
 		const result = await Swal.fire({
 			title: "Request more details",
 			input: "textarea",
@@ -289,10 +313,10 @@ export default function RequestApproval() {
 
 		try {
 			setActionLoading(true);
-			const updated = await requestMaterialApprovalApi.requestDetails(request.id, {
+			await requestMaterialApprovalApi.requestDetails(request.id, {
 				approval_notes: result.value,
 			});
-			upsertRequest(updated);
+			await loadRequests();
 			setSelectedRequest(null);
 			await Swal.fire({
 				icon: "success",

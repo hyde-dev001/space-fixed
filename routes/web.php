@@ -88,6 +88,8 @@ Route::get('/payment-failed', function () {
 Route::get('/my-orders', [OrderController::class, 'index'])->name('my-orders');
 Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->name('orders.confirm-delivery');
 Route::post('/orders/cancel', [OrderController::class, 'cancel'])->middleware('auth:user')->name('orders.cancel');
+Route::post('/orders/request-refund', [OrderController::class, 'requestRefund'])->middleware('auth:user')->name('orders.request-refund');
+Route::post('/orders/refunds/{id}/mark-shipped-return', [OrderController::class, 'markRefundReturnShipped'])->middleware('auth:user')->name('orders.refunds.mark-shipped-return');
 Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->middleware('auth:user')->name('customer-profile');
 Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
 Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware('auth:user')->name('customer-profile.password');
@@ -771,6 +773,8 @@ Route::middleware('auth:user')->prefix('api/staff')->group(function () {
         ->middleware('permission:access-staff-job-orders');
     Route::patch('orders/{id}/status', [\App\Http\Controllers\Api\StaffOrderController::class, 'updateStatus'])
         ->middleware('permission:access-staff-job-orders');
+    Route::post('orders/{id}/confirm-return-received', [\App\Http\Controllers\Api\StaffOrderController::class, 'confirmReturnReceived'])
+        ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/complete', [\App\Http\Controllers\Api\StaffOrderController::class, 'complete'])
         ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/activate-pickup', [\App\Http\Controllers\Api\StaffOrderController::class, 'activatePickup'])
@@ -1114,9 +1118,9 @@ Route::get('/storage/reviews/{filename}', function ($filename) {
     return response()->file($path);
 })->where('filename', '.*');
 
-// Session-backed API endpoints for finance (allow web-session authenticated users)
-// CONSOLIDATED: All finance routes under /api/finance/session
-Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
+// Session-backed API endpoints for finance
+// CONSOLIDATED: All finance routes under /api/finance/session with finance access permissions
+Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
     // Chart of Accounts - Commented out due to missing controller
     // Route::get('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'index']);
     // Route::post('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'store']);
@@ -1152,6 +1156,12 @@ Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session'
     Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
     Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
     Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
+    Route::post('invoices/{id}/mark-paid', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'markAsPaid']);
+
+    // Post to ledger (requires invoice finance access permission)
+    Route::middleware('permission:access-finance-invoices')->group(function () {
+        Route::post('invoices/{id}/post', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'post']);
+    });
 
     // REMOVED: Journal Entries - Invoices/expenses auto-post behind the scenes for SMEs
     // Route::get('journal-entries', [FinanceJournalEntryController::class, 'index']);
@@ -1776,11 +1786,14 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         }
         $user = Auth::guard('user')->user();
         $shopOwnerId = $user->shop_owner_id ?? $user->id;
-        $initialOrders = \App\Models\Order::with(['items', 'customer', 'shopOwner'])
+        $initialOrders = \App\Models\Order::with(['items', 'customer', 'shopOwner', 'refunds' => fn ($refundQuery) => $refundQuery->orderByDesc('id')])
             ->where('shop_owner_id', $shopOwnerId)
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($order) {
+                $itemSubtotal = (float) ($order->total_amount ?? 0);
+                $shippingFee = (float) ($order->shipping_fee ?? 0);
+            $latestRefund = $order->refunds->first();
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
@@ -1788,7 +1801,9 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
                     'customer_email' => $order->customer_email ?? optional($order->customer)->email ?? '',
                     'customer_phone' => $order->customer_phone ?? '',
                     'shipping_address' => $order->customer_address ?? '',
-                    'total_amount' => $order->total_amount,
+                    'total_amount' => $itemSubtotal,
+                    'shipping_fee' => $shippingFee,
+                    'grand_total' => $itemSubtotal + $shippingFee,
                     'status' => $order->status,
                     'payment_status' => $order->payment_status ?? 'pending',
                     'payment_method' => $order->payment_method ?? '',
@@ -1802,6 +1817,24 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
                     'updated_at' => $order->updated_at->toISOString(),
                     'pickup_enabled' => $order->pickup_enabled ?? false,
                     'pickup_enabled_at' => $order->pickup_enabled_at ?? null,
+                    'latest_refund' => $latestRefund ? [
+                        'id' => (int) $latestRefund->id,
+                        'status' => (string) $latestRefund->status,
+                        'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
+                        'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
+                        'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                        'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
+                        'customer_return_carrier' => $latestRefund->customer_return_carrier,
+                        'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
+                        'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
+                        'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
+                        'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
+                        'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
+                        'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
+                        'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
+                        'rejection_reason' => $latestRefund->rejection_reason,
+                        'flow_type' => (string) ($latestRefund->flow_type ?? ''),
+                    ] : null,
                     'items' => $order->items->map(function ($item) {
                         return [
                             'id' => $item->id,
@@ -2036,13 +2069,13 @@ Route::prefix('api/leave')->name('api.leave.')->middleware(['auth:user'])->group
 
     // Manager routes
     Route::get('/pending/all', [LeaveController::class, 'pending'])
-        ->middleware('old_role:Manager,Finance Manager,Super Admin,Shop Owner')
+        ->middleware('role_or_permission:Manager|Finance Manager|Super Admin|Shop Owner|access-leave-approvals')
         ->name('pending');
     Route::post('/{id}/approve', [LeaveController::class, 'approve'])
-        ->middleware('old_role:Manager,Finance Manager,Super Admin,Shop Owner')
+        ->middleware('role_or_permission:Manager|Finance Manager|Super Admin|Shop Owner|access-leave-approvals')
         ->name('approve');
     Route::post('/{id}/reject', [LeaveController::class, 'reject'])
-        ->middleware('old_role:Manager,Finance Manager,Super Admin,Shop Owner')
+        ->middleware('role_or_permission:Manager|Finance Manager|Super Admin|Shop Owner|access-leave-approvals')
         ->name('reject');
 });
 

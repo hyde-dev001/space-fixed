@@ -51,6 +51,12 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
         $apiKey = null;
         $amount = 0;
         $description = 'SoleSpace Purchase';
+        $lineItems = [[
+            'currency' => 'PHP',
+            'amount' => 0,
+            'name' => 'SoleSpace Purchase',
+            'quantity' => 1,
+        ]];
         $successUrl = url('/order-success') . '?paymongo_success=1';
         $failedUrl = url('/order-success') . '?paymongo_failed=1';
 
@@ -69,8 +75,36 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
             }
 
             $apiKey = $order->shopOwner?->paymongo_secret_key;
-            $amount = ((float) $order->total_amount) + ((float) ($order->shipping_fee ?? 0));
+            $itemSubtotal = max(0.0, (float) $order->total_amount);
+            $shippingFee = max(0.0, (float) ($order->shipping_fee ?? 0));
+            $amount = $itemSubtotal + $shippingFee;
             $description = 'SoleSpace Order #' . $order->order_number;
+
+            $lineItems = [];
+            if ($itemSubtotal > 0) {
+                $lineItems[] = [
+                    'currency' => 'PHP',
+                    'amount' => (int) round($itemSubtotal * 100),
+                    'name' => 'Product Subtotal',
+                    'quantity' => 1,
+                ];
+            }
+            if ($shippingFee > 0) {
+                $lineItems[] = [
+                    'currency' => 'PHP',
+                    'amount' => (int) round($shippingFee * 100),
+                    'name' => 'Shipping Fee',
+                    'quantity' => 1,
+                ];
+            }
+            if (empty($lineItems)) {
+                $lineItems[] = [
+                    'currency' => 'PHP',
+                    'amount' => (int) round($amount * 100),
+                    'name' => $description,
+                    'quantity' => 1,
+                ];
+            }
         } else {
             $repair = \App\Models\RepairRequest::with('shopOwner')
                 ->where('id', (int) $validated['repair_request_id'])
@@ -106,6 +140,12 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
             }
 
             $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
+            $lineItems = [[
+                'currency' => 'PHP',
+                'amount' => (int) round($amount * 100),
+                'name' => $description,
+                'quantity' => 1,
+            ]];
             $successUrl = url('/my-repairs') . '?paymongo_success=1';
             $failedUrl = url('/my-repairs') . '?paymongo_failed=1';
         }
@@ -135,12 +175,7 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
                     'send_email_receipt' => false,
                     'show_description'   => true,
                     'show_line_items'    => true,
-                    'line_items' => [[
-                        'currency' => 'PHP',
-                        'amount'   => (int) round($amount * 100),
-                        'name'     => $description,
-                        'quantity' => 1,
-                    ]],
+                    'line_items' => $lineItems,
                     'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
                 ],
             ],

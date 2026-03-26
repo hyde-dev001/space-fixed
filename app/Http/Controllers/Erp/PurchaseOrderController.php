@@ -13,15 +13,18 @@ use App\Events\PurchaseOrderCompleted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class PurchaseOrderController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
      * Display a listing of purchase orders with filters.
      */
     public function index(Request $request)
     {
-        // $this->authorize('viewAny', PurchaseOrder::class);
+        $this->authorize('viewAny', PurchaseOrder::class);
 
         $query = PurchaseOrder::query()
             ->with(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
@@ -80,7 +83,7 @@ class PurchaseOrderController extends Controller
      */
     public function store(StorePurchaseOrderRequest $request)
     {
-        // $this->authorize('create', PurchaseOrder::class);
+        $this->authorize('create', PurchaseOrder::class);
 
         try {
             DB::beginTransaction();
@@ -145,7 +148,7 @@ class PurchaseOrderController extends Controller
             'completer'
         ])->findOrFail($id);
 
-        // $this->authorize('view', $purchaseOrder);
+        $this->authorize('view', $purchaseOrder);
 
         return response()->json($purchaseOrder);
     }
@@ -157,7 +160,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder = PurchaseOrder::findOrFail($id);
         
-        // $this->authorize('update', $purchaseOrder);
+        $this->authorize('update', $purchaseOrder);
 
         // Can only update if draft
         if ($purchaseOrder->status !== 'draft') {
@@ -195,7 +198,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder = PurchaseOrder::findOrFail($id);
         
-        // $this->authorize('delete', $purchaseOrder);
+        $this->authorize('delete', $purchaseOrder);
 
         // Can only delete if draft
         if ($purchaseOrder->status !== 'draft') {
@@ -218,7 +221,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder = PurchaseOrder::findOrFail($id);
         
-        // $this->authorize('updateStatus', $purchaseOrder);
+        $this->authorize('updateStatus', $purchaseOrder);
 
         if (!$purchaseOrder->canProgressStatus()) {
             return response()->json([
@@ -283,7 +286,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder = PurchaseOrder::findOrFail($id);
         
-        // $this->authorize('updateStatus', $purchaseOrder);
+        $this->authorize('updateStatus', $purchaseOrder);
 
         if ($purchaseOrder->status !== 'draft') {
             return response()->json([
@@ -314,7 +317,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder = PurchaseOrder::findOrFail($id);
         
-        // $this->authorize('updateStatus', $purchaseOrder);
+        $this->authorize('updateStatus', $purchaseOrder);
 
         $validatedData = $request->validate([
             'actual_delivery_date' => 'required|date',
@@ -372,7 +375,7 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder = PurchaseOrder::findOrFail($id);
         
-        // $this->authorize('cancel', $purchaseOrder);
+        $this->authorize('cancel', $purchaseOrder);
 
         if (in_array($purchaseOrder->status, ['delivered', 'completed', 'cancelled'])) {
             return response()->json([
@@ -401,7 +404,7 @@ class PurchaseOrderController extends Controller
      */
     public function getMetrics()
     {
-        // $this->authorize('viewAny', PurchaseOrder::class);
+        $this->authorize('viewAny', PurchaseOrder::class);
 
         $shopOwnerId = Auth::user()->shop_owner_id;
 

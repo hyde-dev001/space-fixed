@@ -603,7 +603,10 @@ class RepairRequestController extends Controller
                     'status' => $repair->status,
                     'total_amount' => $pricingSnapshot['final_total'],
                     'created_at' => $repair->created_at->toISOString(),
-                    'estimated_completion' => $repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null,
+                    'estimated_completion' => $repair->estimated_delivery_date
+                        ? $repair->estimated_delivery_date->format('M d, Y')
+                        : ($repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null),
+                    'estimated_delivery_date' => $repair->estimated_delivery_date ? $repair->estimated_delivery_date->format('M d, Y') : null,
                     'completed_at' => $repair->completed_at ? $repair->completed_at->format('M d, Y') : null,
                     'shop_id' => $repair->shop_owner_id,
                     'shop_owner_id' => $repair->shop_owner_id,
@@ -710,6 +713,7 @@ class RepairRequestController extends Controller
                 'carrier_name' => $repair->carrier_name,
                 'carrier_phone' => $repair->carrier_phone,
                 'tracking_link' => $repair->tracking_link,
+                'estimated_delivery_date' => $repair->estimated_delivery_date,
                 'shipped_at' => $repair->shipped_at,
                 'created_at' => $repair->created_at,
                 'images' => array_map(function($path) {

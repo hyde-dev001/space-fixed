@@ -66,6 +66,19 @@ const buildProductFrames = (product: Product): string[] => {
 };
 
 const MAX_SHOWROOM_SLOTS = 84;
+const JOYSTICK_RADIUS_PX = 62;
+const JOYSTICK_DEADZONE = 0.16;
+
+interface JoystickVector {
+	x: number;
+	y: number;
+	active: boolean;
+}
+
+const isLandscapeViewport = () => {
+	if (typeof window === 'undefined') return false;
+	return window.innerWidth > window.innerHeight;
+};
 
 const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	products,
@@ -110,6 +123,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const hiddenShelfShoeIndicesRef = useRef(new Set<number>());
 	const loadedFocusedFramesRef = useRef(new Set<string>());
 	const focusedFramePromiseCacheRef = useRef(new Map<string, Promise<void>>());
+	const joystickPointerIdRef = useRef<number | null>(null);
+	const joystickThumbRef = useRef<HTMLDivElement | null>(null);
+	const joystickVectorRef = useRef<JoystickVector>({ x: 0, y: 0, active: false });
+	const immersiveModeAttemptedRef = useRef(false);
+	const appEnteredFullscreenRef = useRef(false);
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);
 	const [isSceneLoading, setIsSceneLoading] = useState(true);
@@ -121,6 +139,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [showFocusedHint, setShowFocusedHint] = useState(true);
 	const [focusedFrameSrc, setFocusedFrameSrc] = useState<string | null>(null);
 	const [isFocusedImageVisible, setIsFocusedImageVisible] = useState(false);
+	const [isTouchScreenDevice, setIsTouchScreenDevice] = useState(false);
+	const [showLandscapeTip, setShowLandscapeTip] = useState(false);
+	const [joystickUiVector, setJoystickUiVector] = useState({ x: 0, y: 0 });
 	const lightsOn = isNightMode;
 	const normalizedPlanCode = String(showroomPlanCode ?? '').trim().toLowerCase();
 	const normalizedPlanName = String(showroomPlanName ?? '').trim().toLowerCase();
@@ -173,6 +194,37 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	useEffect(() => {
 		onFocusModeChange?.(focusedShoeIndex !== null);
 	}, [focusedShoeIndex, onFocusModeChange]);
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+
+		const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+		const updateTouchDevice = () => {
+			const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+			setIsTouchScreenDevice(hasTouchPoints || coarsePointerQuery.matches || window.innerWidth <= 1024);
+		};
+
+		const hideLandscapeTipInLandscape = () => {
+			if (isLandscapeViewport()) {
+				setShowLandscapeTip(false);
+			}
+		};
+
+		updateTouchDevice();
+		hideLandscapeTipInLandscape();
+
+		window.addEventListener('resize', updateTouchDevice);
+		window.addEventListener('resize', hideLandscapeTipInLandscape);
+		window.addEventListener('orientationchange', hideLandscapeTipInLandscape);
+		coarsePointerQuery.addEventListener('change', updateTouchDevice);
+
+		return () => {
+			window.removeEventListener('resize', updateTouchDevice);
+			window.removeEventListener('resize', hideLandscapeTipInLandscape);
+			window.removeEventListener('orientationchange', hideLandscapeTipInLandscape);
+			coarsePointerQuery.removeEventListener('change', updateTouchDevice);
+		};
+	}, []);
 
 	useEffect(() => {
 		if (focusedShoeIndex === null) {
@@ -331,6 +383,115 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		}
 		focusedZoomRef.current = 1;
 	};
+
+	const clearJoystickVector = () => {
+		joystickVectorRef.current = { x: 0, y: 0, active: false };
+		setJoystickUiVector({ x: 0, y: 0 });
+	};
+
+	const requestMobileLandscape = async () => {
+		if (!isTouchScreenDevice || immersiveModeAttemptedRef.current) {
+			return;
+		}
+
+		immersiveModeAttemptedRef.current = true;
+		const container = mountRef.current;
+		const canUseFullscreen = typeof document !== 'undefined' && typeof container?.requestFullscreen === 'function';
+
+		if (canUseFullscreen && !document.fullscreenElement) {
+			try {
+				await container.requestFullscreen();
+				appEnteredFullscreenRef.current = true;
+			} catch {
+				appEnteredFullscreenRef.current = false;
+			}
+		}
+
+		const orientation = (screen as Screen & {
+			orientation?: {
+				lock?: (lockType: string) => Promise<void>;
+				unlock?: () => void;
+			};
+		}).orientation;
+
+		if (orientation?.lock) {
+			try {
+				await orientation.lock('landscape');
+				setShowLandscapeTip(false);
+				return;
+			} catch {
+				setShowLandscapeTip(!isLandscapeViewport());
+				return;
+			}
+		}
+
+		setShowLandscapeTip(!isLandscapeViewport());
+	};
+
+	const exitMobileImmersiveMode = async () => {
+		const orientation = (screen as Screen & {
+			orientation?: {
+				unlock?: () => void;
+			};
+		}).orientation;
+
+		try {
+			orientation?.unlock?.();
+		} catch {
+			// Ignore unlock errors because this API can be restricted by browser policies.
+		}
+
+		if (appEnteredFullscreenRef.current && document.fullscreenElement && document.exitFullscreen) {
+			try {
+				await document.exitFullscreen();
+			} catch {
+				// Ignore exit errors and allow natural browser fullscreen state.
+			}
+		}
+
+		appEnteredFullscreenRef.current = false;
+	};
+
+	const setJoystickByClientPosition = (clientX: number, clientY: number, container: HTMLDivElement) => {
+		const rect = container.getBoundingClientRect();
+		const centerX = rect.left + rect.width / 2;
+		const centerY = rect.top + rect.height / 2;
+		const deltaX = clientX - centerX;
+		const deltaY = clientY - centerY;
+		const distance = Math.hypot(deltaX, deltaY);
+		const clampedDistance = Math.min(distance, JOYSTICK_RADIUS_PX);
+		const angle = Math.atan2(deltaY, deltaX);
+		const clampedX = Math.cos(angle) * clampedDistance;
+		const clampedY = Math.sin(angle) * clampedDistance;
+
+		const normalizedX = clampedX / JOYSTICK_RADIUS_PX;
+		const normalizedY = clampedY / JOYSTICK_RADIUS_PX;
+		const magnitude = Math.hypot(normalizedX, normalizedY);
+
+		if (magnitude < JOYSTICK_DEADZONE) {
+			clearJoystickVector();
+			joystickVectorRef.current.active = true;
+			return;
+		}
+
+		joystickVectorRef.current = {
+			x: normalizedX,
+			y: normalizedY,
+			active: true,
+		};
+		setJoystickUiVector({ x: clampedX, y: clampedY });
+	};
+
+	useEffect(() => {
+		if (!joystickThumbRef.current) return;
+		joystickThumbRef.current.style.transform = `translate(calc(-50% + ${joystickUiVector.x}px), calc(-50% + ${joystickUiVector.y}px))`;
+	}, [joystickUiVector]);
+
+	useEffect(() => {
+		return () => {
+			void exitMobileImmersiveMode();
+		};
+	}, []);
 
 	const resetFocusedView = () => {
 		focusedFrameOffsetRef.current = 0;
@@ -1250,6 +1411,22 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			if (keyState.right) movementDirection.add(movementRight);
 			if (keyState.left) movementDirection.sub(movementRight);
 
+			const joystick = joystickVectorRef.current;
+			if (joystick.active) {
+				if (joystick.y < -JOYSTICK_DEADZONE) {
+					movementDirection.addScaledVector(movementForward, Math.min(1, -joystick.y));
+				}
+				if (joystick.y > JOYSTICK_DEADZONE) {
+					movementDirection.addScaledVector(movementForward, -Math.min(1, joystick.y));
+				}
+				if (joystick.x > JOYSTICK_DEADZONE) {
+					movementDirection.addScaledVector(movementRight, Math.min(1, joystick.x));
+				}
+				if (joystick.x < -JOYSTICK_DEADZONE) {
+					movementDirection.addScaledVector(movementRight, -Math.min(1, -joystick.x));
+				}
+			}
+
 			if (movementDirection.lengthSq() > 0) {
 				movementDirection.normalize();
 				cameraPosition.x += movementDirection.x * walkSpeed * delta;
@@ -1508,6 +1685,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			keyState.backward = false;
 			keyState.left = false;
 			keyState.right = false;
+			clearJoystickVector();
 		};
 
 		window.addEventListener('resize', handleResize);
@@ -1518,6 +1696,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 		return () => {
 			isDisposed = true;
+			clearJoystickVector();
 			hiddenShelfShoeIndicesRef.current.clear();
 			pickupAnimationRef.current = null;
 			pendingFocusOpenRef.current = null;
@@ -1596,6 +1775,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 	const handlePointerDown = (clientX: number, clientY: number) => {
 		if (isPickupAnimatingRef.current) return;
+		void requestMobileLandscape();
 		dragStartXRef.current = clientX;
 		dragStartYRef.current = clientY;
 		pointerMoveDistanceRef.current = 0;
@@ -1667,6 +1847,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 	const activeShoe = shoes[currentIndex] ?? null;
 	const focusedShoe = focusedShoeIndex !== null ? shoes[focusedShoeIndex] : null;
+	const shouldShowMobileJoystick = isTouchScreenDevice && focusedShoeIndex === null;
 
 	return (
 		<>
@@ -1687,6 +1868,15 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 				.focused-swipe-arrow-right {
 					animation: focused-swipe-arrow-right 1.35s ease-in-out infinite;
+				}
+
+				@keyframes landscape-tip-fade {
+					0% { opacity: 0; transform: translateY(-8px); }
+					100% { opacity: 1; transform: translateY(0); }
+				}
+
+				.landscape-tip {
+					animation: landscape-tip-fade 220ms ease-out;
 				}
 			`}</style>
 		<section className={isStandalonePage
@@ -1757,6 +1947,61 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				}}
 			>
 				<div ref={mountRef} className="h-full w-full" />
+
+				{showLandscapeTip && shouldShowMobileJoystick && (
+					<div className="landscape-tip pointer-events-none absolute left-1/2 top-16 z-40 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-center text-xs font-medium text-amber-900 shadow-md">
+						Rotate your device to landscape for best showroom walking experience.
+					</div>
+				)}
+
+				{shouldShowMobileJoystick && (
+					<div
+						className="pointer-events-auto absolute bottom-4 left-4 z-40 h-32 w-32 select-none touch-none rounded-full border border-white/70 bg-slate-900/30 backdrop-blur-sm"
+						onPointerDown={(event) => {
+							event.preventDefault();
+							event.stopPropagation();
+							void requestMobileLandscape();
+							joystickPointerIdRef.current = event.pointerId;
+							event.currentTarget.setPointerCapture(event.pointerId);
+							setJoystickByClientPosition(event.clientX, event.clientY, event.currentTarget);
+						}}
+						onPointerMove={(event) => {
+							if (joystickPointerIdRef.current !== event.pointerId) return;
+							event.preventDefault();
+							event.stopPropagation();
+							setJoystickByClientPosition(event.clientX, event.clientY, event.currentTarget);
+						}}
+						onPointerUp={(event) => {
+							if (joystickPointerIdRef.current !== event.pointerId) return;
+							event.preventDefault();
+							event.stopPropagation();
+							if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+								event.currentTarget.releasePointerCapture(event.pointerId);
+							}
+							joystickPointerIdRef.current = null;
+							clearJoystickVector();
+						}}
+						onPointerCancel={(event) => {
+							if (joystickPointerIdRef.current !== event.pointerId) return;
+							event.preventDefault();
+							event.stopPropagation();
+							if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+								event.currentTarget.releasePointerCapture(event.pointerId);
+							}
+							joystickPointerIdRef.current = null;
+							clearJoystickVector();
+						}}
+					>
+						<div className="absolute inset-3 rounded-full border border-white/45" />
+						<div
+							ref={joystickThumbRef}
+							className="pointer-events-none absolute left-1/2 top-1/2 h-11 w-11 rounded-full border border-white/80 bg-white/75 shadow"
+						/>
+						<div className="pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-wider text-white/90">
+							Walk
+						</div>
+					</div>
+				)}
 
 				{focusedShoeIndex !== null && focusedShoe && (
 					<div

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
@@ -72,6 +73,10 @@ class PaymongoWebhookController extends Controller
             // Handle checkout session payment failed
             if ($eventType === 'checkout_session.payment.failed') {
                 return $this->handleCheckoutSessionFailed($eventData);
+            }
+
+            if (is_string($eventType) && str_contains($eventType, 'refund')) {
+                return $this->handleRefundEvent($eventType, $eventData);
             }
 
             return response()->json(['message' => 'Event received'], 200);
@@ -584,5 +589,95 @@ class PaymongoWebhookController extends Controller
 
         // PayMongo amounts are usually in centavos
         return round(((float) $rawAmount) / 100, 2);
+    }
+
+    private function handleRefundEvent(string $eventType, array $eventData)
+    {
+        $attributes = $eventData['attributes'] ?? [];
+
+        $refundId = $eventData['id']
+            ?? ($attributes['id'] ?? null);
+
+        $paymentId = $attributes['payment_id']
+            ?? ($attributes['data']['attributes']['payment_id'] ?? null)
+            ?? null;
+
+        $rawStatus = $attributes['status']
+            ?? ($attributes['data']['attributes']['status'] ?? null)
+            ?? null;
+
+        $status = strtolower((string) $rawStatus);
+
+        if (!$refundId && !$paymentId) {
+            Log::warning('Refund webhook missing identifiers', [
+                'event_type' => $eventType,
+                'event_data' => $eventData,
+            ]);
+
+            return response()->json(['message' => 'Missing refund identifiers'], 200);
+        }
+
+        $refund = OrderRefund::query()
+            ->when($refundId, fn ($query) => $query->orWhere('paymongo_refund_id', $refundId))
+            ->when($paymentId, fn ($query) => $query->orWhere('paymongo_payment_id', $paymentId))
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$refund) {
+            Log::warning('Refund webhook could not map to order_refunds row', [
+                'event_type' => $eventType,
+                'refund_id' => $refundId,
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json(['message' => 'Refund record not found'], 200);
+        }
+
+        $order = Order::find($refund->order_id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 200);
+        }
+
+        $settlementService = app(PaymentSettlementService::class);
+
+        if (in_array($status, ['succeeded', 'completed', 'paid'], true)) {
+            $refund->update([
+                'status' => 'succeeded',
+                'paymongo_refund_id' => $refundId ?? $refund->paymongo_refund_id,
+                'refunded_at' => $refund->refunded_at ?? now(),
+                'failure_reason' => null,
+                'failed_at' => null,
+            ]);
+
+            $settlementService->settleOrderRefunded(
+                order: $order,
+                refundId: $refundId ?? $refund->paymongo_refund_id,
+                reason: $refund->reason_code,
+                note: $refund->reason_note,
+            );
+
+            return response()->json(['message' => 'Refund settled'], 200);
+        }
+
+        if (in_array($status, ['failed', 'canceled', 'cancelled'], true)) {
+            $refund->update([
+                'status' => 'failed',
+                'paymongo_refund_id' => $refundId ?? $refund->paymongo_refund_id,
+                'failure_reason' => 'paymongo_refund_failed',
+                'failed_at' => now(),
+            ]);
+
+            $settlementService->recordOrderRefundFailure($order, 'paymongo_refund_failed');
+
+            return response()->json(['message' => 'Refund failure recorded'], 200);
+        }
+
+        $refund->update([
+            'status' => 'processing',
+            'paymongo_refund_id' => $refundId ?? $refund->paymongo_refund_id,
+        ]);
+
+        return response()->json(['message' => 'Refund processing'], 200);
     }
 }

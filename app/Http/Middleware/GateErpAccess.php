@@ -21,7 +21,15 @@ class GateErpAccess
     /**
      * ERP handler roles allowed to access ERP modules
      */
-    const ALLOWED_ERP_ROLES = ['HR', 'FINANCE', 'MANAGER', 'STAFF'];
+    const ALLOWED_ERP_ROLES = [
+        'HR',
+        'FINANCE',
+        'FINANCE MANAGER',
+        'FINANCE STAFF',
+        'MANAGER',
+        'STAFF',
+        'REPAIRER',
+    ];
 
     /**
      * Handle an incoming request.
@@ -37,13 +45,15 @@ class GateErpAccess
             return redirect('/');
         }
 
+        $userRole = strtoupper(str_replace('_', ' ', (string) ($user->role ?? '')));
+
         // Deny SUPER_ADMIN from accessing ERP modules
-        if ($user->role === 'SUPER_ADMIN') {
+        if ($userRole === 'SUPER ADMIN') {
             abort(403, 'Super Admin does not have access to ERP modules. Only designated ERP handlers can access ERP pages.');
         }
 
         // Deny users without ERP roles
-        if (!in_array($user->role, self::ALLOWED_ERP_ROLES)) {
+        if (!in_array($userRole, self::ALLOWED_ERP_ROLES, true)) {
             abort(403, 'Your role does not have access to ERP modules.');
         }
 

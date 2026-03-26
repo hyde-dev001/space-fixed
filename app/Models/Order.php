@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Enums\OrderStatus;
 use App\Models\Notification;
+use App\Models\OrderRefund;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -31,11 +32,15 @@ class Order extends Model
         'payment_status',
         'paymongo_link_id',
         'paymongo_payment_id',
+        'paymongo_refund_id',
         'paid_at',
+        'refunded_at',
         'payment_link_created_at',
         'payment_expires_at',
         'payment_failed_at',
         'payment_failure_reason',
+        'refund_reason',
+        'refund_note',
         'payment_expired_at',
         'payment_released_at',
         'invoice_generated',
@@ -74,6 +79,7 @@ class Order extends Model
         'payment_expired_at' => 'datetime',
         'payment_released_at' => 'datetime',
         'paid_at' => 'datetime',
+        'refunded_at' => 'datetime',
     ];
 
     public function scopePayable($query)
@@ -96,6 +102,11 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(OrderRefund::class);
     }
 
     /**

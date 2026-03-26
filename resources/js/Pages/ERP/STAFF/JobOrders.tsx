@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -25,7 +25,9 @@ type Order = {
   email: string;
   phone: string;
   shippingAddress: string;
-  total: string;
+  total_amount: number;
+  shipping_fee: number;
+  grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
@@ -44,6 +46,27 @@ type Order = {
   product?: string;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
+  latest_refund?: {
+    id: number;
+    status: string;
+    shop_owner_status: string;
+    finance_status: string;
+    return_status: string;
+    customer_return_tracking_number?: string | null;
+    customer_return_carrier?: string | null;
+    customer_return_tracking_link?: string | null;
+    customer_return_shipped_at?: string | null;
+    return_confirmed_at?: string | null;
+    refund_executed_at?: string | null;
+    rejected_at?: string | null;
+    rejection_reason?: string | null;
+    flow_type?: string;
+  } | null;
+};
+
+const parseAmount = (value: unknown): number => {
+  const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 };
 
 type MetricCardProps = {
@@ -208,7 +231,18 @@ const MetricCard: React.FC<MetricCardProps> = ({
 export default function JobOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const { auth, initialOrders } = usePage().props as any;
-  const userRole = auth?.user?.role;
+  const userRole = String(auth?.user?.role || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles)
+    ? auth.user.roles.map((role: string) => String(role).toUpperCase())
+    : [];
+  const userPermissions = Array.isArray(auth?.permissions)
+    ? auth.permissions
+    : [];
+  const canAccessStaffModule =
+    userPermissions.includes('access-staff-job-orders') ||
+    userPermissions.includes('access-staff-dashboard') ||
+    userRole === 'STAFF' ||
+    userRoles.includes('STAFF');
   const [selectedTab, setSelectedTab] = useState<string>("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
@@ -229,31 +263,40 @@ export default function JobOrdersPage() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
 
-  const mapApiOrder = (order: any): Order => ({
-    id: order.id,
-    order_number: order.order_number,
-    customer: order.customer_name || 'Unknown',
-    email: order.customer_email || '',
-    phone: order.customer_phone || '',
-    shippingAddress: order.shipping_address || '',
-    total: `₱${parseFloat(order.total_amount || 0).toLocaleString()}`,
-    paymentStatus: order.payment_status || 'pending',
-    paymentMethod: order.payment_method || '',
-    status: order.status as any,
-    eta: order.eta || undefined,
-    orderedAt: new Date(order.created_at).toLocaleString(),
-    carrierCompany: order.carrier_company || undefined,
-    carrierName: order.carrier_name || undefined,
-    carrierPhone: order.carrier_phone || undefined,
-    trackingNumber: order.tracking_number || undefined,
-    trackingLink: order.tracking_link || undefined,
-    items: order.items || [],
-    quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
-    shopName: order.shop?.shop_name || undefined,
-    product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
-    pickup_enabled: order.pickup_enabled || false,
-    pickup_enabled_at: order.pickup_enabled_at || null,
-  });
+  const mapApiOrder = (order: any): Order => {
+    const itemSubtotal = parseAmount(order.total_amount);
+    const shippingFee = parseAmount(order.shipping_fee);
+    const grandTotal = parseAmount(order.grand_total || itemSubtotal + shippingFee);
+
+    return {
+      id: order.id,
+      order_number: order.order_number,
+      customer: order.customer_name || 'Unknown',
+      email: order.customer_email || '',
+      phone: order.customer_phone || '',
+      shippingAddress: order.shipping_address || '',
+      total_amount: itemSubtotal,
+      shipping_fee: shippingFee,
+      grand_total: grandTotal,
+      paymentStatus: order.payment_status || 'pending',
+      paymentMethod: order.payment_method || '',
+      status: order.status as any,
+      eta: order.eta || undefined,
+      orderedAt: new Date(order.created_at).toLocaleString(),
+      carrierCompany: order.carrier_company || undefined,
+      carrierName: order.carrier_name || undefined,
+      carrierPhone: order.carrier_phone || undefined,
+      trackingNumber: order.tracking_number || undefined,
+      trackingLink: order.tracking_link || undefined,
+      items: order.items || [],
+      quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
+      shopName: order.shop?.shop_name || undefined,
+      product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
+      pickup_enabled: order.pickup_enabled || false,
+      pickup_enabled_at: order.pickup_enabled_at || null,
+      latest_refund: order.latest_refund || null,
+    };
+  };
 
   const [orders, setOrders] = useState<Order[]>(() =>
     Array.isArray(initialOrders) ? initialOrders.map(mapApiOrder) : []
@@ -278,6 +321,10 @@ export default function JobOrdersPage() {
     }
   };
 
+  useEffect(() => {
+    void refreshOrders();
+  }, []);
+
   const getShippingMessage = () => {
     if (!selectedOrder) return "";
     const etaText = etaPreset || "(ETA not set)";
@@ -288,7 +335,7 @@ export default function JobOrdersPage() {
     return `${base}${trackingPart}${linkPart}`;
   };
 
-  if (userRole !== "STAFF") {
+  if (!canAccessStaffModule) {
     return (
       <AppLayoutERP>
         <div className="max-w-xl mx-auto mt-24 text-center p-8 bg-white dark:bg-gray-900 rounded-xl shadow">
@@ -302,7 +349,8 @@ export default function JobOrdersPage() {
   // Filter orders based on tab, search, date range, and payment method
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const matchesTab = selectedTab === "all" || order.status === selectedTab;
+      const isRefundOrder = order.status === "refund" || String(order.paymentStatus || '').toLowerCase() === 'refunded';
+      const matchesTab = selectedTab === "all" || (selectedTab === 'refund' ? isRefundOrder : order.status === selectedTab);
       const matchesSearch =
         String(order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -335,13 +383,12 @@ export default function JobOrdersPage() {
     const processing = orders.filter(o => o.status === "processing").length;
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
-    const cancelled = orders.filter(o => o.status === "cancelled").length;
-    const refund = orders.filter(o => o.status === "refund").length;
+    const refund = orders.filter(o => o.status === "refund" || String(o.paymentStatus || '').toLowerCase() === 'refunded').length;
     // Only include non-cancelled orders in revenue calculation
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled")
-      .reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
-    return { total, pending, processing, shipped, delivered, cancelled, refund, totalRevenue };
+      .reduce((sum, o) => sum + o.grand_total, 0);
+    return { total, pending, processing, shipped, delivered, refund, totalRevenue };
   }, [orders]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -359,14 +406,16 @@ export default function JobOrdersPage() {
   };
 
   const handleExportCSV = () => {
-    const headers = ['Order #', 'Customer', 'Email', 'Product', 'Quantity', 'Total', 'Payment Method', 'Status', 'Ordered At'];
+    const headers = ['Order #', 'Customer', 'Email', 'Product', 'Quantity', 'Item Subtotal', 'Shipping Fee', 'Grand Total', 'Payment Method', 'Status', 'Ordered At'];
     const rows = filteredOrders.map(order => [
       order.order_number,
       order.customer,
       order.email,
       order.product || '',
       String(order.quantity || 0),
-      order.total,
+      formatOrderTotal(order.total_amount),
+      formatOrderTotal(order.shipping_fee),
+      formatOrderTotal(order.grand_total),
       order.paymentMethod || '',
       order.status,
       order.orderedAt,
@@ -467,6 +516,103 @@ export default function JobOrdersPage() {
     return normalized === 'paid' || normalized === 'completed';
   };
 
+  const getRefundReturnDisplay = (order: Order) => {
+    const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+    const orderStatus = String(order.status || '').toLowerCase();
+    const latestRefund = order.latest_refund;
+
+    if (latestRefund && String(latestRefund.flow_type || '').toLowerCase() === 'request_approval') {
+      const refundStatus = String(latestRefund.status || '').toLowerCase();
+      const shopOwnerStatus = String(latestRefund.shop_owner_status || '').toLowerCase();
+      const financeStatus = String(latestRefund.finance_status || '').toLowerCase();
+      const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+
+      if (paymentStatus === 'refunded' || refundStatus === 'succeeded') {
+        return {
+          label: 'Refunded',
+          className: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40',
+        };
+      }
+
+      if (refundStatus === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') {
+        return {
+          label: 'Refund Rejected',
+          className: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40',
+        };
+      }
+
+      if (returnStatus === 'pending_customer_shipment') {
+        return {
+          label: 'Awaiting Return Shipment',
+          className: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40',
+        };
+      }
+
+      if (returnStatus === 'in_transit') {
+        return {
+          label: 'Return In Transit',
+          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
+        };
+      }
+
+      if (returnStatus === 'received' && financeStatus === 'approved') {
+        return {
+          label: 'Ready for Finance Refund',
+          className: 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40',
+        };
+      }
+
+      if (returnStatus === 'received') {
+        return {
+          label: 'Returned & Received',
+          className: 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-700/40',
+        };
+      }
+
+      if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') {
+        return {
+          label: 'Awaiting Approval',
+          className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
+        };
+      }
+
+      if (refundStatus === 'processing') {
+        return {
+          label: 'Refund Processing',
+          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
+        };
+      }
+    }
+
+    if (paymentStatus === 'refunded') {
+      return {
+        label: 'Refunded',
+        className: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40',
+      };
+    }
+
+    if (orderStatus === 'refund' || orderStatus === 'returned') {
+      return {
+        label: 'Returned',
+        className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
+      };
+    }
+
+    return {
+      label: '-',
+      className: 'text-gray-500 dark:text-gray-400',
+    };
+  };
+
+  const canConfirmReturnReceived = (order: Order) => {
+    const latestRefund = order.latest_refund;
+    if (!latestRefund) return false;
+
+    return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
+      && String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
+      && !['rejected', 'failed', 'succeeded'].includes(String(latestRefund.status || '').toLowerCase());
+  };
+
   const handleProcessOrder = async (order: Order) => {
     const result = await Swal.fire({
       title: "Process this order?",
@@ -543,6 +689,55 @@ export default function JobOrdersPage() {
   const handleViewOrder = (order: Order) => {
     setViewOrder(order);
     setIsViewModalOpen(true);
+  };
+
+  const handleConfirmReturnReceived = async (order: Order) => {
+    const result = await Swal.fire({
+      title: 'Confirm Returned Item Received?',
+      text: `Mark returned item for order ${order.order_number} as received by staff?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, confirm',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' },
+      });
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrf_token;
+
+      const response = await fetch(`/api/staff/orders/${order.id}/confirm-return-received`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+        },
+        body: JSON.stringify({}),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to confirm returned item.');
+      }
+
+      await refreshOrders();
+      await Swal.fire('Confirmed', data?.message || 'Returned item marked as received.', 'success');
+    } catch (error) {
+      await Swal.fire({
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Unable to confirm returned item.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
+      });
+    }
   };
 
   const handleConfirmShipping = async () => {
@@ -667,28 +862,7 @@ export default function JobOrdersPage() {
         
         if (ordersResponse.ok) {
           const ordersData = await ordersResponse.json();
-          const mappedOrders: Order[] = ordersData.map((order: any) => ({
-            id: order.id,
-            order_number: order.order_number,
-            customer: order.customer_name,
-            email: order.customer_email,
-            phone: order.customer_phone,
-            shippingAddress: order.shipping_address,
-            total: order.total_amount,
-            paymentStatus: order.payment_status,
-            paymentMethod: order.payment_method || '',
-            status: order.status,
-            orderedAt: order.created_at,
-            items: order.items || [],
-            quantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
-            product: order.items?.[0]?.product_name || '',
-            carrierCompany: order.carrier_company,
-            trackingNumber: order.tracking_number,
-            trackingLink: order.tracking_link,
-            eta: order.eta,
-            pickup_enabled: order.pickup_enabled || false,
-            pickup_enabled_at: order.pickup_enabled_at || null,
-          }));
+          const mappedOrders: Order[] = ordersData.map(mapApiOrder);
           setOrders(mappedOrders);
         }
       } catch (fetchError) {
@@ -777,28 +951,7 @@ export default function JobOrdersPage() {
         
         if (ordersResponse.ok) {
           const data = await ordersResponse.json();
-          const mappedOrders: Order[] = data.map((order: any) => ({
-            id: order.id,
-            order_number: order.order_number,
-            customer: order.customer_name,
-            email: order.customer_email,
-            phone: order.customer_phone,
-            shippingAddress: order.shipping_address,
-            total: order.total_amount,
-            paymentStatus: order.payment_status,
-            paymentMethod: order.payment_method || '',
-            status: order.status,
-            orderedAt: order.created_at,
-            items: order.items || [],
-            quantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
-            product: order.items?.[0]?.product_name || '',
-            carrierCompany: order.carrier_company,
-            trackingNumber: order.tracking_number,
-            trackingLink: order.tracking_link,
-            eta: order.eta,
-            pickup_enabled: order.pickup_enabled || false,
-            pickup_enabled_at: order.pickup_enabled_at || null,
-          }));
+          const mappedOrders: Order[] = data.map(mapApiOrder);
           setOrders(mappedOrders);
           
           // Update viewOrder if it's the same order
@@ -939,16 +1092,6 @@ export default function JobOrdersPage() {
                   Delivered ({stats.delivered})
                 </button>
                 <button
-                  onClick={() => setSelectedTab("cancelled")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    selectedTab === "cancelled"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
-                  }`}
-                >
-                  Cancel ({stats.cancelled})
-                </button>
-                <button
                   onClick={() => setSelectedTab("refund")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "refund"
@@ -1085,6 +1228,7 @@ export default function JobOrdersPage() {
                 <col className="w-[11.875%]" />
                 <col className="w-[11.875%]" />
                 <col className="w-[11.875%]" />
+                <col className="w-[11.875%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
@@ -1114,10 +1258,13 @@ export default function JobOrdersPage() {
                     Quantity
                   </th>
                   <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                    Total
+                    Amount Breakdown
                   </th>
                   <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
+                  </th>
+                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    Refunded/Return
                   </th>
                   <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     ETA
@@ -1163,17 +1310,26 @@ export default function JobOrdersPage() {
                       <td className="box-border px-4 py-4 text-center align-top">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.quantity}</span>
                       </td>
-                      <td className="box-border px-4 py-4 text-center align-top">
-                        {isOrderPaid(order) && !isCodOrder(order) ? (
-                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
-                              <PlusIcon className="size-3" />
+                      <td className="box-border px-4 py-4 text-left align-top">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                            <span>Item Subtotal</span>
+                            <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.total_amount)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                            <span>Shipping Fee</span>
+                            <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                            <span>Grand Total</span>
+                            <span className="inline-flex items-center gap-1">
+                              <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
+                                <PlusIcon className="size-3" />
+                              </span>
+                              {formatOrderTotal(order.grand_total)}
                             </span>
-                            {formatOrderTotal(order.total)}
-                          </span>
-                        ) : (
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(order.total)}</span>
-                        )}
+                          </div>
+                        </div>
                       </td>
                       <td className="box-border px-4 py-4 align-top">
                         <div className="flex flex-col items-start gap-2 min-h-12">
@@ -1182,6 +1338,20 @@ export default function JobOrdersPage() {
                             {formatStatusLabel(order.status)}
                           </span>
                         </div>
+                      </td>
+                      <td className="box-border px-4 py-4 align-top">
+                        {(() => {
+                          const refundReturn = getRefundReturnDisplay(order);
+                          if (refundReturn.label === '-') {
+                            return <span className={refundReturn.className}>-</span>;
+                          }
+
+                          return (
+                            <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${refundReturn.className}`}>
+                              {refundReturn.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="box-border px-4 py-4 align-top">
                         <span className="text-sm text-gray-700 dark:text-gray-300">{order.eta || '-'}</span>
@@ -1217,6 +1387,17 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
+                          {canConfirmReturnReceived(order) && (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmReturnReceived(order)}
+                              className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                              title="Confirm returned item received"
+                              aria-label="Confirm returned item received"
+                            >
+                              <CheckCircleIcon className="size-5" />
+                            </button>
+                          )}
                           {/* Shipped orders will be completed when customer confirms receipt */}
                         </div>
                       </td>
@@ -1224,7 +1405,7 @@ export default function JobOrdersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="box-border px-6 py-12 text-center">
+                    <td colSpan={10} className="box-border px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No orders found</p>
                     </td>
                   </tr>
@@ -1544,8 +1725,21 @@ export default function JobOrdersPage() {
                       <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.quantity}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Total</span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.total}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Item Subtotal</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(viewOrder.total_amount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Shipping Fee</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(viewOrder.shipping_fee)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
+                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                        <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
+                          <PlusIcon className="size-3" />
+                        </span>
+                        {formatOrderTotal(viewOrder.grand_total)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Ordered At</span>
@@ -1583,6 +1777,15 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+                {canConfirmReturnReceived(viewOrder) && (
+                  <button
+                    onClick={() => handleConfirmReturnReceived(viewOrder)}
+                    className="px-4 py-2 border border-indigo-600 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                    title="Confirm returned item received"
+                  >
+                    Confirm Return Received
+                  </button>
+                )}
                 {viewOrder.status === "shipped" && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}

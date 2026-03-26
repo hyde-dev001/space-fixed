@@ -22,6 +22,7 @@ use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
 use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchaseRequestController;
 use App\Http\Controllers\ShopOwner\ExpenseController as ShopOwnerExpenseController;
 use App\Http\Controllers\ShopOwner\PremiumCheckoutController;
+use App\Http\Controllers\Api\RefundApprovalController;
 
 /**
  * Shop Owner Routes
@@ -53,6 +54,16 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/', [ShopOwnerExpenseController::class, 'index'])->name('shop_owner.expenses.index');
         Route::post('/{id}/approve', [ShopOwnerExpenseController::class, 'approve'])->name('shop_owner.expenses.approve');
         Route::post('/{id}/reject', [ShopOwnerExpenseController::class, 'reject'])->name('shop_owner.expenses.reject');
+    });
+
+    // ============================================
+    // REFUND APPROVALS (Shop Owner)
+    // ============================================
+    Route::prefix('refunds')->group(function () {
+        Route::get('/', [RefundApprovalController::class, 'shopOwnerIndex'])->name('shop_owner.refunds.index');
+        Route::post('/{id}/approve', [RefundApprovalController::class, 'shopOwnerApprove'])->name('shop_owner.refunds.approve');
+        Route::post('/{id}/reject', [RefundApprovalController::class, 'shopOwnerReject'])->name('shop_owner.refunds.reject');
+        Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'shopOwnerExecuteGatewayRefund'])->name('shop_owner.refunds.execute');
     });
 
     // ============================================
@@ -145,6 +156,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show'])->name('shop_owner.orders.show');
         Route::patch('/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus'])->name('shop_owner.orders.update-status');
         Route::post('/{id}/activate-pickup', [\App\Http\Controllers\ShopOwner\OrderController::class, 'activatePickup'])->name('shop_owner.orders.activate-pickup');
+        Route::post('/{id}/confirm-return-received', [\App\Http\Controllers\ShopOwner\OrderController::class, 'confirmReturnReceived'])->name('shop_owner.orders.confirm-return-received');
     });
 
     // ============================================

@@ -22,6 +22,7 @@ use App\Http\Controllers\ERP\HR\PayrollController;
 use App\Http\Controllers\ERP\PurchaseRequestController as ErpPurchaseRequestController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
+use App\Http\Controllers\Api\RefundApprovalController;
 
 /**
  * Finance Module Routes - Audit Logs (requires view-finance-audit-logs permission)
@@ -43,7 +44,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Finance Module Routes - General Operations
  * Accessible by users with any Finance permissions (including pricing approvals)
  */
-Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-refund-approval', 'shop.isolation'])->group(function () {
 
     // ============================================
     // PURCHASE REQUEST FINANCE REVIEW
@@ -109,6 +110,16 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::post('/{id}/reject', [RepairServiceController::class, 'financeReject'])->name('finance.repair-price-changes.reject');
         Route::post('/{id}/approve-final', [RepairServiceController::class, 'financeApproveFinal'])->name('finance.repair-price-changes.approve-final');
     });
+
+    // ============================================
+    // REFUND APPROVALS
+    // ============================================
+    Route::prefix('refunds')->group(function () {
+        Route::get('/', [RefundApprovalController::class, 'financeIndex'])->name('finance.refunds.index');
+        Route::post('/{id}/approve', [RefundApprovalController::class, 'financeApprove'])->name('finance.refunds.approve');
+        Route::post('/{id}/reject', [RefundApprovalController::class, 'financeReject'])->name('finance.refunds.reject');
+        Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'financeExecuteGatewayRefund'])->name('finance.refunds.execute');
+    });
 });
 
 /**
@@ -128,41 +139,5 @@ Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 
     Route::post('/batch/approve', [FinancePayslipApprovalController::class, 'batchApprove'])->name('finance.payslip_approval.batch_approve');
 });
 
-/**
- * Session-based Finance Routes (aliases for backward compatibility)
- * These routes map to the same controllers as the main finance routes
- * but use the /api/finance/session prefix (used by frontend code)
- */
-Route::prefix('api/finance/session')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices', 'shop.isolation'])->group(function () {
-    
-    // ============================================
-    // EXPENSES (Session-based)
-    // ============================================
-    Route::prefix('expenses')->group(function () {
-        Route::get('/', [ExpenseController::class, 'index'])->name('finance.session.expenses.index');
-        Route::get('/{id}', [ExpenseController::class, 'show'])->name('finance.session.expenses.show');
-        Route::post('/', [ExpenseController::class, 'store'])->name('finance.session.expenses.store');
-        Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.session.expenses.update');
-        Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.session.expenses.destroy');
-        Route::get('/{id}/receipt/download', [ExpenseController::class, 'downloadReceipt'])->name('finance.session.expenses.download');
-        
-    });
-
-    // ============================================
-    // INVOICES (Session-based)
-    // ============================================
-    Route::prefix('invoices')->group(function () {
-        Route::get('/', [InvoiceController::class, 'index'])->name('finance.session.invoices.index');
-        Route::get('/{id}', [InvoiceController::class, 'show'])->name('finance.session.invoices.show');
-        Route::post('/', [InvoiceController::class, 'store'])->name('finance.session.invoices.store');
-        Route::post('/from-job', [InvoiceController::class, 'createFromJob'])->name('finance.session.invoices.from_job');
-        Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.session.invoices.update');
-        Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.session.invoices.destroy');
-        Route::post('/{id}/send', [InvoiceController::class, 'send'])->name('finance.session.invoices.send');
-        Route::post('/{id}/void', [InvoiceController::class, 'void'])->name('finance.session.invoices.void');
-        Route::post('/{id}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('finance.session.invoices.mark_paid');
-        
-        // Post to ledger (requires access-finance-invoices permission)
-        Route::middleware('permission:access-finance-invoices')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.session.invoices.post');
-    });
-});
+// Session-based /api/finance/session aliases removed.
+// Canonical secured session routes are defined in routes/web.php.

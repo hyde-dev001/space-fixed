@@ -1,5 +1,5 @@
 import { Head, router, usePage } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
@@ -71,6 +71,10 @@ export default function SuppliersManagement() {
 			setLoading(false);
 		}
 	};
+
+	useEffect(() => {
+		void fetchSuppliers();
+	}, []);
 
 	const filteredData = useMemo(() => {
 		if (!suppliers || !Array.isArray(suppliers)) return [];

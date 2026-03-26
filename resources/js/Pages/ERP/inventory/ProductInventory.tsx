@@ -136,6 +136,10 @@ export default function ProductInventory() {
 		}
 	}, []);
 
+	useEffect(() => {
+		void fetchInventory();
+	}, [fetchInventory]);
+
 	const categories = useMemo(() => {
 		return ["All", ...Array.from(new Set(inventory.map((item) => item.category)))];
 	}, [inventory]);

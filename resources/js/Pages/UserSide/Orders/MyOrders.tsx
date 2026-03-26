@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
-import Swal from '@/Pages/UserSide/Shared/UserModal';
+import Swal from '../Shared/UserModal';
 
 type OrderItem = {
   id: number;
@@ -21,7 +21,12 @@ type Order = {
   status: string;
   payment_status?: string;
   payment_method?: string;
+  refund_status?: 'processing' | 'refunded' | null;
+  refund_status_note?: string | null;
   total_amount: number;
+  shipping_fee?: number;
+  grand_total?: number;
+  total_paid?: number;
   created_at: string;
   shop_id?: number | null;
   shop_name: string;
@@ -35,16 +40,36 @@ type Order = {
   tracking_link?: string;
   eta?: string;
   pickup_enabled?: boolean;
+  refund_stage?: {
+    id: number;
+    status: string;
+    shop_owner_status: string;
+    finance_status: string;
+    return_status: string;
+    customer_return_tracking_number?: string | null;
+    customer_return_carrier?: string | null;
+    customer_return_rider_name?: string | null;
+    customer_return_rider_phone?: string | null;
+    customer_return_tracking_link?: string | null;
+    customer_return_shipped_at?: string | null;
+    return_confirmed_at?: string | null;
+    refund_executed_at?: string | null;
+    rejection_reason?: string | null;
+    can_mark_return_shipped?: boolean;
+    is_refunded?: boolean;
+  } | null;
 };
 
 interface MyOrdersProps {
   orders: Order[];
+  [key: string]: unknown;
 }
 
 type OrderTab = 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled';
 
 const MyOrders: React.FC = () => {
-  const { orders: initialOrders } = usePage<MyOrdersProps>().props;
+  const page = usePage();
+  const initialOrders = ((page.props as any).orders ?? []) as Order[];
   const [orders, setOrders] = useState<Order[]>(initialOrders || []);
   const [selectedTab, setSelectedTab] = useState<OrderTab>('all');
   const [highlightOrderId, setHighlightOrderId] = useState<number | null>(null);
@@ -60,7 +85,7 @@ const MyOrders: React.FC = () => {
   const [refundStep, setRefundStep] = useState<number>(1);
   const [refundReason, setRefundReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
-  const [refundMethod, setRefundMethod] = useState<string>('');
+  const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
   const [retryingOrderId, setRetryingOrderId] = useState<number | null>(null);
 
@@ -148,6 +173,25 @@ const MyOrders: React.FC = () => {
     return () => window.clearTimeout(scrollTimer);
   }, [highlightOrderId, orders]);
 
+  const hasProcessingRefund = orders.some(
+    (order) => (order.status === 'cancelled' && order.refund_status === 'processing')
+      || ['pending_approval', 'processing', 'requested'].includes(String(order.refund_stage?.status || '').toLowerCase())
+  );
+
+  useEffect(() => {
+    if (!hasProcessingRefund) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      router.reload({
+        only: ['orders'],
+      });
+    }, 15000);
+
+    return () => window.clearInterval(timer);
+  }, [hasProcessingRefund]);
+
   const confirmDelivery = async (orderId: number) => {
     const result = await Swal.fire({
       title: 'Confirm Order Delivery?',
@@ -213,6 +257,7 @@ const MyOrders: React.FC = () => {
 
     try {
       setRetryingOrderId(orderId);
+      const targetOrder = orders.find((o) => o.id === orderId);
       const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
         method: 'POST',
         credentials: 'include',
@@ -221,6 +266,10 @@ const MyOrders: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
+        body: JSON.stringify({
+          subtotal_amount: parseAmount(targetOrder?.total_amount),
+          shipping_fee: parseAmount(targetOrder?.shipping_fee),
+        }),
       });
 
       const data = await response.json();
@@ -243,21 +292,13 @@ const MyOrders: React.FC = () => {
   };
 
   const cancelOrder = async (orderId: number, reason?: string, note?: string, orderItemId?: number | null) => {
-    // If no reason provided, fall back to a simple confirmation (backwards-compatible)
     if (!reason) {
-      const result = await Swal.fire({
-        title: 'Cancel Order?',
-        text: 'Are you sure you want to cancel this order? Inventory will be restored.',
+      Swal.fire({
         icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, cancel it',
-        cancelButtonText: 'Keep order',
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#6b7280',
-        reverseButtons: true,
+        title: 'Please select a reason',
+        confirmButtonColor: '#000000',
       });
-
-      if (!result.isConfirmed) return;
+      return;
     }
 
     try {
@@ -288,8 +329,25 @@ const MyOrders: React.FC = () => {
         prev.map(order => {
           if (order.id !== orderId) return order;
 
+          const derivedRefundStatus = (() => {
+            const status = String(data?.refund_status || '').toLowerCase();
+            if (status === 'refunded' || status === 'already_refunded') return 'refunded' as const;
+            if (status === 'processing' || status === 'already_processing') return 'processing' as const;
+            if (data?.refund_required) return 'processing' as const;
+            return order.refund_status ?? null;
+          })();
+
+          const derivedRefundNote = derivedRefundStatus
+            ? String(data?.message || order.refund_status_note || '')
+            : order.refund_status_note;
+
           if (!orderItemId) {
-            return { ...order, status: 'cancelled' };
+            return {
+              ...order,
+              status: 'cancelled',
+              refund_status: derivedRefundStatus,
+              refund_status_note: derivedRefundNote,
+            };
           }
 
           const remainingItems = (order.items || []).filter(item => item.id !== orderItemId);
@@ -301,13 +359,19 @@ const MyOrders: React.FC = () => {
             items_count: remainingItems.length,
             total_amount: updatedTotal,
             status: remainingItems.length === 0 ? 'cancelled' : order.status,
+            refund_status: remainingItems.length === 0 ? derivedRefundStatus : order.refund_status,
+            refund_status_note: remainingItems.length === 0 ? derivedRefundNote : order.refund_status_note,
           };
         })
       );
 
       Swal.fire({
         icon: 'success',
-        title: orderItemId ? 'Item Cancelled' : 'Order Cancelled',
+        title: orderItemId
+          ? 'Item Cancelled'
+          : data?.refund_required
+            ? 'Order Cancelled & Refund Started'
+            : 'Order Cancelled',
         text: data.message || 'Your order has been cancelled and inventory has been restored.',
         confirmButtonColor: '#000000',
       });
@@ -370,10 +434,163 @@ const MyOrders: React.FC = () => {
     return order.payment_status !== 'paid' && order.payment_status !== 'completed';
   };
 
+  const isOnlinePaymentOrder = (order: Order): boolean => {
+    const paymentMethod = String(order.payment_method || '').toLowerCase();
+    return !['cod', 'cash_on_delivery', 'cash on delivery'].includes(paymentMethod);
+  };
+
+  const getRefundStageText = (order: Order): string | null => {
+    const stage = order.refund_stage;
+    if (!stage) return null;
+
+    const status = String(stage.status || '').toLowerCase();
+    const shopOwnerStatus = String(stage.shop_owner_status || '').toLowerCase();
+    const financeStatus = String(stage.finance_status || '').toLowerCase();
+    const returnStatus = String(stage.return_status || '').toLowerCase();
+
+    if (order.payment_status === 'refunded' || stage.is_refunded || status === 'succeeded') return 'Refunded';
+    if (status === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') return 'Refund Rejected';
+    if (returnStatus === 'pending_customer_shipment') return 'Ship Defective Product';
+    if (returnStatus === 'in_transit') return 'Return In Transit';
+    if (returnStatus === 'received' && financeStatus === 'approved') return 'Awaiting Finance Refund Release';
+    if (returnStatus === 'received') return 'Returned Item Received';
+    if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') return 'Pending Approval';
+    if (status === 'processing') return 'Refund Processing';
+    return 'Refund Processing';
+  };
+
+  const handleMarkRefundReturnShipped = async (order: Order) => {
+    const stage = order.refund_stage;
+    if (!stage?.id) return;
+
+    const shipmentInput = await Swal.fire({
+      title: 'Return Shipment Details',
+      html: `
+        <div style="display:grid;gap:10px;text-align:left;">
+          <label style="font-size:13px;font-weight:600;">Carrier Company</label>
+          <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" style="margin:0;" />
+
+          <label style="font-size:13px;font-weight:600;">Rider Name</label>
+          <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" style="margin:0;" />
+
+          <label style="font-size:13px;font-weight:600;">Rider Number</label>
+          <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" style="margin:0;" />
+
+          <label style="font-size:13px;font-weight:600;">Tracking Number</label>
+          <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" style="margin:0;" />
+
+          <label style="font-size:13px;font-weight:600;">Tracking Link</label>
+          <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." style="margin:0;" />
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Submit',
+      confirmButtonColor: '#000000',
+      focusConfirm: false,
+      preConfirm: () => {
+        const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
+        const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
+        const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
+        const trackingNumber = (document.getElementById('swal-tracking-number') as HTMLInputElement | null)?.value?.trim() || '';
+        const trackingLink = (document.getElementById('swal-tracking-link') as HTMLInputElement | null)?.value?.trim() || '';
+
+        if (!carrierCompany || !riderName || !riderPhone || !trackingNumber || !trackingLink) {
+          Swal.showValidationMessage('Please complete all shipment details.');
+          return null;
+        }
+
+        try {
+          new URL(trackingLink);
+        } catch {
+          Swal.showValidationMessage('Tracking link must be a valid URL.');
+          return null;
+        }
+
+        return {
+          carrierCompany,
+          riderName,
+          riderPhone,
+          trackingNumber,
+          trackingLink,
+        };
+      },
+    });
+
+    if (!shipmentInput.isConfirmed || !shipmentInput.value) return;
+
+    try {
+      const response = await fetch(`/orders/refunds/${stage.id}/mark-shipped-return`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        },
+        body: JSON.stringify({
+          tracking_number: shipmentInput.value.trackingNumber,
+          carrier_company: shipmentInput.value.carrierCompany,
+          rider_name: shipmentInput.value.riderName,
+          rider_phone: shipmentInput.value.riderPhone,
+          tracking_link: shipmentInput.value.trackingLink,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to submit return shipment details.');
+      }
+
+      setOrders((prev) =>
+        prev.map((item) =>
+          item.id === order.id
+            ? {
+                ...item,
+                refund_stage: {
+                  ...(item.refund_stage || stage),
+                  return_status: String(data?.refund?.return_status || 'in_transit'),
+                  customer_return_tracking_number: data?.refund?.customer_return_tracking_number || shipmentInput.value.trackingNumber,
+                  customer_return_carrier: data?.refund?.customer_return_carrier || shipmentInput.value.carrierCompany,
+                  customer_return_rider_name: data?.refund?.customer_return_rider_name || shipmentInput.value.riderName,
+                  customer_return_rider_phone: data?.refund?.customer_return_rider_phone || shipmentInput.value.riderPhone,
+                  customer_return_tracking_link: data?.refund?.customer_return_tracking_link || shipmentInput.value.trackingLink,
+                },
+                refund_status: 'processing',
+                refund_status_note: data?.message || 'Return shipment submitted. Waiting for staff confirmation.',
+              }
+            : item
+        )
+      );
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Return Shipment Submitted',
+        text: data?.message || 'Your return shipment details were submitted successfully.',
+        confirmButtonColor: '#000000',
+      });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Unable to submit return shipment details.',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const parseAmount = (value: unknown): number => {
+    const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const formatPeso = (value: unknown): string => {
+    return `₱${parseAmount(value).toLocaleString()}`;
+  };
+
   const filteredOrders = selectedTab === 'all' 
     ? orders 
     : orders.filter(order => {
-        if (selectedTab === 'to_ship') return order.status === 'to_ship' || order.status === 'pending' || order.status === 'processing';
+        if (selectedTab === 'shipped') return order.status === 'to_ship' || order.status === 'pending' || order.status === 'processing';
         if (selectedTab === 'completed') return order.status === 'completed' || order.status === 'delivered';
         return order.status === selectedTab;
       });
@@ -406,16 +623,11 @@ const MyOrders: React.FC = () => {
       Swal.fire({ icon: 'warning', title: 'Please upload at least one photo or video', confirmButtonColor: '#000000' });
       return;
     }
-    
-    if (!refundMethod) {
-      Swal.fire({ icon: 'warning', title: 'Please select a refund method', confirmButtonColor: '#000000' });
-      return;
-    }
 
     // Show confirmation before submitting
     const result = await Swal.fire({
       title: 'Submit Refund Request?',
-      text: 'Please review your refund details before submitting. Once submitted, our team will review your request.',
+      text: 'Your refund will be returned to your original payment method after approval. Please review your details before submitting.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Yes, Submit',
@@ -431,7 +643,6 @@ const MyOrders: React.FC = () => {
       const formData = new FormData();
       formData.append('order_id', refundOrderId.toString());
       formData.append('reason', refundReason);
-      formData.append('refund_method', refundMethod);
       formData.append('note', refundNote);
       
       // Append all media files
@@ -449,8 +660,9 @@ const MyOrders: React.FC = () => {
         body: formData,
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.message || 'Failed to submit refund request');
       }
 
@@ -459,13 +671,33 @@ const MyOrders: React.FC = () => {
       setRefundStep(1);
       setRefundReason('');
       setRefundMedia([]);
-      setRefundMethod('');
       setRefundNote('');
+
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === refundOrderId
+            ? {
+                ...order,
+                refund_status: 'processing',
+                refund_status_note: 'Refund request submitted and pending approvals.',
+                refund_stage: data?.refund
+                  ? {
+                      id: Number(data.refund.id || 0),
+                      status: String(data.refund.status || 'pending_approval'),
+                      shop_owner_status: String(data.refund.shop_owner_status || 'pending'),
+                      finance_status: String(data.refund.finance_status || 'pending'),
+                      return_status: String(data.refund.return_status || 'awaiting_approval'),
+                    }
+                  : order.refund_stage,
+              }
+            : order
+        )
+      );
 
       Swal.fire({
         icon: 'success',
         title: 'Refund Request Submitted',
-        text: 'Your refund request has been submitted successfully. We will review it shortly.',
+        text: 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
@@ -688,6 +920,24 @@ const MyOrders: React.FC = () => {
                           >
                             {getStatusText(order.status)}
                           </span>
+                          {isOnlinePaymentOrder(order) && (order.refund_status || order.refund_stage) && (
+                            <div className="mt-2 text-right">
+                              <span
+                                className={`inline-flex items-center px-3 py-1 text-[11px] font-semibold tracking-wider uppercase border ${
+                                  getRefundStageText(order) === 'Refunded' || order.refund_status === 'refunded'
+                                    ? 'text-green-700 border-green-300 bg-green-50'
+                                    : getRefundStageText(order) === 'Refund Rejected'
+                                    ? 'text-red-700 border-red-300 bg-red-50'
+                                    : 'text-blue-700 border-blue-300 bg-blue-50'
+                                }`}
+                              >
+                                {getRefundStageText(order) || (order.refund_status === 'refunded' ? 'Refunded' : 'Refund Processing')}
+                              </span>
+                              {(order.refund_stage?.rejection_reason || order.refund_status_note) && (
+                                <p className="mt-1 text-xs text-gray-500">{order.refund_stage?.rejection_reason || order.refund_status_note}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -726,7 +976,7 @@ const MyOrders: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Item Total */}
+                      {/* Order Total */}
                       <div className="mt-8 pt-6 border-t border-gray-200">
                         <div className="flex justify-between items-center">
                           <div>
@@ -746,8 +996,12 @@ const MyOrders: React.FC = () => {
                             )}
                           </div>
                           <div className="text-right">
-                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Item Total</p>
-                            <p className="font-bold text-black text-2xl">₱{item.subtotal.toLocaleString()}</p>
+                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-2">Total Paid</p>
+                            <div className="flex items-center justify-end text-black">
+                              <span className="font-semibold text-lg">
+                                {formatPeso(order.total_paid ?? order.grand_total ?? (parseAmount(order.total_amount) + parseAmount(order.shipping_fee)))}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -833,22 +1087,37 @@ const MyOrders: React.FC = () => {
                             {order.pickup_enabled ? 'RECEIVED' : 'RECEIVED'}
                           </button>
                         )}
-                        {order.status === 'delivered' && (
+                        {['delivered', 'completed'].includes(order.status) && (
                           <>
-                            <button
-                              onClick={() => {
-                                setRefundOrderId(order.id);
-                                setRefundStep(1);
-                                setRefundReason('');
-                                setRefundMedia([]);
-                                setRefundMethod('');
-                                setRefundNote('');
-                                setShowRefundModal(true);
-                              }}
-                              className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
-                            >
-                              REFUND
-                            </button>
+                            {order.refund_stage?.can_mark_return_shipped ? (
+                              <button
+                                onClick={() => handleMarkRefundReturnShipped(order)}
+                                className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                              >
+                                SHIP DEFECTIVE PRODUCT
+                              </button>
+                            ) : !order.refund_stage ? (
+                              <button
+                                onClick={() => {
+                                  setRefundOrderId(order.id);
+                                  setRefundStep(1);
+                                  setRefundReason('');
+                                  setRefundMedia([]);
+                                  setRefundNote('');
+                                  setShowRefundModal(true);
+                                }}
+                                className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                              >
+                                REFUND
+                              </button>
+                            ) : (
+                              <button
+                                disabled
+                                className="px-6 py-2.5 border border-gray-200 text-gray-400 text-sm font-medium tracking-wide rounded-md cursor-not-allowed"
+                              >
+                                {getRefundStageText(order) || 'REFUND PROCESSING'}
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 if (item.product_slug) {
@@ -1077,61 +1346,33 @@ const MyOrders: React.FC = () => {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-700">Order Total:</span>
-                          <span className="text-sm text-gray-900">₱{orders.find(o => o.id === refundOrderId)?.total_amount.toLocaleString()}.00</span>
+                          <span className="text-sm text-gray-900">{formatPeso(orders.find(o => o.id === refundOrderId)?.grand_total ?? orders.find(o => o.id === refundOrderId)?.total_amount)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-bold text-gray-900">Refund Amount:</span>
-                          <span className="text-sm font-bold text-green-600">₱{orders.find(o => o.id === refundOrderId)?.total_amount.toLocaleString()}.00</span>
+                          <span className="text-sm font-bold text-green-600">{formatPeso(orders.find(o => o.id === refundOrderId)?.grand_total ?? orders.find(o => o.id === refundOrderId)?.total_amount)}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Refund Method Selection */}
+                    {/* Refund Method - Always Original Payment Method */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-3">
-                        Select Refund Method <span className="text-red-500">*</span>
+                        Refund Method
                       </label>
                       
-                      <div className="border border-gray-300 rounded-lg p-6 bg-white">
+                      <div className="border border-green-300 rounded-lg p-6 bg-green-50">
                         <div className="flex items-center justify-between mb-4">
-                          <h4 className="text-base font-normal">Secure Refund Processing</h4>
+                          <h4 className="text-base font-semibold text-green-900">Secure Refund to Original Payment Method</h4>
                           <div className="flex items-center gap-2">
                             <img src="/images/payment-logo/visa.png" alt="Visa" className="h-6" />
                             <img src="/images/payment-logo/MAYA.png" alt="Maya" className="h-6" />
                             <img src="/images/payment-logo/GCASH.png" alt="GCash" className="h-6" />
                           </div>
                         </div>
-                        <p className="text-sm text-gray-700 text-center">
-                          Your refund will be processed securely through your selected payment method within 2-4 business days after approval.
+                        <p className="text-sm text-gray-700">
+                          <span className="font-semibold">Your refund will be processed securely to the same payment method you used for this order.</span> If you paid with GCash, Maya, or Credit Card, your refund will go back to that account within 2-4 business days after approval.
                         </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 mt-4">
-                        {[
-                          { value: 'original_payment', label: 'Original Payment Method' },
-                          { value: 'bank_transfer', label: 'Bank Transfer' },
-                          { value: 'gcash', label: 'GCash' },
-                          { value: 'paymongo', label: 'PayMongo Wallet' },
-                        ].map((method) => (
-                          <label
-                            key={method.value}
-                            className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                              refundMethod === method.value
-                                ? 'border-black bg-gray-50'
-                                : 'border-gray-200 hover:border-gray-400'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="refund_method"
-                              value={method.value}
-                              checked={refundMethod === method.value}
-                              onChange={(e) => setRefundMethod(e.target.value)}
-                              className="form-radio h-4 w-4 text-black flex-shrink-0"
-                            />
-                            <span className="text-sm font-medium text-gray-900">{method.label}</span>
-                          </label>
-                        ))}
                       </div>
                     </div>
 
@@ -1170,7 +1411,6 @@ const MyOrders: React.FC = () => {
                       setRefundStep(1);
                       setRefundReason('');
                       setRefundMedia([]);
-                      setRefundMethod('');
                       setRefundNote('');
                     }}
                     className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 font-medium"
@@ -1209,9 +1449,9 @@ const MyOrders: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundMethod}
+                      disabled={!refundReason || !isMediaRequirementMet()}
                       className={`px-5 py-2.5 rounded text-white font-medium ${
-                        refundMethod
+                        refundReason && isMediaRequirementMet()
                           ? 'bg-black hover:bg-gray-800'
                           : 'bg-gray-300 cursor-not-allowed'
                       }`}

@@ -1157,8 +1157,8 @@ const Checkout: React.FC = () => {
 
       <Navigation />
 
-      <main className="flex-1 pt-24 lg:pt-28">
-        <div className="max-w-7xl mx-auto py-6 lg:py-12 px-6 text-black">
+      <main className="flex-1 pt-16 xl:pt-28">
+        <div className="max-w-7xl mx-auto pt-0 pb-6 xl:py-12 px-6 text-black">
         {recoveryOrderId && recoveryReason && (
           <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
             <p className="text-sm font-medium text-amber-900 mb-2">
@@ -1177,9 +1177,9 @@ const Checkout: React.FC = () => {
           </div>
         )}
 
-        <div className="lg:hidden">
+        <div className="xl:hidden">
           {items.length === 0 ? (
-            <div className="py-20 flex flex-col items-center justify-center text-center text-black">
+            <div className="min-h-[82vh] flex flex-col items-center justify-center text-center text-black">
               <div className="relative">
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l1 5h13l1-4H7" />
@@ -1194,7 +1194,7 @@ const Checkout: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="pb-32 lg:pb-0 pt-0">
+              <div className="pb-32 xl:pb-0 pt-0">
                 {shopGroups.map((shopGroup) => {
                   const shopSelection = getShopSelectionState(shopGroup.items);
 
@@ -1226,7 +1226,6 @@ const Checkout: React.FC = () => {
                           <p className="truncate text-sm font-bold text-black">{shopGroup.shopName}</p>
                         </div>
 
-                        <span className="text-xl text-gray-400 shrink-0">›</span>
                       </button>
 
                       <div>
@@ -1317,7 +1316,7 @@ const Checkout: React.FC = () => {
         </div>
 
         {items.length > 0 && (
-          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white px-4 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
+          <div className="xl:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white px-4 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
             <div className="flex items-center gap-3">
               <button 
                 type="button" 
@@ -1354,7 +1353,7 @@ const Checkout: React.FC = () => {
           </div>
         )}
 
-        <div className="hidden lg:grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+        <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
           {/* Left: cart items (span 2 on md) */}
           <div className={items.length === 0 ? 'md:col-span-3' : 'md:col-span-2'}>
             <div className={items.length === 0 ? 'rounded bg-white' : 'border border-gray-100 rounded'}>
@@ -1378,7 +1377,7 @@ const Checkout: React.FC = () => {
 
               <div>
                 {items.length === 0 ? (
-                  <div className="py-20 flex flex-col items-center justify-center text-center text-black">
+                  <div className="min-h-[62vh] flex flex-col items-center justify-center text-center text-black">
                     <div className="relative">
                       <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l1 5h13l1-4H7" />
@@ -2014,7 +2013,7 @@ const Checkout: React.FC = () => {
         </div>
       </main>
 
-      <div className="hidden md:block">
+      <div className="hidden xl:block">
         <CheckoutFooter />
       </div>
     </div>

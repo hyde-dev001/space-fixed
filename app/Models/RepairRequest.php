@@ -91,6 +91,7 @@ class RepairRequest extends Model
         'carrier_name',
         'carrier_phone',
         'tracking_link',
+        'estimated_delivery_date',
         'shipped_at',
     ];
 
@@ -101,6 +102,7 @@ class RepairRequest extends Model
         'received_at' => 'datetime',
         'awaiting_parts_since' => 'datetime',
         'shipped_at' => 'datetime',
+        'estimated_delivery_date' => 'date',
         'assigned_at' => 'datetime',
         'last_reassigned_at' => 'datetime',
         'scheduled_dropoff_date' => 'datetime',

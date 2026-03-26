@@ -4,6 +4,7 @@ namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
+use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
@@ -362,6 +363,47 @@ class LandingPageController extends Controller
             'colors' => $colors,
         ];
 
+        $parseVariantSize = static function (?string $rawSize): array {
+            $normalized = trim((string) $rawSize);
+            if ($normalized === '') {
+                return [
+                    'size_system' => 'US',
+                    'size' => '',
+                ];
+            }
+
+            if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $normalized, $matches) === 1) {
+                return [
+                    'size_system' => strtoupper(trim((string) $matches[1])),
+                    'size' => trim((string) $matches[2]),
+                ];
+            }
+
+            return [
+                'size_system' => 'US',
+                'size' => $normalized,
+            ];
+        };
+
+        $variantCount = collect($product->variants ?? [])->count();
+        $variantStockQuantity = (int) collect($product->variants ?? [])->sum(function ($variant) {
+            return max(0, (int) $variant->quantity);
+        });
+
+        $displayStockQuantity = $variantCount > 0
+            ? $variantStockQuantity
+            : (int) $product->stock_quantity;
+
+        $computedSalesCount = (int) OrderItem::query()
+            ->where('product_id', $product->id)
+            ->whereHas('order', function ($query) {
+                $query->whereIn('status', ['completed', 'delivered'])
+                    ->whereIn('payment_status', ['paid', 'completed']);
+            })
+            ->sum('quantity');
+
+        $displaySalesCount = max((int) $product->sales_count, $computedSalesCount);
+
         return Inertia::render('UserSide/Products/ProductShow', [
             'product' => [
                 'id' => $product->id,
@@ -377,7 +419,7 @@ class LandingPageController extends Controller
                 'description' => $product->description,
                 'brand' => $product->brand,
                 'category' => $product->category,
-                'stock_quantity' => $product->stock_quantity,
+                'stock_quantity' => $displayStockQuantity,
                 'sku' => $product->sku,
                 'weight' => $product->weight,
                 'views_count' => $product->views_count,
@@ -391,11 +433,51 @@ class LandingPageController extends Controller
                         'sku' => $variant->sku,
                     ];
                 })->toArray() : [],
-                'sales_count' => $product->sales_count,
-                'colorVariants' => $product->colorVariants ? $product->colorVariants->map(function ($variant) use ($linkedInventory) {
+                'sales_count' => $displaySalesCount,
+                'colorVariants' => $product->colorVariants ? $product->colorVariants->map(function ($variant) use ($linkedInventory, $product, $parseVariantSize, $variantCount) {
                     $variantSizes = [];
 
-                    if ($linkedInventory) {
+                    $variantSizesFromProductVariants = collect($product->variants ?? [])
+                        ->filter(function ($productVariant) use ($variant) {
+                            return strcasecmp(
+                                trim((string) $productVariant->color),
+                                trim((string) $variant->color_name)
+                            ) === 0;
+                        })
+                        ->map(function ($productVariant) use ($parseVariantSize) {
+                            $parsed = $parseVariantSize($productVariant->size);
+
+                            return [
+                                'id' => null,
+                                'size' => $parsed['size'],
+                                'size_system' => $parsed['size_system'],
+                                'quantity' => max(0, (int) $productVariant->quantity),
+                            ];
+                        })
+                        ->filter(function (array $sizeRow) {
+                            return $sizeRow['size'] !== '' && $sizeRow['quantity'] > 0;
+                        })
+                        ->groupBy(function (array $sizeRow) {
+                            return strtoupper((string) $sizeRow['size_system']) . '::' . mb_strtolower((string) $sizeRow['size']);
+                        })
+                        ->map(function ($sizeGroup) {
+                            $first = $sizeGroup->first();
+
+                            return [
+                                'id' => null,
+                                'size' => $first['size'],
+                                'size_system' => $first['size_system'],
+                                'quantity' => (int) collect($sizeGroup)->sum('quantity'),
+                            ];
+                        })
+                        ->values()
+                        ->all();
+
+                    if (!empty($variantSizesFromProductVariants)) {
+                        $variantSizes = $variantSizesFromProductVariants;
+                    }
+
+                    if (empty($variantSizes) && $linkedInventory && $variantCount === 0) {
                         $matchedInventoryColor = $linkedInventory->colorVariants->first(function ($inventoryColor) use ($variant) {
                             if ($variant->inventory_color_id) {
                                 return (int) $inventoryColor->id === (int) $variant->inventory_color_id;

@@ -218,6 +218,10 @@ export default function StockRequest() {
 		}
 	};
 
+	useEffect(() => {
+		void refreshData();
+	}, []);
+
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 		if (!query) return requests;
@@ -254,7 +258,7 @@ export default function StockRequest() {
 		}
 
 		try {
-			const created = await stockRequestApi.createFromInventory({
+			await stockRequestApi.createFromInventory({
 				inventory_item_id: Number(formData.inventoryItemId),
 				quantity_needed:   parsedQty,
 				priority:          formData.priority,
@@ -262,7 +266,7 @@ export default function StockRequest() {
 				notes:             formData.notes || undefined,
 			});
 
-			setRequests((prev) => [created, ...prev]);
+			await refreshData();
 			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
 			setFormData(initialFormState);
 			setIsCreateModalOpen(false);

@@ -1,7 +1,8 @@
 import { Head, router, usePage } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { supplierOrderAPI } from "@/services/inventoryAPI";
 import type { SupplierOrder as ApiSupplierOrder } from "@/types/inventory";
 
 type OrderStatus = "Sent" | "Confirmed" | "In Transit" | "Delivered" | "Completed" | "Cancelled";
@@ -178,9 +179,27 @@ export default function SupplierOrderMonitoring() {
 		() => (initialData?.data ?? []).map(mapApiOrder)
 	);
 	const [loading, setLoading] = useState(false);
+	const [loadError, setLoadError] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState(supplierParam);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingOrder, setViewingOrder] = useState<SupplierOrderItem | null>(null);
+
+	const loadOrders = async () => {
+		setLoading(true);
+		setLoadError(null);
+		try {
+			const response = await supplierOrderAPI.getAll({ per_page: 200 });
+			setOrders((response.data ?? []).map(mapApiOrder));
+		} catch {
+			setLoadError("Could not refresh supplier orders.");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		void loadOrders();
+	}, []);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -221,6 +240,15 @@ export default function SupplierOrderMonitoring() {
 						<h1 className="text-2xl font-semibold mb-1">Supplier Order Monitoring</h1>
 						<p className="text-gray-600 dark:text-gray-400">Track PO delivery timelines and monitor remaining days before expected arrival</p>
 					</div>
+					<button
+						type="button"
+						onClick={() => {
+							void loadOrders();
+						}}
+						className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+					>
+						Refresh
+					</button>
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -289,6 +317,21 @@ export default function SupplierOrderMonitoring() {
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 						{loading ? (
 							<tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Loading supplier orders...</td></tr>
+						) : loadError ? (
+							<tr>
+								<td colSpan={6} className="px-4 py-10 text-center text-sm text-red-500">
+									<p>{loadError}</p>
+									<button
+										type="button"
+										onClick={() => {
+											void loadOrders();
+										}}
+										className="mt-3 px-3 py-1 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20"
+									>
+										Retry
+									</button>
+								</td>
+							</tr>
 						) : paginatedItems.length > 0 ? (
 									paginatedItems.map((order) => {
 										const sla = getSlaBadge(order);

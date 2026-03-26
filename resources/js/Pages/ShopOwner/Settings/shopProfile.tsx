@@ -960,11 +960,13 @@ const ShopProfile: React.FC = () => {
             {/* Profile Header Card */}
             <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
               <div className="relative h-56 w-full overflow-hidden bg-slate-200">
-                <img
-                  src={coverPhoto || '/images/shop/p1.jpg'}
-                  alt={`${displayName} cover`}
-                  className="h-full w-full object-cover"
-                />
+                {coverPhoto && (
+                  <img
+                    src={coverPhoto}
+                    alt={`${displayName} cover`}
+                    className="h-full w-full object-cover"
+                  />
+                )}
                 <div className="absolute inset-0 bg-linear-to-t from-black/45 via-black/20 to-black/10" />
                 <button
                   type="button"

@@ -5,12 +5,19 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderRefund;
+use App\Services\OrderRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
+    public function __construct(
+        private readonly OrderRefundService $orderRefundService,
+    ) {
+    }
+
     /**
      * Get all orders for shop owner
      * 
@@ -25,7 +32,11 @@ class OrderController extends Controller
         }
 
         $query = Order::where('shop_owner_id', $shopOwner->id)
-            ->with(['items.product', 'customer']);
+            ->with([
+                'items.product',
+                'customer',
+                'refunds' => fn ($refundQuery) => $refundQuery->orderByDesc('id'),
+            ]);
 
         // Filter by status if provided
         if ($request->has('status') && $request->status !== 'all') {
@@ -53,6 +64,9 @@ class OrderController extends Controller
 
         return response()->json([
             'data' => $orders->map(function($order) {
+                $itemSubtotal = (float) ($order->total_amount ?? 0);
+                $shippingFee = (float) ($order->shipping_fee ?? 0);
+                $latestRefund = $order->refunds->first();
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
@@ -60,13 +74,33 @@ class OrderController extends Controller
                     'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                     'customer_phone' => $order->customer_phone ?? '',
                     'shipping_address' => $order->shipping_address ?? '',
-                    'total_amount' => $order->total_amount,
+                    'total_amount' => $itemSubtotal,
+                    'shipping_fee' => $shippingFee,
+                    'grand_total' => $itemSubtotal + $shippingFee,
                     'status' => $order->status,
                     'payment_status' => $order->payment_status ?? 'pending',
                     'payment_method' => $order->payment_method ?? '',
                     'tracking_number' => $order->tracking_number ?? '',
                     'carrier_company' => $order->carrier_company ?? '',
                     'eta' => $order->eta ?? null,
+                    'latest_refund' => $latestRefund ? [
+                        'id' => (int) $latestRefund->id,
+                        'status' => (string) $latestRefund->status,
+                        'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
+                        'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
+                        'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                        'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
+                        'customer_return_carrier' => $latestRefund->customer_return_carrier,
+                        'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
+                        'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
+                        'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
+                        'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
+                        'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
+                        'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
+                        'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
+                        'rejection_reason' => $latestRefund->rejection_reason,
+                        'flow_type' => (string) ($latestRefund->flow_type ?? ''),
+                    ] : null,
                     'created_at' => $order->created_at->toISOString(),
                     'updated_at' => $order->updated_at->toISOString(),
                     'items' => $order->items->map(function($item) {
@@ -109,12 +143,20 @@ class OrderController extends Controller
         }
 
         $order = Order::where('shop_owner_id', $shopOwner->id)
-            ->with(['items.product', 'customer'])
+            ->with([
+                'items.product',
+                'customer',
+                'refunds' => fn ($refundQuery) => $refundQuery->orderByDesc('id'),
+            ])
             ->find($id);
 
         if (!$order) {
             return response()->json(['error' => 'Order not found'], 404);
         }
+
+        $itemSubtotal = (float) ($order->total_amount ?? 0);
+        $shippingFee = (float) ($order->shipping_fee ?? 0);
+        $latestRefund = $order->refunds->first();
 
         return response()->json([
             'id' => $order->id,
@@ -123,7 +165,9 @@ class OrderController extends Controller
             'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
             'customer_phone' => $order->customer_phone ?? '',
             'shipping_address' => $order->shipping_address ?? '',
-            'total_amount' => $order->total_amount,
+            'total_amount' => $itemSubtotal,
+            'shipping_fee' => $shippingFee,
+            'grand_total' => $itemSubtotal + $shippingFee,
             'status' => $order->status,
             'payment_status' => $order->payment_status ?? 'pending',
             'payment_method' => $order->payment_method ?? '',
@@ -133,6 +177,24 @@ class OrderController extends Controller
             'carrier_phone' => $order->carrier_phone ?? '',
             'tracking_link' => $order->tracking_link ?? '',
             'eta' => $order->eta ?? null,
+            'latest_refund' => $latestRefund ? [
+                'id' => (int) $latestRefund->id,
+                'status' => (string) $latestRefund->status,
+                'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
+                'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
+                'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
+                'customer_return_carrier' => $latestRefund->customer_return_carrier,
+                'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
+                'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
+                'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
+                'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
+                'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
+                'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
+                'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
+                'rejection_reason' => $latestRefund->rejection_reason,
+                'flow_type' => (string) ($latestRefund->flow_type ?? ''),
+            ] : null,
             'created_at' => $order->created_at->toISOString(),
             'updated_at' => $order->updated_at->toISOString(),
             'items' => $order->items->map(function($item) {
@@ -331,6 +393,72 @@ class OrderController extends Controller
                 'message' => 'Failed to activate pickup confirmation'
             ], 500);
         }
+    }
+
+    public function confirmReturnReceived(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'return_notes' => 'nullable|string|max:1000',
+        ]);
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if (!$shopOwner) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $registrationType = strtolower(trim((string) ($shopOwner->registration_type ?? '')));
+        if ($registrationType === 'company') {
+            return response()->json([
+                'success' => false,
+                'message' => 'For company accounts, confirm returned items from the Staff Job Orders module.',
+            ], 422);
+        }
+
+        $order = Order::query()
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$order) {
+            return response()->json(['error' => 'Order not found'], 404);
+        }
+
+        $refund = OrderRefund::query()
+            ->where('order_id', $order->id)
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->where('flow_type', 'request_approval')
+            ->whereIn('status', ['requested', 'pending_approval', 'processing'])
+            ->latest('id')
+            ->first();
+
+        if (!$refund) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active refund request found for this order.',
+            ], 404);
+        }
+
+        $result = $this->orderRefundService->confirmReturnReceived(
+            refund: $refund,
+            staffId: null,
+            notes: $validated['return_notes'] ?? null,
+        );
+
+        if (($result['result'] ?? null) === 'invalid_state') {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Return cannot be confirmed in current state.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'] ?? 'Return has been confirmed.',
+            'refund' => $result['refund'],
+            'refund_ready_for_finance_release' => ((string) (($result['refund']->finance_status ?? 'pending')) === 'approved')
+                && ((string) (($result['refund']->return_status ?? 'pending_customer_shipment')) === 'received'),
+        ]);
     }
 }
 

@@ -113,6 +113,33 @@ export default function RepairerSupport() {
     return content || "No messages yet";
   };
 
+  const mapConversationToTicket = (conv: any, existingMessages: Message[] = []): Ticket => {
+    const latestMessage = Array.isArray(conv?.messages) && conv.messages.length > 0
+      ? conv.messages[conv.messages.length - 1]
+      : null;
+    const shopName = conv.shop_owner?.business_name || "Shop";
+
+    return {
+      id: conv.id,
+      customerId: conv.customer?.id,
+      customerName: conv.customer?.name || "Unknown",
+      customerAvatar: normalizePhotoPath(conv.customer?.profile_photo_url || conv.customer?.profile_photo),
+      shopName,
+      shopAvatar: normalizePhotoPath(conv.shop_owner?.profile_photo),
+      customerRole: conv.customer?.email || "",
+      lastMessage: getVisiblePreviewText(latestMessage?.content),
+      lastMessageTime: formatTime(conv.last_message_at),
+      status: "active",
+      messages: existingMessages,
+      priority: conv.priority,
+      conversationStatus: conv.status,
+      transferNote: conv.transfer_note,
+      transferredFrom: conv.transferred_from_name,
+      order: conv.order || undefined,
+      repairRequest: conv.repairRequest || undefined,
+    };
+  };
+
   useEffect(() => {
     fetchConversations();
   }, [statusFilter]);
@@ -134,42 +161,41 @@ export default function RepairerSupport() {
       }
       
       const conversationsData = conversations.map((conv: any) => {
-        // Preserve existing messages if this ticket is already loaded
         const existingTicket = tickets.find((t) => t.id === conv.id);
-        const shopName = conv.shop_owner?.business_name || "Shop";
-        const shopAvatar = normalizePhotoPath(conv.shop_owner?.profile_photo);
-        const customerAvatar = normalizePhotoPath(
-          conv.customer?.profile_photo_url || conv.customer?.profile_photo
-        );
-
-        return {
-          id: conv.id,
-          customerId: conv.customer?.id,
-          customerName: conv.customer?.name || "Unknown",
-          customerAvatar,
-          shopName,
-          shopAvatar,
-          customerRole: conv.customer?.email || "",
-          lastMessage: getVisiblePreviewText(conv.messages?.[0]?.content),
-          lastMessageTime: formatTime(conv.last_message_at),
-          status: "active",
-          messages: existingTicket?.messages || [], // Keep existing messages
-          priority: conv.priority,
-          conversationStatus: conv.status,
-          transferNote: conv.transfer_note,
-          transferredFrom: conv.transferred_from_name,
-          order: conv.order || undefined,
-          repairRequest: conv.repairRequest || undefined,
-        };
+        return mapConversationToTicket(conv, existingTicket?.messages || []);
       });
       
       setTickets(conversationsData);
 
       const requestedConversationId = getRequestedConversationId();
-      if (requestedConversationId && conversationsData.find((ticket: any) => ticket.id === requestedConversationId)) {
-        setSelectedTicketId(requestedConversationId);
-        window.history.replaceState({}, '', '/erp/staff/repairer-support');
-        return;
+      if (requestedConversationId) {
+        const requestedTicket = conversationsData.find((ticket: any) => ticket.id === requestedConversationId);
+
+        if (requestedTicket) {
+          setSelectedTicketId(requestedConversationId);
+          window.history.replaceState({}, '', '/erp/staff/repairer-support');
+          return;
+        }
+
+        try {
+          const directConversationResponse = await axios.get(`/api/repairer/conversations/${requestedConversationId}`);
+          const directConversation = directConversationResponse.data;
+
+          if (directConversation?.id) {
+            const existingTicket = tickets.find((ticket) => ticket.id === directConversation.id);
+            const fallbackTicket = mapConversationToTicket(directConversation, existingTicket?.messages || []);
+
+            setTickets((prev) => [
+              fallbackTicket,
+              ...prev.filter((ticket) => ticket.id !== fallbackTicket.id),
+            ]);
+            setSelectedTicketId(fallbackTicket.id);
+            window.history.replaceState({}, '', '/erp/staff/repairer-support');
+            return;
+          }
+        } catch (directFetchError) {
+          console.warn('Requested conversation is not yet available in repairer list:', directFetchError);
+        }
       }
       
       // Only update selection if current selection is not in the new list

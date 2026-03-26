@@ -284,7 +284,7 @@ const RepairProcess: React.FC = () => {
     brand: '',
     description: '',
     serviceType: '', // intake: 'pickup' or 'walkin'
-    returnDeliveryMethod: '', // return: 'walk_in' | 'customer_pickup' | 'shop_delivery'
+    returnDeliveryMethod: '', // return: 'walk_in' | 'shop_delivery'
     pickupAddressLine: '',
     pickupBarangay: '',
     pickupCity: '',
@@ -804,7 +804,7 @@ const RepairProcess: React.FC = () => {
           <p><strong>Services:</strong> ${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</p>
           <p><strong>Add-ons:</strong> ${selectedPackage ? selectedAddOnServiceIds.length : 0}</p>
           <p><strong>To Shop (Intake):</strong> ${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</p>
-          <p><strong>To Customer (Return):</strong> ${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : formData.returnDeliveryMethod === 'shop_delivery' ? 'Shop Delivery to Customer' : 'Customer Arranged Courier Pickup'}</p>
+          <p><strong>To Customer (Return):</strong> ${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</p>
           <p><strong>Total:</strong> ₱${grandTotal.toLocaleString()}</p>
         </div>
       `,
@@ -1208,14 +1208,14 @@ const RepairProcess: React.FC = () => {
                           <input
                             type="radio"
                             name="returnDeliveryMethod"
-                            value="customer_pickup"
-                            checked={formData.returnDeliveryMethod === 'customer_pickup'}
+                            value="shop_delivery"
+                            checked={formData.returnDeliveryMethod === 'shop_delivery'}
                             onChange={handleInputChange}
                             className="w-4 h-4 mt-1"
                           />
                           <div>
-                            <span className="text-sm font-medium text-black">Customer Arranged Courier Pickup</span>
-                            <p className="text-xs text-gray-600">I will arrange Lalamove/courier to pick up from the shop and deliver to me.</p>
+                            <span className="text-sm font-medium text-black">Repairer Arranged Courier Delivery</span>
+                            <p className="text-xs text-gray-600">The repair shop will arrange a courier to deliver your repaired shoes to your address.</p>
                           </div>
                         </label>
                       </div>

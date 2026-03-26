@@ -854,6 +854,15 @@ const Payment: React.FC = () => {
         ? `/api/customer/repairs/${paymentRecovery.id}/retry-payment-session`
         : `/api/orders/${paymentRecovery.id}/retry-payment-session`;
 
+      const retryPayload = paymentRecovery.scope === 'repair'
+        ? undefined
+        : {
+            shipping_fee: !isPremiumPayment && !isRepairPayment
+              ? Math.max(0, Number(shippingEstimate?.max_fee ?? checkoutData?.shipping_fee ?? 0))
+              : 0,
+            subtotal_amount: Number(checkoutData?.total_amount ?? 0),
+          };
+
       const response = await fetch(endpoint, {
         method: 'POST',
         credentials: 'include',
@@ -862,6 +871,7 @@ const Payment: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken,
         },
+        body: retryPayload ? JSON.stringify(retryPayload) : undefined,
       });
 
       const data = await response.json().catch(() => ({}));
@@ -1025,6 +1035,10 @@ const Payment: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
         },
+        body: JSON.stringify({
+          shipping_fee: computedShippingFee,
+          subtotal_amount: Number(checkoutData.total_amount ?? 0),
+        }),
       });
 
       if (!response.ok) {
@@ -1064,8 +1078,11 @@ const Payment: React.FC = () => {
   }
 
   const subtotal = checkoutData.total_amount;
+  const checkoutShipping = Number(checkoutData.shipping_fee);
   const shipping = !isPremiumPayment && !isRepairPayment
-    ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
+    ? (Number.isFinite(checkoutShipping)
+      ? Math.max(0, checkoutShipping)
+      : Math.max(0, Number(shippingEstimate?.max_fee ?? 0)))
     : 0;
   const total = subtotal + shipping;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);

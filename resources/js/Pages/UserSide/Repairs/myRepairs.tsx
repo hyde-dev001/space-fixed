@@ -16,6 +16,7 @@ type RepairOrder = {
   total_amount: number;
   created_at: string;
   estimated_completion?: string;
+  estimated_delivery_date?: string | null;
   duration?: string;
   completed_at?: string;
   shop_id?: number | null;
@@ -126,6 +127,14 @@ const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walk_in' 
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
 const getOrderGrandTotal = (order: RepairOrder) => Number(order.final_total ?? order.total_amount ?? 0);
 const getOrderMaterialsTotal = (order: RepairOrder) => Number(order.materials_total ?? order.pricing_breakdown?.materials_total ?? 0);
+const escapeSwalText = (value?: string | null): string => {
+  return (value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
 
 const getIntakeMethod = (order: RepairOrder): 'walk_in' | 'customer_delivery' => {
   if (order.intake_delivery_method === 'walk_in' || order.intake_delivery_method === 'customer_delivery') {
@@ -144,7 +153,7 @@ const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 's
     return order.return_delivery_method;
   }
 
-  return order.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup';
+  return order.delivery_method === 'walk_in' ? 'walk_in' : 'shop_delivery';
 };
 
 const getIntakeMethodLabel = (order: RepairOrder): string => {
@@ -160,11 +169,31 @@ const getReturnMethodLabel = (order: RepairOrder): string => {
     return 'Customer Pick-up at Shop';
   }
 
-  if (returnMethod === 'shop_delivery') {
-    return 'Shop Delivery to Customer';
+  return 'Repairer Arranged Courier Delivery';
+};
+
+const shouldShowCourierShippingInfo = (order: RepairOrder): boolean => {
+  if (getReturnMethod(order) !== 'shop_delivery') {
+    return false;
   }
 
-  return 'Customer Arranges Courier Pickup';
+  if (order.status === 'shipped' || order.status === 'picked_up') {
+    return true;
+  }
+
+  return Boolean(
+    order.estimated_delivery_date ||
+    order.estimated_completion ||
+    order.carrier_company ||
+    order.carrier_name ||
+    order.carrier_phone ||
+    order.tracking_number ||
+    order.tracking_link
+  );
+};
+
+const getCourierEstimatedDelivery = (order: RepairOrder): string => {
+  return order.estimated_delivery_date || order.estimated_completion || '-';
 };
 
 // Static mock data for testing
@@ -288,7 +317,7 @@ const MyRepairs: React.FC = () => {
   const [refundStep, setRefundStep] = useState<number>(1);
   const [refundReason, setRefundReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
-  const [refundMethod, setRefundMethod] = useState<string>('');
+  const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
 
   // Review modal states (Phase 10D)
@@ -859,16 +888,11 @@ const MyRepairs: React.FC = () => {
       Swal.fire({ icon: 'warning', title: 'Please upload at least one photo or video', confirmButtonColor: '#000000' });
       return;
     }
-    
-    if (!refundMethod) {
-      Swal.fire({ icon: 'warning', title: 'Please select a refund method', confirmButtonColor: '#000000' });
-      return;
-    }
 
     // Show confirmation before submitting
     const result = await Swal.fire({
       title: 'Submit Refund Request?',
-      text: 'Please review your refund details before submitting. Once submitted, our team will review your request.',
+      text: 'Your refund will be returned to your original payment method after approval. Please review your details before submitting.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Yes, Submit',
@@ -884,7 +908,6 @@ const MyRepairs: React.FC = () => {
       const formData = new FormData();
       formData.append('repair_id', refundOrderId.toString());
       formData.append('reason', refundReason);
-      formData.append('refund_method', refundMethod);
       formData.append('note', refundNote);
       
       // Append all media files
@@ -912,13 +935,12 @@ const MyRepairs: React.FC = () => {
       setRefundStep(1);
       setRefundReason('');
       setRefundMedia([]);
-      setRefundMethod('');
       setRefundNote('');
 
       Swal.fire({
         icon: 'success',
         title: 'Refund Request Submitted',
-        text: 'Your refund request has been submitted successfully. We will review it shortly.',
+        text: 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
@@ -1103,7 +1125,7 @@ const MyRepairs: React.FC = () => {
     return order.status === 'ready_for_pickup' && !order.pickup_enabled;
   };
 
-  const handleSwitchDeliveryMethod = async (order: RepairOrder, nextMethod: 'walk_in' | 'customer_pickup') => {
+  const handleSwitchDeliveryMethod = async (order: RepairOrder, nextMethod: 'walk_in' | 'shop_delivery') => {
     const switchingToWalkIn = nextMethod === 'walk_in';
     const currentMethod = getReturnMethod(order);
 
@@ -1112,18 +1134,29 @@ const MyRepairs: React.FC = () => {
     }
 
     const result = await Swal.fire({
-      title: switchingToWalkIn ? 'Change to Pick-up at Shop?' : 'Switch to Customer Courier Pickup?',
+      title: switchingToWalkIn ? 'Change to Pick-up at Shop?' : 'Switch to Repairer Arranged Courier Delivery?',
       html: `
-        <p class="text-gray-700 mb-2">You are changing this order from <strong>${getReturnMethodLabel(order)}</strong> to <strong>${switchingToWalkIn ? 'Customer Pick-up at Shop' : 'Customer Arranges Courier Pickup'}</strong>.</p>
-        <p class="text-gray-700">${switchingToWalkIn ? 'You will pick up your repaired shoes from the shop.' : 'You will arrange Lalamove/courier to pick up your repaired shoes from the shop.'}</p>
+        <div class="text-left rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p class="text-[13px] uppercase tracking-[0.18em] text-slate-500 font-semibold mb-2">Return Method Change</p>
+          <p class="text-sm text-slate-700 leading-6 mb-2">You are changing this order from <strong class="text-slate-900">${escapeSwalText(getReturnMethodLabel(order))}</strong> to <strong class="text-slate-900">${switchingToWalkIn ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</strong>.</p>
+          <p class="text-sm text-slate-600 leading-6">${switchingToWalkIn ? 'You will pick up your repaired shoes from the shop once it is ready.' : 'The repairer will arrange courier delivery and send your tracking details once shipped.'}</p>
+        </div>
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: switchingToWalkIn ? 'Yes, change to pick-up at shop' : 'Yes, switch to courier pick-up',
+      confirmButtonText: switchingToWalkIn ? 'Yes, change to pick-up at shop' : 'Yes, switch to repairer-arranged courier delivery',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
       reverseButtons: true,
+      customClass: {
+        popup: '!rounded-3xl !px-6 !py-6 !shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)] !border !border-slate-200',
+        title: '!text-3xl !font-black !text-slate-900 !leading-[1.2] !tracking-[-0.015em] !mb-2',
+        htmlContainer: '!mx-0 !mb-0 !mt-2 !p-0',
+        actions: '!mt-6 !w-full !gap-3 !justify-end',
+        confirmButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !tracking-[0.01em] !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
+        cancelButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
+      },
     });
 
     if (!result.isConfirmed) return;
@@ -1136,14 +1169,37 @@ const MyRepairs: React.FC = () => {
         ?? (order.pickup_address && typeof order.pickup_address === 'object' ? order.pickup_address : null);
 
       const addressModal = await Swal.fire({
-        title: 'Delivery Address for Courier Pick-up',
+        title: 'Delivery Address for Repairer Courier Delivery',
         html: `
+          <div class="text-left mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p class="text-[13px] uppercase tracking-[0.18em] text-slate-500 font-semibold mb-1">Delivery Address</p>
+            <p class="text-sm text-slate-600 leading-6">This address will be used by the repairer-arranged courier for return delivery.</p>
+          </div>
           <div class="space-y-3 text-left">
-            <input id="return_address_line" class="swal2-input m-0!" placeholder="Address line" value="${fallbackAddress?.address_line ?? ''}" />
-            <input id="return_barangay" class="swal2-input m-0!" placeholder="Barangay" value="${fallbackAddress?.barangay ?? ''}" />
-            <input id="return_city" class="swal2-input m-0!" placeholder="City" value="${fallbackAddress?.city ?? ''}" />
-            <input id="return_region" class="swal2-input m-0!" placeholder="Region/Province" value="${fallbackAddress?.region ?? ''}" />
-            <input id="return_postal_code" class="swal2-input m-0!" placeholder="Postal code" value="${fallbackAddress?.postal_code ?? ''}" />
+            <div>
+              <label for="return_address_line" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Address Line</label>
+              <input id="return_address_line" class="swal2-input myrepairs-swal-input" placeholder="House no., street, building" value="${escapeSwalText(fallbackAddress?.address_line)}" />
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="return_barangay" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Barangay</label>
+                <input id="return_barangay" class="swal2-input myrepairs-swal-input" placeholder="Barangay" value="${escapeSwalText(fallbackAddress?.barangay)}" />
+              </div>
+              <div>
+                <label for="return_city" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">City</label>
+                <input id="return_city" class="swal2-input myrepairs-swal-input" placeholder="City" value="${escapeSwalText(fallbackAddress?.city)}" />
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="return_region" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Region/Province</label>
+                <input id="return_region" class="swal2-input myrepairs-swal-input" placeholder="Region or province" value="${escapeSwalText(fallbackAddress?.region)}" />
+              </div>
+              <div>
+                <label for="return_postal_code" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Postal Code</label>
+                <input id="return_postal_code" class="swal2-input myrepairs-swal-input" placeholder="Postal code" value="${escapeSwalText(fallbackAddress?.postal_code)}" inputmode="numeric" pattern="[0-9]*" maxlength="10" />
+              </div>
+            </div>
           </div>
         `,
         showCancelButton: true,
@@ -1152,6 +1208,29 @@ const MyRepairs: React.FC = () => {
         confirmButtonColor: '#000000',
         cancelButtonColor: '#6b7280',
         focusConfirm: false,
+        customClass: {
+          popup: '!rounded-3xl !px-6 !py-6 !shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)] !border !border-slate-200',
+          title: '!text-3xl !font-black !text-slate-900 !leading-[1.2] !tracking-[-0.015em] !mb-2',
+          htmlContainer: '!mx-0 !mb-0 !mt-2 !p-0 !overflow-visible',
+          actions: '!mt-6 !w-full !gap-3 !justify-end',
+          confirmButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !tracking-[0.01em] !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
+          cancelButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
+          validationMessage: '!rounded-xl !bg-rose-50 !text-rose-700 !border !border-rose-200 !px-3 !py-2 !mt-3 !mx-0',
+        },
+        didOpen: () => {
+          ['return_address_line', 'return_barangay', 'return_city', 'return_region', 'return_postal_code'].forEach((id) => {
+            const el = document.getElementById(id) as HTMLInputElement | null;
+            if (!el) return;
+            el.classList.add('!m-0', '!w-full', '!h-11', '!rounded-xl', '!border', '!border-slate-200', '!bg-white', '!px-3', '!text-sm', '!text-slate-900', 'focus:!border-slate-400', 'focus:!ring-2', 'focus:!ring-slate-200');
+          });
+
+          const postalCodeInput = document.getElementById('return_postal_code') as HTMLInputElement | null;
+          if (postalCodeInput) {
+            postalCodeInput.addEventListener('input', () => {
+              postalCodeInput.value = postalCodeInput.value.replace(/\D/g, '');
+            });
+          }
+        },
         preConfirm: () => {
           const addressLine = (document.getElementById('return_address_line') as HTMLInputElement | null)?.value?.trim() ?? '';
           const barangay = (document.getElementById('return_barangay') as HTMLInputElement | null)?.value?.trim() ?? '';
@@ -1161,6 +1240,11 @@ const MyRepairs: React.FC = () => {
 
           if (!addressLine || !barangay || !city || !region || !postalCode) {
             Swal.showValidationMessage('Please complete all delivery address fields.');
+            return null;
+          }
+
+          if (!/^\d+$/.test(postalCode)) {
+            Swal.showValidationMessage('Postal code must contain numbers only.');
             return null;
           }
 
@@ -1207,8 +1291,8 @@ const MyRepairs: React.FC = () => {
         text: response.data?.message || (updatedMethod === 'walk_in'
           ? 'Your order is now set to customer pick-up at the shop.'
           : updatedMethod === 'shop_delivery'
-            ? 'Your order is now set to shop delivery.'
-            : 'Your order is now set to customer-arranged courier pickup.'),
+            ? 'Your order is now set to repairer-arranged courier delivery.'
+            : 'Your order is now set to repairer-arranged courier delivery.'),
         confirmButtonColor: '#000000',
       });
     } catch (error: any) {
@@ -1395,6 +1479,19 @@ const MyRepairs: React.FC = () => {
 
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
+  const tabButtonBaseClass =
+    'relative inline-flex min-w-[132px] shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 lg:min-w-0 lg:flex-1';
+  const tabBadgeClass =
+    'absolute right-1 top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center';
+  const actionButtonBaseClass =
+    'inline-flex items-center justify-center gap-2 rounded-full border px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+  const actionButtonPrimaryClass =
+    'border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/45';
+  const actionButtonSecondaryClass =
+    'border-gray-300 bg-white text-gray-800 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 focus-visible:ring-gray-300';
+  const actionButtonDangerClass =
+    'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
+  const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -1402,134 +1499,139 @@ const MyRepairs: React.FC = () => {
       <Navigation />
 
       <main className="flex-1">
-        <div className="max-w-6xl mx-auto pt-28 pb-16 px-6 lg:pt-32">
-          <div className="flex items-center justify-between mb-12">
-            <h1 className="text-4xl font-bold text-black">My Repairs</h1>
+        <div className="w-full px-6 pb-16 pt-28 lg:pt-32 xl:px-10 2xl:px-14">
+          <div className="mx-auto mb-10 max-w-6xl select-none text-center">
+            <h1 className="text-4xl font-bold tracking-tight text-[#16233b] sm:text-5xl">My Repairs</h1>
+            <p className="mx-auto mt-2 max-w-2xl text-sm text-black/55 sm:text-base">
+              Track every request, payment, and pickup update in one place.
+            </p>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-8 mb-12 border-b border-gray-200">
+          <div className="mb-12 flex w-full gap-3 overflow-x-auto pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => setSelectedTab('new_request')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'new_request'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               NEW REQUEST
               {getCountByStatus('new_request') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('new_request')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('pending')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'pending'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               PENDING
               {getCountByStatus('pending') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('pending')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('received')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'received'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               RECEIVED
               {getCountByStatus('received') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('received')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('in_progress')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'in_progress'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               IN PROGRESS
               {getCountByStatus('in_progress') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('in_progress')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('ready_for_pickup')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'ready_for_pickup'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               READY FOR PICKUP
               {getCountByStatus('ready_for_pickup') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('ready_for_pickup')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('picked_up')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'picked_up'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               COMPLETED
               {getCountByStatus('picked_up') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('picked_up')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('cancelled')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'cancelled'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               CANCELLED
               {getCountByStatus('cancelled') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('cancelled')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('rejected')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'rejected'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               REJECTED
               {getCountByStatus('rejected') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('rejected')}
                 </span>
               )}
             </button>
           </div>
+
+          <div className="mx-auto max-w-6xl">
 
           {/* Loading State */}
           {loading && (
@@ -1551,7 +1653,7 @@ const MyRepairs: React.FC = () => {
               <p className="text-gray-500 mb-8">Book a repair service to see your repairs here!</p>
               <Link
                 href="/repair-services"
-                className="inline-block px-8 py-3 bg-black text-white font-medium hover:bg-gray-800 transition-colors"
+                className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
               >
                 Browse Repair Services
               </Link>
@@ -1584,7 +1686,84 @@ const MyRepairs: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        {(['repairer_accepted', 'pending'].includes(order.status)) &&
+                          (getIntakeMethod(order) === 'walk_in' || order.conversation_id) &&
+                          !order.estimated_completion && (
+                          <button
+                            onClick={() => {
+                              setScheduleOrderId(order.id);
+                              setScheduleShopId(order.shop_owner_id ?? null);
+                              setScheduleVisibleMonthKey(getMonthKey(new Date()));
+                              setScheduleSelectedDate('');
+                              setShopClosedDayNumbers(new Set());
+                              setShowScheduleModal(true);
+                            }}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#16233b] bg-[#16233b] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black"
+                            title="Set Schedule"
+                            aria-label="Set Schedule"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        )}
+
+                        {((order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed') ||
+                          (order.status === 'received' && order.conversation_id && getIntakeMethod(order) === 'walk_in')) && (
+                          <Link
+                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
+                            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50"
+                            title="Chat with Repairer"
+                            aria-label="Chat with Repairer"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            {getUnreadCountForConversation(order.conversation_id) > 0 && (
+                              <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center">
+                                {getUnreadCountForConversation(order.conversation_id) > 99 ? '99+' : getUnreadCountForConversation(order.conversation_id)}
+                              </span>
+                            )}
+                          </Link>
+                        )}
+
+                        {canSwitchDeliveryMethod(order) && getReturnMethod(order) !== 'walk_in' && (
+                          <button
+                            onClick={() => handleSwitchDeliveryMethod(order, 'walk_in')}
+                            disabled={processingPayment}
+                            className={`w-9 h-9 inline-flex items-center justify-center rounded-md transition-colors ${
+                              processingPayment
+                                ? 'border border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'border border-gray-300 bg-white text-black hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50'
+                            }`}
+                            title="Change to Pick-up at Shop"
+                            aria-label="Change to Pick-up at Shop"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h10m0 0l-3-3m3 3l-3 3M16 17H6m0 0l3 3m-3-3l3-3" />
+                            </svg>
+                          </button>
+                        )}
+
+                        {canSwitchDeliveryMethod(order) && getReturnMethod(order) === 'walk_in' && (
+                          <button
+                            onClick={() => handleSwitchDeliveryMethod(order, 'shop_delivery')}
+                            disabled={processingPayment}
+                            className={`w-9 h-9 inline-flex items-center justify-center rounded-md transition-colors ${
+                              processingPayment
+                                ? 'border border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'border border-gray-300 bg-white text-black hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50'
+                            }`}
+                            title="Switch to Repairer Courier Delivery"
+                            aria-label="Switch to Repairer Courier Delivery"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h10m0 0l-3-3m3 3l-3 3M16 17H6m0 0l3 3m-3-3l3-3" />
+                            </svg>
+                          </button>
+                        )}
+
                         <span
                           className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusColor(
                             order.status
@@ -1600,7 +1779,7 @@ const MyRepairs: React.FC = () => {
                   <div className="p-8">
                     <div className="flex gap-6">
                       {/* Item Image */}
-                      <div className="w-24 h-24 bg-white border border-gray-200 overflow-hidden flex-shrink-0">
+                      <div className="w-24 h-24 bg-white border border-gray-200 overflow-hidden shrink-0">
                         {order.image ? (
                           <img
                             src={order.image}
@@ -1717,6 +1896,49 @@ const MyRepairs: React.FC = () => {
                             </div>
                           )}
                         </div>
+
+                        {shouldShowCourierShippingInfo(order) && (
+                          <div className="mt-6 pt-6 border-t border-gray-200">
+                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date</p>
+                                <p className="text-sm text-black font-medium">{getCourierEstimatedDelivery(order)}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Shipping Business</p>
+                                <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Name</p>
+                                <p className="text-sm text-black font-medium">{order.carrier_name || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Phone</p>
+                                <p className="text-sm text-black font-medium">{order.carrier_phone || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number</p>
+                                <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
+                              </div>
+                              <div className="md:col-span-2">
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
+                                {order.tracking_link ? (
+                                  <a
+                                    href={order.tracking_link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm text-black underline break-all"
+                                  >
+                                    {order.tracking_link}
+                                  </a>
+                                ) : (
+                                  <p className="text-sm text-black font-medium">-</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                     </div>
@@ -1726,7 +1948,7 @@ const MyRepairs: React.FC = () => {
                       order.shop_owner_id != null &&
                       shopCapacityCache[order.shop_owner_id]?.is_full && (
                       <div className="mt-6 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        <svg className="mt-0.5 w-4 h-4 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="mt-0.5 w-4 h-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                         </svg>
                         <span>
@@ -1768,54 +1990,16 @@ const MyRepairs: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
-                      {/* Set Schedule — visible after repairer accepts/payment done and no drop-off date set yet */}
-                      {/* Walk-in: show as soon as status allows. Delivery: require conversation to exist first */}
-                      {(['repairer_accepted', 'pending'].includes(order.status)) &&
-                        (getIntakeMethod(order) === 'walk_in' || order.conversation_id) &&
-                        !order.estimated_completion && (
-                        <button
-                          onClick={() => {
-                            setScheduleOrderId(order.id);
-                            setScheduleShopId(order.shop_owner_id ?? null);
-                            setScheduleVisibleMonthKey(getMonthKey(new Date()));
-                            setScheduleSelectedDate('');
-                            setShopClosedDayNumbers(new Set());
-                            setShowScheduleModal(true);
-                          }}
-                          className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium tracking-wide hover:bg-blue-700 transition-colors rounded-md flex items-center gap-2"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          SET SCHEDULE
-                        </button>
-                      )}
                       {/* Chat with Repairer and Pay Now - For All Delivery Methods */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          <Link
-                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
-                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
-                          >
-                            <span className="relative inline-flex">
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                              </svg>
-                              {getUnreadCountForConversation(order.conversation_id) > 0 && (
-                                <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center">
-                                  {getUnreadCountForConversation(order.conversation_id) > 99 ? '99+' : getUnreadCountForConversation(order.conversation_id)}
-                                </span>
-                              )}
-                            </span>
-                            CHAT WITH REPAIRER
-                          </Link>
                           <button
                             onClick={() => handlePayNow(order.id)}
                             disabled={!order.payment_enabled || processingPayment}
-                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                            className={`${actionButtonBaseClass} ${
                               order.payment_enabled && !processingPayment
-                                ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                ? actionButtonPrimaryClass
+                                : actionButtonDisabledClass
                             }`}
                           >
                             {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
@@ -1828,7 +2012,7 @@ const MyRepairs: React.FC = () => {
                               setShowCancelModal(true);
                             }}
                             disabled={processingPayment}
-                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                            className={`${actionButtonBaseClass} ${processingPayment ? actionButtonDisabledClass : actionButtonDangerClass}`}
                           >
                             CANCEL REQUEST
                           </button>
@@ -1838,23 +2022,7 @@ const MyRepairs: React.FC = () => {
                       {/* Walk-in Repairs - Just chat, no need to confirm */}
                       {order.status === 'received' && order.conversation_id && getIntakeMethod(order) === 'walk_in' && (
                         <>
-                          <Link
-                            href={`/customer/conversations?conversation_id=${order.conversation_id}`}
-                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md flex items-center gap-2"
-                          >
-                            <span className="relative inline-flex">
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                              </svg>
-                              {getUnreadCountForConversation(order.conversation_id) > 0 && (
-                                <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center">
-                                  {getUnreadCountForConversation(order.conversation_id) > 99 ? '99+' : getUnreadCountForConversation(order.conversation_id)}
-                                </span>
-                              )}
-                            </span>
-                            CHAT WITH REPAIRER
-                          </Link>
-                          <div className="px-6 py-2.5 bg-green-100 text-green-700 text-sm font-medium tracking-wide rounded-md flex items-center gap-2">
+                          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
                             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                             </svg>
@@ -1868,10 +2036,10 @@ const MyRepairs: React.FC = () => {
                           <button
                             onClick={() => handlePayNow(order.id)}
                             disabled={!order.payment_enabled || processingPayment}
-                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                            className={`${actionButtonBaseClass} ${
                               order.payment_enabled && !processingPayment
-                                ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                ? actionButtonPrimaryClass
+                                : actionButtonDisabledClass
                             }`}
                           >
                             {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
@@ -1884,29 +2052,11 @@ const MyRepairs: React.FC = () => {
                               setShowCancelModal(true);
                             }}
                             disabled={processingPayment}
-                            className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                            className={`${actionButtonBaseClass} ${processingPayment ? actionButtonDisabledClass : actionButtonDangerClass}`}
                           >
                             CANCEL REPAIR
                           </button>
                         </>
-                      )}
-                      {canSwitchDeliveryMethod(order) && getReturnMethod(order) !== 'walk_in' && (
-                        <button
-                          onClick={() => handleSwitchDeliveryMethod(order, 'walk_in')}
-                          disabled={processingPayment}
-                          className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
-                        >
-                          CHANGE TO PICK-UP AT SHOP
-                        </button>
-                      )}
-                      {canSwitchDeliveryMethod(order) && getReturnMethod(order) === 'walk_in' && (
-                        <button
-                          onClick={() => handleSwitchDeliveryMethod(order, 'customer_pickup')}
-                          disabled={processingPayment}
-                          className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
-                        >
-                          SWITCH TO COURIER PICK-UP
-                        </button>
                       )}
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
@@ -1915,10 +2065,10 @@ const MyRepairs: React.FC = () => {
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
-                              className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md flex items-center gap-2 ${
+                              className={`${actionButtonBaseClass} ${
                                 order.payment_enabled && !processingPayment
-                                  ? 'bg-black text-white hover:bg-gray-800 transition-colors cursor-pointer'
-                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  ? actionButtonPrimaryClass
+                                  : actionButtonDisabledClass
                               }`}
                             >
                               {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
@@ -1928,10 +2078,10 @@ const MyRepairs: React.FC = () => {
                             type="button"
                             onClick={() => confirmPickup(order.id)}
                             disabled={!order.pickup_enabled}
-                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${
+                            className={`${actionButtonBaseClass} ${
                               order.pickup_enabled
-                                ? 'bg-black text-white hover:bg-gray-800 cursor-pointer'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                ? actionButtonPrimaryClass
+                                : actionButtonDisabledClass
                             }`}
                             title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
                           >
@@ -1951,13 +2101,13 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                            className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                           >
                             REFUND
                           </button>
                           <button
                             onClick={() => openReviewModal(order.id)}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                            className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
                           >
                             REVIEW
                           </button>
@@ -1969,6 +2119,7 @@ const MyRepairs: React.FC = () => {
               ))}
             </div>
           )}
+          </div>
         </div>
         {showCancelModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -2024,7 +2175,7 @@ const MyRepairs: React.FC = () => {
                     setSelectedReason('');
                     setCancelNote('');
                   }}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                 >
                   Close
                 </button>
@@ -2042,7 +2193,7 @@ const MyRepairs: React.FC = () => {
                     setCancelNote('');
                   }}
                   disabled={!selectedReason}
-                  className={`px-4 py-2 rounded text-white ${selectedReason ? 'bg-red-600 hover:bg-red-700' : 'bg-red-300 cursor-not-allowed'}`}
+                  className={`${actionButtonBaseClass} ${selectedReason ? actionButtonDangerClass : actionButtonDisabledClass}`}
                 >
                   Cancel Repair
                 </button>
@@ -2054,7 +2205,7 @@ const MyRepairs: React.FC = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowRefundModal(false)}></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
-              <div className="px-8 py-4 border-b flex-shrink-0">
+              <div className="px-8 py-4 border-b shrink-0">
                 <h3 className="text-xl font-semibold">Request Refund {refundStep === 2 && '- Payment Details'}</h3>
                 <p className="text-sm text-gray-500 mt-1">
                   {refundStep === 1 ? 'Please provide details for your refund request.' : 'Select your refund method and review details.'}
@@ -2086,7 +2237,7 @@ const MyRepairs: React.FC = () => {
                               value={r}
                               checked={refundReason === r}
                               onChange={(e) => setRefundReason(e.target.value)}
-                              className="form-radio h-4 w-4 text-black flex-shrink-0"
+                              className="form-radio h-4 w-4 text-black shrink-0"
                             />
                             <span className="text-sm text-gray-700">{r}</span>
                           </label>
@@ -2220,7 +2371,7 @@ const MyRepairs: React.FC = () => {
                               value={method.value}
                               checked={refundMethod === method.value}
                               onChange={(e) => setRefundMethod(e.target.value)}
-                              className="form-radio h-4 w-4 text-black flex-shrink-0"
+                              className="form-radio h-4 w-4 text-black shrink-0"
                             />
                             <span className="text-sm font-medium text-gray-900">{method.label}</span>
                           </label>
@@ -2244,12 +2395,12 @@ const MyRepairs: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div className="px-8 py-4 border-t flex justify-between gap-3 flex-shrink-0">
+              <div className="px-8 py-4 border-t flex justify-between gap-3 shrink-0">
                 <div>
                   {refundStep === 2 && (
                     <button
                       onClick={() => setRefundStep(1)}
-                      className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 font-medium"
+                      className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                     >
                       Back
                     </button>
@@ -2263,10 +2414,9 @@ const MyRepairs: React.FC = () => {
                       setRefundStep(1);
                       setRefundReason('');
                       setRefundMedia([]);
-                      setRefundMethod('');
                       setRefundNote('');
                     }}
-                    className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 font-medium"
+                    className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                   >
                     Close
                   </button>
@@ -2291,10 +2441,10 @@ const MyRepairs: React.FC = () => {
                         setRefundStep(2);
                       }}
                       disabled={!refundReason || !isMediaRequirementMet()}
-                      className={`px-5 py-2.5 rounded text-white font-medium ${
+                      className={`${actionButtonBaseClass} ${
                         refundReason && isMediaRequirementMet()
-                          ? 'bg-black hover:bg-gray-800'
-                          : 'bg-gray-300 cursor-not-allowed'
+                          ? actionButtonPrimaryClass
+                          : actionButtonDisabledClass
                       }`}
                     >
                       Next
@@ -2302,11 +2452,11 @@ const MyRepairs: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundMethod}
-                      className={`px-5 py-2.5 rounded text-white font-medium ${
-                        refundMethod
-                          ? 'bg-black hover:bg-gray-800'
-                          : 'bg-gray-300 cursor-not-allowed'
+                      disabled={!refundReason || !isMediaRequirementMet()}
+                      className={`${actionButtonBaseClass} ${
+                        refundReason && isMediaRequirementMet()
+                          ? actionButtonPrimaryClass
+                          : actionButtonDisabledClass
                       }`}
                     >
                       Submit Refund Request
@@ -2342,6 +2492,8 @@ const MyRepairs: React.FC = () => {
                         onClick={() => setReviewRating(star)}
                         onMouseEnter={() => setHoveredRating(star)}
                         onMouseLeave={() => setHoveredRating(0)}
+                        aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                        title={`Rate ${star} star${star > 1 ? 's' : ''}`}
                         className="transition-transform hover:scale-110"
                       >
                         <svg
@@ -2411,6 +2563,8 @@ const MyRepairs: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => removeReviewImage(index)}
+                          aria-label="Remove review image"
+                          title="Remove review image"
                           className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2427,6 +2581,7 @@ const MyRepairs: React.FC = () => {
                           accept="image/*"
                           multiple
                           onChange={handleReviewImageUpload}
+                          aria-label="Upload review images"
                           className="hidden"
                         />
                         <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2441,17 +2596,17 @@ const MyRepairs: React.FC = () => {
               <div className="px-6 py-4 border-t flex justify-end gap-3 sticky bottom-0 bg-white">
                 <button
                   onClick={() => setShowReviewModal(false)}
-                  className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={submitReview}
                   disabled={reviewRating === 0}
-                  className={`px-5 py-2.5 rounded-lg text-white font-medium transition-colors ${
+                  className={`${actionButtonBaseClass} ${
                     reviewRating > 0
-                      ? 'bg-black hover:bg-gray-800'
-                      : 'bg-gray-300 cursor-not-allowed'
+                      ? actionButtonPrimaryClass
+                      : actionButtonDisabledClass
                   }`}
                 >
                   Submit Review
@@ -2470,7 +2625,12 @@ const MyRepairs: React.FC = () => {
                   <h3 className="text-lg font-bold text-black">Set Your Schedule</h3>
                   <p className="text-sm text-gray-500 mt-0.5">Pick a drop-off date after discussing with your repairer.</p>
                 </div>
-                <button onClick={() => setShowScheduleModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  aria-label="Close schedule modal"
+                  title="Close"
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -2487,6 +2647,8 @@ const MyRepairs: React.FC = () => {
                         const [y, m] = scheduleVisibleMonthKey.split('-').map(Number);
                         setScheduleVisibleMonthKey(getMonthKey(new Date(y, m - 2, 1)));
                       }}
+                      aria-label="Previous month"
+                      title="Previous month"
                       className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
                     >
                       <svg className="w-4 h-4 text-gray-700" viewBox="0 0 20 20" fill="currentColor">
@@ -2499,6 +2661,8 @@ const MyRepairs: React.FC = () => {
                         const [y, m] = scheduleVisibleMonthKey.split('-').map(Number);
                         setScheduleVisibleMonthKey(getMonthKey(new Date(y, m, 1)));
                       }}
+                      aria-label="Next month"
+                      title="Next month"
                       className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
                     >
                       <svg className="w-4 h-4 text-gray-700" viewBox="0 0 20 20" fill="currentColor">
@@ -2557,17 +2721,17 @@ const MyRepairs: React.FC = () => {
               <div className="px-6 py-4 border-t flex justify-end gap-3">
                 <button
                   onClick={() => setShowScheduleModal(false)}
-                  className="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                  className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmSchedule}
                   disabled={!scheduleSelectedDate || isSubmittingSchedule}
-                  className={`px-5 py-2 rounded-lg text-white text-sm font-medium transition-colors ${
+                  className={`${actionButtonBaseClass} ${
                     scheduleSelectedDate && !isSubmittingSchedule
-                      ? 'bg-black hover:bg-gray-800'
-                      : 'bg-gray-300 cursor-not-allowed'
+                      ? actionButtonPrimaryClass
+                      : actionButtonDisabledClass
                   }`}
                 >
                   {isSubmittingSchedule ? 'Saving...' : 'Confirm Schedule'}

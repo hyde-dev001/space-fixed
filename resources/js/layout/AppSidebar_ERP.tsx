@@ -686,6 +686,10 @@ const AppSidebar_ERP: React.FC = () => {
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
   const permissions = (props as any)?.auth?.permissions || [];
+  const normalizedRole = String(role || '').toUpperCase();
+  const normalizedRoles = Array.isArray(roles)
+    ? roles.map((value: string) => String(value).toUpperCase())
+    : [];
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -936,7 +940,7 @@ const AppSidebar_ERP: React.FC = () => {
   const getAttendanceSection = (): AttendanceSectionKey => {
     if (hasStaffAccess()) return "staff";
     if (hasRepairerAccess()) return "repair";
-    if (role === "MANAGER") return "manager";
+    if (normalizedRole === "MANAGER" || normalizedRoles.includes("MANAGER")) return "manager";
     if (hasInventoryAccess()) return "inventory";
     if (hasProcurementAccess()) return "procurement";
     if (hasHRAccess()) return "hr";
@@ -968,7 +972,7 @@ const AppSidebar_ERP: React.FC = () => {
       menuGroups.push({ menuType: "repair", items: withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem]) });
     }
 
-    if (role === "MANAGER") {
+    if (normalizedRole === "MANAGER" || normalizedRoles.includes("MANAGER")) {
       menuGroups.push({
         menuType: "manager",
         items: withAttendanceForSection("manager", [...managerItems, myPayslipsItem]),
@@ -1070,8 +1074,8 @@ const AppSidebar_ERP: React.FC = () => {
           permissions.includes('access-repair-price-approval') ||
           permissions.includes('access-shoe-price-approval') ||
           permissions.includes('access-refund-approval') ||
-          roles.includes('Shop Owner') ||
-          role === 'Shop Owner' ||
+          normalizedRoles.includes('SHOP OWNER') ||
+          normalizedRole === 'SHOP OWNER' ||
           permissions.includes('access-payslip-approval') ||
           permissions.includes('access-approval-workflow');
         
@@ -1091,13 +1095,13 @@ const AppSidebar_ERP: React.FC = () => {
               return permissions.includes('access-refund-approval');
             }
             if (subItem.name === "Payslip Approvals") {
-              return roles.includes('Shop Owner') || role === 'Shop Owner' || permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
+              return normalizedRoles.includes('SHOP OWNER') || normalizedRole === 'SHOP OWNER' || permissions.includes('access-payslip-approval') || permissions.includes('access-approval-workflow');
             }
             return false;
           });
         }
         
-        return hasAnyPricingPermission && item.subItems.length > 0;
+        return hasAnyPricingPermission && (item.subItems?.length ?? 0) > 0;
       }
       
       // Don't show items without matching permissions
@@ -1107,7 +1111,7 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has any finance permissions
   const hasFinanceAccess = () => {
-    if (roles.includes('Shop Owner') || role === 'Shop Owner') {
+    if (normalizedRoles.includes('SHOP OWNER') || normalizedRole === 'SHOP OWNER') {
       return true;
     }
 
@@ -1127,7 +1131,7 @@ const AppSidebar_ERP: React.FC = () => {
   // Check if user has HR role or HR-specific permissions
   const hasHRAccess = () => {
     // Check for HR role first
-    if (roles.includes('HR')) return true;
+    if (normalizedRoles.includes('HR') || normalizedRole === 'HR') return true;
     
     // Or check for HR-specific simplified permissions
     const hrSpecificPermissions = [
@@ -1156,19 +1160,19 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has Staff role (don't check permissions - Finance has pricing permissions but shouldn't see Staff section)
   const hasStaffAccess = () => {
-    return roles.includes('Staff') || role === "STAFF" || role === "Staff";
+    return normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF';
   };
 
   // Check if user has Repairer role (don't check permissions - Finance has repair pricing permissions but shouldn't see Repairer section)
   const hasRepairerAccess = () => {
-    return roles.includes('Repairer') || role === "REPAIRER" || role === "Repairer";
+    return normalizedRoles.includes('REPAIRER') || normalizedRole === "REPAIRER";
   };
 
   // Check if user has Inventory Manager role or explicit inventory gate permission
   // NOTE: 'access-inventory-overview' is intentionally excluded — it belongs to the Manager's
   // own overview page inside the Manager module, NOT the full Inventory module.
   const hasInventoryAccess = () => {
-    if (roles.includes('Inventory Manager')) return true;
+    if (normalizedRoles.includes('INVENTORY MANAGER')) return true;
     if (permissions.includes('view-inventory')) return true;
     // Only individual inventory module page permissions grant sidebar access
     const inventoryPagePermissions = [
@@ -1184,7 +1188,7 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has Procurement Manager role or explicit procurement gate permission
   const hasProcurementAccess = () => {
-    if (roles.includes('Procurement Manager')) return true;
+    if (normalizedRoles.includes('PROCUREMENT MANAGER')) return true;
     if (permissions.includes('view-procurement')) return true;
     // Also grant access if user has any individual procurement page permission
     const procurementPagePermissions = [
@@ -1297,7 +1301,7 @@ const AppSidebar_ERP: React.FC = () => {
 
       // Inventory Overview - check if user has Staff role or permission
       if (item.route === "erp.staff.inventory-overview") {
-        return roles.includes('Staff') || permissions.includes('access-staff-dashboard');
+        return normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF' || permissions.includes('access-staff-dashboard');
       }
       
       // Hide other items by default (no permissions)

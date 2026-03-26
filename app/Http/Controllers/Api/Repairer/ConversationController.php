@@ -15,6 +15,48 @@ use Illuminate\Support\Facades\Validator;
 
 class ConversationController extends Controller
 {
+    private function resolveUserShopOwnerId($user): ?int
+    {
+        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+
+        return $shopOwnerId ? (int) $shopOwnerId : null;
+    }
+
+    private function isRepairerVisibleConversation(Conversation $conversation): bool
+    {
+        if ($conversation->assigned_to_type === 'repairer') {
+            return true;
+        }
+
+        if (in_array($conversation->assigned_to_type, ['shop_owner', 'crm'], true)) {
+            return $conversation->repairRequest()->exists();
+        }
+
+        return false;
+    }
+
+    private function canRepairerAccessConversation(Conversation $conversation, int $userShopOwnerId): bool
+    {
+        if ((int) $conversation->shop_owner_id !== (int) $userShopOwnerId) {
+            return false;
+        }
+
+        return $this->isRepairerVisibleConversation($conversation);
+    }
+
+    private function claimConversationForRepairer(Conversation $conversation, int $userId): void
+    {
+        if ($conversation->assigned_to_type === 'repairer' && (int) $conversation->assigned_to_id === (int) $userId) {
+            return;
+        }
+
+        $conversation->update([
+            'assigned_to_type' => 'repairer',
+            'assigned_to_id' => $userId,
+            'last_message_at' => now(),
+        ]);
+    }
+
     /**
      * Get all conversations assigned to repairer department
      * Supports filtering by status, priority, and assigned staff
@@ -24,7 +66,7 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id from authenticated user
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $shopOwnerId = $this->resolveUserShopOwnerId($user);
 
         if (!$shopOwnerId) {
             \Log::error('Repairer: User not associated with a shop', [
@@ -40,7 +82,14 @@ class ConversationController extends Controller
         ]);
 
         $query = Conversation::where('shop_owner_id', $shopOwnerId)
-            ->where('assigned_to_type', 'repairer') // Only repairer department conversations
+            ->where(function ($assignmentQuery) {
+                // Include canonical repairer conversations and transitional repair-related ones.
+                $assignmentQuery->where('assigned_to_type', 'repairer')
+                    ->orWhere(function ($repairScopedQuery) {
+                        $repairScopedQuery->whereIn('assigned_to_type', ['shop_owner', 'crm'])
+                            ->whereHas('repairRequest');
+                    });
+            })
             ->with([
                 'shopOwner:id,business_name,profile_photo',
                 'customer',
@@ -149,26 +198,16 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id for comparison
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        // Verify user has access to this shop's conversation
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$userShopOwnerId || !$this->canRepairerAccessConversation($conversation, $userShopOwnerId)) {
             \Log::warning('Repairer: Unauthorized access to conversation', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
                 'user_shop_owner_id' => $userShopOwnerId,
-            ]);
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        // Verify conversation is assigned to repairer department
-        if ($conversation->assigned_to_type !== 'repairer') {
-            \Log::warning('Repairer: Attempting to access non-repairer conversation', [
-                'user_id' => $user->id,
-                'conversation_id' => $conversation->id,
                 'assigned_to_type' => $conversation->assigned_to_type,
             ]);
-            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $conversation->load([
@@ -252,22 +291,19 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id from authenticated user
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$userShopOwnerId || !$this->canRepairerAccessConversation($conversation, $userShopOwnerId)) {
             \Log::warning('Repairer: Unauthorized message send attempt', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
                 'user_shop_owner_id' => $userShopOwnerId,
+                'assigned_to_type' => $conversation->assigned_to_type,
             ]);
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        // Verify conversation is assigned to repairer
-        if ($conversation->assigned_to_type !== 'repairer') {
-            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
-        }
+        $this->claimConversationForRepairer($conversation, (int) $user->id);
 
         $validator = Validator::make($request->all(), [
             'content' => 'nullable|string|max:5000',
@@ -354,21 +390,16 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id from authenticated user
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$userShopOwnerId || !$this->canRepairerAccessConversation($conversation, $userShopOwnerId)) {
             \Log::warning('Repairer: Unauthorized transfer attempt', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
                 'user_shop_owner_id' => $userShopOwnerId,
+                'assigned_to_type' => $conversation->assigned_to_type,
             ]);
             return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        // Verify conversation is currently with repairer
-        if ($conversation->assigned_to_type !== 'repairer') {
-            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
         }
 
         $validator = Validator::make($request->all(), [
@@ -420,21 +451,16 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id from authenticated user
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$userShopOwnerId || !$this->canRepairerAccessConversation($conversation, $userShopOwnerId)) {
             \Log::warning('Repairer: Unauthorized status update attempt', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
                 'user_shop_owner_id' => $userShopOwnerId,
+                'assigned_to_type' => $conversation->assigned_to_type,
             ]);
             return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        // Verify conversation is assigned to repairer
-        if ($conversation->assigned_to_type !== 'repairer') {
-            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
         }
 
         $validator = Validator::make($request->all(), [
@@ -467,21 +493,16 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id from authenticated user
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$userShopOwnerId || !$this->canRepairerAccessConversation($conversation, $userShopOwnerId)) {
             \Log::warning('Repairer: Unauthorized priority update attempt', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
                 'user_shop_owner_id' => $userShopOwnerId,
+                'assigned_to_type' => $conversation->assigned_to_type,
             ]);
             return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        // Verify conversation is assigned to repairer
-        if ($conversation->assigned_to_type !== 'repairer') {
-            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
         }
 
         $validator = Validator::make($request->all(), [
@@ -509,21 +530,16 @@ class ConversationController extends Controller
         $user = Auth::user();
 
         // Get shop_owner_id from authenticated user
-        $userShopOwnerId = $user->shop_owner_id ?? $user->id;
+        $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        // Verify access
-        if ($conversation->shop_owner_id !== $userShopOwnerId) {
+        if (!$userShopOwnerId || !$this->canRepairerAccessConversation($conversation, $userShopOwnerId)) {
             \Log::warning('Repairer: Unauthorized payment activation attempt', [
                 'user_id' => $user->id,
                 'conversation_shop_owner_id' => $conversation->shop_owner_id,
                 'user_shop_owner_id' => $userShopOwnerId,
+                'assigned_to_type' => $conversation->assigned_to_type,
             ]);
             return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        // Verify conversation is assigned to repairer
-        if ($conversation->assigned_to_type !== 'repairer') {
-            return response()->json(['error' => 'This conversation is not assigned to repairer department'], 403);
         }
 
         // Get the repair request associated with this conversation

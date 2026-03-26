@@ -1,16 +1,25 @@
 // Create PayMongo Checkout Session
 app.post('/api/checkout', async (req, res) => {
     try {
-        const { amount, description } = req.body;
+        const { amount, subtotal_amount, shipping_fee, description } = req.body;
+        const normalizedSubtotal = Number(subtotal_amount ?? 0);
+        const normalizedShipping = Number(shipping_fee ?? 0);
+        const computedAmount = Number.isFinite(normalizedSubtotal)
+            ? Math.max(0, normalizedSubtotal) + (Number.isFinite(normalizedShipping) ? Math.max(0, normalizedShipping) : 0)
+            : Number(amount);
 
-        if (!amount || Number(amount) <= 0) {
+        const payableAmount = Number.isFinite(computedAmount) && computedAmount > 0
+            ? computedAmount
+            : Number(amount);
+
+        if (!payableAmount || payableAmount <= 0) {
             return res.status(400).json({ error: 'Invalid amount' });
         }
 
         const payload = {
             data: {
                 attributes: {
-                    amount: Math.round(Number(amount) * 100),
+                    amount: Math.round(payableAmount * 100),
                     currency: 'PHP',
                     description: description || 'Payment',
                     payment_method_types: [

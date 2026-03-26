@@ -1,9 +1,10 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { dashboardAPI, productInventoryAPI } from "@/services/inventoryAPI";
 import type { InventoryItem, InventoryMetrics } from "@/types/inventory";
 
 type MetricColor = "success" | "warning" | "info";
@@ -113,12 +114,34 @@ export default function ERPInventoryOverview() {
   const [items, setItems] = useState<InventoryItem[]>(initialData?.data ?? []);
   const [metrics, setMetrics] = useState<InventoryMetrics | null>(initialMetrics ?? null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  const loadOverview = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [itemsResponse, latestMetrics] = await Promise.all([
+        productInventoryAPI.getAll({ per_page: 200 }),
+        dashboardAPI.getMetrics(),
+      ]);
+      setItems(itemsResponse.data ?? []);
+      setMetrics(latestMetrics ?? null);
+    } catch {
+      setLoadError("Could not refresh inventory data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadOverview();
+  }, []);
 
 
   const categories = ["All", ...Array.from(new Set(items.map((i) => i.category)))];
@@ -247,6 +270,15 @@ export default function ERPInventoryOverview() {
             <p className="text-gray-600 dark:text-gray-400">View all available stock and inventory levels (Read-only)</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                void loadOverview();
+              }}
+              className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              Refresh
+            </button>
             <span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
               Read-Only Access
             </span>
@@ -370,6 +402,21 @@ export default function ERPInventoryOverview() {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {loading ? (
                   <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
+                ) : loadError ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-sm text-red-500">
+                      <p>{loadError}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void loadOverview();
+                        }}
+                        className="mt-3 px-3 py-1 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20"
+                      >
+                        Retry
+                      </button>
+                    </td>
+                  </tr>
                 ) : paginatedItems.length === 0 ? (
                   <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-500">No inventory items found.</td></tr>
                 ) : paginatedItems.map((item) => (

@@ -331,8 +331,12 @@ class RepairWorkflowController extends Controller
                     ]
                 );
                 
-                // Update last message time
-                $conversation->update(['last_message_at' => now()]);
+                // Normalize assignment when reusing an existing conversation created by other channels.
+                $conversation->update([
+                    'assigned_to_id' => $shopOwner->id,
+                    'assigned_to_type' => 'shop_owner',
+                    'last_message_at' => now(),
+                ]);
                 
                 // Determine next status based on delivery method
                 // Walk-in: Customer needs to confirm/bring item → 'pending'
@@ -1341,8 +1345,6 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
 
-            DB::beginTransaction();
-            
             $repairRequest = RepairRequest::where('id', $id)
                 ->where('assigned_repairer_id', $user->id)
                 ->where('status', 'in_progress')
@@ -1424,21 +1426,33 @@ class RepairWorkflowController extends Controller
     public function markCompleted(Request $request, $id)
     {
         $request->validate([
-            'completion_notes' => 'nullable|string|max:500'
+            'completion_notes' => 'nullable|string|max:500',
+            'no_materials_used_confirmed' => 'nullable|boolean',
         ]);
+
+        $noMaterialsUsedConfirmed = $request->boolean('no_materials_used_confirmed');
 
         try {
             // Check if authenticated as shop owner first
             $shopOwner = Auth::guard('shop_owner')->user();
             
             if ($shopOwner) {
-                // Shop owner can mark any repair for their shop as completed
-                DB::beginTransaction();
-                
                 $repairRequest = RepairRequest::where('id', $id)
                     ->where('shop_owner_id', $shopOwner->id)
                     ->where('status', 'in_progress')
                     ->firstOrFail();
+
+                $materialUsageExists = $repairRequest->materialUsages()->exists();
+                if (!$materialUsageExists && !$noMaterialsUsedConfirmed) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
+                        'requires_material_confirmation' => true,
+                    ], 422);
+                }
+
+                // Shop owner can mark any repair for their shop as completed
+                DB::beginTransaction();
                 
                 $repairRequest->update([
                     'status' => 'completed',
@@ -1473,6 +1487,17 @@ class RepairWorkflowController extends Controller
                 ->where('assigned_repairer_id', $user->id)
                 ->where('status', 'in_progress')
                 ->firstOrFail();
+
+            $materialUsageExists = $repairRequest->materialUsages()->exists();
+            if (!$materialUsageExists && !$noMaterialsUsedConfirmed) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
+                    'requires_material_confirmation' => true,
+                ], 422);
+            }
+
+            DB::beginTransaction();
             
             $repairRequest->update([
                 'status' => 'completed',
@@ -1734,8 +1759,18 @@ class RepairWorkflowController extends Controller
     public function activatePickup(Request $request, $id)
     {
         try {
-            // Check if authenticated as shop owner first
-            $shopOwner = Auth::guard('shop_owner')->user();
+            $route = $request->route();
+            $routeMiddleware = $route ? $route->gatherMiddleware() : [];
+            $routeName = $route ? $route->getName() : null;
+
+            $expectsShopOwnerGuard = in_array('auth:shop_owner', $routeMiddleware, true)
+                || (is_string($routeName) && str_starts_with($routeName, 'shop_owner.'));
+            $expectsUserGuard = in_array('auth:user', $routeMiddleware, true);
+
+            // Prevent cross-session guard collisions (e.g., user logged in as both repairer and shop owner).
+            $shopOwner = ($expectsShopOwnerGuard && !$expectsUserGuard)
+                ? Auth::guard('shop_owner')->user()
+                : null;
             
             if ($shopOwner) {
                 // Shop owner can activate pickup for any repair for their shop
@@ -2419,10 +2454,19 @@ class RepairWorkflowController extends Controller
             $intakeDeliveryMethod = $repairRequest->intake_delivery_method
                 ?? ($repairRequest->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery');
 
-            if ($intakeDeliveryMethod !== 'walk_in') {
+            $effectiveReturnMethod = $repairRequest->return_delivery_method
+                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
+
+            $allowsInShopSettlement = $effectiveReturnMethod !== 'shop_delivery'
+                && (
+                $intakeDeliveryMethod === 'walk_in'
+                || in_array($effectiveReturnMethod, ['walk_in', 'customer_pickup'], true)
+                );
+
+            if (!$allowsInShopSettlement) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'In-shop payment is only available for walk-in intake.'
+                    'message' => 'In-shop payment is only available for repairs returned via customer pick-up at shop.'
                 ], 409);
             }
 
@@ -2488,6 +2532,7 @@ class RepairWorkflowController extends Controller
                 'carrier_name'    => ['required', 'string', 'max:100'],
                 'carrier_phone'   => ['required', 'string', 'max:30'],
                 'tracking_link'   => ['nullable', 'string', 'max:500'],
+                'estimated_delivery_date' => ['required', 'date'],
             ]);
 
             $query = RepairRequest::where('id', $id);

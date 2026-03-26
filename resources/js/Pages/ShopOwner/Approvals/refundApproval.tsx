@@ -1,8 +1,9 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import RefundStageBadge from "../../../components/refunds/RefundStageBadge";
 
 const initialRefundRequests = [
 	{
@@ -275,6 +276,12 @@ interface RefundRequest {
 	refundNote?: string;
 	reason: string;
 	status: "Pending" | "Approved" | "Rejected";
+	rawStatus?: string;
+	shopOwnerStatus?: string;
+	financeStatus?: string;
+	returnStatus?: string;
+	refundExecutedAt?: string | null;
+	refundedAt?: string | null;
 	rejectionReason?: string;
 	media?: string[];
 }
@@ -354,13 +361,61 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function RefundApproval() {
-	const [requests, setRequests] = useState<RefundRequest[]>(initialRefundRequests);
+	const { auth } = usePage().props as any;
+	const registrationType = String(auth?.shop_owner?.registration_type || auth?.registration_type || "").toLowerCase();
+	const isIndividualRegistration = registrationType === "individual";
+
+	const [requests, setRequests] = useState<RefundRequest[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null);
 	const [activeImage, setActiveImage] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState("Pending");
+	const [isActionProcessing, setIsActionProcessing] = useState(false);
+	const [isLoading, setIsLoading] = useState(false);
+
+	const isVideoEvidence = (src: string): boolean => {
+		return /\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(src);
+	};
+
+	const fetchRefundRequests = async () => {
+		setIsLoading(true);
+		try {
+			const params = new URLSearchParams();
+			params.append("status", statusFilter);
+			if (searchQuery.trim()) {
+				params.append("search", searchQuery.trim());
+			}
+
+			const response = await fetch(`/api/shop-owner/refunds?${params.toString()}`, {
+				credentials: "include",
+				headers: {
+					Accept: "application/json",
+				},
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Failed to load refund requests");
+			}
+
+			setRequests(Array.isArray(data?.data) ? data.data : []);
+		} catch (error) {
+			Swal.fire({
+				icon: "error",
+				title: "Failed",
+				text: error instanceof Error ? error.message : "Unable to load refund requests.",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		void fetchRefundRequests();
+	}, [statusFilter, searchQuery]);
 
 	const filteredData = useMemo(() => {
 		return requests.filter((item) => {
@@ -392,7 +447,47 @@ export default function RefundApproval() {
 		setActiveImage(null);
 	};
 
+	const canShopOwnerApprove = (request: RefundRequest): boolean => {
+		const rawStatus = String(request.rawStatus || "").toLowerCase();
+		const financeStatus = String(request.financeStatus || "").toLowerCase();
+		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+		const financeApprovedOrNotRequired = isIndividualRegistration || financeStatus === "approved";
+
+		return request.status === "Pending"
+			&& financeApprovedOrNotRequired
+			&& shopOwnerStatus !== "approved"
+			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+	};
+
+	const canShopOwnerReject = (request: RefundRequest): boolean => {
+		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+		
+		return request.status === "Pending"
+			&& shopOwnerStatus === "pending";
+	};
+
 	const handleApprove = async (request: RefundRequest) => {
+		if (!canShopOwnerApprove(request)) {
+			await Swal.fire({
+				title: "Approval Not Allowed",
+				text: "This refund has already been approved by shop owner or is no longer approvable.",
+				icon: "info",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
+		const financeStatus = String(request.financeStatus || "").toLowerCase();
+		if (!isIndividualRegistration && financeStatus !== "approved") {
+			await Swal.fire({
+				title: "Finance Approval Required",
+				text: "Finance must approve this refund first before shop owner approval.",
+				icon: "info",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
 		const result = await Swal.fire({
 			title: "Approve Refund?",
 			html: `
@@ -414,15 +509,45 @@ export default function RefundApproval() {
 		});
 
 		if (result.isConfirmed) {
-			setRequests((prev) =>
-				prev.map((r) => (r.id === request.id ? { ...r, status: "Approved" } : r))
-			);
-			Swal.fire({
-				title: "Approved!",
-				text: "The refund request has been approved.",
-				icon: "success",
-				confirmButtonColor: "#2563eb",
-			});
+			setIsActionProcessing(true);
+			try {
+				const response = await fetch(`/api/shop-owner/refunds/${request.id}/approve`, {
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN":
+							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+					},
+					body: JSON.stringify({}),
+				});
+
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data?.message || "Failed to approve refund request.");
+				}
+
+				setRequests((prev) =>
+					prev.map((r) => (r.id === request.id ? { ...r, ...(data?.refund || {}), status: "Approved" } : r))
+				);
+				Swal.fire({
+					title: "Approved!",
+					text: data?.message || "The refund request has been approved.",
+					icon: "success",
+					confirmButtonColor: "#2563eb",
+				});
+				await fetchRefundRequests();
+			} catch (error) {
+				Swal.fire({
+					title: "Failed",
+					text: error instanceof Error ? error.message : "Unable to approve refund request.",
+					icon: "error",
+					confirmButtonColor: "#2563eb",
+				});
+			} finally {
+				setIsActionProcessing(false);
+			}
 		}
 	};
 
@@ -454,17 +579,126 @@ export default function RefundApproval() {
 		});
 
 		if (reason) {
-			setRequests((prev) =>
-				prev.map((r) =>
-					r.id === request.id ? { ...r, status: "Rejected", rejectionReason: reason } : r
-				)
-			);
+			setIsActionProcessing(true);
+			try {
+				const response = await fetch(`/api/shop-owner/refunds/${request.id}/reject`, {
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN":
+							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+					},
+					body: JSON.stringify({ rejection_reason: reason }),
+				});
+
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data?.message || "Failed to reject refund request.");
+				}
+
+				setRequests((prev) =>
+					prev.map((r) =>
+						r.id === request.id
+							? { ...r, ...(data?.refund || {}), status: "Rejected", rejectionReason: reason }
+							: r
+					)
+				);
+				Swal.fire({
+					title: "Rejected",
+					text: data?.message || "The refund request has been rejected.",
+					icon: "info",
+					confirmButtonColor: "#2563eb",
+				});
+				await fetchRefundRequests();
+			} catch (error) {
+				Swal.fire({
+					title: "Failed",
+					text: error instanceof Error ? error.message : "Unable to reject refund request.",
+					icon: "error",
+					confirmButtonColor: "#2563eb",
+				});
+			} finally {
+				setIsActionProcessing(false);
+			}
+		}
+	};
+
+	const canExecuteGatewayRefund = (request: RefundRequest): boolean => {
+		if (!isIndividualRegistration) {
+			return false;
+		}
+
+		const rawStatus = String(request.rawStatus || "").toLowerCase();
+		const financeStatus = String(request.financeStatus || "").toLowerCase();
+		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+		const returnStatus = String(request.returnStatus || "").toLowerCase();
+
+		return financeStatus === "approved"
+			&& shopOwnerStatus === "approved"
+			&& ["in_transit", "received"].includes(returnStatus)
+			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+	};
+
+	const handleExecuteGatewayRefund = async (request: RefundRequest) => {
+		const result = await Swal.fire({
+			title: "Execute Refund Payout?",
+			html: `
+				<div style="text-align: left; margin-top: 1rem;">
+					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
+				</div>
+			`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#10b981",
+			cancelButtonColor: "#6b7280",
+			confirmButtonText: "Execute",
+			cancelButtonText: "Cancel",
+		});
+
+		if (!result.isConfirmed) {
+			return;
+		}
+
+		setIsActionProcessing(true);
+		try {
+			const response = await fetch(`/api/shop-owner/refunds/${request.id}/execute-gateway-refund`, {
+				method: "POST",
+				credentials: "include",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json",
+					"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+				},
+				body: JSON.stringify({}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Failed to execute refund payout.");
+			}
+
 			Swal.fire({
-				title: "Rejected",
-				text: "The refund request has been rejected.",
-				icon: "info",
+				title: "Payout Execution Started",
+				text: data?.message || "Refund payout execution has started.",
+				icon: "success",
 				confirmButtonColor: "#2563eb",
 			});
+
+			await fetchRefundRequests();
+		} catch (error) {
+			Swal.fire({
+				title: "Failed",
+				text: error instanceof Error ? error.message : "Unable to execute refund payout.",
+				icon: "error",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 
@@ -530,6 +764,7 @@ export default function RefundApproval() {
 						</div>
 						<div className="sm:w-48">
 							<select
+								aria-label="Filter refund requests by status"
 								value={statusFilter}
 								onChange={(e) => {
 									setStatusFilter(e.target.value);
@@ -555,6 +790,7 @@ export default function RefundApproval() {
 									<th className="pb-3 font-medium">Method</th>
 									<th className="pb-3 font-medium">Requested By</th>
 									<th className="pb-3 font-medium">Status</th>
+									<th className="pb-3 font-medium">Refund/Return Stage</th>
 									<th className="pb-3 font-medium text-right">Action</th>
 								</tr>
 							</thead>
@@ -581,6 +817,9 @@ export default function RefundApproval() {
 												{request.status}
 											</span>
 										</td>
+											<td className="py-4">
+												<RefundStageBadge request={request} />
+											</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">
 												<button
@@ -597,8 +836,8 @@ export default function RefundApproval() {
 								))}
 								{paginatedRequests.length === 0 && (
 									<tr>
-										<td colSpan={7} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-											No refund requests found.
+									<td colSpan={8} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+											{isLoading ? "Loading refund requests..." : "No refund requests found."}
 										</td>
 									</tr>
 								)}
@@ -685,6 +924,8 @@ export default function RefundApproval() {
 							</div>
 							<button
 								onClick={handleCloseModal}
+								aria-label="Close refund details"
+								title="Close"
 								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 							>
 								<XIcon className="size-5" />
@@ -723,17 +964,21 @@ export default function RefundApproval() {
 								</div>
 
 								<div>
-									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Photos</p>
+									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Evidence</p>
 									{selectedRequest.media && selectedRequest.media.length > 0 ? (
 										<div className="grid grid-cols-5 gap-3">
-											{selectedRequest.media.slice(0, 5).map((src, index) => (
+											{selectedRequest.media.map((src, index) => (
 												<button
 													key={`${selectedRequest.id}-media-${index}`}
 													onClick={() => setActiveImage(src)}
 													className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-													title="View image"
+													title={isVideoEvidence(src) ? "View video" : "View image"}
 												>
-													<img src={src} alt={`Refund evidence ${index + 1}`} className="w-full h-full object-cover" />
+													{isVideoEvidence(src) ? (
+														<video src={src} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+													) : (
+														<img src={src} alt={`Refund evidence ${index + 1}`} className="w-full h-full object-cover" />
+													)}
 												</button>
 											))}
 										</div>
@@ -756,24 +1001,36 @@ export default function RefundApproval() {
 						<div className="px-8 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
 							<button
 								onClick={handleCloseModal}
-								className="px-5 py-2.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+								disabled={isActionProcessing}
+								className="px-5 py-2.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Close
 							</button>
+							{String(selectedRequest.shopOwnerStatus || "").toLowerCase() === "pending" && (
+								<button
+									onClick={() => handleApprove(selectedRequest)}
+									disabled={!canShopOwnerApprove(selectedRequest) || isActionProcessing}
+									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									Approve
+								</button>
+							)}
 							<button
-								onClick={() => handleApprove(selectedRequest)}
-								disabled={selectedRequest.status !== "Pending"}
-								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								onClick={() => handleExecuteGatewayRefund(selectedRequest)}
+								disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
+								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Approve
+								Execute Payout
 							</button>
-							<button
-								onClick={() => handleReject(selectedRequest)}
-								disabled={selectedRequest.status !== "Pending"}
-								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								Reject
-							</button>
+							{String(selectedRequest.shopOwnerStatus || "").toLowerCase() === "pending" && (
+								<button
+									onClick={() => handleReject(selectedRequest)}
+									disabled={!canShopOwnerReject(selectedRequest) || isActionProcessing}
+									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									Reject
+								</button>
+							)}
 						</div>
 					</div>
 				</div>
@@ -782,12 +1039,22 @@ export default function RefundApproval() {
 			{activeImage && (
 				<div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/80 p-6" onClick={() => setActiveImage(null)}>
 					<button
+						aria-label="Close image preview"
 						className="absolute top-4 right-4 text-white/80 hover:text-white"
 						title="Close"
 					>
 						<XIcon className="size-6" />
 					</button>
-					<img src={activeImage} alt="Refund evidence" className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-2xl" />
+					{isVideoEvidence(activeImage) ? (
+						<video
+							src={activeImage}
+							className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-2xl"
+							controls
+							autoPlay
+						/>
+					) : (
+						<img src={activeImage} alt="Refund evidence" className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-2xl" />
+					)}
 				</div>
 			)}
 		</AppLayout_shopOwner>

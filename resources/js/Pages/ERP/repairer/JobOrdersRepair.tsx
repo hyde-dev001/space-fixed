@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -388,7 +388,23 @@ const MetricCard: React.FC<MetricCardProps> = ({
 export default function JobOrdersRepair() {
   const [error, setError] = useState<string | null>(null);
   const { auth } = usePage().props as any;
-  const userRole = auth?.user?.role;
+  const userRole = String(auth?.user?.role || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles)
+    ? auth.user.roles.map((role: string) => String(role).toUpperCase())
+    : [];
+  const userPermissions = Array.isArray(auth?.permissions)
+    ? auth.permissions
+    : [];
+  const canAccessRepairModule =
+    userPermissions.includes('access-repair-job-orders') ||
+    userPermissions.includes('access-repairer-dashboard') ||
+    userPermissions.includes('access-repairer-support') ||
+    userRole === 'STAFF' ||
+    userRole === 'MANAGER' ||
+    userRole === 'REPAIRER' ||
+    userRoles.includes('STAFF') ||
+    userRoles.includes('MANAGER') ||
+    userRoles.includes('REPAIRER');
   const [selectedTab, setSelectedTab] = useState<string>("under-review");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -401,6 +417,7 @@ export default function JobOrdersRepair() {
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [carrierCompany, setCarrierCompany] = useState("");
+  const carrierCompanySelectRef = useRef<HTMLSelectElement | null>(null);
   const [carrierName, setCarrierName] = useState("");
   const [carrierPhone, setCarrierPhone] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
@@ -440,7 +457,7 @@ export default function JobOrdersRepair() {
     "Other (please specify in notes)",
   ];
 
-  if (userRole !== "STAFF" && userRole !== "MANAGER" && userRole !== "REPAIRER") {
+  if (!canAccessRepairModule) {
     return (
       <AppLayoutERP>
         <div className="max-w-xl mx-auto mt-24 text-center p-8 bg-white dark:bg-gray-900 rounded-xl shadow">
@@ -661,6 +678,10 @@ export default function JobOrdersRepair() {
 
   const canTrackMaterials = (status: RepairOrder["status"] | undefined) => {
     return status === "in-progress" || status === "awaiting_parts";
+  };
+
+  const canEditIntakeDeliveryMethod = (status: RepairOrder["status"]) => {
+    return !['received', 'in-progress', 'awaiting_parts', 'completed', 'ready-for-pickup', 'picked_up', 'cancelled', 'rejected'].includes(status);
   };
 
   const fetchRepairMaterials = async (repairId: number) => {
@@ -946,9 +967,9 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const canMarkReceived = (order: Pick<RepairOrder, 'payment_status' | 'serviceType'>) => {
-    if (isWalkInIntake(order)) return true;
-    return ['paid', 'completed'].includes(order.payment_status ?? '');
+  const canMarkReceived = (order: Pick<RepairOrder, 'payment_status'>) => {
+    const normalized = (order.payment_status ?? '').toLowerCase();
+    return normalized === 'paid' || normalized === 'completed';
   };
 
   const getMarkReceivedBlockedMessage = () => {
@@ -968,9 +989,17 @@ export default function JobOrdersRepair() {
   const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
     const policy = order.payment_policy ?? 'deposit_50';
+    const returnMethod = order.returnDeliveryMethod;
+
+    if (returnMethod === 'shop_delivery') return false;
+
+    const canCollectInShop =
+      isWalkInIntake(order)
+      || returnMethod === 'walk_in'
+      || returnMethod === 'customer_pickup';
 
     if (order.status === 'cancelled') return false;
-    if (!isWalkInIntake(order)) return false;
+    if (!canCollectInShop) return false;
     if (status === 'completed') return false;
     if (policy === 'full_upfront') {
       return ['pending', 'failed', 'expired', ''].includes(status);
@@ -1219,10 +1248,15 @@ export default function JobOrdersRepair() {
 
     if (!result.isConfirmed) return;
 
-    try {
-      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-completed`, {
-        completion_notes: ''
+    const completeRepair = (noMaterialsUsedConfirmed: boolean = false) => {
+      return axios.post(`/api/repairer/repairs/${orderId}/mark-completed`, {
+        completion_notes: '',
+        no_materials_used_confirmed: noMaterialsUsedConfirmed,
       });
+    };
+
+    try {
+      const response = await completeRepair(false);
       
       if (response.data.success) {
         await Swal.fire({
@@ -1234,6 +1268,41 @@ export default function JobOrdersRepair() {
         fetchOrders();
       }
     } catch (error: any) {
+      if (error?.response?.status === 422 && error?.response?.data?.requires_material_confirmation) {
+        const confirmNoMaterials = await Swal.fire({
+          title: 'No Materials Logged',
+          text: error?.response?.data?.message || 'No materials usage is logged for this repair. Confirm if no materials were used.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Confirm No Materials Used',
+          cancelButtonText: 'Back',
+          confirmButtonColor: '#10b981',
+        });
+
+        if (!confirmNoMaterials.isConfirmed) return;
+
+        try {
+          const retryResponse = await completeRepair(true);
+          if (retryResponse.data.success) {
+            await Swal.fire({
+              title: 'Repair Completed!',
+              text: 'Customer will be notified that repair is done.',
+              icon: 'success',
+              confirmButtonColor: '#2563eb',
+            });
+            fetchOrders();
+          }
+        } catch (retryError: any) {
+          await Swal.fire({
+            title: 'Error',
+            text: retryError.response?.data?.message || 'Failed to mark as completed',
+            icon: 'error',
+          });
+        }
+
+        return;
+      }
+
       await Swal.fire({
         title: 'Error',
         text: error.response?.data?.message || 'Failed to mark as completed',
@@ -1296,13 +1365,13 @@ export default function JobOrdersRepair() {
     }
 
     const result = await Swal.fire({
-      title: isWalkInOrder ? 'Mark as Received In-Shop?' : 'Activate Pickup Confirmation?',
+      title: isWalkInOrder ? 'Confirm Shop Pickup?' : 'Activate Pickup Confirmation?',
       text: isWalkInOrder
-        ? 'This will mark the repaired shoe as received in-shop and complete the order.'
+        ? 'Please confirm that the customer has already picked up the shoes from the shop.'
         : 'This will allow the customer to confirm they have received their item.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: isWalkInOrder ? 'Mark Received' : 'Activate',
+      confirmButtonText: isWalkInOrder ? 'Confirm Pickup' : 'Activate',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
@@ -1515,6 +1584,28 @@ export default function JobOrdersRepair() {
     setIsViewModalOpen(true);
   };
 
+  const calculateEtaDate = (preset: string): string => {
+    const today = new Date();
+    let daysToAdd = 3;
+
+    if (preset.includes("1-2")) daysToAdd = 2;
+    else if (preset.includes("1-3")) daysToAdd = 3;
+    else if (preset.includes("2-4")) daysToAdd = 4;
+    else if (preset.includes("3-6")) daysToAdd = 6;
+
+    let currentDate = new Date(today);
+    let addedDays = 0;
+
+    while (addedDays < daysToAdd) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+        addedDays++;
+      }
+    }
+
+    return currentDate.toISOString().split('T')[0];
+  };
+
   const handleShipOrder = (order: RepairOrder) => {
     if (isWalkInReturn(order)) {
       Swal.fire({
@@ -1538,6 +1629,7 @@ export default function JobOrdersRepair() {
 
   const handleConfirmShipping = async () => {
     if (!selectedOrder) return;
+    const normalizedCarrierCompany = (carrierCompany || carrierCompanySelectRef.current?.value || '').trim();
 
     // Validation
     if (!etaPreset) {
@@ -1550,7 +1642,7 @@ export default function JobOrdersRepair() {
       return;
     }
 
-    if (!carrierCompany) {
+    if (!normalizedCarrierCompany) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please select a Shipping Business",
@@ -1580,7 +1672,9 @@ export default function JobOrdersRepair() {
       return;
     }
 
-    if (!trackingNumber) {
+    const normalizedTrackingNumber = trackingNumber.trim();
+
+    if (!normalizedTrackingNumber) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Number",
@@ -1589,6 +1683,18 @@ export default function JobOrdersRepair() {
       });
       return;
     }
+
+    if (!/^\d+$/.test(normalizedTrackingNumber)) {
+      await Swal.fire({
+        title: "Invalid Tracking Number",
+        text: "Tracking Number must contain numbers only.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    const etaDate = calculateEtaDate(etaPreset);
 
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -1601,11 +1707,12 @@ export default function JobOrdersRepair() {
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          tracking_number: trackingNumber,
-          carrier_company: carrierCompany,
+          tracking_number: normalizedTrackingNumber,
+          carrier_company: normalizedCarrierCompany,
           carrier_name: carrierName,
           carrier_phone: carrierPhone,
           tracking_link: trackingLink || null,
+          estimated_delivery_date: etaDate,
         }),
       });
 
@@ -2023,14 +2130,14 @@ export default function JobOrdersRepair() {
               <colgroup>
                 <col className="w-[13%]" />
                 <col className="w-[8%]" />
-                <col className="w-[16%]" />
+                <col className="w-[14%]" />
                 <col className="w-[10%]" />
                 <col className="w-[10%]" />
                 <col className="w-[7%]" />
                 <col className="w-[7%]" />
-                <col className="w-[10%]" />
                 <col className="w-[9%]" />
-                <col className="w-[10%]" />
+                <col className="w-[8%]" />
+                <col className="w-[14%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
@@ -2164,8 +2271,8 @@ export default function JobOrdersRepair() {
                           ? <span className="font-medium text-blue-700 dark:text-blue-400">{order.preferredDate}</span>
                           : <span className="text-gray-400 dark:text-gray-500">—</span>}
                       </td>
-                      <td className="px-4 py-4 text-sm font-medium">
-                        <div className="flex flex-wrap items-center gap-2">
+                      <td className="px-4 py-4 text-sm font-medium whitespace-nowrap">
+                        <div className="flex items-center gap-1 whitespace-nowrap [&>button]:inline-flex [&>button]:size-10 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-lg [&>button>svg]:size-5">
                           <button
                             onClick={() => handleViewOrder(order)}
                             className="inline-flex items-center justify-center p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
@@ -2173,26 +2280,100 @@ export default function JobOrdersRepair() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          
-                          {/* Phase 8: Work Progress Action Buttons */}
+
+                          {(order.status === "owner_approved" || order.status === "repairer_accepted" || order.status === "waiting_customer_confirmation" || order.status === "pending") && (
+                            <>
+                              <button
+                                onClick={() => handleMarkReceived(order)}
+                                disabled={!canMarkReceived(order)}
+                                className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
+                                  canMarkReceived(order)
+                                    ? 'text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:text-cyan-300 dark:hover:bg-cyan-900/30'
+                                    : 'text-gray-400 cursor-not-allowed'
+                                }`}
+                                title={
+                                  canMarkReceived(order)
+                                    ? 'Mark shoes as received at shop'
+                                    : getMarkReceivedBlockedMessage()
+                                }
+                                aria-label="Mark as Received"
+                              >
+                                <PackageIcon className="size-5" />
+                              </button>
+                              {!order.payment_enabled && (
+                                <button
+                                  onClick={() => handleActivatePayment(String(order.database_id))}
+                                  className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
+                                  title="Activate payment for this repair"
+                                  aria-label="Activate Payment"
+                                >
+                                  <CurrencyDollarIcon className="size-5" />
+                                </button>
+                              )}
+                              {isWalkInIntake(order) && (
+                                <button
+                                  onClick={() => handleMarkPaidInShop(order)}
+                                  disabled={!isInShopPaymentDueNow(order)}
+                                  className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
+                                    isInShopPaymentDueNow(order)
+                                      ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30'
+                                      : 'text-gray-400 cursor-not-allowed'
+                                  }`}
+                                  title={
+                                    isInShopPaymentDueNow(order)
+                                      ? getMarkPaidInShopLabel(order)
+                                      : 'No payable phase is currently due for in-shop payment'
+                                  }
+                                  aria-label="Mark Paid In Shop"
+                                >
+                                  <CurrencyDollarIcon className="size-5" />
+                                </button>
+                              )}
+                            </>
+                          )}
+
+                          {order.status === "received" && (
+                            <>
+                              {!order.payment_enabled && (
+                                <button
+                                  onClick={() => handleActivatePayment(String(order.database_id))}
+                                  className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
+                                  title="Activate payment for this repair"
+                                  aria-label="Activate Payment"
+                                >
+                                  <CurrencyDollarIcon className="size-5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleStartWork(order)}
+                                className="inline-flex items-center justify-center p-2 rounded-lg text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:text-indigo-300 dark:hover:bg-indigo-900/30 transition-colors"
+                                title="Start work"
+                                aria-label="Start Work"
+                              >
+                                <WrenchIcon className="size-5" />
+                              </button>
+                            </>
+                          )}
+
                           {(order.status === "in-progress" || order.status === "completed") && (
                             <button
                               onClick={() => handleMarkReady(String(order.database_id))}
-                              className="inline-flex items-center justify-center p-2 text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                              className="inline-flex items-center justify-center p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30 rounded-lg transition-colors"
                               title="Ready for Pickup"
                               aria-label="Ready for Pickup"
                             >
-                              <MotorcycleIcon className="size-5" />
+                              <CheckCircleIcon className="size-5" />
                             </button>
                           )}
                           
                           {order.status === "awaiting_parts" && (
                             <button
-                              onClick={() => handleResumeWork(order.database_id)}
-                              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                              onClick={() => handleResumeWork(String(order.database_id))}
+                              className="inline-flex items-center justify-center p-2 rounded-lg text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/30 transition-colors"
                               title="Resume work (parts arrived)"
+                              aria-label="Resume Work"
                             >
-                              Resume Work
+                              <WrenchIcon className="size-5" />
                             </button>
                           )}
                           
@@ -2200,20 +2381,21 @@ export default function JobOrdersRepair() {
                             <>
                               {canActivateOnlineRemainingBalance(order) && (
                                 <button
-                                  onClick={() => handleActivatePayment(order.database_id)}
-                                  className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                  onClick={() => handleActivatePayment(String(order.database_id))}
+                                  className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
                                   title="Activate online payment for remaining balance"
+                                  aria-label="Activate Remaining Balance"
                                 >
-                                  Activate Remaining Balance
+                                  <CurrencyDollarIcon className="size-5" />
                                 </button>
                               )}
                               <button
                                 onClick={() => handleShipOrder(order)}
-                                className="inline-flex size-9 items-center justify-center rounded-lg border border-gray-300 bg-gray-50 text-green-500 transition-colors hover:border-green-300 hover:bg-white hover:text-green-600 dark:border-gray-700 dark:bg-gray-900 dark:text-green-400 dark:hover:border-green-500 dark:hover:bg-gray-800"
+                                className="inline-flex items-center justify-center p-2 rounded-lg text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30 transition-colors"
                                 title="Ship this repair order"
                                 aria-label="Ship this repair order"
                               >
-                                <CheckCircleIcon className="h-4 w-4" />
+                                <CheckCircleIcon className="size-5" />
                               </button>
                             </>
                           )}
@@ -2221,36 +2403,57 @@ export default function JobOrdersRepair() {
                             <button
                               onClick={() => handleActivatePickup(String(order.database_id))}
                               disabled={!isFullyPaidForRelease(order)}
-                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
                                 !isFullyPaidForRelease(order)
-                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                  : 'text-white bg-purple-600 hover:bg-purple-700'
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
                               }`}
                               title={
                                 !isFullyPaidForRelease(order)
                                   ? getReleasePaymentBlockedMessage(order)
                                   : 'Mark repaired shoe as received in-shop'
                               }
+                              aria-label="Mark Received"
                             >
-                              Mark Received
+                              <PackageIcon className="size-5" />
+                            </button>
+                          )}
+                          {order.status === "ready-for-pickup" && isInShopPaymentDueNow(order) && (
+                            <button
+                              onClick={() => handleMarkPaidInShop(order)}
+                              disabled={!isInShopPaymentDueNow(order)}
+                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
+                                isInShopPaymentDueNow(order)
+                                  ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30'
+                                  : 'text-gray-400 cursor-not-allowed'
+                              }`}
+                              title={
+                                isInShopPaymentDueNow(order)
+                                  ? getMarkPaidInShopLabel(order)
+                                  : 'No payable phase is currently due for in-shop payment'
+                              }
+                              aria-label="Mark Paid In Shop"
+                            >
+                              <CurrencyDollarIcon className="size-5" />
                             </button>
                           )}
                           {order.status === "shipped" && (
                             <button
                               onClick={() => handleActivatePickup(String(order.database_id))}
                               disabled={Boolean(order.pickup_enabled || order.pickup_enabled_at)}
-                              className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
                                 order.pickup_enabled || order.pickup_enabled_at
-                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                  : 'text-white bg-purple-600 hover:bg-purple-700'
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
                               }`}
                               title={
                                 order.pickup_enabled || order.pickup_enabled_at
                                   ? 'Waiting for customer receive confirmation'
                                   : 'Activate customer receive confirmation'
                               }
+                              aria-label="Activate Receive"
                             >
-                              {order.pickup_enabled || order.pickup_enabled_at ? 'Waiting Customer Receive' : 'Activate Receive'}
+                              <PackageIcon className="size-5" />
                             </button>
                           )}
                         </div>
@@ -2444,7 +2647,22 @@ export default function JobOrdersRepair() {
 
                 {/* Service Details */}
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Service Details</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Service Details</p>
+                    {canEditIntakeDeliveryMethod(viewOrder.status) && (
+                      <button
+                        type="button"
+                        onClick={() => handleChangeDeliveryMethod(viewOrder)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                        title="Edit intake delivery method"
+                        aria-label="Edit intake delivery method"
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-8.19 8.19a1 1 0 01-.439.263l-3 1a1 1 0 01-1.264-1.264l1-3a1 1 0 01.263-.439l8.19-8.19zM12.172 5L6 11.172V13h1.828L14 6.828 12.172 5z" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                   <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Shoe Type</span>
@@ -2472,20 +2690,9 @@ export default function JobOrdersRepair() {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Intake Delivery Method</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {formatServiceType(viewOrder.serviceType)}
-                        </span>
-                        {!['in-progress','awaiting_parts','completed','ready-for-pickup','picked_up','cancelled','rejected'].includes(viewOrder.status) && (
-                          <button
-                            type="button"
-                            onClick={() => handleChangeDeliveryMethod(viewOrder)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-800 underline underline-offset-2"
-                          >
-                            Change
-                          </button>
-                        )}
-                      </div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatServiceType(viewOrder.serviceType)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Return Delivery Method</span>
@@ -2781,158 +2988,17 @@ export default function JobOrdersRepair() {
                 )}
                 
                 {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved" || viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation" || viewOrder.status === "pending") && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => handleMarkReceived(viewOrder)}
-                      disabled={!canMarkReceived(viewOrder)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        canMarkReceived(viewOrder)
-                          ? 'bg-white hover:bg-gray-100 text-gray-900 border border-gray-900'
-                          : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
-                      }`}
-                      title={
-                        canMarkReceived(viewOrder)
-                          ? 'Mark shoes as received at shop'
-                          : getMarkReceivedBlockedMessage()
-                      }
-                    >
-                      Mark as Received
-                    </button>
-                    {isWalkInIntake(viewOrder) && (
-                      <button
-                        onClick={() => handleMarkPaidInShop(viewOrder)}
-                        disabled={!isInShopPaymentDueNow(viewOrder)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                          isInShopPaymentDueNow(viewOrder)
-                            ? 'bg-white hover:bg-gray-100 text-gray-900 border border-gray-900'
-                            : 'bg-gray-200 text-gray-500 border border-gray-300 cursor-not-allowed'
-                        }`}
-                        title={
-                          isInShopPaymentDueNow(viewOrder)
-                            ? 'Record in-shop cash/manual payment'
-                            : 'No payable phase is currently due for in-shop payment'
-                        }
-                      >
-                        {getMarkPaidInShopLabel(viewOrder)}
-                      </button>
-                    )}
-                    {!viewOrder.payment_enabled && (
-                      <button
-                        onClick={() => handleActivatePayment(viewOrder.database_id)}
-                        className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
-                        title="Activate payment for this repair"
-                      >
-                        Activate Payment
-                      </button>
-                    )}
-                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Use action icons in the table row to process this order.</div>
                 )}
-                
-                {/* After shoes are received, show start work button */}
+
                 {viewOrder.status === "received" && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => handleStartWork(viewOrder)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-                      title="Start working on this repair"
-                    >
-                      Start Work
-                    </button>
-                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Use action icons in the table row to process this order.</div>
                 )}
                 {viewOrder.status === "ready-for-pickup" && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    {(() => {
-                      const isWalkInReturnMethod = getReturnDeliveryMethod(viewOrder) === 'walk_in';
-                      const isPickupDelivery = !isWalkInReturnMethod;
-                      const canActivateRelease = isFullyPaidForRelease(viewOrder);
-
-                      return (
-                        <>
-                          {isPickupDelivery && (
-                            <>
-                              {canActivateOnlineRemainingBalance(viewOrder) && (
-                                <button
-                                  onClick={() => handleActivatePayment(viewOrder.database_id)}
-                                  className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 border border-gray-900 rounded-lg font-medium transition-colors"
-                                  title="Activate online payment for remaining balance"
-                                >
-                                  Activate Remaining Balance
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleShipOrder(viewOrder)}
-                                className="inline-flex size-9 items-center justify-center rounded-lg border border-gray-300 bg-gray-50 text-green-500 transition-colors hover:border-green-300 hover:bg-white hover:text-green-600 dark:border-gray-700 dark:bg-gray-900 dark:text-green-400 dark:hover:border-green-500 dark:hover:bg-gray-800"
-                                title="Ship this repair order"
-                                aria-label="Ship this repair order"
-                              >
-                                <CheckCircleIcon className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                          {isWalkInReturnMethod && (
-                            <button
-                              onClick={() => handleActivatePickup(String(viewOrder.database_id))}
-                              disabled={!canActivateRelease}
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                !canActivateRelease
-                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                  : 'bg-purple-600 hover:bg-purple-700 text-white'
-                              }`}
-                              title={
-                                !canActivateRelease
-                                  ? getReleasePaymentBlockedMessage(viewOrder)
-                                  : 'Mark repaired shoe as received in-shop'
-                              }
-                            >
-                              Mark Received
-                            </button>
-                          )}
-                          {isWalkInIntake(viewOrder) && (
-                            <button
-                              onClick={() => handleMarkPaidInShop(viewOrder)}
-                              disabled={!isInShopPaymentDueNow(viewOrder)}
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors border border-black ${
-                                isInShopPaymentDueNow(viewOrder)
-                                  ? 'bg-white hover:bg-gray-100 text-black'
-                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                              }`}
-                              title={
-                                isInShopPaymentDueNow(viewOrder)
-                                  ? 'Record in-shop cash/manual payment'
-                                  : 'No payable phase is currently due for in-shop payment'
-                              }
-                            >
-                              {getMarkPaidInShopLabel(viewOrder)}
-                            </button>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Use action icons in the table row to process this order.</div>
                 )}
                 {viewOrder.status === "shipped" && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => handleActivatePickup(String(viewOrder.database_id))}
-                      disabled={Boolean(viewOrder.pickup_enabled || viewOrder.pickup_enabled_at)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        viewOrder.pickup_enabled || viewOrder.pickup_enabled_at
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-white hover:bg-gray-100 text-gray-900 border border-gray-900'
-                      }`}
-                      title={
-                        viewOrder.pickup_enabled || viewOrder.pickup_enabled_at
-                          ? 'Waiting for customer receive confirmation'
-                          : 'Activate customer receive confirmation'
-                      }
-                    >
-                      {viewOrder.pickup_enabled || viewOrder.pickup_enabled_at ? '✓ Receive Activated' : 'Activate Receive'}
-                    </button>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Waiting for customer to confirm item received.
-                    </p>
-                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Use action icons in the table row to process this order.</div>
                 )}
                 <button
                   onClick={() => {
@@ -3031,12 +3097,14 @@ export default function JobOrdersRepair() {
                       Shipping Business *
                     </label>
                     <select
+                      ref={carrierCompanySelectRef}
                       value={carrierCompany}
-                      onChange={(e) => setCarrierCompany(e.target.value)}
+                      onChange={(e) => setCarrierCompany(e.target.value.trim())}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       title="Shipping Business"
+                      required
                     >
-                      <option value="">Select shipping</option>
+                      <option value="" disabled>Select shipping business</option>
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
@@ -3083,12 +3151,14 @@ export default function JobOrdersRepair() {
                     <input
                       type="text"
                       value={trackingNumber}
-                      onChange={(e) => setTrackingNumber(e.target.value)}
+                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       aria-label="Tracking Number"
                       title="Tracking Number"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier. This field is required before confirming shipping.</p>
+                    <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier (numbers only). This field is required before confirming shipping.</p>
                   </div>
 
                   <div>

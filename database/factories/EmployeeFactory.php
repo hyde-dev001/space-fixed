@@ -45,7 +45,7 @@ class EmployeeFactory extends Factory
             'functional_role' => $this->faker->randomElement(['manager', 'staff', 'technician', 'accountant']),
             'salary' => $this->faker->randomFloat(2, 30000, 150000),
             'hire_date' => $this->faker->dateTimeBetween('-5 years', 'now'),
-            'status' => $this->faker->randomElement(['active', 'inactive', 'on_leave', 'suspended']),
+            'status' => $this->faker->randomElement(['active', 'inactive', 'suspended']),
         ];
     }
 
@@ -75,7 +75,7 @@ class EmployeeFactory extends Factory
     public function onLeave(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => 'on_leave',
+            'status' => 'inactive',
         ]);
     }
 

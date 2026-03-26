@@ -1,0 +1,661 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Order;
+use App\Models\OrderRefund;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class OrderRefundService
+{
+    public function __construct(
+        private readonly PaymongoRefundService $paymongoRefundService,
+        private readonly PaymentSettlementService $paymentSettlementService,
+    ) {
+    }
+
+    public function autoRefundOnCancellation(Order $order, ?string $reason = null, ?string $note = null): array
+    {
+        if (!$this->isEligibleForOnlineRefund($order)) {
+            return [
+                'result' => 'not_required',
+                'message' => 'No gateway refund required for this order.',
+                'refund' => null,
+            ];
+        }
+
+        $existing = OrderRefund::query()
+            ->where('order_id', $order->id)
+            ->where('flow_type', 'cancel_auto')
+            ->whereIn('status', ['processing', 'succeeded'])
+            ->latest('id')
+            ->first();
+
+        if ($existing) {
+            return [
+                'result' => $existing->status === 'succeeded' ? 'already_refunded' : 'already_processing',
+                'message' => 'A refund was already created for this cancellation.',
+                'refund' => $existing,
+            ];
+        }
+
+        $order->loadMissing('shopOwner', 'items');
+
+        $secretKey = (string) ($order->shopOwner?->paymongo_secret_key ?? '');
+        if ($secretKey === '') {
+            return [
+                'result' => 'failed',
+                'message' => 'Payment gateway is not configured for this shop.',
+                'refund' => null,
+            ];
+        }
+
+        $paymentId = $this->resolvePaymentId($order, $secretKey);
+        if (!$paymentId) {
+            return [
+                'result' => 'failed',
+                'message' => 'Unable to resolve payment reference for refund.',
+                'refund' => null,
+            ];
+        }
+
+        $amount = $this->resolveRefundAmount($order, $secretKey);
+        if ($amount <= 0) {
+            return [
+                'result' => 'failed',
+                'message' => 'Refund amount is invalid.',
+                'refund' => null,
+            ];
+        }
+
+        $idempotencyKey = 'cancel-auto-order-' . $order->id;
+
+        $refund = OrderRefund::create([
+            'order_id' => $order->id,
+            'customer_id' => $order->customer_id,
+            'shop_owner_id' => $order->shop_owner_id,
+            'flow_type' => 'cancel_auto',
+            'status' => 'processing',
+            'shop_owner_status' => 'approved',
+            'shop_owner_approved_at' => now(),
+            'finance_status' => 'approved',
+            'finance_approved_at' => now(),
+            'return_status' => 'not_required',
+            'refund_executed_at' => now(),
+            'payment_gateway' => 'paymongo',
+            'paymongo_payment_id' => $paymentId,
+            'amount' => $amount,
+            'currency' => 'PHP',
+            'reason_code' => 'customer_cancellation',
+            'reason_note' => $reason,
+            'idempotency_key' => $idempotencyKey,
+            'requested_at' => now(),
+        ]);
+
+        $gatewayResult = $this->paymongoRefundService->createRefund(
+            secretKey: $secretKey,
+            paymentId: $paymentId,
+            amountInCentavos: (int) round($amount * 100),
+            reason: 'requested_by_customer',
+        );
+
+        if (!($gatewayResult['success'] ?? false)) {
+            $refund->update([
+                'status' => 'failed',
+                'failure_reason' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                'failed_at' => now(),
+            ]);
+
+            $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
+
+            return [
+                'result' => 'failed',
+                'message' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                'refund' => $refund->fresh(),
+            ];
+        }
+
+        $gatewayStatus = strtolower((string) ($gatewayResult['status'] ?? 'processing'));
+        $refundStatus = in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)
+            ? 'succeeded'
+            : 'processing';
+
+        $refund->update([
+            'status' => $refundStatus,
+            'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
+            'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
+            'failure_reason' => null,
+            'failed_at' => null,
+            'reason_note' => $note ? trim(($reason ? $reason . "\n\n" : '') . $note) : $reason,
+        ]);
+
+        if ($refundStatus === 'succeeded') {
+            $this->paymentSettlementService->settleOrderRefunded(
+                order: $order,
+                refundId: $refund->paymongo_refund_id,
+                reason: $reason,
+                note: $note,
+            );
+        }
+
+        return [
+            'result' => $refundStatus === 'succeeded' ? 'refunded' : 'processing',
+            'message' => 'Refund request has been submitted successfully.',
+            'refund' => $refund->fresh(),
+        ];
+    }
+
+    public function approveRequestedRefund(
+        OrderRefund $refund,
+        string $stage = 'finance',
+        ?int $processedBy = null,
+        ?string $approvalNote = null,
+    ): array
+    {
+        $refund->loadMissing('order.shopOwner');
+        $order = $refund->order;
+
+        if (!$order) {
+            return [
+                'result' => 'failed',
+                'message' => 'Refund is not linked to an order.',
+                'refund' => $refund,
+            ];
+        }
+
+        if (in_array((string) $refund->status, ['failed', 'rejected', 'succeeded'], true)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Refund request cannot be approved in its current state.',
+                'refund' => $refund,
+            ];
+        }
+
+        if ((string) ($order->payment_status ?? 'pending') === 'refunded') {
+            $refund->update([
+                'status' => 'succeeded',
+                'approved_at' => $refund->approved_at ?? now(),
+                'refunded_at' => $refund->refunded_at ?? now(),
+                'processed_by' => $processedBy,
+            ]);
+
+            return [
+                'result' => 'already_refunded',
+                'message' => 'Order is already refunded.',
+                'refund' => $refund->fresh(),
+            ];
+        }
+
+        $stageNormalized = strtolower(trim($stage));
+        if (!in_array($stageNormalized, ['shop_owner', 'finance'], true)) {
+            return [
+                'result' => 'invalid_stage',
+                'message' => 'Invalid approval stage.',
+                'refund' => $refund,
+            ];
+        }
+
+        $payload = [
+            'approved_at' => $refund->approved_at ?? now(),
+            'processed_by' => $processedBy,
+        ];
+
+        if ($approvalNote) {
+            $payload['reason_note'] = trim((string) ($refund->reason_note ? $refund->reason_note . "\n\n" : '') . 'Approval note: ' . $approvalNote);
+        }
+
+        if ($stageNormalized === 'shop_owner') {
+            $registrationType = strtolower(trim((string) ($order->shopOwner?->registration_type ?? '')));
+            $isIndividualShop = $registrationType === 'individual';
+
+            if (!$isIndividualShop && (string) ($refund->finance_status ?? 'pending') !== 'approved') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Shop owner approval requires finance approval first.',
+                    'refund' => $refund,
+                ];
+            }
+
+            if ((string) ($refund->shop_owner_status ?? 'pending') === 'approved') {
+                return [
+                    'result' => 'already_approved',
+                    'message' => 'Shop owner has already approved this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
+            $payload['shop_owner_status'] = 'approved';
+            $payload['shop_owner_approved_at'] = now();
+            $payload['shop_owner_approved_by'] = $processedBy;
+
+            if ($isIndividualShop && (string) ($refund->finance_status ?? 'pending') !== 'approved') {
+                $payload['finance_status'] = 'approved';
+                $payload['finance_approved_at'] = now();
+                $payload['finance_approved_by'] = null;
+            }
+        }
+
+        if ($stageNormalized === 'finance') {
+            if ((string) ($refund->finance_status ?? 'pending') === 'approved') {
+                return [
+                    'result' => 'already_approved',
+                    'message' => 'Finance has already approved this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
+            $payload['finance_status'] = 'approved';
+            $payload['finance_approved_at'] = now();
+            $payload['finance_approved_by'] = $processedBy;
+        }
+
+        if ((string) ($refund->status ?? 'requested') === 'requested') {
+            $payload['status'] = 'pending_approval';
+        }
+
+        $isDualApproved = ($payload['shop_owner_status'] ?? $refund->shop_owner_status) === 'approved'
+            && ($payload['finance_status'] ?? $refund->finance_status) === 'approved';
+
+        if ($isDualApproved && in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['awaiting_approval', 'not_required'], true)) {
+            $payload['return_status'] = 'pending_customer_shipment';
+        }
+
+        $refund->update($payload);
+
+        $nextMessage = 'Refund approval recorded.';
+        if ($stageNormalized === 'finance') {
+            $nextMessage = $isDualApproved
+                ? 'Finance approval recorded. Awaiting product return confirmation before payout.'
+                : 'Finance approval recorded. Awaiting shop owner approval.';
+        } elseif ($stageNormalized === 'shop_owner') {
+            $nextMessage = $isDualApproved
+                ? 'Shop owner approval recorded. Awaiting product return confirmation before payout.'
+                : 'Shop owner approval recorded. Awaiting finance approval.';
+        }
+
+        return [
+            'result' => 'approved',
+            'message' => $nextMessage,
+            'refund' => $refund->fresh(),
+        ];
+    }
+
+    public function rejectRequestedRefund(OrderRefund $refund, string $rejectionReason, string $stage = 'finance', ?int $processedBy = null): array
+    {
+        if (!in_array((string) $refund->status, ['requested', 'pending_approval'], true)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Refund request cannot be rejected in its current state.',
+                'refund' => $refund,
+            ];
+        }
+
+        $stageNormalized = strtolower(trim($stage));
+        if (!in_array($stageNormalized, ['shop_owner', 'finance'], true)) {
+            return [
+                'result' => 'invalid_stage',
+                'message' => 'Invalid rejection stage.',
+                'refund' => $refund,
+            ];
+        }
+
+        // Prevent rejection if stage has already approved or rejected
+        if ($stageNormalized === 'finance') {
+            $financeStatus = strtolower(trim((string) ($refund->finance_status ?? 'pending')));
+            if ($financeStatus !== 'pending') {
+                return [
+                    'result' => 'already_' . $financeStatus,
+                    'message' => 'Finance has already ' . $financeStatus . ' this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+        }
+
+        if ($stageNormalized === 'shop_owner') {
+            $shopOwnerStatus = strtolower(trim((string) ($refund->shop_owner_status ?? 'pending')));
+            if ($shopOwnerStatus !== 'pending') {
+                return [
+                    'result' => 'already_' . $shopOwnerStatus,
+                    'message' => 'Shop owner has already ' . $shopOwnerStatus . ' this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+        }
+
+        $payload = [
+            'status' => 'rejected',
+            'rejection_reason' => $rejectionReason,
+            'approved_at' => now(),
+            'processed_by' => $processedBy,
+            'failed_at' => null,
+            'failure_reason' => null,
+        ];
+
+        if ($stageNormalized === 'shop_owner') {
+            $payload['shop_owner_status'] = 'rejected';
+        } else {
+            $payload['finance_status'] = 'rejected';
+        }
+
+        $refund->update($payload);
+
+        return [
+            'result' => 'rejected',
+            'message' => 'Refund request has been rejected.',
+            'refund' => $refund->fresh(),
+        ];
+    }
+
+    public function markCustomerReturnShipped(OrderRefund $refund, array $shipmentData): array
+    {
+        if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved' || (string) ($refund->finance_status ?? 'pending') !== 'approved') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Refund approvals must be completed before return shipment.',
+                'refund' => $refund,
+            ];
+        }
+
+        if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'in_transit'], true)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Return shipment cannot be updated in the current state.',
+                'refund' => $refund,
+            ];
+        }
+
+        $refund->update([
+            'return_status' => 'in_transit',
+            'customer_return_tracking_number' => $shipmentData['tracking_number'] ?? $refund->customer_return_tracking_number,
+            'customer_return_carrier' => $shipmentData['carrier_company'] ?? ($shipmentData['carrier'] ?? $refund->customer_return_carrier),
+            'customer_return_rider_name' => $shipmentData['rider_name'] ?? $refund->customer_return_rider_name,
+            'customer_return_rider_phone' => $shipmentData['rider_phone'] ?? $refund->customer_return_rider_phone,
+            'customer_return_tracking_link' => $shipmentData['tracking_link'] ?? $refund->customer_return_tracking_link,
+            'customer_return_shipped_at' => $shipmentData['shipped_at'] ?? now(),
+            'return_notes' => $shipmentData['note'] ?? $refund->return_notes,
+        ]);
+
+        return [
+            'result' => 'in_transit',
+            'message' => 'Return shipment details submitted successfully.',
+            'refund' => $refund->fresh(),
+        ];
+    }
+
+    public function confirmReturnReceived(OrderRefund $refund, ?int $staffId, ?string $notes = null): array
+    {
+        if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'in_transit'], true)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Return cannot be confirmed in the current state.',
+                'refund' => $refund,
+            ];
+        }
+
+        $refund->update([
+            'return_status' => 'received',
+            'return_confirmed_at' => now(),
+            'return_confirmed_by_staff_id' => $staffId,
+            'return_notes' => $notes ?? $refund->return_notes,
+        ]);
+
+        return [
+            'result' => 'received',
+            'message' => 'Product return has been confirmed as received.',
+            'refund' => $refund->fresh(),
+        ];
+    }
+
+    public function executeApprovedRefund(OrderRefund $refund, ?int $processedBy = null, ?string $executionNote = null): array
+    {
+        $refund->loadMissing('order.shopOwner');
+        $order = $refund->order;
+
+        if (!$order) {
+            return [
+                'result' => 'failed',
+                'message' => 'Refund is not linked to an order.',
+                'refund' => $refund,
+            ];
+        }
+
+        if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved' || (string) ($refund->finance_status ?? 'pending') !== 'approved') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Both shop owner and finance approvals are required before payout.',
+                'refund' => $refund,
+            ];
+        }
+
+        if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['in_transit', 'received'], true)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Return shipment must be marked in transit or received before payout execution.',
+                'refund' => $refund,
+            ];
+        }
+
+        if (in_array((string) ($refund->status ?? ''), ['processing', 'succeeded'], true)) {
+            return [
+                'result' => (string) ($refund->status ?? 'processing') === 'succeeded' ? 'already_refunded' : 'already_processing',
+                'message' => 'Refund execution has already started for this request.',
+                'refund' => $refund,
+            ];
+        }
+
+        return $this->executeGatewayRefund($refund, $order, $processedBy, $executionNote);
+    }
+
+    private function executeGatewayRefund(OrderRefund $refund, Order $order, ?int $processedBy = null, ?string $executionNote = null): array
+    {
+        $secretKey = (string) ($order->shopOwner?->paymongo_secret_key ?? '');
+        if ($secretKey === '') {
+            $refund->update([
+                'status' => 'failed',
+                'failure_reason' => 'Payment gateway is not configured for this shop.',
+                'failed_at' => now(),
+                'processed_by' => $processedBy,
+            ]);
+
+            return [
+                'result' => 'failed',
+                'message' => 'Payment gateway is not configured for this shop.',
+                'refund' => $refund->fresh(),
+            ];
+        }
+
+        $paymentId = $this->resolvePaymentId($order, $secretKey);
+        if (!$paymentId) {
+            $refund->update([
+                'status' => 'failed',
+                'failure_reason' => 'Unable to resolve payment reference for refund.',
+                'failed_at' => now(),
+                'processed_by' => $processedBy,
+            ]);
+
+            return [
+                'result' => 'failed',
+                'message' => 'Unable to resolve payment reference for refund.',
+                'refund' => $refund->fresh(),
+            ];
+        }
+
+        $amount = (float) ($refund->amount ?? 0);
+        if ($amount <= 0) {
+            $amount = $this->resolveRefundAmount($order, $secretKey);
+        }
+
+        if ($amount <= 0) {
+            $refund->update([
+                'status' => 'failed',
+                'failure_reason' => 'Refund amount is invalid.',
+                'failed_at' => now(),
+                'processed_by' => $processedBy,
+            ]);
+
+            return [
+                'result' => 'failed',
+                'message' => 'Refund amount is invalid.',
+                'refund' => $refund->fresh(),
+            ];
+        }
+
+        $refund->update([
+            'status' => 'processing',
+            'paymongo_payment_id' => $paymentId,
+            'amount' => round($amount, 2),
+            'processed_by' => $processedBy,
+            'refund_executed_at' => now(),
+            'reason_note' => $executionNote
+                ? trim((string) ($refund->reason_note ? $refund->reason_note . "\n\n" : '') . 'Finance payout note: ' . $executionNote)
+                : $refund->reason_note,
+        ]);
+
+        $gatewayResult = $this->paymongoRefundService->createRefund(
+            secretKey: $secretKey,
+            paymentId: $paymentId,
+            amountInCentavos: (int) round($amount * 100),
+            reason: 'requested_by_customer',
+        );
+
+        if (!($gatewayResult['success'] ?? false)) {
+            $refund->update([
+                'status' => 'failed',
+                'failure_reason' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                'failed_at' => now(),
+            ]);
+
+            $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
+
+            return [
+                'result' => 'failed',
+                'message' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                'refund' => $refund->fresh(),
+            ];
+        }
+
+        $gatewayStatus = strtolower((string) ($gatewayResult['status'] ?? 'processing'));
+        $refundStatus = in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)
+            ? 'succeeded'
+            : 'processing';
+
+        $refund->update([
+            'status' => $refundStatus,
+            'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
+            'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
+            'failure_reason' => null,
+            'failed_at' => null,
+        ]);
+
+        if ($refundStatus === 'succeeded') {
+            $this->paymentSettlementService->settleOrderRefunded(
+                order: $order,
+                refundId: $refund->paymongo_refund_id,
+                reason: $refund->reason_code,
+                note: $refund->reason_note,
+            );
+        }
+
+        return [
+            'result' => $refundStatus === 'succeeded' ? 'refunded' : 'processing',
+            'message' => 'Refund payout execution has been submitted successfully.',
+            'refund' => $refund->fresh(),
+        ];
+    }
+
+    private function isEligibleForOnlineRefund(Order $order): bool
+    {
+        $paymentMethod = strtolower((string) ($order->payment_method ?? 'paymongo'));
+        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+
+        return $isOnlinePayment && in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true);
+    }
+
+    private function resolvePaymentId(Order $order, string $secretKey): ?string
+    {
+        $storedPaymentId = trim((string) ($order->paymongo_payment_id ?? ''));
+        if ($storedPaymentId !== '') {
+            return $storedPaymentId;
+        }
+
+        $sessionId = trim((string) ($order->paymongo_link_id ?? ''));
+        if ($sessionId === '') {
+            return null;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($secretKey . ':'),
+                'Accept' => 'application/json',
+            ])->get("https://api.paymongo.com/v1/checkout_sessions/{$sessionId}");
+
+            if ($response->failed()) {
+                return null;
+            }
+
+            $payments = $response->json('data.attributes.payments') ?? [];
+            $firstPayment = $payments[0] ?? [];
+            $paymentId = $firstPayment['data']['id'] ?? ($firstPayment['id'] ?? null);
+
+            if ($paymentId) {
+                $order->update(['paymongo_payment_id' => (string) $paymentId]);
+            }
+
+            return $paymentId ? (string) $paymentId : null;
+        } catch (\Throwable $e) {
+            Log::warning('Failed to resolve PayMongo payment ID for refund', [
+                'order_id' => $order->id,
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function resolveRefundAmount(Order $order, string $secretKey): float
+    {
+        $totalAmount = (float) ($order->total_amount ?? 0);
+        $shippingFee = (float) ($order->shipping_fee ?? 0);
+        $legacyTotal = (float) ($order->total ?? 0);
+
+        $computed = $totalAmount + max(0, $shippingFee);
+        $amount = max($computed, $legacyTotal, $totalAmount);
+
+        if ($amount > 0) {
+            return round($amount, 2);
+        }
+
+        $sessionId = trim((string) ($order->paymongo_link_id ?? ''));
+        if ($sessionId === '') {
+            return 0;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($secretKey . ':'),
+                'Accept' => 'application/json',
+            ])->get("https://api.paymongo.com/v1/checkout_sessions/{$sessionId}");
+
+            if ($response->failed()) {
+                return 0;
+            }
+
+            $payments = $response->json('data.attributes.payments') ?? [];
+            $firstPaymentAmount = (int) ($payments[0]['data']['attributes']['amount'] ?? $payments[0]['attributes']['amount'] ?? 0);
+
+            if ($firstPaymentAmount > 0) {
+                return round($firstPaymentAmount / 100, 2);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to resolve refund amount from PayMongo session', [
+                'order_id' => $order->id,
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return 0;
+    }
+}
