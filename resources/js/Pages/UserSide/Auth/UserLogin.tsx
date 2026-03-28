@@ -31,9 +31,8 @@ export default function UserLogin() {
     if (flash.success) {
       Swal.fire({
         icon: 'success',
-        title: 'Account activated',
-        text: flash.success,
-        confirmButtonColor: '#000000',
+        title: 'Account Activated',
+        text: 'Your account is ready to use. Sign in now to get started.',
         confirmButtonText: 'Sign in now',
       });
     }
@@ -88,11 +87,11 @@ export default function UserLogin() {
       onSuccess: (page: any) => {
         Swal.fire({
           icon: 'success',
-          title: 'Signed in',
-          text: 'Welcome back!',
-          confirmButtonColor: '#000000',
-          timer: 1500,
+          title: 'Signed In',
+          text: 'Welcome back to SoleSpace!',
           showConfirmButton: false,
+          timer: 1800,
+          timerProgressBar: true,
         });
         // Let Inertia handle the redirect - it will preserve the session properly
         // The server already sends the correct redirect URL
@@ -103,9 +102,9 @@ export default function UserLogin() {
         
         Swal.fire({
           icon: 'error',
-          title: 'Sign-in failed',
+          title: 'Sign-in Failed',
           text: errors.email || errors.password || 'Email or password is incorrect. Please try again.',
-          confirmButtonColor: '#ef4444',
+          iconColor: '#e36a5d',
         });
       },
       onFinish: () => {

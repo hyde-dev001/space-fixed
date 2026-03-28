@@ -35,9 +35,9 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function shop_owner_approval_requires_finance_approval_first(): void
+    public function company_shop_owner_approval_requires_finance_approval_first(): void
     {
-        $refund = $this->makeRefund();
+        $refund = $this->makeRefund(registrationType: 'company');
 
         $result = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 10);
 
@@ -45,6 +45,19 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->assertSame('pending', $refund->shop_owner_status);
         $this->assertSame('pending', $refund->finance_status);
         $this->assertSame('awaiting_approval', $refund->return_status);
+    }
+
+    #[Test]
+    public function individual_shop_owner_approval_auto_approves_finance_stage(): void
+    {
+        $refund = $this->makeRefund(registrationType: 'individual');
+
+        $result = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 10);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->shop_owner_status);
+        $this->assertSame('approved', $refund->finance_status);
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
     }
 
     #[Test]
@@ -120,7 +133,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function execute_refund_requires_return_received_before_payout(): void
+    public function execute_refund_attempts_payout_when_return_is_in_transit(): void
     {
         $refund = $this->makeRefund([
             'shop_owner_status' => 'approved',
@@ -129,10 +142,19 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             'status' => 'pending_approval',
         ]);
 
+        $this->paymongoRefundService
+            ->expects($this->once())
+            ->method('createRefund')
+            ->willReturn([
+                'success' => false,
+                'message' => 'Gateway temporarily unavailable',
+            ]);
+
         $result = $this->service->executeApprovedRefund($refund, processedBy: 90);
 
-        $this->assertSame('invalid_state', $result['result']);
-        $this->assertStringContainsString('confirm return receipt', strtolower((string) $result['message']));
+        $this->assertSame('failed', $result['result']);
+        $this->assertSame('failed', $refund->status);
+        $this->assertStringContainsString('gateway', strtolower((string) $result['message']));
     }
 
     #[Test]
@@ -192,7 +214,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->assertSame('Item condition does not qualify for refund.', $refund->rejection_reason);
     }
 
-    private function makeRefund(array $overrides = []): InMemoryOrderRefund
+    private function makeRefund(array $overrides = [], ?string $registrationType = null): InMemoryOrderRefund
     {
         $refund = new InMemoryOrderRefund(array_merge([
             'id' => 5001,
@@ -219,6 +241,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
 
         $shopOwner = new ShopOwner([
             'id' => 202,
+            'registration_type' => $registrationType,
             'paymongo_secret_key' => 'sk_test_abc',
         ]);
 

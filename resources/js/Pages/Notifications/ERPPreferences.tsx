@@ -10,11 +10,16 @@ const ERPPreferences: React.FC = () => {
   const { auth } = usePage().props as any;
   const userRole = String(auth?.user?.role || '').toUpperCase();
   const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
+  const permissions = Array.isArray(auth?.permissions) ? auth.permissions : [];
 
   // Determine the correct notification API basePath based on user role
   // Staff/Repairers use /api/staff/notifications (requires 'old_role:Staff|Manager|Shop Owner|Repairer')
   // HR/Finance/Manager use /api/hr/notifications (requires HR permissions)
-  const isStaffRole = userRole.includes('STAFF') || userRoles.includes('STAFF');
+  const isStaffRole =
+    permissions.includes('access-staff-dashboard') ||
+    permissions.includes('access-staff-job-orders') ||
+    userRole.includes('STAFF') ||
+    userRoles.includes('STAFF');
   const isRepairerRole = userRole === 'REPAIRER' || userRoles.includes('REPAIRER');
   const isStaffScopedNotifications = isRepairerRole || isStaffRole;
   const basePath = isStaffScopedNotifications ? '/api/staff/notifications' : '/api/hr/notifications';

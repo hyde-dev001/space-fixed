@@ -766,10 +766,22 @@ export default function JobOrdersPage() {
       return;
     }
 
-    if (!trackingNumber) {
+    const normalizedTrackingNumber = trackingNumber.trim();
+
+    if (!normalizedTrackingNumber) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Number",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (!/^\d+$/.test(normalizedTrackingNumber)) {
+      await Swal.fire({
+        title: "Invalid Tracking Number",
+        text: "Tracking Number must contain numbers only.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -804,7 +816,7 @@ export default function JobOrdersPage() {
         },
         body: JSON.stringify({
           status: 'shipped',
-          tracking_number: trackingNumber,
+          tracking_number: normalizedTrackingNumber,
           carrier_company: carrierCompany,
           carrier_name: carrierName,
           carrier_phone: carrierPhone,
@@ -890,7 +902,7 @@ export default function JobOrdersPage() {
                   carrierCompany,
                   carrierName,
                   carrierPhone,
-                  trackingNumber,
+                  trackingNumber: normalizedTrackingNumber,
                   trackingLink,
                   eta: etaDate,
                 }
@@ -1214,7 +1226,9 @@ export default function JobOrdersPage() {
                     <input
                       type="checkbox"
                       title="Select all orders on this page"
-                      aria-label="Select all orders on this page"
+                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       checked={
                         paginatedOrders.length > 0 &&
                         selectedOrders.length === paginatedOrders.length

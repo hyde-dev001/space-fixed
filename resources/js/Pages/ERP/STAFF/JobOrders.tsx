@@ -784,10 +784,22 @@ export default function JobOrdersPage() {
       return;
     }
 
-    if (!trackingNumber) {
+    const normalizedTrackingNumber = trackingNumber.trim();
+
+    if (!normalizedTrackingNumber) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Number",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (!/^\d+$/.test(normalizedTrackingNumber)) {
+      await Swal.fire({
+        title: "Invalid Tracking Number",
+        text: "Tracking Number must contain numbers only.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -837,7 +849,7 @@ export default function JobOrdersPage() {
         },
         body: JSON.stringify({
           status: 'shipped',
-          tracking_number: trackingNumber,
+          tracking_number: normalizedTrackingNumber,
           carrier_company: carrierCompany,
           carrier_name: carrierName,
           carrier_phone: carrierPhone,
@@ -878,7 +890,7 @@ export default function JobOrdersPage() {
                   carrierCompany,
                   carrierName,
                   carrierPhone,
-                  trackingNumber,
+                  trackingNumber: normalizedTrackingNumber,
                   trackingLink,
                   eta: etaPreset,
                 }
@@ -934,6 +946,18 @@ export default function JobOrdersPage() {
       const response = await axios.post(`/api/staff/orders/${orderId}/activate-pickup`);
       
       if (response.data.success) {
+        setOrders((prev) =>
+          prev.map((order) =>
+            order.id === orderId
+              ? {
+                  ...order,
+                  pickup_enabled: true,
+                  pickup_enabled_at: new Date().toISOString(),
+                }
+              : order
+          )
+        );
+
         await Swal.fire({
           title: 'Pickup Activated!',
           text: 'Customer can now confirm they received their order.',
@@ -960,6 +984,9 @@ export default function JobOrdersPage() {
             if (updatedOrder) setViewOrder(updatedOrder);
           }
         }
+
+        setIsViewModalOpen(false);
+        setViewOrder(null);
       }
     } catch (error: any) {
       await Swal.fire({
@@ -1575,7 +1602,9 @@ export default function JobOrdersPage() {
                     <input
                       type="text"
                       value={trackingNumber}
-                      onChange={(e) => setTrackingNumber(e.target.value)}
+                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       disabled={selectedOrder.status === 'shipped'}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -1786,18 +1815,13 @@ export default function JobOrdersPage() {
                     Confirm Return Received
                   </button>
                 )}
-                {viewOrder.status === "shipped" && (
+                {viewOrder.status === "shipped" && !viewOrder.pickup_enabled && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}
-                    disabled={viewOrder.pickup_enabled}
-                    className={`px-4 py-2 border border-black rounded-lg font-medium transition-colors ${
-                      viewOrder.pickup_enabled
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-white hover:bg-gray-100 text-black'
-                    }`}
-                    title={viewOrder.pickup_enabled ? 'Pickup already activated' : 'Activate pickup confirmation'}
+                    className="px-4 py-2 border border-black rounded-lg font-medium transition-colors bg-white hover:bg-gray-100 text-black"
+                    title="Activate pickup confirmation"
                   >
-                    {viewOrder.pickup_enabled ? '✓ Pickup Activated' : 'Activate Receive'}
+                    Activate Receive
                   </button>
                 )}
                 <button

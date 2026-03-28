@@ -193,7 +193,7 @@ const statusLabel: Record<EmployeeStatus, string> = {
   active: "Active",
   on_leave: "On Leave",
   probation: "Probation",
-  inactive: "Inactive",
+  inactive: "Under Investigation",
   suspended: "Suspended",
 };
 
@@ -201,7 +201,7 @@ const statusBadge = (status: EmployeeStatus) => {
   if (status === "active") return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
   if (status === "on_leave") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
   if (status === "probation") return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-  if (status === "inactive") return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+  if (status === "inactive") return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
   if (status === "suspended") return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
   return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
 };
@@ -1018,7 +1018,24 @@ export const EmployeeManagement: React.FC<{
     });
   };
 
+  const isSelfEmployeeAccount = (employee?: Employee | null): boolean => {
+    if (!employee) return false;
+    const employeeEmail = String(employee.email ?? '').trim().toLowerCase();
+    const linkedUserId = Number(employee.linkedUser ?? 0);
+    return (linkedUserId > 0 && linkedUserId === currentUserId)
+      || (employeeEmail !== '' && employeeEmail === currentUserEmail);
+  };
+
   const handleSuspendClick = (employee: Employee) => {
+    if (isSelfEmployeeAccount(employee)) {
+      void Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot file a suspension request for the account you are currently using.',
+      });
+      return;
+    }
+
     setEmployeeToSuspend(employee);
     setSuspensionRequestForm({ reason: "", evidence: "" });
     setIsSuspensionRequestModalOpen(true);
@@ -1069,6 +1086,33 @@ export const EmployeeManagement: React.FC<{
       }
 
       const data = await response.json();
+      const targetEmployeeId = employeeToSuspend.id;
+      const investigationReason = suspensionRequestForm.reason.trim();
+
+      // Reflect status change immediately in the table without requiring a manual refresh.
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === targetEmployeeId
+            ? {
+                ...row,
+                status: "inactive",
+                suspensionReason: investigationReason,
+              }
+            : row
+        )
+      );
+
+      if (selectedEmployee && selectedEmployee.id === targetEmployeeId) {
+        setSelectedEmployee((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: "inactive",
+                suspensionReason: investigationReason,
+              }
+            : prev
+        );
+      }
 
       setIsSuspensionRequestModalOpen(false);
       setEmployeeToSuspend(null);
@@ -1144,11 +1188,8 @@ export const EmployeeManagement: React.FC<{
         return;
       }
 
-      // Show all permissions (direct + role) in the UI, but only allow editing direct permissions
-      const allPermissions = [...new Set([...(data.permissions || []), ...(data.direct_permissions || [])])];
-      
       setSelectedEmployeeForPermissions(employeeWithUser);
-      setSelectedPermissions(allPermissions);
+      setSelectedPermissions(data.direct_permissions || []);
       setSelectedAdditionalRoles(data.additional_roles || []);
       setIsPermissionModalOpen(true);
     } catch (error: any) {
@@ -1203,6 +1244,28 @@ export const EmployeeManagement: React.FC<{
       procurement: false,
       staff: false,
     });
+  };
+
+  const addAllPermissions = () => {
+    if (!availablePermissions) return;
+
+    const rolePermissions = new Set(((selectedEmployeeForPermissions as any)?.rolePermissions || []) as string[]);
+    const allPermissions = [
+      ...(availablePermissions.grouped.finance || []),
+      ...(availablePermissions.grouped.hr || []),
+      ...(availablePermissions.grouped.crm || []),
+      ...(availablePermissions.grouped.manager || []),
+      ...(availablePermissions.grouped.inventory || []),
+      ...(availablePermissions.grouped.procurement || []),
+      ...(businessType !== 'retail' ? (availablePermissions.grouped.repairer || []) : []),
+      ...(availablePermissions.grouped.staff || []),
+    ].filter((permission) => !rolePermissions.has(permission));
+
+    setSelectedPermissions((prev) => Array.from(new Set([...prev, ...allPermissions])));
+  };
+
+  const clearAllPermissions = () => {
+    setSelectedPermissions([]);
   };
 
   const handleResetEmployeePassword = async (employee: Employee) => {
@@ -1358,14 +1421,16 @@ export const EmployeeManagement: React.FC<{
   // View/Resend Invitation Link
   const addRolePermissions = (roleKey: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
     if (!availablePermissions || !availablePermissions.grouped[roleKey]) return;
-    const rolePermissions = availablePermissions.grouped[roleKey];
+    const inheritedPermissions = new Set(((selectedEmployeeForPermissions as any)?.rolePermissions || []) as string[]);
+    const rolePermissions = availablePermissions.grouped[roleKey].filter((permission) => !inheritedPermissions.has(permission));
     const newPermissions = Array.from(new Set([...selectedPermissions, ...rolePermissions]));
     setSelectedPermissions(newPermissions);
   };
 
   const clearRolePermissions = (roleKey: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
     if (!availablePermissions || !availablePermissions.grouped[roleKey]) return;
-    const rolePermissions = availablePermissions.grouped[roleKey];
+    const inheritedPermissions = new Set(((selectedEmployeeForPermissions as any)?.rolePermissions || []) as string[]);
+    const rolePermissions = availablePermissions.grouped[roleKey].filter((permission) => !inheritedPermissions.has(permission));
     const newPermissions = selectedPermissions.filter(p => !rolePermissions.includes(p));
     setSelectedPermissions(newPermissions);
   };
@@ -1607,6 +1672,94 @@ export const EmployeeManagement: React.FC<{
     }, 100);
   };
 
+  const selectedEmployeeRolePermissions = (((selectedEmployeeForPermissions as any)?.rolePermissions || []) as string[]);
+  const selectedEmployeeRoleName = ((selectedEmployeeForPermissions as any)?.roleName
+    || selectedEmployeeForPermissions?.department
+    || 'Staff') as string;
+
+  const permissionCategoryConfigs = [
+    {
+      key: 'finance',
+      label: 'Finance Module',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      show: true,
+    },
+    {
+      key: 'hr',
+      label: 'HR Module',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      ),
+      show: true,
+    },
+    {
+      key: 'crm',
+      label: 'Customer Relationship Management Module',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      ),
+      show: true,
+    },
+    {
+      key: 'manager',
+      label: 'Manager Permissions',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+      ),
+      show: true,
+    },
+    {
+      key: 'inventory',
+      label: 'Inventory Module',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      ),
+      show: true,
+    },
+    {
+      key: 'procurement',
+      label: 'Procurement Module',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      ),
+      show: true,
+    },
+    {
+      key: 'repairer',
+      label: 'Repairer Permissions',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M21 6.5a4.5 4.5 0 01-6.36 4.09l-6.8 6.8a2 2 0 11-2.83-2.83l6.8-6.8A4.5 4.5 0 1116.5 3a4.49 4.49 0 014.5 3.5z" />
+        </svg>
+      ),
+      show: businessType !== 'retail',
+    },
+    {
+      key: 'staff',
+      label: 'Staff Permissions',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+      show: true,
+    },
+  ] as const;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 lg:p-6">
       <div className="max-w-[1600px] mx-auto">
@@ -1637,7 +1790,7 @@ export const EmployeeManagement: React.FC<{
             changeType="increase"
             icon={UserCircleIcon}
             color="info"
-            description="All active and inactive records"
+            description="All employee records"
           />
           <MetricCard
             title="Active"
@@ -1729,7 +1882,7 @@ export const EmployeeManagement: React.FC<{
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                   }`}
                 >
-                  Inactive
+                  Under Investigation
                 </button>
                 <button
                   onClick={() => setFilterStatus("suspended")}
@@ -1873,9 +2026,9 @@ export const EmployeeManagement: React.FC<{
                             <>
                               <button
                                 onClick={() => handleSuspendClick(employee)}
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                title="File Suspension Request"
-                                disabled={isProcessingId === employee.id}
+                                className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${(isProcessingId === employee.id || isSelfEmployeeAccount(employee)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title={isSelfEmployeeAccount(employee) ? 'You cannot file a suspension request for your own account' : 'File Suspension Request'}
+                                disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                               >
                                 <AlertIcon className="h-5 w-5" />
                               </button>
@@ -2382,490 +2535,218 @@ export const EmployeeManagement: React.FC<{
         {/* Permission Management Modal */}
         {isPermissionModalOpen && selectedEmployeeForPermissions && availablePermissions && (
           <ModalPortal>
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-              <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <LockIcon className="w-6 h-6 text-white" />
-                      <div>
-                        <h3 className="text-xl font-bold text-white">Manage Permissions</h3>
-                        <p className="text-purple-100 text-sm">{buildName(selectedEmployeeForPermissions)}</p>
-                      </div>
+            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-gray-900 shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
+                <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
+                  <div>
+                    <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Manage Permissions</h3>
+                    <div className="mt-2 flex items-center gap-3">
+                      <p className="text-gray-600 dark:text-gray-400">{buildName(selectedEmployeeForPermissions)}</p>
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                        {selectedEmployeeRoleName}
+                      </span>
                     </div>
-                    <button
-                      onClick={() => setIsPermissionModalOpen(false)}
-                      className="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
                   </div>
+                  <button
+                    onClick={() => setIsPermissionModalOpen(false)}
+                    title="Close permissions modal"
+                    className="h-10 w-10 inline-flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
 
-                {/* Body */}
-                <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-                  {/* Manager Access Warning */}
-                  {selectedEmployeeForPermissions.department === 'Manager' && (
-                    <div className="mb-6 flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border-2 border-amber-300 dark:border-amber-700">
-                      <AlertIcon className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-bold text-amber-900 dark:text-amber-200 mb-1">
-                          🔒 Manager Role - Restricted to Manager Pages Only
-                        </p>
-                        <p className="text-sm text-amber-800 dark:text-amber-300">
-                          This employee has the <span className="font-semibold">Manager</span> role, which grants access to <span className="font-bold">manager-specific pages only</span> 
-                          (user management, role assignment, system oversight, audit logs, and settings). 
-                          <span className="font-bold"> Managers cannot access HR, CRM, Finance, or operational modules.</span> 
-                          To grant access to specific modules, add the appropriate additional permissions below.
-                        </p>
+                <div className="p-6 max-h-[70vh] overflow-y-auto">
+                  {selectedEmployeeRolePermissions.length > 0 && (
+                    <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                        Permissions from {selectedEmployeeRoleName} Role
+                      </h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        These permissions are granted by the role and cannot be removed individually
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {selectedEmployeeRolePermissions.map((permission) => (
+                          <label key={permission} className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 cursor-not-allowed">
+                            <input
+                              type="checkbox"
+                              checked={true}
+                              disabled={true}
+                              className="h-4 w-4 text-gray-400 border-gray-300 rounded cursor-not-allowed opacity-50"
+                            />
+                            <span className="truncate">{permission}</span>
+                          </label>
+                        ))}
                       </div>
                     </div>
                   )}
-                  
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Select additional permissions for this employee
-                    </p>
-                    <div className="flex gap-2">
-                      <button onClick={expandAllCategories} className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
-                        Expand All
-                      </button>
-                      <span className="text-gray-300">|</span>
-                      <button onClick={collapseAllCategories} className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
-                        Collapse All
-                      </button>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Additional Permissions
+                        </h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Grant additional permissions beyond those provided by the role
+                        </p>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={addAllPermissions}
+                          className="text-xs px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                        >
+                          Add All
+                        </button>
+                        <button
+                          onClick={clearAllPermissions}
+                          className="text-xs px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                        >
+                          Clear All
+                        </button>
+                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                        <button
+                          onClick={expandAllCategories}
+                          className="text-xs text-gray-700 dark:text-gray-300 hover:underline"
+                        >
+                          Expand All
+                        </button>
+                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                        <button
+                          onClick={collapseAllCategories}
+                          className="text-xs text-gray-700 dark:text-gray-300 hover:underline"
+                        >
+                          Collapse All
+                        </button>
+                      </div>
+                    </div>
+
+                    {permissionCategoryConfigs.map((category) => {
+                      if (!category.show) return null;
+
+                      const permissions = availablePermissions.grouped[category.key] || [];
+                      if (permissions.length === 0) return null;
+
+                      return (
+                        <div key={category.key} className="mb-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => toggleCategory(category.key)}
+                            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <svg className={`w-5 h-5 text-gray-700 dark:text-gray-300 transition-transform ${expandedCategories[category.key] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                <div className="flex items-center gap-2">
+                                  {category.icon}
+                                  <span className="font-semibold text-gray-900 dark:text-white">{category.label}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
+                                  {permissions.filter((permission) => selectedPermissions.includes(permission) || selectedEmployeeRolePermissions.includes(permission)).length} / {permissions.length}
+                                </span>
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    addRolePermissions(category.key);
+                                  }}
+                                  className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors cursor-pointer"
+                                >
+                                  Add
+                                </div>
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearRolePermissions(category.key);
+                                  }}
+                                  className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors cursor-pointer"
+                                >
+                                  Clear
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+
+                          {expandedCategories[category.key] && (
+                            <div className="p-4 bg-white dark:bg-gray-800">
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {permissions.map((permission) => {
+                                  const isFromRole = selectedEmployeeRolePermissions.includes(permission);
+                                  const isSelected = selectedPermissions.includes(permission);
+
+                                  return (
+                                    <label
+                                      key={permission}
+                                      className={`flex items-center gap-2 text-sm p-2 rounded ${isFromRole ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed bg-gray-50 dark:bg-gray-900/50' : 'text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isFromRole || isSelected}
+                                        disabled={isFromRole}
+                                        onChange={() => !isFromRole && togglePermission(permission)}
+                                        className={`h-4 w-4 rounded ${isFromRole ? 'text-gray-400 border-gray-300 cursor-not-allowed opacity-50' : 'text-gray-900 dark:text-gray-100 border-gray-300 focus:ring-gray-500'}`}
+                                      />
+                                      <span className="flex-1 truncate">{permission}</span>
+                                      {isFromRole && (
+                                        <span className="text-xs text-gray-400 italic">from role</span>
+                                      )}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                      <span>Total Permissions:</span>
+                      <span className="font-semibold">
+                        {selectedEmployeeRolePermissions.length + selectedPermissions.filter((p) => !selectedEmployeeRolePermissions.includes(p)).length}
+                        <span className="text-xs ml-1">
+                          ({selectedEmployeeRolePermissions.length} from role + {selectedPermissions.filter((p) => !selectedEmployeeRolePermissions.includes(p)).length} additional)
+                        </span>
+                      </span>
                     </div>
                   </div>
-
-                  <div className="space-y-3">
-                    {/* Finance Module */}
-                    {availablePermissions.grouped.finance && availablePermissions.grouped.finance.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('finance')}
-                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.finance ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">💰 Finance Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
-                              {availablePermissions.grouped.finance.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.finance.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('finance')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all Finance permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('finance')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all Finance permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.finance && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.finance.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* HR Module */}
-                    {availablePermissions.grouped.hr && availablePermissions.grouped.hr.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('hr')}
-                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.hr ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">👥 HR Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
-                              {availablePermissions.grouped.hr.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.hr.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('hr')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all HR permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('hr')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all HR permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.hr && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.hr.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* CRM Module */}
-                    {availablePermissions.grouped.crm && availablePermissions.grouped.crm.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('crm')}
-                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.crm ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">🤝 CRM Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
-                              {availablePermissions.grouped.crm.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.crm.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('crm')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all CRM permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('crm')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all CRM permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.crm && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.crm.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Manager Module */}
-                    {availablePermissions.grouped.manager && availablePermissions.grouped.manager.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('manager')}
-                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.manager ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">⚙️ Manager Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
-                              {availablePermissions.grouped.manager.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.manager.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('manager')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all Manager permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('manager')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all Manager permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.manager && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.manager.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Repairer Module - Only show if business type is not retail-only */}
-                    {businessType !== 'retail' && availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('repairer')}
-                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.repairer ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">🔧 Repairer Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
-                              {availablePermissions.grouped.repairer.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.repairer.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('repairer')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all Repairer permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('repairer')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all Repairer permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.repairer && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.repairer.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Staff Module */}
-                    {availablePermissions.grouped.staff && availablePermissions.grouped.staff.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('staff')}
-                            className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.staff ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">👔 Staff Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-purple-600 text-white rounded-full">
-                              {availablePermissions.grouped.staff.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.staff.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('staff')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all Staff permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('staff')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all Staff permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.staff && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.staff.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Inventory Module */}
-                    {availablePermissions.grouped.inventory && availablePermissions.grouped.inventory.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('inventory')}
-                            className="flex-1 px-4 py-3 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.inventory ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">📦 Inventory Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-teal-600 text-white rounded-full">
-                              {availablePermissions.grouped.inventory.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.inventory.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('inventory')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all Inventory permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('inventory')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all Inventory permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.inventory && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.inventory.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Procurement Module */}
-                    {availablePermissions.grouped.procurement && availablePermissions.grouped.procurement.length > 0 && (
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <div className="flex">
-                          <button
-                            onClick={() => toggleCategory('procurement')}
-                            className="flex-1 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3">
-                              <svg className={`w-5 h-5 transition-transform ${expandedCategories.procurement ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="font-semibold text-gray-900 dark:text-white">🛒 Procurement Module</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 text-xs font-medium bg-amber-600 text-white rounded-full">
-                              {availablePermissions.grouped.procurement.filter(p => selectedPermissions.includes(p)).length} / {availablePermissions.grouped.procurement.length}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => addRolePermissions('procurement')}
-                            className="px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors border-l border-green-600"
-                            title="Add all Procurement permissions"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => clearRolePermissions('procurement')}
-                            className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors border-l border-red-600"
-                            title="Clear all Procurement permissions"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {expandedCategories.procurement && (
-                          <div className="p-4 bg-white dark:bg-gray-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {availablePermissions.grouped.procurement.map((permission) => (
-                              <label key={permission} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(permission)}
-                                  onChange={() => togglePermission(permission)}
-                                  className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300">{permission}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-
                 </div>
 
-                {/* Footer */}
-                <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end gap-3">
+                <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
                   <button
-                    onClick={() => setIsPermissionModalOpen(false)}
-                    className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    onClick={() => {
+                      setIsPermissionModalOpen(false);
+                      setSelectedEmployeeForPermissions(null);
+                      setSelectedPermissions([]);
+                    }}
+                    disabled={isSavingPermissions}
+                    className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={savePermissions}
                     disabled={isSavingPermissions}
-                    className={`px-5 py-2.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors ${isSavingPermissions ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
                   >
+                    {isSavingPermissions && (
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    )}
                     {isSavingPermissions ? 'Saving...' : 'Save Permissions'}
                   </button>
                 </div>

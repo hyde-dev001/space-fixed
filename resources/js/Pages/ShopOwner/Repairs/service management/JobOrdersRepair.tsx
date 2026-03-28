@@ -14,7 +14,7 @@ type RepairOrder = {
   item: string;
   service: string;
   total: string;
-  status: "new_request" | "assigned_to_repairer" | "repairer_accepted" | "owner_approved" | "waiting_customer_confirmation" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "shipped" | "picked_up" | "under-review" | "pending" | "received" | "rejected" | "cancelled";
+  status: "new_request" | "assigned_to_repairer" | "repairer_accepted" | "owner_approval_pending" | "owner_approved" | "waiting_customer_confirmation" | "confirmed" | "in-progress" | "awaiting_parts" | "completed" | "ready-for-pickup" | "shipped" | "picked_up" | "under-review" | "pending" | "received" | "repairer_rejected" | "manager_rejected" | "owner_rejected" | "rejected" | "cancelled";
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -222,11 +222,41 @@ const normalizeRepairStatus = (status: string | null | undefined): RepairOrder["
     case "under_review":
     case "under-review":
       return "under-review";
+    case "owner_rejected":
+      return "owner_rejected";
+    case "repairer_rejected":
+    case "waiting for approval to reject":
+    case "waiting_for_approval_to_reject":
+      return "repairer_rejected";
+    case "manager_rejected":
+      return "manager_rejected";
     case "shipped":
       return "shipped";
     default:
       return value as RepairOrder["status"];
   }
+};
+
+const isRejectedWorkflowStatus = (status: string) => (
+  status === "rejected"
+  || status === "owner_rejected"
+  || status === "repairer_rejected"
+  || status === "manager_rejected"
+);
+
+const getRepairStatusLabel = (status: string) => {
+  if (status === "new_request") return "New Request";
+  if (status === "assigned_to_repairer") return "Assigned to Repairer";
+  if (status === "under-review") return "Under Review";
+  if (status === "pending" || status === "repairer_accepted" || status === "owner_approval_pending" || status === "owner_approved") return "Pending";
+  if (status === "in-progress") return "In Progress";
+  if (status === "completed") return "Work Done";
+  if (status === "ready-for-pickup") return "Ready for Pickup";
+  if (status === "shipped") return "Shipped";
+  if (status === "picked_up" || status === "received") return "Received";
+  if (status === "repairer_rejected") return "Pending Rejection";
+  if (status === "manager_rejected" || status === "owner_rejected" || status === "rejected") return "Rejected";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 };
 
 const toNumber = (value: unknown): number | null => {
@@ -612,6 +642,8 @@ export default function JobOrdersRepair() {
         matchesTab = order.status === "picked_up";
       } else if (selectedTab === "ready-for-pickup") {
         matchesTab = order.status === "ready-for-pickup" || order.status === "shipped";
+      } else if (selectedTab === "rejected") {
+        matchesTab = isRejectedWorkflowStatus(order.status);
       } else {
         matchesTab = order.status === selectedTab;
       }
@@ -641,10 +673,10 @@ export default function JobOrdersRepair() {
     const readyForPickup = orders.filter(o => o.status === "ready-for-pickup" || o.status === "shipped").length;
     const pickedUp = orders.filter(o => o.status === "picked_up").length;
     const completedAll = orders.filter(o => o.status === "picked_up").length;
-    const rejected = orders.filter(o => o.status === "rejected").length;
+    const rejected = orders.filter(o => isRejectedWorkflowStatus(o.status)).length;
     const cancelled = orders.filter(o => o.status === "cancelled").length;
     const totalRevenue = orders
-      .filter(o => o.status !== "cancelled" && o.status !== "rejected")
+      .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status))
       .reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
     return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
   }, [orders]);
@@ -679,6 +711,9 @@ export default function JobOrdersRepair() {
       "picked_up": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       "ready-for-pickup": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
       "shipped": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
+      "repairer_rejected": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+      "manager_rejected": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      "owner_rejected": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       "rejected": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       "cancelled": "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
     };
@@ -1941,31 +1976,7 @@ export default function JobOrdersRepair() {
                       <td className="px-4 py-4">
                         <div className="flex flex-col gap-1">
                           <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                            {order.status === "new_request"
-                              ? "New Request"
-                              : order.status === "assigned_to_repairer"
-                              ? "Assigned to Repairer"
-                              : order.status === "under-review"
-                              ? "Under Review"
-                              : order.status === "pending"
-                              ? "Pending"
-                              : order.status === "repairer_accepted"
-                              ? "Pending"
-                              : order.status === "in-progress"
-                              ? "In Progress"
-                              : order.status === "completed"
-                              ? "Work Done"
-                              : order.status === "ready-for-pickup"
-                              ? "Ready for Pickup"
-                              : order.status === "shipped"
-                              ? "Shipped"
-                              : order.status === "picked_up"
-                              ? "Received"
-                              : order.status === "received"
-                              ? "Received"
-                              : order.status === "rejected"
-                              ? "Rejected"
-                              : order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                            {getRepairStatusLabel(order.status)}
                           </span>
                           {order.payment_enabled && (
                             <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${
@@ -2262,29 +2273,7 @@ export default function JobOrdersRepair() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full ${getStatusColor(viewOrder.status)}`}>
-                      {viewOrder.status === "new_request"
-                        ? "New Request"
-                        : viewOrder.status === "assigned_to_repairer"
-                        ? "Assigned to Repairer"
-                        : viewOrder.status === "under-review"
-                        ? "Under Review"
-                        : viewOrder.status === "pending"
-                        ? "Pending"
-                        : viewOrder.status === "repairer_accepted"
-                        ? "Pending"
-                        : viewOrder.status === "in-progress"
-                        ? "In Progress"
-                        : viewOrder.status === "completed"
-                        ? "Work Done"
-                        : viewOrder.status === "ready-for-pickup"
-                        ? "Ready for Pickup"
-                        : viewOrder.status === "shipped"
-                        ? "Shipped"
-                        : viewOrder.status === "picked_up"
-                          ? "Received"
-                        : viewOrder.status === "rejected"
-                        ? "Rejected"
-                        : viewOrder.status.charAt(0).toUpperCase() + viewOrder.status.slice(1)}
+                      {getRepairStatusLabel(viewOrder.status)}
                     </span>
                     {isInShopPaymentRecorded(viewOrder) && (
                       <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">

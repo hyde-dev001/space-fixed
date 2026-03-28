@@ -307,7 +307,6 @@ const DashboardRepair: React.FC = () => {
 						<table className="min-w-full divide-y divide-gray-100 text-sm">
 							<thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
 								<tr>
-									<th className="px-6 py-3 text-left font-semibold">Order</th>
 									<th className="px-6 py-3 text-left font-semibold">Customer</th>
 									<th className="px-6 py-3 text-left font-semibold">Service</th>
 									<th className="px-6 py-3 text-left font-semibold">Status</th>
@@ -319,7 +318,6 @@ const DashboardRepair: React.FC = () => {
 							<tbody className="divide-y divide-gray-100">
 								{recentRepairs.map((repair) => (
 									<tr key={repair.orderId} className="text-gray-700">
-										<td className="px-6 py-4 font-semibold text-gray-900">{repair.orderId}</td>
 										<td className="px-6 py-4">{repair.customer}</td>
 										<td className="px-6 py-4">{repair.service}</td>
 										<td className="px-6 py-4">

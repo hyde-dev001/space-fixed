@@ -144,6 +144,7 @@ const CloseIcon = ({ className }: { className?: string }) => (
 );
 
 interface ServiceItem {
+  id?: number | string;
   name: string;
   category: string;
   price: string;
@@ -272,7 +273,7 @@ export default function ERPPricingAndServices() {
       try {
         const priceValue = editFormData.price;
         
-        const response = await axios.put(`/api/repair-services/${selectedService?.id}`, {
+        const response = await axios.put(`/api/repair-services/${(selectedService as any)?.id}`, {
           price: priceValue,
           status: "Under Review",
           reason: editFormData.reason,
@@ -449,6 +450,7 @@ export default function ERPPricingAndServices() {
                   setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
+                title="Filter by status"
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 <option value="All">All Status</option>
@@ -497,12 +499,14 @@ export default function ERPPricingAndServices() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => handleViewClick(item)}
+                          title="View service details"
                           className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
                         >
                           <EyeIcon className="w-5 h-5" />
                         </button>
                         <button 
                           onClick={() => handleEditClick(item)}
+                          title="Edit service price"
                           className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
                         >
                           <PencilIcon className="w-5 h-5" />
@@ -583,16 +587,15 @@ export default function ERPPricingAndServices() {
           {/* Add Service Modal */}
           {addModalOpen && (
             <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-lg w-full border border-gray-200/80 dark:border-gray-700/60 overflow-hidden">
-                <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500" />
-                <div className="flex items-center justify-between p-6 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
+              <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
+                <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Repair Service</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Create a new service entry for review.</p>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Add Repair Service</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Create a new service entry for review.</p>
                   </div>
                   <button
                     onClick={() => setAddModalOpen(false)}
-                    className="h-9 w-9 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+                    className="h-10 w-10 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                     aria-label="Close"
                   >
                     <CloseIcon className="w-4 h-4" />
@@ -614,6 +617,7 @@ export default function ERPPricingAndServices() {
                     <select
                       value={addFormData.category}
                       onChange={(e) => setAddFormData({ ...addFormData, category: e.target.value })}
+                      title="Select service category"
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition"
                     >
                       <option value="Care">Care</option>
@@ -671,43 +675,42 @@ export default function ERPPricingAndServices() {
         {/* View Modal */}
         {viewModalOpen && selectedService && (
           <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-lg w-full border border-gray-200/80 dark:border-gray-700/60 overflow-hidden">
-              <div className="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-500" />
-              <div className="flex items-center justify-between p-6 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
+              <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Service Details</h2>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Review pricing and approval status.</p>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Service Details</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Review pricing and approval status.</p>
                 </div>
                 <button
                   onClick={() => setViewModalOpen(false)}
-                  className="h-9 w-9 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+                  className="h-10 w-10 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   aria-label="Close"
                 >
                   <CloseIcon className="w-4 h-4" />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
-                <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Service Name</p>
+              <div className="p-6 sm:p-7 space-y-4">
+                <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/50 p-4 sm:p-5">
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Service Name</p>
                   <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{selectedService.name}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Category</p>
+                  <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/50 p-4 sm:p-5">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Category</p>
                     <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedService.category}</p>
                   </div>
-                  <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Price</p>
+                  <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/50 p-4 sm:p-5">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Price</p>
                     <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedService.price}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Duration</p>
+                  <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/50 p-4 sm:p-5">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Duration</p>
                     <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedService.duration}</p>
                   </div>
-                  <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Status</p>
+                  <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50 dark:bg-gray-800/50 p-4 sm:p-5">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Status</p>
                     <span
                       className={`mt-2 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
                         selectedService.status === "Active"
@@ -730,7 +733,7 @@ export default function ERPPricingAndServices() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex gap-3 p-6 sm:p-7 border-t border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/70">
                 <button
                   onClick={() => setViewModalOpen(false)}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -745,22 +748,21 @@ export default function ERPPricingAndServices() {
         {/* Edit Modal */}
         {editModalOpen && selectedService && (
           <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-lg w-full border border-gray-200/80 dark:border-gray-700/60 overflow-hidden">
-              <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500" />
-              <div className="flex items-center justify-between p-6 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
+              <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Service</h2>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Price updates require a reason.</p>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">Edit Service</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Price updates require a clear business reason.</p>
                 </div>
                 <button
                   onClick={() => setEditModalOpen(false)}
-                  className="h-9 w-9 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+                  className="h-10 w-10 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   aria-label="Close"
                 >
                   <CloseIcon className="w-4 h-4" />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
+              <div className="p-6 sm:p-7 space-y-4">
                 {(() => {
                   const currentPrice = parsePrice(selectedService.price);
                   const proposedPrice = parsePrice(editFormData.price);
@@ -776,7 +778,8 @@ export default function ERPPricingAndServices() {
                           type="text"
                           value={selectedService.name}
                           disabled
-                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
+                          title="Service name"
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-80"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -786,7 +789,8 @@ export default function ERPPricingAndServices() {
                             type="text"
                             value={selectedService.category}
                             disabled
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
+                            title="Service category"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-80"
                           />
                         </div>
                         <div>
@@ -805,9 +809,11 @@ export default function ERPPricingAndServices() {
                                   setEditFormData({ ...editFormData, price: value });
                                 }
                               }}
-                              className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 transition"
+                              title="Proposed new price"
+                              className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 dark:focus:border-blue-400 transition"
                             />
                           </div>
+                          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Current: {selectedService.price}</p>
                         </div>
                       </div>
 
@@ -815,7 +821,7 @@ export default function ERPPricingAndServices() {
                         <div className={`rounded-xl px-4 py-3 border ${priceDiff >= 0 ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Price Change:</span>
-                            <span className={`text-xl font-semibold ${priceDiff >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                            <span className={`text-lg font-semibold ${priceDiff >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
                               {priceDiff >= 0 ? '↑' : '↓'} {priceDiff >= 0 ? '+' : '-'}₱{Math.abs(priceDiff).toLocaleString()} ({priceDiff >= 0 ? '+' : ''}{pct.toFixed(1)}%)
                             </span>
                           </div>
@@ -828,16 +834,19 @@ export default function ERPPricingAndServices() {
                           value={editFormData.reason}
                           onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
                           placeholder="Explain why this price change is needed (e.g., market adjustment, material costs, seasonal update)..."
-                          rows={3}
-                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 dark:focus:border-blue-400 resize-none transition"
+                          rows={4}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 dark:focus:border-blue-400 resize-none transition"
                         />
-                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">This reason will be reviewed by the finance team.</p>
+                        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                          <p>This reason will be reviewed by the finance team.</p>
+                          <p>{editFormData.reason.trim().length} chars</p>
+                        </div>
                       </div>
                     </>
                   );
                 })()}
               </div>
-              <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex gap-3 p-6 sm:p-7 border-t border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/70">
                 <button
                   onClick={() => setEditModalOpen(false)}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -846,7 +855,7 @@ export default function ERPPricingAndServices() {
                 </button>
                 <button
                   onClick={handleSaveEdit}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-semibold shadow-sm hover:bg-blue-700 transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-semibold shadow-sm hover:bg-blue-700 active:translate-y-px transition-all"
                 >
                   Save
                 </button>

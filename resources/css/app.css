@@ -275,6 +275,11 @@ layer(base);
   --z-index-9999: 9999;
   --z-index-99999: 99999;
   --z-index-999999: 999999;
+
+  --animate-slideInUp: slideInUp 0.4s ease-out;
+  --animate-slideOutDown: slideOutDown 0.3s ease-in;
+  --animate-fadeIn: fadeIn 0.3s ease-out;
+  --animate-fadeOut: fadeOut 0.3s ease-in;
 }
 
 /* Ensure global background follows theme (eliminates light gutters in dark mode) */
@@ -314,6 +319,230 @@ body {
 /* Keep SweetAlert dialogs above sticky headers/sidebars and modals */
 .swal2-container {
   z-index: 11000000 !important;
+}
+
+.swal2-container.user-swal2-backdrop-show,
+.swal2-backdrop-show.user-swal2-backdrop-show {
+  animation: userSwalBackdropIn 0.2s ease-out;
+}
+
+.swal2-container.user-swal2-backdrop-hide,
+.swal2-backdrop-hide.user-swal2-backdrop-hide {
+  animation: userSwalBackdropOut 0.16s ease-in;
+}
+
+.swal2-popup.user-swal2-popup {
+  width: min(32rem, calc(100vw - 2rem)) !important;
+  border-radius: 1.4rem !important;
+  border: 0 !important;
+  box-shadow: 0 26px 80px -42px rgba(15, 23, 42, 0.5) !important;
+  padding: 2rem 1.85rem 1.5rem !important;
+  animation: userSwalPopupIn 0.24s ease-out;
+}
+
+.swal2-popup.user-swal2-popup.user-swal2-hide {
+  animation: userSwalPopupOut 0.18s ease-in;
+}
+
+.swal2-popup.user-swal2-popup .swal2-icon {
+  margin: 0 auto 0.75rem !important;
+}
+
+.swal2-popup.user-swal2-popup .swal2-icon.swal2-warning {
+  border-color: #e5b07f !important;
+  color: #e5b07f !important;
+}
+
+.swal2-popup.user-swal2-popup .swal2-icon.swal2-warning [class^='swal2-icon-content'] {
+  color: #e5b07f !important;
+}
+
+.swal2-title.user-swal2-title {
+  margin: 0.15rem 0 0 !important;
+  font-size: clamp(1.75rem, 2.6vw, 2.2rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.1 !important;
+  letter-spacing: -0.02em !important;
+  color: #0f172a !important;
+}
+
+.swal2-html-container.user-swal2-text {
+  margin: 0.65rem 0 0 !important;
+  padding: 0 !important;
+  font-size: 1.12rem !important;
+  font-weight: 400 !important;
+  line-height: 1.45 !important;
+  color: #111827 !important;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary {
+  text-align: left;
+  border-radius: 1rem;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-intro {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+  color: #344054;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-row {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-label {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-value {
+  color: #101828;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-total {
+  margin: 0.8rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid #d0d5dd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.swal2-html-container.user-swal2-text .user-swal2-summary-total strong {
+  font-size: 1.16rem;
+  letter-spacing: 0.01em;
+}
+
+.swal2-actions.user-swal2-actions {
+  width: 100% !important;
+  margin-top: 1.45rem !important;
+  gap: 0.8rem !important;
+  justify-content: stretch !important;
+}
+
+.swal2-actions.user-swal2-actions button {
+  flex: 1 1 0 !important;
+  margin: 0 !important;
+  border-radius: 0.85rem !important;
+  min-height: 2.9rem !important;
+  padding: 0.65rem 1rem !important;
+  font-size: 1.08rem !important;
+  font-weight: 700 !important;
+  border: 1px solid transparent !important;
+  transition: all 0.16s ease;
+}
+
+.swal2-confirm.user-swal2-confirm {
+  background-color: #001339 !important;
+  color: #ffffff !important;
+  border-color: #001339 !important;
+}
+
+.swal2-confirm.user-swal2-confirm:hover {
+  background-color: #031d56 !important;
+  border-color: #031d56 !important;
+}
+
+.swal2-cancel.user-swal2-cancel {
+  background-color: #dde1e6 !important;
+  color: #344054 !important;
+  border-color: #dde1e6 !important;
+}
+
+.swal2-cancel.user-swal2-cancel:hover {
+  background-color: #cfd4db !important;
+  border-color: #cfd4db !important;
+}
+
+.swal2-confirm.user-swal2-confirm:focus-visible,
+.swal2-cancel.user-swal2-cancel:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+@media (max-width: 640px) {
+  .swal2-popup.user-swal2-popup {
+    padding: 1.6rem 1rem 1rem !important;
+  }
+
+  .swal2-title.user-swal2-title {
+    font-size: 1.9rem !important;
+  }
+
+  .swal2-html-container.user-swal2-text {
+    font-size: 1rem !important;
+  }
+
+  .swal2-html-container.user-swal2-text .user-swal2-summary-row {
+    grid-template-columns: 1fr;
+    gap: 0.12rem;
+  }
+
+  .swal2-html-container.user-swal2-text .user-swal2-summary-intro {
+    margin-bottom: 0.55rem;
+  }
+
+  .swal2-actions.user-swal2-actions {
+    gap: 0.55rem !important;
+  }
+
+  .swal2-actions.user-swal2-actions button {
+    min-height: 2.7rem !important;
+    font-size: 1rem !important;
+  }
+}
+
+@keyframes userSwalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes userSwalBackdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes userSwalPopupIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes userSwalPopupOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
 }
 
 @utility menu-item {
@@ -409,4 +638,45 @@ body {
 
 .cart-badge-pulse {
   animation: cart-pulse 0.4s ease-in-out;
+}
+
+/* Modal animations */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }

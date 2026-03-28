@@ -767,6 +767,7 @@ Route::get('/api/csrf-token', function () {
 
 // Staff API Routes (session-based authentication)
 Route::middleware('auth:user')->prefix('api/staff')->group(function () {
+    Route::get('inventory-overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index']);
     Route::get('orders', [\App\Http\Controllers\Api\StaffOrderController::class, 'index'])
         ->middleware('permission:access-staff-job-orders');
     Route::get('orders/{id}', [\App\Http\Controllers\Api\StaffOrderController::class, 'show'])
@@ -1032,6 +1033,9 @@ Route::middleware(['auth:user', 'role:Manager'])->prefix('api/manager/repairs')-
     // Approve repairer's rejection
     Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveRejection']);
 
+    // Final manager approval to close rejection workflow
+    Route::post('{id}/finalize-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'finalizeRejection']);
+
     // Override rejection and reassign
     Route::post('{id}/override-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'overrideRejection']);
 
@@ -1049,6 +1053,11 @@ Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefi
 
     // Reject high-value repair
     Route::post('{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair']);
+
+    // Rejection workflow owner approval routes
+    Route::get('/rejection-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getOwnerRejectionPendingApprovals']);
+    Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveOwnerRejection']);
+    Route::post('{id}/reject-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectOwnerRejection']);
 
     // Ship a repair (ready-for-pickup → shipped)
     Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);

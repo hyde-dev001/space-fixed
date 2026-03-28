@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Enums\EmployeeStatus;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\Response;
@@ -58,7 +60,10 @@ class AuthController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         
-        if (!Auth::guard('user')->attempt($request->only('email', 'password'))) {
+        $credentials = $request->only('email', 'password');
+        $credentials['status'] = 'active';
+
+        if (!Auth::guard('user')->attempt($credentials)) {
             return response()->json([
                 'message' => [
                     'icon' => 'error',
@@ -69,6 +74,30 @@ class AuthController extends Controller
         }
         
         $user = Auth::guard('user')->user();
+
+        if ($user && $user->shop_owner_id) {
+            $employee = Employee::where('email', $user->email)->first();
+            if ($employee) {
+                $employeeStatus = $employee->status;
+                $isEmployeeActive = $employeeStatus instanceof EmployeeStatus
+                    ? $employeeStatus === EmployeeStatus::ACTIVE
+                    : (string) $employeeStatus === EmployeeStatus::ACTIVE->value;
+
+                if (!$isEmployeeActive) {
+                    Auth::guard('user')->logout();
+
+                    return response()->json([
+                        'message' => [
+                            'icon' => 'error',
+                            'title' => 'Account Suspended',
+                            'text' => 'Your account has been suspended. Please contact support.'
+                        ]
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+            }
+        }
+
+        /** @var User $user */
         $token = $user->createToken('auth_token', [ $request->ip() ])->plainTextToken;
 
         return response()->json([

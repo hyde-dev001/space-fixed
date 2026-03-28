@@ -210,13 +210,20 @@ class UserController extends Controller
                     ]);
                 }
 
-                // For employees/staff, also check employee table status
+                // For employees/staff, only active employment status can access the system.
                 if ($user->shop_owner_id) {
                     $employee = Employee::where('email', $user->email)->first();
-                    if ($employee && $employee->status === 'suspended') {
-                        throw ValidationException::withMessages([
-                            'email' => ['Your account has been suspended. Please contact support.'],
-                        ]);
+                    if ($employee) {
+                        $employeeStatus = $employee->status;
+                        $isEmployeeActive = $employeeStatus instanceof EmployeeStatus
+                            ? $employeeStatus === EmployeeStatus::ACTIVE
+                            : (string) $employeeStatus === EmployeeStatus::ACTIVE->value;
+
+                        if (!$isEmployeeActive) {
+                            throw ValidationException::withMessages([
+                                'email' => ['Your account has been suspended. Please contact support.'],
+                            ]);
+                        }
                     }
                 }
 

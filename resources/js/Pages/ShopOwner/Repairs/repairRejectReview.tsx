@@ -58,12 +58,13 @@ const HistoryIcon = ({ className }: { className?: string }) => (
 interface RepairRejection {
 	id: number;
 	request_number: string;
+	request_id?: string;
 	total: number;
 	status: string;
 	is_high_value: boolean;
 	requires_owner_approval: boolean;
 	owner_decision?: string;
-	owner_approval_notes?: string;
+	owner_review_notes?: string;
 	owner_reviewed_at?: string;
 	created_at: string;
 	user?: {
@@ -71,12 +72,14 @@ interface RepairRejection {
 		first_name: string;
 		last_name: string;
 		email: string;
-		phone_number: string;
+		phone?: string;
+		phone_number?: string;
 	};
 	services?: Array<{
 		id: number;
 		name: string;
-		base_price: number;
+		price?: number;
+		base_price?: number;
 	}>;
 	repairer?: {
 		id: number;
@@ -178,7 +181,7 @@ export default function RepairRejectReview() {
 	const fetchRepairs = async () => {
 		try {
 			setLoading(true);
-			const response = await axios.get('/api/shop-owner/repairs/high-value-pending');
+			const response = await axios.get('/api/shop-owner/repairs/rejection-pending');
 			if (response.data.success) {
 				setRejections(response.data.repairs);
 			}
@@ -213,6 +216,9 @@ export default function RepairRejectReview() {
 		}
 	}, [auth]);
 
+	const getRequestLabel = (item: RepairRejection) => item.request_number || item.request_id || `#${item.id}`;
+	const getTotalAmount = (item: RepairRejection) => Number(item.total || 0);
+
 	const filteredData = useMemo(() => {
 		return rejections.filter((item) => {
 			const customerName = `${item.user?.first_name || ''} ${item.user?.last_name || ''}`;
@@ -220,7 +226,7 @@ export default function RepairRejectReview() {
 			const serviceName = item.services?.map(s => s.name).join(', ') || '';
 			
 			const matchesSearch =
-				item.request_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				getRequestLabel(item).toLowerCase().includes(searchQuery.toLowerCase()) ||
 				serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				repairerName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -235,8 +241,8 @@ export default function RepairRejectReview() {
 	const paginatedRejections = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
 	const pendingCount = rejections.filter((r) => r.status === "owner_approval_pending").length;
-	const approvedCount = rejections.filter((r) => r.status === "owner_approved").length;
-	const rejectedCount = rejections.filter((r) => r.status === "owner_rejected").length;
+	const approvedCount = rejections.filter((r) => r.status === "manager_reviewing").length;
+	const rejectedCount = rejections.filter((r) => r.status === "assigned_to_repairer").length;
 
 	const handleViewClick = (rejection: RepairRejection) => {
 		setSelectedRejection(rejection);
@@ -253,23 +259,30 @@ export default function RepairRejectReview() {
 		const serviceName = rejection.services?.map(s => s.name).join(', ') || 'N/A';
 		
 		const { value: notes } = await Swal.fire({
-			title: "Approve High-Value Repair?",
+			title: "Approve Rejection Request?",
 			html: `
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Request:</strong> ${rejection.request_number}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${serviceName}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Total:</strong> ₱${rejection.total.toFixed(2)}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Total:</strong> ₱${getTotalAmount(rejection).toFixed(2)}</p>
 					<p style="margin-bottom: 1rem;"><strong>Repairer:</strong> ${rejection.repairer?.first_name || ''} ${rejection.repairer?.last_name || ''}</p>
-					<textarea id="approval-notes" class="swal2-textarea" placeholder="Optional approval notes" style="width: 100%; min-height: 80px;"></textarea>
+					<textarea id="approval-notes" class="swal2-textarea" placeholder="Optional notes" style="width: 100%; min-height: 80px; margin: 0; box-sizing: border-box; resize: vertical; overflow-x: hidden;"></textarea>
 				</div>
 			`,
 			icon: "question",
+			width: 560,
 			showCancelButton: true,
 			confirmButtonColor: "#10b981",
 			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Approve",
+			confirmButtonText: "Approve & Forward",
 			cancelButtonText: "Cancel",
+			didOpen: () => {
+				const htmlContainer = Swal.getHtmlContainer();
+				if (htmlContainer) {
+					htmlContainer.style.overflowX = "hidden";
+				}
+			},
 			preConfirm: () => {
 				const textarea = document.getElementById('approval-notes') as HTMLTextAreaElement;
 				return textarea?.value || '';
@@ -278,12 +291,12 @@ export default function RepairRejectReview() {
 
 		if (notes !== undefined) {
 			try {
-				const response = await axios.post(`/api/shop-owner/repairs/${rejection.id}/approve-high-value`, { notes });
+				const response = await axios.post(`/api/shop-owner/repairs/${rejection.id}/approve-rejection`, { notes });
 				
 				if (response.data.success) {
 					await Swal.fire({
 						title: "Approved!",
-						text: "The high-value repair has been approved. Repairer can now start work.",
+						text: "Rejection request approved and forwarded to manager for final approval.",
 						icon: "success",
 						confirmButtonColor: "#2563eb",
 					});
@@ -303,19 +316,32 @@ export default function RepairRejectReview() {
 
 	const handleRejectRejection = async (rejection: RepairRejection) => {
 		const { value: notes } = await Swal.fire({
-			title: "Reject High-Value Repair?",
+			title: "Reject Rejection Request?",
 			html: `
-				<div style="text-align: left; margin-top: 1rem;">
+				<div style="text-align: left; margin-top: 1rem; max-width: 100%; overflow-x: hidden;">
 					<p style="margin-bottom: 1rem;">Please provide a reason for rejection (minimum 10 characters):</p>
-					<textarea id="rejection-notes" class="swal2-textarea" placeholder="Enter rejection reason..." style="width: 100%; min-height: 100px;"></textarea>
+					<textarea id="rejection-notes" placeholder="Enter rejection reason..." style="display: block; width: 100%; max-width: 100%; min-height: 100px; margin: 0; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; box-sizing: border-box; resize: vertical; overflow-x: hidden;"></textarea>
 				</div>
 			`,
 			icon: "warning",
+			width: 560,
 			showCancelButton: true,
 			confirmButtonColor: "#ef4444",
 			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Reject",
+			confirmButtonText: "Return to Repairer",
 			cancelButtonText: "Cancel",
+			didOpen: () => {
+				const popup = Swal.getPopup();
+				if (popup) {
+					popup.style.overflowX = "hidden";
+				}
+
+				const htmlContainer = Swal.getHtmlContainer();
+				if (htmlContainer) {
+					htmlContainer.style.maxWidth = "100%";
+					htmlContainer.style.overflowX = "hidden";
+				}
+			},
 			preConfirm: () => {
 				const textarea = document.getElementById('rejection-notes') as HTMLTextAreaElement;
 				const value = textarea?.value || '';
@@ -329,12 +355,12 @@ export default function RepairRejectReview() {
 
 		if (notes) {
 			try {
-				const response = await axios.post(`/api/shop-owner/repairs/${rejection.id}/reject-high-value`, { notes });
+				const response = await axios.post(`/api/shop-owner/repairs/${rejection.id}/reject-rejection`, { notes });
 				
 				if (response.data.success) {
 					await Swal.fire({
-						title: "Rejected",
-						text: "The high-value repair has been rejected. Customer will be notified.",
+						title: "Returned",
+						text: "Rejection request was declined and sent back to assigned repair flow.",
 						icon: "success",
 						confirmButtonColor: "#2563eb",
 					});
@@ -387,8 +413,8 @@ export default function RepairRejectReview() {
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
-						<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">High-Value Repair Approvals</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review and approve repair requests above your threshold price</p>
+							<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Repair Rejection Review</h1>
+							<p className="text-gray-600 dark:text-gray-400">Review manager-forwarded rejection requests</p>
 					</div>
 					<div />
 				</div>
@@ -426,8 +452,8 @@ export default function RepairRejectReview() {
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
-							<h2 className="text-lg font-semibold text-gray-900 dark:text-white">High-Value Repair Requests</h2>
-							<p className="text-sm text-gray-500 dark:text-gray-400">Review repair requests that require your approval</p>
+							<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Rejection Requests</h2>
+							<p className="text-sm text-gray-500 dark:text-gray-400">Review rejection workflow requests waiting for your decision</p>
 						</div>
 						<div className="flex items-center gap-2">
 							<Link
@@ -467,8 +493,8 @@ export default function RepairRejectReview() {
 							>
 								<option value="All">All Status</option>
 							<option value="owner_approval_pending">Pending</option>
-							<option value="owner_approved">Approved</option>
-							<option value="owner_rejected">Rejected</option>
+							<option value="manager_reviewing">Approved</option>
+							<option value="assigned_to_repairer">Rejected</option>
 							</select>
 						</div>
 					</div>
@@ -496,12 +522,12 @@ export default function RepairRejectReview() {
 										const customerName = `${rejection.user?.first_name || ''} ${rejection.user?.last_name || ''}`;
 										const serviceNames = rejection.services?.map(s => s.name).join(', ') || 'N/A';
 										const statusLabel = rejection.status === 'owner_approval_pending' ? 'Pending' : 
-														  rejection.status === 'owner_approved' ? 'Approved' : 'Rejected';
+														  rejection.status === 'manager_reviewing' ? 'Approved' : 'Rejected';
 										
 										return (
 											<tr key={rejection.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
 												<td className="py-4">
-													<p className="font-medium text-gray-900 dark:text-white">{rejection.request_number}</p>
+													<p className="font-medium text-gray-900 dark:text-white">{getRequestLabel(rejection)}</p>
 													<p className="text-xs text-gray-500 dark:text-gray-400">{new Date(rejection.created_at).toLocaleDateString()}</p>
 												</td>
 												<td className="py-4 text-gray-700 dark:text-gray-300">{serviceNames}</td>
@@ -510,14 +536,14 @@ export default function RepairRejectReview() {
 													<p className="text-xs text-gray-500 dark:text-gray-400">{rejection.user?.email}</p>
 												</td>
 												<td className="py-4">
-													<p className="font-semibold text-gray-900 dark:text-white">₱{rejection.total.toFixed(2)}</p>
+													<p className="font-semibold text-gray-900 dark:text-white">₱{getTotalAmount(rejection).toFixed(2)}</p>
 												</td>
 												<td className="py-4">
 													<span
 														className={`px-2 py-1 rounded-full text-xs font-semibold ${
 															rejection.status === "owner_approval_pending"
 																? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-																: rejection.status === "owner_approved"
+																: rejection.status === "manager_reviewing"
 																? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
 																: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
 														}`}
@@ -542,7 +568,7 @@ export default function RepairRejectReview() {
 									{paginatedRejections.length === 0 && (
 										<tr>
 											<td colSpan={6} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-												{loading ? 'Loading...' : 'No high-value repair requests found.'}
+												{loading ? 'Loading...' : 'No rejection workflow requests found.'}
 											</td>
 										</tr>
 									)}
@@ -625,8 +651,8 @@ export default function RepairRejectReview() {
 									<WrenchIcon className="size-5" />
 								</div>
 								<div>
-								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">High-Value Repair Details</h3>
-								<p className="text-sm text-gray-500 dark:text-gray-400">{selectedRejection.request_number}</p>
+								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rejection Workflow Details</h3>
+								<p className="text-sm text-gray-500 dark:text-gray-400">{getRequestLabel(selectedRejection)}</p>
 							</div>
 						</div>
 						<button
@@ -649,12 +675,12 @@ export default function RepairRejectReview() {
 											{selectedRejection.services.map((service, index) => (
 												<div key={index} className="flex justify-between items-center">
 													<span className="text-gray-900 dark:text-white">{service.name}</span>
-													<span className="font-semibold text-gray-900 dark:text-white">₱{service.base_price.toFixed(2)}</span>
+													<span className="font-semibold text-gray-900 dark:text-white">₱{Number(service.price ?? service.base_price ?? 0).toFixed(2)}</span>
 												</div>
 											))}
 											<div className="border-t border-gray-300 dark:border-gray-700 mt-3 pt-3 flex justify-between items-center">
 												<span className="font-semibold text-gray-900 dark:text-white">Total</span>
-												<span className="text-lg font-bold text-orange-600 dark:text-orange-400">₱{selectedRejection.total.toFixed(2)}</span>
+												<span className="text-lg font-bold text-orange-600 dark:text-orange-400">₱{getTotalAmount(selectedRejection).toFixed(2)}</span>
 											</div>
 										</div>
 									) : (
@@ -678,7 +704,7 @@ export default function RepairRejectReview() {
 									</div>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm bg-white dark:bg-gray-900">
 										<p className="text-gray-600 dark:text-gray-400">Phone</p>
-										<p className="font-semibold text-gray-900 dark:text-white">{selectedRejection.user?.phone_number || 'N/A'}</p>
+										<p className="font-semibold text-gray-900 dark:text-white">{selectedRejection.user?.phone || selectedRejection.user?.phone_number || 'N/A'}</p>
 									</div>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm bg-white dark:bg-gray-900">
 										<p className="text-gray-600 dark:text-gray-400">Request Date</p>
@@ -699,29 +725,29 @@ export default function RepairRejectReview() {
 										<p className={`font-semibold ${
 											selectedRejection.status === "owner_approval_pending"
 												? "text-yellow-600 dark:text-yellow-400"
-												: selectedRejection.status === "owner_approved"
+												: selectedRejection.status === "manager_reviewing"
 												? "text-green-600 dark:text-green-400"
 												: "text-red-600 dark:text-red-400"
 										}`}>
 											{selectedRejection.status === 'owner_approval_pending' ? 'Pending Your Approval' :
-											 selectedRejection.status === 'owner_approved' ? 'Approved' : 'Rejected'}
+											 selectedRejection.status === 'manager_reviewing' ? 'Approved by You' : 'Returned to Repairer'}
 										</p>
 									</div>
 								</div>
 							</div>
 
-							{selectedRejection.owner_approval_notes && (
+								{selectedRejection.owner_review_notes && (
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-										{selectedRejection.status === "owner_approved" ? "Approval Notes" : "Rejection Notes"}
+											{selectedRejection.status === "manager_reviewing" ? "Approval Notes" : "Return Notes"}
 									</p>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/40">
-										{selectedRejection.owner_approval_notes}
+											{selectedRejection.owner_review_notes}
 									</div>
 								</div>
 							)}
 
-							{selectedRejection.status === "owner_approved" && selectedRejection.owner_reviewed_by && (
+								{selectedRejection.status === "manager_reviewing" && selectedRejection.owner_reviewed_by && (
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Approval Details</p>
 									<div className="grid grid-cols-2 gap-4">
@@ -741,7 +767,7 @@ export default function RepairRejectReview() {
 								</div>
 							)}
 
-							{selectedRejection.status === "owner_rejected" && selectedRejection.owner_reviewed_by && (
+							{selectedRejection.status === "assigned_to_repairer" && selectedRejection.owner_reviewed_by && (
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rejection Details</p>
 									<div className="grid grid-cols-2 gap-4">
@@ -782,7 +808,7 @@ export default function RepairRejectReview() {
 							disabled={selectedRejection.status !== "owner_approval_pending"}
 							className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							Reject
+							Return to Repairer
 						</button>
 					</div>
 					</div>

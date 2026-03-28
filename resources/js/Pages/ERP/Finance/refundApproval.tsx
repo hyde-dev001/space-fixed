@@ -532,9 +532,12 @@ export default function RefundApproval() {
 					throw new Error(data?.message || "Failed to approve refund request.");
 				}
 
+				const updatedRefund = { ...request, ...(data?.refund || {}), status: "Approved" };
 				setRequests((prev) =>
-					prev.map((r) => (r.id === request.id ? { ...r, ...(data?.refund || {}), status: "Approved" } : r))
+					prev.map((r) => (r.id === request.id ? updatedRefund : r))
 				);
+				setSelectedRequest(updatedRefund);
+				
 				Swal.fire({
 					title: "Approved!",
 					text: data?.message || "The refund request has been approved.",

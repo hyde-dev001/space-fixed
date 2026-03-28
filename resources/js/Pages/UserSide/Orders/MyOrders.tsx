@@ -65,7 +65,7 @@ interface MyOrdersProps {
   [key: string]: unknown;
 }
 
-type OrderTab = 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled';
+type OrderTab = 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'return_refund';
 
 const MyOrders: React.FC = () => {
   const page = usePage();
@@ -87,7 +87,18 @@ const MyOrders: React.FC = () => {
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
-  const [retryingOrderId, setRetryingOrderId] = useState<number | null>(null);
+
+  const isReturnRefundOrder = (order: Order): boolean => {
+    const refundStatus = String(order.refund_status || '').toLowerCase();
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+    const stageStatus = String(order.refund_stage?.status || '').toLowerCase();
+
+    return Boolean(order.refund_stage)
+      || refundStatus === 'processing'
+      || refundStatus === 'refunded'
+      || paymentStatus === 'refunded'
+      || ['requested', 'pending_approval', 'processing', 'succeeded', 'rejected'].includes(stageStatus);
+  };
 
   const mapStatusToTab = (status: string): OrderTab => {
     switch (status) {
@@ -102,7 +113,7 @@ const MyOrders: React.FC = () => {
       case 'delivered':
         return 'completed';
       case 'cancelled':
-        return 'cancelled';
+        return 'all';
       default:
         return 'all';
     }
@@ -117,8 +128,9 @@ const MyOrders: React.FC = () => {
     if (value === 'to_ship' || value === 'ship') return 'shipped';
     if (value === 'to_receive' || value === 'receive') return 'shipped';
     if (value === 'to_rate' || value === 'rate') return 'completed';
+    if (value === 'return_refund' || value === 'return/refund' || value === 'return' || value === 'refund') return 'return_refund';
 
-    if (value === 'all' || value === 'pending' || value === 'processing' || value === 'shipped' || value === 'completed' || value === 'cancelled') {
+    if (value === 'all' || value === 'pending' || value === 'processing' || value === 'shipped' || value === 'completed' || value === 'return_refund') {
       return value;
     }
 
@@ -161,7 +173,7 @@ const MyOrders: React.FC = () => {
       return;
     }
 
-    setSelectedTab(mapStatusToTab(targetOrder.status));
+    setSelectedTab(isReturnRefundOrder(targetOrder) ? 'return_refund' : mapStatusToTab(targetOrder.status));
 
     const scrollTimer = window.setTimeout(() => {
       const targetElement = document.querySelector(`[data-order-id="${highlightOrderId}"]`);
@@ -172,6 +184,14 @@ const MyOrders: React.FC = () => {
 
     return () => window.clearTimeout(scrollTimer);
   }, [highlightOrderId, orders]);
+
+  // Sync local state with page props when polling reloads data
+  useEffect(() => {
+    const newOrders = ((page.props as any).orders ?? []) as Order[];
+    if (newOrders.length > 0 && JSON.stringify(newOrders) !== JSON.stringify(orders)) {
+      setOrders(newOrders);
+    }
+  }, [page.props]);
 
   const hasProcessingRefund = orders.some(
     (order) => (order.status === 'cancelled' && order.refund_status === 'processing')
@@ -247,47 +267,6 @@ const MyOrders: React.FC = () => {
         text: error instanceof Error ? error.message : 'Unable to confirm delivery. Please try again.',
         confirmButtonColor: '#000000',
       });
-    }
-  };
-
-  const retryOrderPaymentSession = async (orderId: number) => {
-    if (retryingOrderId === orderId) {
-      return;
-    }
-
-    try {
-      setRetryingOrderId(orderId);
-      const targetOrder = orders.find((o) => o.id === orderId);
-      const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-        },
-        body: JSON.stringify({
-          subtotal_amount: parseAmount(targetOrder?.total_amount),
-          shipping_fee: parseAmount(targetOrder?.shipping_fee),
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data?.checkout_url) {
-        throw new Error(data?.message || 'Unable to create a new payment session.');
-      }
-
-      sessionStorage.setItem('pendingOrderId', String(orderId));
-      window.location.href = data.checkout_url;
-    } catch (error) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Retry Failed',
-        text: error instanceof Error ? error.message : 'Unable to retry payment right now.',
-        confirmButtonColor: '#000000',
-      });
-    } finally {
-      setRetryingOrderId(null);
     }
   };
 
@@ -388,17 +367,28 @@ const MyOrders: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'refunded':
+        return 'rounded-full border border-green-300 bg-green-50 text-green-700';
       case 'delivered':
-        return 'text-green-700';
+        return 'rounded-full border border-green-300 bg-green-50 text-green-700';
       case 'cancelled':
-        return 'text-red-700';
+        return 'rounded-full border border-red-300 bg-red-50 text-red-700';
+      case 'pending':
+        return 'rounded-full border border-amber-300 bg-amber-50 text-amber-700';
+      case 'processing':
+        return 'rounded-full border border-blue-300 bg-blue-50 text-blue-700';
+      case 'shipped':
+      case 'to_ship':
+        return 'rounded-full border border-indigo-300 bg-indigo-50 text-indigo-700';
       default:
-        return 'text-black';
+        return 'rounded-full border border-gray-300 bg-gray-100 text-gray-700';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
+      case 'refunded':
+        return 'Refunded';
       case 'to_ship':
         return 'To Ship';
       case 'shipped':
@@ -417,21 +407,12 @@ const MyOrders: React.FC = () => {
   };
 
   // Count functions for order statuses
-  const getCountByStatus = (status: string) => {
+  const getCountByStatus = (status: OrderTab) => {
     if (status === 'all') return orders.length;
-    if (status === 'shipped') return orders.filter(o => o.status === 'shipped' || o.status === 'to_ship').length;
-    if (status === 'completed') return orders.filter(o => o.status === 'completed' || o.status === 'delivered').length;
-    return orders.filter(o => o.status === status).length;
-  };
-
-  const canRetryOnlinePayment = (order: Order): boolean => {
-    const paymentMethod = String(order.payment_method || '').toLowerCase();
-    const isCod = paymentMethod === 'cod' || paymentMethod === 'cash_on_delivery' || paymentMethod === 'cash on delivery';
-    if (isCod) {
-      return false;
-    }
-
-    return order.payment_status !== 'paid' && order.payment_status !== 'completed';
+    if (status === 'return_refund') return orders.filter(isReturnRefundOrder).length;
+    if (status === 'shipped') return orders.filter(o => !isReturnRefundOrder(o) && (o.status === 'shipped' || o.status === 'to_ship')).length;
+    if (status === 'completed') return orders.filter(o => !isReturnRefundOrder(o) && (o.status === 'completed' || o.status === 'delivered')).length;
+    return orders.filter(o => !isReturnRefundOrder(o) && o.status === status).length;
   };
 
   const isOnlinePaymentOrder = (order: Order): boolean => {
@@ -451,12 +432,34 @@ const MyOrders: React.FC = () => {
     if (order.payment_status === 'refunded' || stage.is_refunded || status === 'succeeded') return 'Refunded';
     if (status === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') return 'Refund Rejected';
     if (returnStatus === 'pending_customer_shipment') return 'Ship Defective Product';
+    if (['in_transit', 'received'].includes(returnStatus) && shopOwnerStatus === 'approved' && financeStatus === 'approved') {
+      return 'Awaiting Finance Refund Release';
+    }
     if (returnStatus === 'in_transit') return 'Return In Transit';
-    if (returnStatus === 'received' && financeStatus === 'approved') return 'Awaiting Finance Refund Release';
     if (returnStatus === 'received') return 'Returned Item Received';
     if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') return 'Pending Approval';
     if (status === 'processing') return 'Refund Processing';
     return 'Refund Processing';
+  };
+
+  const isOrderRefunded = (order: Order): boolean => {
+    const stageStatus = String(order.refund_stage?.status || '').toLowerCase();
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+
+    return (
+      paymentStatus === 'refunded'
+      || order.refund_status === 'refunded'
+      || order.refund_stage?.is_refunded === true
+      || stageStatus === 'succeeded'
+    );
+  };
+
+  const getDisplayStatus = (order: Order): string => {
+    if (isOrderRefunded(order)) {
+      return 'refunded';
+    }
+
+    return order.status;
   };
 
   const handleMarkRefundReturnShipped = async (order: Order) => {
@@ -590,7 +593,9 @@ const MyOrders: React.FC = () => {
   const filteredOrders = selectedTab === 'all' 
     ? orders 
     : orders.filter(order => {
-        if (selectedTab === 'shipped') return order.status === 'to_ship' || order.status === 'pending' || order.status === 'processing';
+        if (selectedTab === 'return_refund') return isReturnRefundOrder(order);
+        if (isReturnRefundOrder(order)) return false;
+        if (selectedTab === 'shipped') return order.status === 'to_ship' || order.status === 'shipped';
         if (selectedTab === 'completed') return order.status === 'completed' || order.status === 'delivered';
         return order.status === selectedTab;
       });
@@ -766,108 +771,129 @@ const MyOrders: React.FC = () => {
     return images.length === 5 && videos.length === 1;
   };
 
+  const tabButtonBaseClass =
+    'relative inline-flex min-w-[132px] shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 lg:min-w-0 lg:flex-1';
+  const tabBadgeClass =
+    'absolute right-1 top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center';
+  const actionButtonBaseClass =
+    'inline-flex items-center justify-center gap-2 rounded-full border px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+  const actionButtonPrimaryClass =
+    'border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/45';
+  const actionButtonSecondaryClass =
+    'border-gray-300 bg-white text-gray-800 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 focus-visible:ring-gray-300';
+  const actionButtonDangerClass =
+    'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
+  const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Head title="My Purchases" />
       <Navigation />
 
       <main className="flex-1">
-        <div className="max-w-6xl mx-auto pt-28 pb-16 px-6 lg:pt-32">
-          <h1 className="text-4xl font-bold mb-12 text-black">My Purchases</h1>
+        <div className="w-full px-6 pb-16 pt-28 lg:pt-32 xl:px-10 2xl:px-14">
+          <div className="mx-auto mb-10 max-w-6xl select-none text-center">
+            <h1 className="text-4xl font-bold tracking-tight text-[#16233b] sm:text-5xl">My Purchases</h1>
+            <p className="mx-auto mt-2 max-w-2xl text-sm text-black/55 sm:text-base">
+              Manage deliveries, returns, and refunds with clear real-time order progress.
+            </p>
+          </div>
 
           {/* Tabs */}
-          <div className="flex gap-8 mb-12 border-b border-gray-200">
+          <div className="mb-12 flex w-full gap-3 overflow-x-auto pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => setSelectedTab('all')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'all'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               ALL ORDERS
               {getCountByStatus('all') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('all')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('pending')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'pending'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               PENDING
               {getCountByStatus('pending') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('pending')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('processing')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'processing'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               PROCESSING
               {getCountByStatus('processing') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('processing')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('shipped')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'shipped'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               SHIPPED
               {getCountByStatus('shipped') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('shipped')}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSelectedTab('completed')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
+              className={`${tabButtonBaseClass} ${
                 selectedTab === 'completed'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
               COMPLETED
               {getCountByStatus('completed') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
+                <span className={tabBadgeClass}>
                   {getCountByStatus('completed')}
                 </span>
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('cancelled')}
-              className={`pb-4 font-medium text-sm tracking-wide transition-all flex items-center gap-2 ${
-                selectedTab === 'cancelled'
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-gray-400 hover:text-gray-600'
+              onClick={() => setSelectedTab('return_refund')}
+              className={`${tabButtonBaseClass} ${
+                selectedTab === 'return_refund'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
               }`}
             >
-              CANCELLED
-              {getCountByStatus('cancelled') > 0 && (
-                <span className="text-gray-800 px-2 py-0.5 text-xs font-semibold">
-                  {getCountByStatus('cancelled')}
+              RETURN/REFUND
+              {getCountByStatus('return_refund') > 0 && (
+                <span className={tabBadgeClass}>
+                  {getCountByStatus('return_refund')}
                 </span>
               )}
             </button>
           </div>
+
+          <div className="mx-auto max-w-6xl">
 
           {/* Orders Display */}
           {filteredOrders.length === 0 ? (
@@ -881,7 +907,7 @@ const MyOrders: React.FC = () => {
               <p className="text-gray-500 mb-8">Start shopping to see your orders here!</p>
               <Link
                 href="/products"
-                className="inline-block px-8 py-3 bg-black text-white font-medium hover:bg-gray-800 transition-colors"
+                className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
               >
                 Browse Products
               </Link>
@@ -889,7 +915,14 @@ const MyOrders: React.FC = () => {
           ) : (
             <div className="space-y-8">
               {filteredOrders.flatMap((order) =>
-                (order.items || []).map((item, idx) => (
+                (order.items || []).map((item, idx) => {
+                  const displayStatus = getDisplayStatus(order);
+                  const refundStageText = getRefundStageText(order);
+                  const shouldShowRefundStageBadge = isOnlinePaymentOrder(order)
+                    && (order.refund_status || order.refund_stage)
+                    && !isOrderRefunded(order);
+
+                  return (
                   <div
                     key={`${order.id}-${item.id ?? idx}`}
                     data-order-id={order.id}
@@ -915,23 +948,21 @@ const MyOrders: React.FC = () => {
                         <div>
                           <span
                             className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusBadge(
-                              order.status
+                              displayStatus
                             )}`}
                           >
-                            {getStatusText(order.status)}
+                            {getStatusText(displayStatus)}
                           </span>
-                          {isOnlinePaymentOrder(order) && (order.refund_status || order.refund_stage) && (
+                          {shouldShowRefundStageBadge && (
                             <div className="mt-2 text-right">
                               <span
                                 className={`inline-flex items-center px-3 py-1 text-[11px] font-semibold tracking-wider uppercase border ${
-                                  getRefundStageText(order) === 'Refunded' || order.refund_status === 'refunded'
-                                    ? 'text-green-700 border-green-300 bg-green-50'
-                                    : getRefundStageText(order) === 'Refund Rejected'
+                                  refundStageText === 'Refund Rejected'
                                     ? 'text-red-700 border-red-300 bg-red-50'
                                     : 'text-blue-700 border-blue-300 bg-blue-50'
                                 }`}
                               >
-                                {getRefundStageText(order) || (order.refund_status === 'refunded' ? 'Refunded' : 'Refund Processing')}
+                                {refundStageText || 'Refund Processing'}
                               </span>
                               {(order.refund_stage?.rejection_reason || order.refund_status_note) && (
                                 <p className="mt-1 text-xs text-gray-500">{order.refund_stage?.rejection_reason || order.refund_status_note}</p>
@@ -1049,15 +1080,6 @@ const MyOrders: React.FC = () => {
                       <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
                         {order.status === 'pending' && (
                           <>
-                            {canRetryOnlinePayment(order) && (
-                              <button
-                                onClick={() => retryOrderPaymentSession(order.id)}
-                                disabled={retryingOrderId === order.id}
-                                className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${retryingOrderId === order.id ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-800'}`}
-                              >
-                                {retryingOrderId === order.id ? 'RETRYING...' : 'RETRY PAYMENT'}
-                              </button>
-                            )}
                             <button
                               onClick={() => {
                                 const shouldCancelWholeOrder = (order.items?.length || 0) === 1;
@@ -1067,7 +1089,7 @@ const MyOrders: React.FC = () => {
                                 setCancelNote('');
                                 setShowCancelModal(true);
                               }}
-                              className="px-6 py-2.5 bg-red-600 text-white text-sm font-medium tracking-wide hover:bg-red-700 transition-colors rounded-md"
+                              className={`${actionButtonBaseClass} ${actionButtonDangerClass}`}
                             >
                               CANCEL ORDER
                             </button>
@@ -1077,10 +1099,10 @@ const MyOrders: React.FC = () => {
                           <button
                             onClick={() => confirmDelivery(order.id)}
                             disabled={!order.pickup_enabled}
-                            className={`px-6 py-2.5 text-sm font-medium tracking-wide rounded-md transition-colors ${
+                            className={`${actionButtonBaseClass} ${
                               order.pickup_enabled
-                                ? 'bg-black text-white hover:bg-gray-800 cursor-pointer'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                ? actionButtonPrimaryClass
+                                : actionButtonDisabledClass
                             }`}
                             title={order.pickup_enabled ? 'Confirm you have received your order' : 'Waiting for shop to activate receive'}
                           >
@@ -1092,7 +1114,7 @@ const MyOrders: React.FC = () => {
                             {order.refund_stage?.can_mark_return_shipped ? (
                               <button
                                 onClick={() => handleMarkRefundReturnShipped(order)}
-                                className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                                className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                               >
                                 SHIP DEFECTIVE PRODUCT
                               </button>
@@ -1106,14 +1128,14 @@ const MyOrders: React.FC = () => {
                                   setRefundNote('');
                                   setShowRefundModal(true);
                                 }}
-                                className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium tracking-wide hover:bg-gray-50 transition-colors rounded-md"
+                                className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                               >
                                 REFUND
                               </button>
                             ) : (
                               <button
                                 disabled
-                                className="px-6 py-2.5 border border-gray-200 text-gray-400 text-sm font-medium tracking-wide rounded-md cursor-not-allowed"
+                                className={`${actionButtonBaseClass} ${actionButtonDisabledClass}`}
                               >
                                 {getRefundStageText(order) || 'REFUND PROCESSING'}
                               </button>
@@ -1124,7 +1146,7 @@ const MyOrders: React.FC = () => {
                                   router.visit(`/products/${item.product_slug}#reviews`);
                                 }
                               }}
-                              className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors rounded-md"
+                              className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
                             >
                               REVIEW
                             </button>
@@ -1133,7 +1155,7 @@ const MyOrders: React.FC = () => {
                         {order.status === 'completed' && (
                           <Link
                             href={`/products`}
-                            className="px-6 py-2.5 bg-black text-white text-sm font-medium tracking-wide hover:bg-gray-800 transition-colors inline-block rounded-md"
+                            className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
                           >
                             ORDER AGAIN
                           </Link>
@@ -1141,7 +1163,8 @@ const MyOrders: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))
+                );
+                })
               )}
             </div>
           )}
@@ -1211,14 +1234,14 @@ const MyOrders: React.FC = () => {
                     setSelectedReason('');
                     setCancelNote('');
                   }}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                 >
                   Close
                 </button>
                 <button
                   onClick={handleSubmitCancel}
                   disabled={!selectedReason}
-                  className={`px-4 py-2 rounded text-white ${selectedReason ? 'bg-red-600 hover:bg-red-700' : 'bg-red-300 cursor-not-allowed'}`}
+                  className={`${actionButtonBaseClass} ${selectedReason ? actionButtonDangerClass : actionButtonDisabledClass}`}
                 >
                   Cancel Order
                 </button>
@@ -1230,7 +1253,7 @@ const MyOrders: React.FC = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowRefundModal(false)}></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
-              <div className="px-8 py-4 border-b flex-shrink-0">
+              <div className="px-8 py-4 border-b shrink-0">
                 <h3 className="text-xl font-semibold">Request Refund {refundStep === 2 && '- Payment Details'}</h3>
                 <p className="text-sm text-gray-500 mt-1">
                   {refundStep === 1 ? 'Please provide details for your refund request.' : 'Select your refund method and review details.'}
@@ -1262,7 +1285,7 @@ const MyOrders: React.FC = () => {
                               value={r}
                               checked={refundReason === r}
                               onChange={(e) => setRefundReason(e.target.value)}
-                              className="form-radio h-4 w-4 text-black flex-shrink-0"
+                              className="form-radio h-4 w-4 text-black shrink-0"
                             />
                             <span className="text-sm text-gray-700">{r}</span>
                           </label>
@@ -1392,12 +1415,12 @@ const MyOrders: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div className="px-8 py-4 border-t flex justify-between gap-3 flex-shrink-0">
+              <div className="px-8 py-4 border-t flex justify-between gap-3 shrink-0">
                 <div>
                   {refundStep === 2 && (
                     <button
                       onClick={() => setRefundStep(1)}
-                      className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 font-medium"
+                      className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                     >
                       Back
                     </button>
@@ -1413,7 +1436,7 @@ const MyOrders: React.FC = () => {
                       setRefundMedia([]);
                       setRefundNote('');
                     }}
-                    className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 font-medium"
+                    className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                   >
                     Close
                   </button>
@@ -1438,10 +1461,10 @@ const MyOrders: React.FC = () => {
                         setRefundStep(2);
                       }}
                       disabled={!refundReason || !isMediaRequirementMet()}
-                      className={`px-5 py-2.5 rounded text-white font-medium ${
+                      className={`${actionButtonBaseClass} ${
                         refundReason && isMediaRequirementMet()
-                          ? 'bg-black hover:bg-gray-800'
-                          : 'bg-gray-300 cursor-not-allowed'
+                          ? actionButtonPrimaryClass
+                          : actionButtonDisabledClass
                       }`}
                     >
                       Next
@@ -1450,10 +1473,10 @@ const MyOrders: React.FC = () => {
                     <button
                       onClick={handleSubmitRefund}
                       disabled={!refundReason || !isMediaRequirementMet()}
-                      className={`px-5 py-2.5 rounded text-white font-medium ${
+                      className={`${actionButtonBaseClass} ${
                         refundReason && isMediaRequirementMet()
-                          ? 'bg-black hover:bg-gray-800'
-                          : 'bg-gray-300 cursor-not-allowed'
+                          ? actionButtonPrimaryClass
+                          : actionButtonDisabledClass
                       }`}
                     >
                       Submit Refund Request
@@ -1464,6 +1487,7 @@ const MyOrders: React.FC = () => {
             </div>
           </div>
         )}
+        </div>
       </main>
     </div>
   );

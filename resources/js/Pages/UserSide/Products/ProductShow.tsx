@@ -557,7 +557,9 @@ const ProductShow: React.FC = () => {
       icon: 'success',
       title: 'Voucher claimed',
       text: `${campaign.code} has been added to your wallet.`,
-      confirmButtonText: 'Nice',
+      showConfirmButton: false,
+      timer: 1500,
+      timerProgressBar: true,
     });
   };
 

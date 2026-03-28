@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ERP\Manager;
 
 use App\Http\Controllers\Controller;
 use App\Models\SuspensionRequest;
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -153,6 +154,14 @@ class SuspensionApprovalController extends Controller
         } else {
             $req->manager_status = 'rejected';
             $req->status = SuspensionStatus::REJECTED_MANAGER;
+
+            // Re-enable employee access when request is rejected by manager.
+            if ($req->employee) {
+                $req->employee->update([
+                    'status' => EmployeeStatus::ACTIVE,
+                    'suspension_reason' => null,
+                ]);
+            }
         }
 
         $req->save();

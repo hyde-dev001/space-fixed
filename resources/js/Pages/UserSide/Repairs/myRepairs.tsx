@@ -560,8 +560,8 @@ const MyRepairs: React.FC = () => {
           icon: 'error',
           title: 'Payment Not Completed',
           text: 'You did not finish the payment. Create a new payment session to try again.',
-          showCancelButton: !!parsedPendingRepairId,
-          confirmButtonText: 'Create New Payment Session',
+          showCancelButton: true,
+          confirmButtonText: 'Create New Payment',
           cancelButtonText: 'Close',
           confirmButtonColor: '#000000',
         });
@@ -632,8 +632,8 @@ const MyRepairs: React.FC = () => {
               icon: 'warning',
               title: 'Payment Session Expired',
               text: 'Your payment session expired. Create a new payment session to continue.',
-              showCancelButton: !!parsedPendingRepairId,
-              confirmButtonText: 'Create New Payment Session',
+              showCancelButton: true,
+              confirmButtonText: 'Create New Payment',
               cancelButtonText: 'Close',
               confirmButtonColor: '#000000',
             });

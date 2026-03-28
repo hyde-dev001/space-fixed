@@ -798,22 +798,22 @@ const RepairProcess: React.FC = () => {
     const confirmSubmit = await Swal.fire({
       title: 'Confirm Submit Request',
       html: `
-        <div style="text-align:left;">
-          <p style="margin-bottom:8px;">Please confirm your repair request details:</p>
-          <p><strong>Package:</strong> ${selectedPackage ? selectedPackage.name : 'None'}</p>
-          <p><strong>Services:</strong> ${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</p>
-          <p><strong>Add-ons:</strong> ${selectedPackage ? selectedAddOnServiceIds.length : 0}</p>
-          <p><strong>To Shop (Intake):</strong> ${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</p>
-          <p><strong>To Customer (Return):</strong> ${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</p>
-          <p><strong>Total:</strong> ₱${grandTotal.toLocaleString()}</p>
+        <div class="user-swal2-summary">
+          <p class="user-swal2-summary-intro">Please confirm your repair request details:</p>
+          <div class="user-swal2-summary-list">
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Package</span><span class="user-swal2-summary-value">${selectedPackage ? selectedPackage.name : 'None'}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Services</span><span class="user-swal2-summary-value">${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Add-ons</span><span class="user-swal2-summary-value">${selectedPackage ? selectedAddOnServiceIds.length : 0}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Shop (Intake)</span><span class="user-swal2-summary-value">${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Customer (Return)</span><span class="user-swal2-summary-value">${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</span></p>
+          </div>
+          <p class="user-swal2-summary-total"><span>Total</span><strong>₱${grandTotal.toLocaleString()}</strong></p>
         </div>
       `,
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Yes, Submit',
       cancelButtonText: 'Cancel',
-      confirmButtonColor: '#000000',
-      cancelButtonColor: '#6b7280',
     });
 
     if (!confirmSubmit.isConfirmed) {

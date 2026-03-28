@@ -528,9 +528,12 @@ export default function RefundApproval() {
 					throw new Error(data?.message || "Failed to approve refund request.");
 				}
 
+				const updatedRefund = { ...request, ...(data?.refund || {}), status: "Approved" };
 				setRequests((prev) =>
-					prev.map((r) => (r.id === request.id ? { ...r, ...(data?.refund || {}), status: "Approved" } : r))
+					prev.map((r) => (r.id === request.id ? updatedRefund : r))
 				);
+				setSelectedRequest(updatedRefund);
+				
 				Swal.fire({
 					title: "Approved!",
 					text: data?.message || "The refund request has been approved.",
@@ -1015,13 +1018,15 @@ export default function RefundApproval() {
 									Approve
 								</button>
 							)}
-							<button
-								onClick={() => handleExecuteGatewayRefund(selectedRequest)}
-								disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
-								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								Execute Payout
-							</button>
+							{isIndividualRegistration && (
+								<button
+									onClick={() => handleExecuteGatewayRefund(selectedRequest)}
+									disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
+									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									Execute Payout
+								</button>
+							)}
 							{String(selectedRequest.shopOwnerStatus || "").toLowerCase() === "pending" && (
 								<button
 									onClick={() => handleReject(selectedRequest)}

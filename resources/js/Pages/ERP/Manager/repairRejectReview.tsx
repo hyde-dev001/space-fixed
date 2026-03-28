@@ -158,6 +158,8 @@ interface RepairRejection {
 	decisionReason?: string;
 	media?: string[];
 	repairerName?: string;
+	rawStatus?: string;
+	workflowStage?: "manager_initial" | "manager_final" | "resolved";
 }
 
 interface AvailableRepairer {
@@ -277,7 +279,24 @@ export default function RepairRejectReview() {
 			const response = await axios.get('/api/manager/repairs/rejected');
 			
 			if (response.data.success) {
-				const formattedData = response.data.data.map((item: any) => ({
+				const formattedData = response.data.data.map((item: any) => {
+					const workflowStage: RepairRejection['workflowStage'] =
+						item.status === 'repairer_rejected'
+							? 'manager_initial'
+							: item.status === 'manager_reviewing'
+							? 'manager_final'
+							: 'resolved';
+
+					const mappedStatus: RepairRejection['status'] =
+						item.status === 'repairer_rejected' || item.status === 'manager_reviewing'
+							? 'Pending'
+							: item.status === 'rejected' || item.manager_decision === 'approve_rejection'
+							? 'Approved'
+							: item.status === 'manager_rejected' || item.status === 'assigned_to_repairer' || item.manager_decision === 'override_accept'
+							? 'Rejected'
+							: 'Pending';
+
+					return {
 					id: item.id,
 					requestNumber: item.request_id,
 					serviceName: item.services?.map((s: any) => s.name).join(', ') || 'N/A',
@@ -287,11 +306,7 @@ export default function RepairRejectReview() {
 					requestedOn: new Date(item.created_at).toISOString().split('T')[0],
 					reason: item.description || 'No description',
 					rejectionReason: item.repairer_rejection_reason,
-					status: item.manager_decision === 'approve_rejection' || item.status === 'rejected'
-						? 'Approved'
-						: item.manager_decision === 'override_accept' || item.status === 'manager_rejected' || item.status === 'assigned_to_repairer'
-						? 'Rejected'
-						: 'Pending',
+					status: mappedStatus,
 					approvedBy: item.manager_reviewed_by?.name,
 					approvedAt: item.manager_reviewed_at,
 					rejectedBy: item.manager_reviewed_by?.name,
@@ -299,7 +314,10 @@ export default function RepairRejectReview() {
 					decisionReason: item.manager_review_notes,
 					media: item.images ? JSON.parse(item.images) : [],
 					repairerName: item.repairer?.name || 'Unassigned',
-				}));
+					rawStatus: item.status,
+					workflowStage,
+					};
+				});
 				setRejections(formattedData);
 			}
 		} catch (error) {
@@ -355,12 +373,29 @@ export default function RepairRejectReview() {
 		setApproveModalOpen(true);
 	};
 
+	const getApproveActionConfig = (rejection: RepairRejection) => {
+		if (rejection.workflowStage === 'manager_final') {
+			return {
+				title: 'Finalize Rejection',
+				button: 'Finalize Rejection',
+				endpoint: `/api/manager/repairs/${rejection.id}/finalize-rejection`,
+			};
+		}
+
+		return {
+			title: 'Forward to Shop Owner',
+			button: 'Forward to Shop Owner',
+			endpoint: `/api/manager/repairs/${rejection.id}/approve-rejection`,
+		};
+	};
+
 	const submitApproveRejection = async () => {
 		if (!selectedRejection) return;
 
 		try {
 			setIsApproving(true);
-			const response = await axios.post(`/api/manager/repairs/${selectedRejection.id}/approve-rejection`, {
+			const action = getApproveActionConfig(selectedRejection);
+			const response = await axios.post(action.endpoint, {
 				notes: approveNotes,
 			});
 
@@ -369,8 +404,8 @@ export default function RepairRejectReview() {
 				handleCloseModal();
 				setFeedbackModal({
 					open: true,
-					title: "Approved",
-					message: response.data.message || "The rejection has been approved.",
+					title: selectedRejection.workflowStage === 'manager_final' ? 'Final Approval Complete' : 'Forwarded to Shop Owner',
+					message: response.data.message || "Action completed successfully.",
 					tone: "success",
 				});
 				fetchRejections();
@@ -379,7 +414,7 @@ export default function RepairRejectReview() {
 			console.error('Failed to approve rejection:', error);
 			setFeedbackModal({
 				open: true,
-				title: 'Failed to approve',
+				title: 'Failed to submit action',
 				message: error.response?.data?.message || 'Please try again.',
 				tone: 'error',
 			});
@@ -389,6 +424,16 @@ export default function RepairRejectReview() {
 	};
 
 	const handleRejectRejection = async (rejection: RepairRejection) => {
+		if (rejection.workflowStage !== 'manager_initial') {
+			setFeedbackModal({
+				open: true,
+				title: 'Override unavailable',
+				message: 'Override is only available during the first manager review stage.',
+				tone: 'warning',
+			});
+			return;
+		}
+
 		try {
 			setIsLoadingRepairers(true);
 			setOverrideTarget(rejection);
@@ -413,7 +458,7 @@ export default function RepairRejectReview() {
 
 			const repairers: AvailableRepairer[] = repairerResponse.data.available_repairers || [];
 			setAvailableRepairers(repairers);
-			setSelectedRepairerId(repairers[0]?.id ?? null);
+			setSelectedRepairerId(null);
 			setOverrideModalOpen(true);
 		} catch (error: any) {
 			console.error('Failed to fetch available repairers:', error);
@@ -841,11 +886,11 @@ export default function RepairRejectReview() {
 								disabled={selectedRejection.status !== "Pending"}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Approve Rejection
+								{selectedRejection.workflowStage === 'manager_final' ? 'Finalize Rejection' : 'Forward to Shop Owner'}
 							</button>
 							<button
 								onClick={() => handleRejectRejection(selectedRejection)}
-								disabled={selectedRejection.status !== "Pending" || isLoadingRepairers}
+								disabled={selectedRejection.status !== "Pending" || selectedRejection.workflowStage !== 'manager_initial' || isLoadingRepairers}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{isLoadingRepairers ? "Loading repairers..." : "Override & Reassign"}
@@ -890,7 +935,9 @@ export default function RepairRejectReview() {
 					<div className="absolute inset-0" onClick={() => setApproveModalOpen(false)} />
 					<div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
 						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Approve Rejection</h3>
+							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+								{selectedRejection.workflowStage === 'manager_final' ? 'Finalize Rejection' : 'Forward Rejection to Shop Owner'}
+							</h3>
 							<button
 								onClick={() => setApproveModalOpen(false)}
 								title="Close approve modal"
@@ -931,7 +978,9 @@ export default function RepairRejectReview() {
 								disabled={isApproving}
 								className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								{isApproving ? "Approving..." : "Approve Rejection"}
+								{isApproving
+									? (selectedRejection.workflowStage === 'manager_final' ? 'Finalizing...' : 'Submitting...')
+									: (selectedRejection.workflowStage === 'manager_final' ? 'Finalize Rejection' : 'Forward to Shop Owner')}
 							</button>
 						</div>
 					</div>

@@ -5,11 +5,15 @@ namespace App\Http\Controllers\ERP\HR;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\SuspensionRequest;
+use App\Models\User;
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SuspensionRequestController extends Controller
 {
@@ -81,6 +85,19 @@ class SuspensionRequestController extends Controller
 
         $employee = Employee::findOrFail($validated['employee_id']);
 
+        $authUser = Auth::guard('user')->user();
+        $employeeEmail = Str::lower(trim((string) $employee->email));
+        $authEmail = Str::lower(trim((string) ($authUser?->email ?? '')));
+        $linkedUserId = (int) (User::query()->where('email', $employee->email)->value('id') ?? 0);
+        $isSelfSuspensionAttempt = ($linkedUserId > 0 && $linkedUserId === (int) ($authUser?->id ?? 0))
+            || ($employeeEmail !== '' && $employeeEmail === $authEmail);
+
+        if ($isSelfSuspensionAttempt) {
+            return response()->json([
+                'message' => 'You cannot file a suspension request for your own account.'
+            ], 403);
+        }
+
         $hasPending = SuspensionRequest::where('employee_id', $employee->id)
             ->whereIn('status', [SuspensionStatus::PENDING_MANAGER, SuspensionStatus::PENDING_OWNER])
             ->exists();
@@ -91,15 +108,24 @@ class SuspensionRequestController extends Controller
             ], 422);
         }
 
-        $req = SuspensionRequest::create([
-            'employee_id' => $employee->id,
-            'requested_by' => Auth::id(),
-            'reason' => $validated['reason'],
-            'evidence' => $validated['evidence'] ?? null,
-            'status' => SuspensionStatus::PENDING_MANAGER,
-            'manager_status' => 'pending',
-            'owner_status' => 'pending',
-        ]);
+        $req = DB::transaction(function () use ($employee, $validated) {
+            $createdRequest = SuspensionRequest::create([
+                'employee_id' => $employee->id,
+                'requested_by' => Auth::id(),
+                'reason' => $validated['reason'],
+                'evidence' => $validated['evidence'] ?? null,
+                'status' => SuspensionStatus::PENDING_MANAGER,
+                'manager_status' => 'pending',
+                'owner_status' => 'pending',
+            ]);
+
+            // Mark as inactive while suspension request is under review.
+            $employee->update([
+                'status' => EmployeeStatus::INACTIVE,
+            ]);
+
+            return $createdRequest;
+        });
 
         // Notify all Manager role users in this shop
         $authUser = Auth::user();
@@ -112,7 +138,7 @@ class SuspensionRequestController extends Controller
                     'reason'        => $validated['reason'],
                 ]);
             } catch (\Exception $e) {
-                \Log::warning('Could not notify manager of suspension request: ' . $e->getMessage());
+                Log::warning('Could not notify manager of suspension request: ' . $e->getMessage());
             }
         }
 

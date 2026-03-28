@@ -495,19 +495,40 @@ class ManagerController extends Controller
             ];
             $repairClosedRejectedStatuses = ['manager_approved', 'manager_rejected', 'rejected', 'cancelled'];
             
-            // Sales KPI: posted invoices in selected period
-            $totalSales = DB::table('finance_invoices')
+            // Sales KPI: paid + fulfilled orders in selected period
+            $orderSales = DB::table('orders')
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', ['completed', 'delivered', 'shipped'])
+                ->where('payment_status', 'paid')
+                ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart, $rangeEnd])
+                ->sum('total_amount');
+
+            // Add standalone posted invoices (not tied to an order) to avoid missing finance-only sales
+            $standaloneInvoiceSales = DB::table('finance_invoices')
                 ->where('shop_id', $shopOwnerId)
                 ->where('status', 'posted')
+                ->whereNull('job_order_id')
                 ->whereBetween('created_at', [$rangeStart, $rangeEnd])
                 ->sum('total');
-                
+
+            $totalSales = (float) $orderSales + (float) $standaloneInvoiceSales;
+
             // Previous period comparison (same duration as selected period)
-            $previousSales = DB::table('finance_invoices')
+            $previousOrderSales = DB::table('orders')
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', ['completed', 'delivered', 'shipped'])
+                ->where('payment_status', 'paid')
+                ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$previousStart, $previousEnd])
+                ->sum('total_amount');
+
+            $previousStandaloneInvoiceSales = DB::table('finance_invoices')
                 ->where('shop_id', $shopOwnerId)
                 ->where('status', 'posted')
+                ->whereNull('job_order_id')
                 ->whereBetween('created_at', [$previousStart, $previousEnd])
                 ->sum('total');
+
+            $previousSales = (float) $previousOrderSales + (float) $previousStandaloneInvoiceSales;
                 
             $salesChange = $previousSales > 0
                 ? (($totalSales - $previousSales) / $previousSales) * 100 
@@ -553,10 +574,24 @@ class ManagerController extends Controller
                 ->where('status', 'active')
                 ->count();
                 
-            // Get monthly revenue trend (last 6 months)
-            $monthlyRevenue = DB::table('finance_invoices')
+            // Get monthly revenue trend from paid fulfilled orders + standalone posted invoices
+            $monthlyOrderRevenue = DB::table('orders')
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', ['completed', 'delivered', 'shipped'])
+                ->where('payment_status', 'paid')
+                ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart->copy()->startOfMonth(), $rangeEnd])
+                ->select(
+                    DB::raw('DATE_FORMAT(COALESCE(paid_at, created_at), "%Y-%m") as month'),
+                    DB::raw('SUM(total_amount) as revenue')
+                )
+                ->groupBy('month')
+                ->orderBy('month', 'asc')
+                ->get();
+
+            $monthlyStandaloneInvoiceRevenue = DB::table('finance_invoices')
                 ->where('shop_id', $shopOwnerId)
                 ->where('status', 'posted')
+                ->whereNull('job_order_id')
                 ->whereBetween('created_at', [$rangeStart->copy()->startOfMonth(), $rangeEnd])
                 ->select(
                     DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
@@ -565,6 +600,24 @@ class ManagerController extends Controller
                 ->groupBy('month')
                 ->orderBy('month', 'asc')
                 ->get();
+
+            $monthlyRevenueMap = [];
+            foreach ($monthlyOrderRevenue as $entry) {
+                $key = (string) $entry->month;
+                $monthlyRevenueMap[$key] = ($monthlyRevenueMap[$key] ?? 0.0) + (float) $entry->revenue;
+            }
+            foreach ($monthlyStandaloneInvoiceRevenue as $entry) {
+                $key = (string) $entry->month;
+                $monthlyRevenueMap[$key] = ($monthlyRevenueMap[$key] ?? 0.0) + (float) $entry->revenue;
+            }
+
+            ksort($monthlyRevenueMap);
+            $monthlyRevenue = collect($monthlyRevenueMap)
+                ->map(fn($revenue, $month) => [
+                    'month' => $month,
+                    'revenue' => round((float) $revenue, 2),
+                ])
+                ->values();
             
             // Get pending approvals from multiple sources
             $pendingExpenses = DB::table('finance_expenses')
@@ -691,7 +744,7 @@ class ManagerController extends Controller
                     ],
                 ],
                 'kpiSemantics' => [
-                    'totalSales' => "Posted invoice revenue for {$dateRange['label']}",
+                    'totalSales' => "Paid fulfilled orders + standalone posted invoices for {$dateRange['label']}",
                     'totalRepairs' => "Completed repair jobs for {$dateRange['label']}",
                     'pendingJobOrders' => 'Current open queue: pending retail orders + pending repair jobs',
                 ],

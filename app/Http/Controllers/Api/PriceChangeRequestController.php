@@ -1053,11 +1053,15 @@ class PriceChangeRequestController extends Controller
             ], 403);
         }
 
-        // Can only cancel pending requests
-        if ($priceChangeRequest->status !== 'pending') {
+        $status = $priceChangeRequest->status instanceof PriceChangeStatus
+            ? $priceChangeRequest->status->value
+            : (string) $priceChangeRequest->status;
+
+        // Can only cancel requests that are still awaiting final decision
+        if (!in_array($status, [PriceChangeStatus::PENDING->value, PriceChangeStatus::FINANCE_APPROVED->value], true)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot cancel - request is already being reviewed or completed',
+                'message' => 'Cannot cancel - request is already finalized',
             ], 400);
         }
 

@@ -17,6 +17,25 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
   const { auth } = usePage().props as any;
   const [isLoading, setIsLoading] = React.useState(false);
   const isProcessingRef = React.useRef(false); // Use ref for immediate synchronous check
+  const modalTheme = {
+    customClass: {
+      popup:
+        '!w-[34rem] !max-w-[92vw] !rounded-3xl !px-6 !py-6 !shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)] !border !border-slate-200',
+      title: '!text-3xl !font-black !text-slate-900 !leading-[1.2] !tracking-[-0.015em] !mb-2',
+      htmlContainer: '!mx-0 !mb-0 !mt-2 !p-0 !text-base !text-slate-700',
+      actions: '!mt-6 !w-full !justify-center',
+      confirmButton:
+        '!m-0 !h-11 !min-w-[180px] !rounded-xl !px-6 !text-sm !font-semibold !tracking-[0.01em] !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
+    },
+    showClass: {
+      popup: 'swal2-show !animate-[slideInUp_0.22s]',
+      backdrop: 'swal2-backdrop-show !animate-[fadeIn_0.22s]',
+    },
+    hideClass: {
+      popup: 'swal2-hide !animate-[slideOutDown_0.16s]',
+      backdrop: 'swal2-backdrop-hide !animate-[fadeOut_0.16s]',
+    },
+  } as const;
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
   // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
@@ -133,8 +152,10 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
           icon: 'success',
           title: 'Added to Cart!',
           text: `${product?.name || 'Product'} has been added to your cart`,
-          confirmButtonColor: '#000000',
-          showConfirmButton: true,
+          showConfirmButton: false,
+          timer: 1500,
+          timerProgressBar: true,
+          ...modalTheme,
         });
 
         // Scroll to the cart icon
@@ -158,7 +179,9 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
         icon: 'error',
         title: 'Error',
         text: errorMsg,
+        confirmButtonText: 'OK',
         showConfirmButton: true,
+        ...modalTheme,
       });
     } finally {
       isProcessingRef.current = false; // Reset ref

@@ -1172,7 +1172,7 @@ const Checkout: React.FC = () => {
               disabled={isCreatingRecoverySession}
               className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isCreatingRecoverySession ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
             >
-              {isCreatingRecoverySession ? 'Creating...' : 'Create New Payment Session'}
+              {isCreatingRecoverySession ? 'Creating...' : 'Create New Payment'}
             </button>
           </div>
         )}

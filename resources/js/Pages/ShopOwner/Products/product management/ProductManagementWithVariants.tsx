@@ -522,7 +522,7 @@ export default function ProductManagement() {
     if (!canUse360Uploader) {
       Swal.fire({
         title: 'Premium Required',
-        text: 'Shoe Spin Viewer uploads require an active Retail Premium subscription with available showroom slots.',
+        text: 'Shoe Spin Viewer uploads are currently unavailable.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1044,7 +1044,7 @@ export default function ProductManagement() {
     if (show3DShoeModels && product3DFiles.length > 0 && !canUse360Uploader) {
       Swal.fire({
         title: 'Premium Required',
-        text: 'Shoe Spin Viewer uploads require an active Retail Premium subscription with available showroom slots.',
+        text: 'Shoe Spin Viewer uploads are currently unavailable.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1126,7 +1126,7 @@ export default function ProductManagement() {
 
       if (createdProductId && show3DShoeModels && product3DFiles.length > 0) {
         if (!canUse360Uploader) {
-          throw new Error('Active Retail Premium with available showroom slots is required for Shoe Spin Viewer uploads.');
+          throw new Error('Shoe Spin Viewer uploads are currently unavailable.');
         }
 
         if (!colorVariantUploadResult?.firstColorVariantId) {
@@ -1437,11 +1437,7 @@ export default function ProductManagement() {
                       />
                     </span>
                   </button>
-                ) : (
-                  <span className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
-                    Shoe Spin Viewer requires active Retail Premium with available showroom slots
-                  </span>
-                )}
+                ) : null}
               </div>
               {editingProduct && existingShowroomFrameCount > 0 && (
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1499,7 +1495,7 @@ export default function ProductManagement() {
 
                     {!canUse360Uploader && hasExistingShowroomFrames && (
                       <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
-                        View-only mode: Active Retail Premium with available showroom slots is required to upload new Shoe Spin Viewer frames.
+                        View-only mode: Uploading new Shoe Spin Viewer frames is currently unavailable.
                       </p>
                     )}
 

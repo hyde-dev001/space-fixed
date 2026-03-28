@@ -109,7 +109,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     { name: 'Tennis', description: 'Court shoes for tennis' },
     { name: 'Loafers', description: 'Formal and casual loafers' },
   ];
-
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedQuery = searchQuery.trim();
@@ -139,6 +138,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       showCancelButton: true,
       confirmButtonText: 'Log out',
       cancelButtonText: 'Cancel',
+      reverseButtons: true,
     });
 
     if (!result.isConfirmed) return;
@@ -155,14 +155,33 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         preserveState: false,
         preserveScroll: false,
         onSuccess: () => {
-          Swal.fire('Logged out', 'You have been logged out successfully.', 'success');
+          Swal.fire({
+            icon: 'success',
+            title: 'Logged out',
+            text: 'You have been logged out successfully.',
+            showConfirmButton: false,
+            timer: 2000,
+            timerProgressBar: true,
+          });
         },
         onError: () => {
-          Swal.fire('Error', 'Logout failed. Please try again.', 'error');
+          Swal.fire({
+            icon: 'error',
+            title: 'Logout Failed',
+            text: 'Please try again.',
+            confirmButtonText: 'OK',
+            iconColor: '#e36a5d',
+          });
         },
       });
     } catch (e) {
-      Swal.fire('Error', 'Logout failed. Please try again.', 'error');
+      Swal.fire({
+        icon: 'error',
+        title: 'Logout Failed',
+        text: 'Please try again.',
+        confirmButtonText: 'OK',
+        iconColor: '#e36a5d',
+      });
     }
   };
   const navRef = useRef<HTMLDivElement>(null);

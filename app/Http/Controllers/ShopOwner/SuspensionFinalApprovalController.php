@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\SuspensionRequest;
 use App\Models\Employee;
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -175,13 +176,18 @@ class SuspensionFinalApprovalController extends Controller
                 'owner_reviewed_at' => now(),
             ]);
 
-            // If approved, suspend the employee account
-            if ($action === 'approve') {
-                $employee = $suspensionRequest->employee;
-                if ($employee) {
+            // Keep employee status aligned with final owner decision.
+            $employee = $suspensionRequest->employee;
+            if ($employee) {
+                if ($action === 'approve') {
                     $employee->update([
-                        'status' => 'suspended',
+                        'status' => EmployeeStatus::SUSPENDED,
                         'suspension_reason' => $suspensionRequest->reason,
+                    ]);
+                } else {
+                    $employee->update([
+                        'status' => EmployeeStatus::ACTIVE,
+                        'suspension_reason' => null,
                     ]);
                 }
             }

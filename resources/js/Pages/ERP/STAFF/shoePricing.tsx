@@ -502,42 +502,41 @@ export default function ERPShoePricing() {
 
           {/* View Modal */}
           {viewModalOpen && selectedShoe && (
-            <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-2xl w-full border border-gray-200/80 dark:border-gray-700/60 overflow-hidden">
-                <div className="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-500" />
-                <div className="flex items-center justify-between p-6 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+                <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Product Details</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Review pricing information and approval status</p>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Product Details</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Review pricing information and approval status</p>
                   </div>
                   <button
                     onClick={() => setViewModalOpen(false)}
-                    className="h-9 w-9 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     aria-label="Close"
                   >
-                    <CloseIcon className="w-4 h-4" />
+                    <CloseIcon className="size-5" />
                   </button>
                 </div>
-                <div className="p-6 space-y-5">
+                <div className="px-6 py-5 overflow-y-auto space-y-5">
                   {/* Product Info with Image */}
-                  <div className="flex gap-4 p-4 rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50">
+                  <div className="flex gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
                     <div className="flex-shrink-0">
-                      <img src={selectedShoe.image} alt={selectedShoe.item} className="w-24 h-24 rounded-xl object-cover border border-gray-200 dark:border-gray-700" />
+                      <img src={selectedShoe.image} alt={selectedShoe.item} className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-gray-700" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Product Name</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-white">{selectedShoe.item}</p>
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Product Name</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">{selectedShoe.item}</p>
                     </div>
                   </div>
 
                   {/* Price and Status Grid */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gradient-to-br from-gray-50 to-gray-100/50 dark:from-gray-800/50 dark:to-gray-800/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Current Price</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Current Price</p>
                       <p className="text-2xl font-bold text-gray-900 dark:text-white">{selectedShoe.price}</p>
                     </div>
-                    <div className="rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gradient-to-br from-gray-50 to-gray-100/50 dark:from-gray-800/50 dark:to-gray-800/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Status</p>
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Status</p>
                       <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold ${selectedShoe.status === "Active" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" : selectedShoe.status === "Under Review" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : selectedShoe.status === "Awaiting Owner" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200" : selectedShoe.status === "Rejected" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"}`}>{selectedShoe.status}</span>
                     </div>
                   </div>
@@ -549,11 +548,11 @@ export default function ERPShoePricing() {
                     const isIncrease = difference > 0;
                     
                     return (
-                      <div className="rounded-2xl border-2 border-blue-300/70 dark:border-blue-600/60 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-900/30 dark:to-blue-900/20 p-5">
+                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
-                            <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                            <p className="text-sm font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Pending Price Change</p>
+                            <div className="h-2 w-2 rounded-full bg-blue-500" />
+                            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">Pending Price Change</p>
                           </div>
                           <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                             selectedShoe.status === 'Under Review' 
@@ -565,16 +564,16 @@ export default function ERPShoePricing() {
                         </div>
                         
                         {/* Price Comparison */}
-                        <div className="grid grid-cols-3 gap-3 mb-4">
-                          <div className="text-center p-3 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-blue-200 dark:border-blue-700">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                          <div className="text-center p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                             <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Current</p>
                             <p className="text-sm font-bold text-gray-900 dark:text-white">₱{currentPrice.toLocaleString()}</p>
                           </div>
-                          <div className="text-center p-3 rounded-xl bg-blue-100 dark:bg-blue-800/40 border-2 border-blue-400 dark:border-blue-500">
+                          <div className="text-center p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
                             <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">Proposed</p>
                             <p className="text-sm font-bold text-blue-900 dark:text-blue-100">₱{proposedPrice.toLocaleString()}</p>
                           </div>
-                          <div className="text-center p-3 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-blue-200 dark:border-blue-700">
+                          <div className="text-center p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                             <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Change</p>
                             <p className={`text-sm font-bold ${isIncrease ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                               {isIncrease ? '+' : ''}₱{difference.toLocaleString()} ({percentChange}%)
@@ -583,7 +582,7 @@ export default function ERPShoePricing() {
                         </div>
                         
                         {/* Reason */}
-                        <div className="p-3 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-blue-200 dark:border-blue-700">
+                        <div className="p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                           <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">Reason for Change:</p>
                           <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">{selectedShoe.pendingRequest.reason}</p>
                         </div>
@@ -591,13 +590,13 @@ export default function ERPShoePricing() {
                     );
                   })()}
                   {selectedShoe.status === "Rejected" && selectedShoe.rejectionReason && (
-                    <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                    <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
                       <p className="text-xs uppercase tracking-wide text-red-700 dark:text-red-200">Rejection Reason</p>
                       <p className="mt-1 text-sm text-red-700 dark:text-red-300">{selectedShoe.rejectionReason}</p>
                     </div>
                   )}
                 </div>
-                <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+                <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
                   {selectedShoe.pendingRequest && selectedShoe.status !== 'Rejected' && (
                     <button 
                       onClick={async () => {
@@ -624,22 +623,30 @@ export default function ERPShoePricing() {
                               },
                             });
                             
-                            if (!response.ok) throw new Error('Failed to cancel request');
+                            if (!response.ok) {
+                              let errorMessage = 'Failed to cancel request';
+                              try {
+                                const errorData = await response.json();
+                                errorMessage = errorData?.message || errorMessage;
+                              } catch {
+                              }
+                              throw new Error(errorMessage);
+                            }
                             
                             Swal.fire('Cancelled', 'Price change request has been cancelled.', 'success');
                             setViewModalOpen(false);
                             await fetchShoePricing();
-                          } catch (error) {
-                            Swal.fire('Error', 'Failed to cancel request', 'error');
+                          } catch (error: any) {
+                            Swal.fire('Error', error?.message || 'Failed to cancel request', 'error');
                           }
                         }
                       }}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                      className="px-4 py-2 border border-red-300 dark:border-red-700 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300 rounded-lg font-medium transition-colors"
                     >
                       Cancel Request
                     </button>
                   )}
-                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">Close</button>
+                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors">Close</button>
                 </div>
               </div>
             </div>
@@ -654,24 +661,23 @@ export default function ERPShoePricing() {
             const isIncrease = difference > 0;
             
             return (
-              <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-2xl w-full border border-gray-200/80 dark:border-gray-700/60 overflow-hidden">
-                  <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500" />
-                  <div className="flex items-center justify-between p-6 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
+              <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+                <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+                  <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Request Price Change</h2>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Submit a price change request for finance approval</p>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Request Price Change</h2>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Submit a price change request for finance approval</p>
                     </div>
-                    <button onClick={() => setEditModalOpen(false)} className="h-9 w-9 grid place-items-center rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 transition-colors" aria-label="Close"><CloseIcon className="w-4 h-4" /></button>
+                    <button onClick={() => setEditModalOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" aria-label="Close"><CloseIcon className="size-5" /></button>
                   </div>
-                  <div className="p-6 space-y-5">
+                  <div className="px-6 py-5 overflow-y-auto space-y-5">
                     {/* Product Info */}
-                    <div className="flex gap-4 p-4 rounded-2xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/50">
+                    <div className="flex gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
                       <div className="flex-shrink-0">
-                        <img src={selectedShoe.image} alt={selectedShoe.item} className="w-20 h-20 rounded-xl object-cover border border-gray-200 dark:border-gray-700" />
+                        <img src={selectedShoe.image} alt={selectedShoe.item} className="w-20 h-20 rounded-lg object-cover border border-gray-200 dark:border-gray-700" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Product Name</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Product Name</p>
                         <p className="text-lg font-bold text-gray-900 dark:text-white">{selectedShoe.item}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Current Price: <span className="font-semibold text-gray-900 dark:text-white">{selectedShoe.price}</span></p>
                       </div>
@@ -691,17 +697,17 @@ export default function ERPShoePricing() {
                             const v = e.target.value; 
                             if (v === '' || /^\d*\.?\d*$/.test(v)) setEditFormData({ ...editFormData, price: v }); 
                           }} 
-                          className="w-full pl-10 pr-4 py-3 text-lg rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 dark:focus:border-blue-400 transition"
+                          className="w-full pl-10 pr-4 py-3 text-lg rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                           placeholder="0.00"
                         />
                       </div>
                       
                       {/* Price Change Preview */}
                       {proposedPrice > 0 && proposedPrice !== currentPrice && (
-                        <div className={`mt-3 p-3 rounded-xl border-2 ${
+                        <div className={`mt-3 p-3 rounded-lg border ${
                           isIncrease 
-                            ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700' 
-                            : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' 
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
                         }`}>
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Price Change:</span>
@@ -732,14 +738,14 @@ export default function ERPShoePricing() {
                         onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })} 
                         rows={4} 
                         placeholder="Explain why this price change is needed (e.g., market adjustment, competitor pricing, seasonal discount)..." 
-                        className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 dark:focus:border-blue-400 resize-none transition"
+                        className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                       />
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This reason will be reviewed by the finance team</p>
                     </div>
                   </div>
-                  <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-                    <button onClick={() => setEditModalOpen(false)} className="flex-1 px-5 py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 transition-colors">Cancel</button>
-                    <button onClick={handleSaveEdit} className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all hover:shadow-xl">Submit Request</button>
+                  <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+                    <button onClick={() => setEditModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors">Cancel</button>
+                    <button onClick={handleSaveEdit} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">Submit Request</button>
                   </div>
                 </div>
               </div>

@@ -349,7 +349,7 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ monthlyRevenue = []
                     Monthly Revenue Performance
                 </h3>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Posted invoice revenue trend (API-backed)
+                    Posted invoice revenue trend
                 </p>
             </div>
 
