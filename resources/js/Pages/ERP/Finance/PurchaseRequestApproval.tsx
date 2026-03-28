@@ -6,11 +6,12 @@ import axios from "axios";
 import type { PurchaseRequest } from "@/services/purchaseRequestApi";
 
 type RequestPriority = "high" | "medium" | "low";
-type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "approved" | "rejected";
+type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "pending_finance_final" | "approved" | "rejected";
 type MetricColor = "success" | "warning" | "info";
 
 interface PurchaseRequestApprovalItem extends PurchaseRequest {
-	// Additional frontend-only fields if needed
+	requires_owner_approval?: boolean;
+	approval_stage?: "finance_initial" | "finance_final" | null;
 }
 
 const priorityBadgeClass: Record<RequestPriority, string> = {
@@ -22,6 +23,7 @@ const priorityBadgeClass: Record<RequestPriority, string> = {
 const statusBadgeClass: Record<ApprovalStatus, string> = {
 	pending_finance: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
 	pending_shop_owner: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+	pending_finance_final: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
 	approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
@@ -29,6 +31,7 @@ const statusBadgeClass: Record<ApprovalStatus, string> = {
 const statusDisplayName: Record<ApprovalStatus, string> = {
 	pending_finance: "Pending Finance",
 	pending_shop_owner: "Pending Shop Owner",
+	pending_finance_final: "Pending Finance Final",
 	approved: "Approved",
 	rejected: "Rejected",
 };
@@ -131,7 +134,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 		try {
 			setLoading(true);
 			const response = await axios.get('/api/finance/purchase-requests', {
-				params: { status: 'pending_finance', per_page: 100 },
+				params: { status: 'pending_finance,pending_finance_final', per_page: 100 },
 			});
 			const data = response.data?.data || response.data || [];
 			setRequests(Array.isArray(data) ? data : []);
@@ -144,11 +147,8 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	};
 
 	useEffect(() => {
-		if (initialRequests && initialRequests.length > 0) {
-			setRequests(initialRequests);
-		} else {
-			fetchPurchaseRequests();
-		}
+		setRequests(initialRequests || []);
+		fetchPurchaseRequests();
 	}, [initialRequests]);
 
 	const filteredData = useMemo(() => {
@@ -169,13 +169,13 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
 	const totalRequests = requests.length;
-	const pendingCount = requests.filter((request) => request.status === "pending_finance").length;
+	const pendingCount = requests.filter((request) => request.status === "pending_finance" || request.status === "pending_finance_final").length;
 	const approvedCount = requests.filter((request) => request.status === "pending_shop_owner").length;
 
 	const handleApprove = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
 
-		if (request.status !== "pending_finance") {
+		if (request.status !== "pending_finance" && request.status !== "pending_finance_final") {
 			await Swal.fire({
 				icon: "warning",
 				title: "Cannot Approve",
@@ -185,9 +185,17 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 			return;
 		}
 
+		const isFinanceFinalStage = request.status === "pending_finance_final";
+		const canApplyImmediately = isFinanceFinalStage || request.requires_owner_approval === false;
+		const confirmText = isFinanceFinalStage
+			? `Finalize ${request.pr_number} after Shop Owner approval?`
+			: canApplyImmediately
+				? `Approve ${request.pr_number} and apply immediately?`
+				: `Approve ${request.pr_number} and send to Shop Owner for approval?`;
+
 		const result = await Swal.fire({
 			title: "Approve purchase request?",
-			text: `Approve ${request.pr_number} and send to Shop Owner for final approval?`,
+			text: confirmText,
 			input: "textarea",
 			inputLabel: "Finance Notes (optional)",
 			inputPlaceholder: "Add approval notes...",
@@ -201,19 +209,28 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 		if (!result.isConfirmed) return;
 
 		try {
-			await axios.post(
+			const response = await axios.post(
 				`/api/finance/purchase-requests/${request.id}/approve`,
 				{
 					approval_notes: result.value || undefined,
 				}
 			);
 
+			const approvingRequest = response.data?.purchase_request || request;
+			const requiresOwnerApproval = approvingRequest.requires_owner_approval !== false;
+
 			fetchPurchaseRequests();
+
+			const successText = isFinanceFinalStage
+				? `${request.pr_number} was finalized by Finance.`
+				: requiresOwnerApproval
+					? `${request.pr_number} was approved and sent to Shop Owner for approval.`
+					: `${request.pr_number} was approved and applied immediately.`;
 
 			await Swal.fire({
 				icon: "success",
 				title: "Approved",
-				text: `${request.pr_number} was approved and sent to Shop Owner for final approval.`,
+				text: successText,
 				timer: 1600,
 				showConfirmButton: false,
 			});

@@ -278,6 +278,8 @@ interface RefundRequest {
 	rawStatus?: string;
 	shopOwnerStatus?: string;
 	financeStatus?: string;
+	requiresOwnerApproval?: boolean;
+	approvalStage?: string;
 	returnStatus?: string;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
@@ -464,9 +466,14 @@ export default function RefundApproval() {
 	const canFinanceApprove = (request: RefundRequest): boolean => {
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
+		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+		const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
 
 		return request.status === "Pending"
-			&& financeStatus !== "approved"
+			&& (
+				financeStatus === "pending"
+				|| (requiresOwnerApproval && financeStatus === "approved_initial" && shopOwnerStatus === "approved")
+			)
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
 
@@ -474,7 +481,7 @@ export default function RefundApproval() {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		
 		return request.status === "Pending"
-			&& financeStatus === "pending";
+			&& ["pending", "approved_initial"].includes(financeStatus);
 	};
 
 	const handleApprove = async (request: RefundRequest) => {
@@ -493,7 +500,7 @@ export default function RefundApproval() {
 		setActiveImage(null);
 
 		const result = await Swal.fire({
-			title: "Approve Refund?",
+			title: (request as any).approvalStage === "finance_final" ? "Finalize Refund Approval?" : "Approve Refund?",
 			html: `
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
@@ -502,6 +509,7 @@ export default function RefundApproval() {
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> ${(request as any).approvalStage === "finance_final" ? "Finance final approval" : "Finance initial approval"}</p>
 				</div>
 			`,
 			icon: "question",
@@ -540,7 +548,7 @@ export default function RefundApproval() {
 				
 				Swal.fire({
 					title: "Approved!",
-					text: data?.message || "The refund request has been approved.",
+					text: data?.message || "The refund request approval was recorded.",
 					icon: "success",
 					confirmButtonColor: "#2563eb",
 				});
@@ -1021,13 +1029,13 @@ export default function RefundApproval() {
 							>
 								Close
 							</button>
-							{String(selectedRequest.financeStatus || "").toLowerCase() === "pending" && (
+							{canFinanceApprove(selectedRequest) && (
 								<button
 									onClick={() => handleApprove(selectedRequest)}
 									disabled={!canFinanceApprove(selectedRequest) || isActionProcessing}
 									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									Approve
+									{String(selectedRequest.financeStatus || "").toLowerCase() === "approved_initial" ? "Finalize Approval" : "Approve"}
 								</button>
 							)}
 							<button
@@ -1037,7 +1045,7 @@ export default function RefundApproval() {
 							>
 								Execute Payout
 							</button>
-							{String(selectedRequest.financeStatus || "").toLowerCase() === "pending" && (
+							{canFinanceReject(selectedRequest) && (
 								<button
 									onClick={() => handleReject(selectedRequest)}
 									disabled={!canFinanceReject(selectedRequest) || isActionProcessing}

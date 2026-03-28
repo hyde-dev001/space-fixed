@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\OrderRefund;
 use App\Services\OrderRefundService;
+use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -12,6 +13,7 @@ class RefundApprovalController extends Controller
 {
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
+        private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
     ) {
     }
 
@@ -24,6 +26,16 @@ class RefundApprovalController extends Controller
 
         $query = $this->baseListQuery($request)
             ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0));
+
+        if (strtolower((string) $request->get('status', '')) === 'pending') {
+            $query->where(function ($builder) {
+                $builder->where('finance_status', 'pending')
+                    ->orWhere(function ($nested) {
+                        $nested->where('finance_status', 'approved_initial')
+                            ->where('shop_owner_status', 'approved');
+                    });
+            });
+        }
 
         $paginated = $query->paginate((int) $request->get('per_page', 50));
         $paginated->setCollection($paginated->getCollection()->map(fn (OrderRefund $refund) => $this->transformRefund($refund)));
@@ -40,6 +52,11 @@ class RefundApprovalController extends Controller
 
         $query = $this->baseListQuery($request)
             ->where('shop_owner_id', (int) $shopOwner->id);
+
+        if (strtolower((string) $request->get('status', '')) === 'pending') {
+            $query->where('finance_status', 'approved_initial')
+                ->where('shop_owner_status', 'pending');
+        }
 
         $paginated = $query->paginate((int) $request->get('per_page', 50));
         $paginated->setCollection($paginated->getCollection()->map(fn (OrderRefund $refund) => $this->transformRefund($refund)));
@@ -306,6 +323,24 @@ class RefundApprovalController extends Controller
 
         $order = $refund->order;
         $status = strtolower((string) $refund->status);
+        $shopOwnerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
+        $financeStatus = strtolower((string) ($refund->finance_status ?? 'pending'));
+
+        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
+            (int) ($refund->shop_owner_id ?? 0),
+            (float) ($refund->amount ?? 0)
+        );
+
+        $approvalStage = 'none';
+        if ($financeStatus === 'pending') {
+            $approvalStage = 'finance_initial';
+        } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'pending') {
+            $approvalStage = 'shop_owner';
+        } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'approved') {
+            $approvalStage = 'finance_final';
+        } elseif ($financeStatus === 'approved' && $shopOwnerStatus === 'approved') {
+            $approvalStage = 'approved';
+        }
 
         $uiStatus = match (true) {
             in_array($status, ['requested', 'pending_approval'], true) => 'Pending',
@@ -334,6 +369,8 @@ class RefundApprovalController extends Controller
             'rawStatus' => $status,
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
+            'requiresOwnerApproval' => $requiresOwnerApproval,
+            'approvalStage' => $approvalStage,
             'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),
             'refundExecutedAt' => optional($refund->refund_executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->refunded_at)->toDateTimeString(),

@@ -5,7 +5,6 @@ import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 
 type OrderType = "product" | "repair";
-type ResponseStatus = "pending" | "responded" | "in_progress";
 
 interface CustomerReview {
   id: string;
@@ -15,8 +14,6 @@ interface CustomerReview {
   feedbackImages: string[];
   serviceType: string;
   orderType: OrderType;
-  responseStatus: ResponseStatus;
-  shopResponse?: string | null;
   createdAt: string;
 }
 
@@ -54,12 +51,6 @@ const ReviewIcon = ({ className = "" }: { className?: string }) => (
 const RatingIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-  </svg>
-);
-
-const PendingIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 1a11 11 0 1 0 11 11A11.01 11.01 0 0 0 12 1Zm1 11.41 3.29 3.3-1.42 1.41L11 13V6h2Z" />
   </svg>
 );
 
@@ -148,7 +139,6 @@ export default function CustomerReviews() {
     fetchReviews();
   }, []);
   const [orderTypeFilter, setOrderTypeFilter] = useState<"all" | OrderType>("all");
-  const [responseFilter, setResponseFilter] = useState<"all" | ResponseStatus>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedReview, setSelectedReview] = useState<CustomerReview | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -160,41 +150,6 @@ export default function CustomerReviews() {
   const [reportNotes, setReportNotes] = useState<string>("");
   const [submittingReport, setSubmittingReport] = useState(false);
   const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
-
-  // ── Respond state ────────────────────────────────────────────────────
-  const [responseDraft, setResponseDraft] = useState<string>("");
-  const [submittingResponse, setSubmittingResponse] = useState(false);
-
-  const handleSubmitResponse = async () => {
-    if (!selectedReview || !responseDraft.trim()) return;
-    setSubmittingResponse(true);
-    try {
-      const { data } = await axios.post(
-        `/api/shop-owner/reviews/${selectedReview.id}/respond`,
-        { response: responseDraft.trim() },
-        { headers: { Accept: "application/json" } },
-      );
-      // Update the review in local state so the UI reflects immediately
-      setReviews((prev) =>
-        prev.map((r) =>
-          r.id === selectedReview.id
-            ? { ...r, shopResponse: data.shopResponse, responseStatus: "responded" }
-            : r,
-        ),
-      );
-      setSelectedReview((r) =>
-        r ? { ...r, shopResponse: data.shopResponse, responseStatus: "responded" } : null,
-      );
-      setResponseDraft("");
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-        "Failed to submit response. Please try again.";
-      alert(msg);
-    } finally {
-      setSubmittingResponse(false);
-    }
-  };
 
   const handleReportReview = async () => {
     if (!selectedReview) return;
@@ -225,10 +180,9 @@ export default function CustomerReviews() {
       const haystack = `${review.customerName} ${review.comment} ${review.serviceType}`.toLowerCase();
       const matchesSearch = haystack.includes(search.toLowerCase());
       const matchesOrderType = orderTypeFilter === "all" || review.orderType === orderTypeFilter;
-      const matchesResponse = responseFilter === "all" || review.responseStatus === responseFilter;
-      return matchesSearch && matchesOrderType && matchesResponse;
+      return matchesSearch && matchesOrderType;
     });
-  }, [reviews, search, orderTypeFilter, responseFilter]);
+  }, [reviews, search, orderTypeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredReviews.length / itemsPerPage));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -240,9 +194,6 @@ export default function CustomerReviews() {
     return reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
   }, [reviews]);
 
-  const pendingResponses = reviews.filter((review) => review.responseStatus === "pending").length;
-  const respondedCount = reviews.filter((review) => review.responseStatus === "responded").length;
-
   const renderStars = (rating: number) => (
     <div className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map((value) => (
@@ -250,16 +201,6 @@ export default function CustomerReviews() {
       ))}
     </div>
   );
-
-  const getResponseStatusClasses = (status: ResponseStatus) => {
-    if (status === "responded") {
-      return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-    }
-    if (status === "in_progress") {
-      return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-    }
-    return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
-  };
 
   return (
     <AppLayoutShopOwner>
@@ -274,7 +215,7 @@ export default function CustomerReviews() {
           <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">Shop Owner Feedback</div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <MetricCard
             title="Total Reviews"
             value={reviews.length.toString()}
@@ -292,15 +233,6 @@ export default function CustomerReviews() {
             icon={RatingIcon}
             color="warning"
             description="Overall satisfaction score"
-          />
-          <MetricCard
-            title="Pending Responses"
-            value={pendingResponses.toString()}
-            change={4}
-            changeType="decrease"
-            icon={PendingIcon}
-            color="error"
-            description="Reviews still waiting for a reply"
           />
         </div>
 
@@ -341,23 +273,7 @@ export default function CustomerReviews() {
                 <option value="repair">Repair</option>
               </select>
 
-              <select
-                value={responseFilter}
-                onChange={(event) => {
-                  setResponseFilter(event.target.value as "all" | ResponseStatus);
-                  setCurrentPage(1);
-                }}
-                title="Filter by response status"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white md:w-44"
-              >
-                <option value="all">All responses</option>
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="responded">Responded</option>
-              </select>
             </div>
-
-            <p className="text-sm text-gray-500 dark:text-gray-400">Responded: {respondedCount}</p>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
@@ -369,7 +285,6 @@ export default function CustomerReviews() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Comment</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Service Type</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Order Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Response Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">Action</th>
                 </tr>
@@ -383,18 +298,12 @@ export default function CustomerReviews() {
                     <td className="max-w-90 px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{review.comment}</td>
                     <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{review.serviceType}</td>
                     <td className="px-4 py-3 text-sm capitalize text-gray-700 dark:text-gray-300">{review.orderType}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getResponseStatusClasses(review.responseStatus)}`}>
-                        {review.responseStatus.replace("_", " ")}
-                      </span>
-                    </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{new Date(review.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3 text-center">
                       <button
                         onClick={() => {
                           setSelectedReview(review);
                           setShowReviewModal(true);
-                          setResponseDraft("");
                         }}
                         title={`View feedback from ${review.customerName}`}
                         className="inline-flex items-center justify-center bg-transparent text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -407,7 +316,7 @@ export default function CustomerReviews() {
 
                 {paginatedReviews.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                       No customer reviews found.
                     </td>
                   </tr>
@@ -470,7 +379,6 @@ export default function CustomerReviews() {
                       onClick={() => {
                         setShowReviewModal(false);
                         setSelectedReview(null);
-                        setResponseDraft("");
                       }}
                       className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                     >
@@ -480,73 +388,15 @@ export default function CustomerReviews() {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rating</p>
-                      <div className="mt-2">{renderStars(selectedReview.rating)}</div>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Response Status</p>
-                      <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getResponseStatusClasses(selectedReview.responseStatus)}`}>
-                        {selectedReview.responseStatus.replace("_", " ")}
-                      </span>
-                    </div>
+                  <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rating</p>
+                    <div className="mt-2">{renderStars(selectedReview.rating)}</div>
                   </div>
 
                   <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Feedback Comment</p>
                     <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{selectedReview.comment}</p>
                   </div>
-
-                  {selectedReview.shopResponse ? (
-                    <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Your Response</p>
-                      <p className="mt-2 text-sm text-green-800 dark:text-green-300">{selectedReview.shopResponse}</p>
-                      <button
-                        onClick={() => setResponseDraft(selectedReview.shopResponse ?? "")}
-                        className="mt-3 text-xs font-medium text-green-700 underline hover:no-underline dark:text-green-400"
-                      >
-                        Edit response
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {/* Respond form — shown when no response yet OR editing */}
-                  {(!selectedReview.shopResponse || responseDraft !== "") && (
-                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
-                        {selectedReview.shopResponse ? "Edit Your Response" : "Write a Response"}
-                      </p>
-                      <textarea
-                        value={responseDraft}
-                        onChange={(e) => setResponseDraft(e.target.value)}
-                        rows={3}
-                        maxLength={1000}
-                        placeholder="Reply publicly to this customer's review…"
-                        className="w-full resize-none rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-blue-700 dark:bg-gray-800 dark:text-white"
-                      />
-                      <div className="mt-2 flex items-center justify-between">
-                        <p className="text-xs text-gray-400">{responseDraft.length}/1000</p>
-                        <div className="flex gap-2">
-                          {responseDraft !== "" && (
-                            <button
-                              onClick={() => setResponseDraft("")}
-                              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                          <button
-                            onClick={handleSubmitResponse}
-                            disabled={!responseDraft.trim() || submittingResponse}
-                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            {submittingResponse ? "Saving…" : "Save Response"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pictures</p>

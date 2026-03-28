@@ -267,6 +267,7 @@ export default function UploadInventory() {
     () => mapAndFilterVisibleStocks(initialData?.data ?? [])
   );
   const [loadingStocks, setLoadingStocks] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStock, setEditingStock] = useState<StockItem | null>(null);
   const [colorVariants, setColorVariants] = useState<ColorVariant[]>([]);
@@ -599,6 +600,8 @@ export default function UploadInventory() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isSubmitting) return;
+
     const wasEditing = Boolean(editingStock);
 
     const categoryToSave: StockCategory = editingStock
@@ -628,8 +631,8 @@ export default function UploadInventory() {
       }
     }
 
-    if (!editingStock && !isShoesMode && (Number.isNaN(quantityAsNumber) || quantityAsNumber <= 0)) {
-      alert('Quantity must be greater than 0.');
+    if (!isShoesMode && (Number.isNaN(quantityAsNumber) || quantityAsNumber <= 0 || !Number.isInteger(quantityAsNumber))) {
+      alert('Quantity must be a whole number greater than 0.');
       return;
     }
 
@@ -688,6 +691,7 @@ export default function UploadInventory() {
       if (!confirmation.isConfirmed) return;
     }
 
+    setIsSubmitting(true);
     try {
       const resolvedUnit = isShoesMode ? 'pairs' : (formData.unit || 'pcs');
 
@@ -758,6 +762,8 @@ export default function UploadInventory() {
         text: firstFieldError || apiMessage || fallbackText,
       });
       return;
+    } finally {
+      setIsSubmitting(false);
     }
 
     setIsModalOpen(false);
@@ -1333,8 +1339,19 @@ export default function UploadInventory() {
                         id="stock-quantity"
                         type="number"
                         min="0"
+                        step="1"
                         value={formData.quantity}
-                        onChange={(event) => setFormData((prev) => ({ ...prev, quantity: event.target.value }))}
+                        onKeyDown={(event) => {
+                          if (['e', 'E', '+', '-', '.'].includes(event.key)) {
+                            event.preventDefault();
+                          }
+                        }}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          if (/^\d*$/.test(nextValue)) {
+                            setFormData((prev) => ({ ...prev, quantity: nextValue }));
+                          }
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                         placeholder="0"
                         required
@@ -1426,9 +1443,12 @@ export default function UploadInventory() {
                 </button>
                 <button
                   type="submit"
+                  disabled={isSubmitting}
                   className="h-11 w-full rounded-lg bg-black px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-800"
                 >
-                  {editingStock ? 'Update Stock' : 'Save Stock'}
+                  {isSubmitting
+                    ? (editingStock ? 'Updating...' : 'Saving...')
+                    : (editingStock ? 'Update Stock' : 'Save Stock')}
                 </button>
               </div>
             </form>

@@ -78,6 +78,7 @@ const DocumentIcon = ({ className }: { className?: string }) => (
 
 interface RepairPriceRequest {
   id: number;
+  requestType?: 'service' | 'package';
   serviceName: string;
   category: string;
   currentPrice: string;
@@ -94,7 +95,73 @@ interface RepairPriceRequest {
   ownerReviewedAt: string | null;
   rejectionReason?: string;
   rawStatus?: string;
+  requiresOwnerApproval?: boolean;
 }
+
+type WorkflowStage = 'finance_initial' | 'owner_review' | 'finance_final' | 'approved' | 'rejected';
+
+const getWorkflowStage = (request: RepairPriceRequest): WorkflowStage => {
+  const rawStatus = (request.rawStatus || '').toLowerCase();
+
+  if (rawStatus === 'pending finance final approval' || rawStatus === 'owner_approved') {
+    return 'finance_final';
+  }
+
+  if (request.status === 'pending') {
+    return 'finance_initial';
+  }
+
+  if (request.status === 'finance_approved') {
+    return 'owner_review';
+  }
+
+  if (request.status === 'owner_approved') {
+    return 'approved';
+  }
+
+  if (request.status === 'finance_rejected' || request.status === 'owner_rejected') {
+    return 'rejected';
+  }
+
+  return 'finance_initial';
+};
+
+const getStageBadge = (request: RepairPriceRequest) => {
+  const stage = getWorkflowStage(request);
+
+  if (stage === 'finance_initial') {
+    return {
+      text: 'Pending Finance',
+      classes: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-200',
+    };
+  }
+
+  if (stage === 'owner_review') {
+    return {
+      text: 'Pending Owner',
+      classes: 'bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200',
+    };
+  }
+
+  if (stage === 'finance_final') {
+    return {
+      text: 'Pending Finance Final Approval',
+      classes: 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+    };
+  }
+
+  if (stage === 'approved') {
+    return {
+      text: 'Approved',
+      classes: 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-200',
+    };
+  }
+
+  return {
+    text: request.status === 'owner_rejected' ? 'Owner Rejected' : 'Finance Rejected',
+    classes: 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200',
+  };
+};
 
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
@@ -190,6 +257,7 @@ export default function RepairPriceApproval() {
       const result = await response.json();
       const apiRequests = result.data.map((item: any) => ({
         id: item.id,
+        requestType: item.request_type === 'package' ? 'package' : 'service',
         serviceName: item.service_name,
         category: item.category || 'General',
         currentPrice: `₱${parseFloat(item.current_price).toLocaleString()}`,
@@ -206,6 +274,7 @@ export default function RepairPriceApproval() {
         ownerReviewedBy: item.owner_reviewer?.name || null,
         ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
         rawStatus: item.raw_status,
+        requiresOwnerApproval: item.requires_owner_approval !== false,
       }));
       
       setRequests(apiRequests);
@@ -254,12 +323,11 @@ export default function RepairPriceApproval() {
     // Apply view mode filter
     let matchesViewMode = true;
     if (viewMode === 'pending') {
-      const isFinanceFinalQueue = item.rawStatus === 'Pending Finance Final Approval';
-      matchesViewMode = item.status === 'pending' || isFinanceFinalQueue; // Initial finance review + finance final queue
+      const stage = getWorkflowStage(item as RepairPriceRequest);
+      matchesViewMode = stage === 'finance_initial' || stage === 'finance_final';
     } else if (viewMode === 'recent') {
-      const isForwardedToOwner = item.status === 'finance_approved';
-      const isFullyApplied = item.status === 'owner_approved' && item.rawStatus === 'Active';
-      matchesViewMode = isForwardedToOwner || isFullyApplied;
+      const stage = getWorkflowStage(item as RepairPriceRequest);
+      matchesViewMode = stage === 'owner_review' || stage === 'approved';
     }
     
     return matchesSearch && matchesViewMode;
@@ -270,10 +338,13 @@ export default function RepairPriceApproval() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  const pendingCount = requests.filter((r) => r.status === "pending" || r.rawStatus === 'Pending Finance Final Approval').length;
-  const financeApprovedCount = requests.filter(r => r.status === "finance_approved").length;
-  const approvedCount = requests.filter(r => r.status === "owner_approved" && r.rawStatus === 'Active').length;
-  const rejectedCount = requests.filter(r => r.status === "finance_rejected" || r.status === "owner_rejected").length;
+  const pendingCount = requests.filter((r) => {
+    const stage = getWorkflowStage(r as RepairPriceRequest);
+    return stage === 'finance_initial' || stage === 'finance_final';
+  }).length;
+  const financeApprovedCount = requests.filter((r) => getWorkflowStage(r as RepairPriceRequest) === 'owner_review').length;
+  const approvedCount = requests.filter((r) => getWorkflowStage(r as RepairPriceRequest) === 'approved').length;
+  const rejectedCount = requests.filter((r) => getWorkflowStage(r as RepairPriceRequest) === 'rejected').length;
 
   const handleViewClick = (request: RepairPriceRequest) => {
     setSelectedRequest(request);
@@ -292,10 +363,11 @@ export default function RepairPriceApproval() {
     setViewModalOpen(false);
     setSelectedRequest(null);
 
-    const isFinanceFinalStep = request.rawStatus === 'Pending Finance Final Approval';
+    const stage = getWorkflowStage(request);
+    const canApplyNow = stage === 'finance_final' || (stage === 'finance_initial' && request.requiresOwnerApproval === false);
 
     const { value: notes } = await Swal.fire({
-      title: isFinanceFinalStep ? "Final Finance Approval" : "Approve & Forward to Owner",
+      title: canApplyNow ? "Finance Approval" : "Approve & Forward to Owner",
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Service:</strong> ${request.serviceName}</p>
@@ -304,7 +376,7 @@ export default function RepairPriceApproval() {
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
           <p style="margin-bottom: 1rem;"><strong>Reason:</strong> ${request.reason}</p>
-          <p style="color: #6b7280; font-size: 0.875rem;">${isFinanceFinalStep ? 'This is the final finance step and will apply the price change.' : 'This will forward the request to the Shop Owner for review.'}</p>
+          <p style="color: #6b7280; font-size: 0.875rem;">${canApplyNow ? 'This will apply the price change now.' : 'This will forward the request to the Shop Owner for review.'}</p>
         </div>
       `,
       input: "textarea",
@@ -314,7 +386,7 @@ export default function RepairPriceApproval() {
       showCancelButton: true,
       confirmButtonColor: "#10b981",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: isFinanceFinalStep ? "Approve & Apply Price" : "Approve & Forward",
+      confirmButtonText: canApplyNow ? "Approve & Apply Price" : "Approve & Forward",
       cancelButtonText: "Cancel",
     });
 
@@ -322,7 +394,7 @@ export default function RepairPriceApproval() {
       setIsActionProcessing(true);
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        const approvalEndpoint = isFinanceFinalStep
+        const approvalEndpoint = canApplyNow
           ? `/api/finance/repair-price-changes/${request.id}/approve-final`
           : `/api/finance/repair-price-changes/${request.id}/approve`;
 
@@ -334,7 +406,7 @@ export default function RepairPriceApproval() {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': csrfToken || '',
           },
-          body: JSON.stringify({ notes: notes || null }),
+          body: JSON.stringify({ notes: notes || null, request_type: request.requestType || 'service' }),
         });
 
         if (!response.ok) {
@@ -351,8 +423,8 @@ export default function RepairPriceApproval() {
         // Show centered modal notification
         await Swal.fire({
           icon: 'success',
-          title: isFinanceFinalStep ? 'Price Applied' : 'Approved & Forwarded',
-          text: isFinanceFinalStep
+          title: canApplyNow ? 'Price Applied' : 'Approved & Forwarded',
+          text: canApplyNow
             ? `${request.serviceName} price change has been applied`
             : `${request.serviceName} sent to Shop Owner for review`,
           confirmButtonColor: '#000000',
@@ -423,7 +495,7 @@ export default function RepairPriceApproval() {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': csrfToken || '',
           },
-          body: JSON.stringify({ reason }),
+          body: JSON.stringify({ reason, request_type: request.requestType || 'service' }),
         });
 
         if (!response.ok) {
@@ -481,6 +553,10 @@ export default function RepairPriceApproval() {
       document.body.style.overflow = 'unset';
     };
   }, [viewModalOpen]);
+
+  const selectedRepairRequest = selectedRequest as RepairPriceRequest | null;
+  const selectedStage = selectedRepairRequest ? getWorkflowStage(selectedRepairRequest) : null;
+  const selectedBadge = selectedRepairRequest ? getStageBadge(selectedRepairRequest) : null;
 
   return (
     <>
@@ -636,25 +712,14 @@ export default function RepairPriceApproval() {
                         <td className="py-4 text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
                         <td className="py-4 text-gray-600 dark:text-gray-400 text-xs">{request.requestDate}</td>
                         <td className="py-4">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              request.status === "pending"
-                                ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-200"
-                                : request.status === "finance_approved"
-                                ? "bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-                                : request.status === "owner_approved"
-                                ? "bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-200"
-                                : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                            }`}
-                          >
-                            {request.status === "pending" 
-                              ? "Pending Finance"
-                              : request.status === "finance_approved"
-                              ? "Pending Owner"
-                              : request.status === "owner_approved"
-                              ? (request.rawStatus === 'Pending Finance Final Approval' ? 'Pending Finance Final Approval' : 'Approved')
-                              : "Rejected"}
-                          </span>
+                          {(() => {
+                            const badge = getStageBadge(request as RepairPriceRequest);
+                            return (
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${badge.classes}`}>
+                                {badge.text}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="py-4">
                           <button
@@ -742,39 +807,13 @@ export default function RepairPriceApproval() {
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Finance Price Review</h2>
-                  {selectedRequest.status === 'finance_approved' && (
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-                      Pending Owner
-                    </span>
-                  )}
-                  {selectedRequest.status === 'owner_approved' && selectedRequest.rawStatus !== 'Pending Finance Final Approval' && (
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-200">
-                      Fully Approved
-                    </span>
-                  )}
-                  {selectedRequest.status === 'owner_approved' && selectedRequest.rawStatus === 'Pending Finance Final Approval' && (
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                      Pending Finance Final Approval
-                    </span>
-                  )}
-                  {selectedRequest.status === 'finance_rejected' && (
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200">
-                      Finance Rejected
-                    </span>
-                  )}
-                  {selectedRequest.status === 'owner_rejected' && (
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200">
-                      Owner Rejected
-                    </span>
-                  )}
-                  {selectedRequest.status === 'pending' && (
-                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-50 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-200">
-                      Pending Review
-                    </span>
-                  )}
+                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${selectedBadge?.classes ?? ''}`}>
+                    {selectedBadge?.text ?? 'Pending Review'}
+                  </span>
                 </div>
                 <button
                   onClick={() => setViewModalOpen(false)}
+                  aria-label="Close dialog"
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   <CloseIcon className="w-5 h-5" />
@@ -900,12 +939,12 @@ export default function RepairPriceApproval() {
 
               {/* Actions */}
               <div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                {(selectedRequest.status === 'pending' || (selectedRequest.status === 'owner_approved' && selectedRequest.rawStatus === 'Pending Finance Final Approval')) ? (
+                {(selectedStage === 'finance_initial' || selectedStage === 'finance_final') && selectedRepairRequest ? (
                   <>
                     <button
                       onClick={() => {
                         setViewModalOpen(false);
-                        handleReject(selectedRequest);
+                        handleReject(selectedRepairRequest);
                       }}
                       disabled={isActionProcessing}
                       className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -916,28 +955,26 @@ export default function RepairPriceApproval() {
                     <button
                       onClick={() => {
                         setViewModalOpen(false);
-                        handleApprove(selectedRequest);
+                        handleApprove(selectedRepairRequest);
                       }}
                       disabled={isActionProcessing}
                       className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
-                      {selectedRequest.rawStatus === 'Pending Finance Final Approval' ? 'Approve & Apply Price' : 'Approve & Forward'}
+                      {(selectedStage === 'finance_final' || (selectedStage === 'finance_initial' && selectedRepairRequest.requiresOwnerApproval === false))
+                        ? 'Approve & Apply Price'
+                        : 'Approve & Forward'}
                     </button>
                   </>
-                ) : selectedRequest.status === 'finance_approved' ? (
+                ) : selectedStage === 'owner_review' ? (
                   <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                     Close
                   </button>
-                ) : selectedRequest.status === 'owner_approved' ? (
+                ) : selectedStage === 'approved' ? (
                   <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                     Close
                   </button>
-                ) : selectedRequest.status === 'owner_rejected' ? (
-                  <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                    Close
-                  </button>
-                ) : selectedRequest.status === 'finance_rejected' ? (
+                ) : selectedStage === 'rejected' ? (
                   <button onClick={() => setViewModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                     Close
                   </button>

@@ -34,6 +34,7 @@ export default function FinancePage() {
   const userRole = auth?.user?.role;
   const [error, setError] = useState<string | null>(null);
   const [isPurchaseRequestModalOpen, setIsPurchaseRequestModalOpen] = useState(false);
+  const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
 
   // Mark page as successfully loaded
   useEffect(() => {
@@ -185,7 +186,7 @@ export default function FinancePage() {
               </div>
             );
           }
-          return <PayslipApproval />;
+          return <PayslipApproval onModalStateChange={setIsPayslipModalOpen} />;
 
         case "refund-approvals":
           return <RefundApproval />;
@@ -200,7 +201,10 @@ export default function FinancePage() {
   };
 
   return (
-    <AppLayoutERP hideHeader={section === "purchase-request-approval" && isPurchaseRequestModalOpen}>
+    <AppLayoutERP hideHeader={
+      (section === "purchase-request-approval" && isPurchaseRequestModalOpen)
+      || (section === "payslip-approvals" && isPayslipModalOpen)
+    }>
       <Head title={headTitle} />
       {error && (
         <ErrorModal message={error} onClose={() => setError(null)} />

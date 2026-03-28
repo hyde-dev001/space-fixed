@@ -80,7 +80,7 @@ class PurchaseRequestController extends Controller
             );
 
             return response()->json([
-                'message' => 'Purchase request approved by Shop Owner. Ready for procurement.',
+                'message' => 'Purchase request approved by Shop Owner and forwarded to Finance for final approval.',
                 'purchase_request' => $purchaseRequest->fresh(['supplier', 'inventoryItem', 'requester', 'reviewer', 'approver']),
             ]);
         } catch (\Exception $e) {

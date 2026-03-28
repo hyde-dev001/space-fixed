@@ -432,8 +432,12 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $validator = Validator::make($request->all(), [
-            'notes' => 'required|string|min:10',
+        $notes = trim((string) $request->input('notes', ''));
+
+        $validator = Validator::make([
+            'notes' => $notes,
+        ], [
+            'notes' => 'required|string|min:3|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -452,7 +456,7 @@ class PayslipApprovalController extends Controller
             $result = $this->payslipApprovalService->rejectPayslip(
                 $payslip,
                 User::find($actor['actor_user_id']),
-                $request->input('notes')
+                $notes
             );
 
             if (!$result['success']) {
@@ -468,7 +472,7 @@ class PayslipApprovalController extends Controller
                 $actor['shop_owner_id'],
                 'payslip_rejected_level_' . $payslip->current_approval_level,
                 'Payslip Rejected - Level ' . $payslip->current_approval_level,
-                "Payslip #{$payslip->id} rejected at level {$payslip->current_approval_level}: {$request->input('notes')}",
+                "Payslip #{$payslip->id} rejected at level {$payslip->current_approval_level}: {$notes}",
                 $payslip
             );
 
@@ -499,7 +503,7 @@ class PayslipApprovalController extends Controller
                 'approval_status' => 'rejected',
                 'approved_by' => $actor['actor_user_id'],
                 'approved_at' => now(),
-                'approval_notes' => $request->notes,
+                'approval_notes' => $notes,
                 'final_approved_by' => null,
                 'final_approved_at' => null,
                 'final_approval_notes' => null,
@@ -515,7 +519,7 @@ class PayslipApprovalController extends Controller
                 $actor['shop_owner_id'],
                 'payslip_rejected',
                 'Payslip Rejected',
-                "Payslip #{$payslip->id} rejected by {$actor['name']} (Finance): {$request->notes}",
+                "Payslip #{$payslip->id} rejected by {$actor['name']} (Finance): {$notes}",
                 $payslip
             );
 

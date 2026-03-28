@@ -219,8 +219,17 @@ class OvertimeController extends Controller
     public function approve(Request $request, $id): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user->can('manage-attendance') && !$user->hasRole('Manager')) {
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (
+            ! $user->hasRole('Manager')
+            && ! $user->can('manage-attendance')
+            && ! $user->can('access-overtime-approvals')
+            && ! $user->can('access-attendance-records')
+        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -318,8 +327,17 @@ class OvertimeController extends Controller
     public function reject(Request $request, $id): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user->can('manage-attendance') && !$user->hasRole('Manager')) {
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (
+            ! $user->hasRole('Manager')
+            && ! $user->can('manage-attendance')
+            && ! $user->can('access-overtime-approvals')
+            && ! $user->can('access-attendance-records')
+        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

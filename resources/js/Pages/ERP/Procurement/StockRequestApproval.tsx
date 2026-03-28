@@ -268,50 +268,6 @@ export default function StockRequest() {
 		}
 	};
 
-	const handleAskDetails = async (request: StockRequestApproval) => {
-		if (request.status !== "pending") {
-			await workflowFeedback.warning("Cannot request details", "You can only request details for pending requests.");
-			return;
-		}
-
-		const result = await workflowFeedback.alert({
-			title: "Request more details",
-			input: "textarea",
-			inputLabel: "Message to Inventory",
-			inputPlaceholder: "Type the details you need...",
-			inputValue: request.notes || "",
-			showCancelButton: true,
-			confirmButtonText: "Send request",
-			cancelButtonText: "Cancel",
-			inputValidator: (value) => {
-				if (!value || !value.trim()) {
-					return "Please provide a message before sending.";
-				}
-				return undefined;
-			},
-		});
-
-		if (!result.isConfirmed || !result.value) return;
-
-		setIsActionProcessing(true);
-		try {
-			await stockRequestApi.requestDetails(request.id, { approval_notes: result.value });
-			await workflowFeedback.success({
-				title: "Sent",
-				text: "Request for details has been sent to Inventory.",
-				timer: 1500,
-				showConfirmButton: false,
-			});
-			setViewingRequest(null);
-			fetchRequests();
-		} catch (error: any) {
-			console.error("Failed to request details:", error);
-			await workflowFeedback.error(error?.response?.data?.message || "Failed to send details request");
-		} finally {
-			setIsActionProcessing(false);
-		}
-	};
-
 	const isAnyModalOpen = Boolean(viewingRequest);
 
 	return (
@@ -538,12 +494,18 @@ export default function StockRequest() {
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Repair Request ID: {viewingRequest.repair_request_id}</p>
 							)}
 						</div>
-							{viewingRequest.rejection_reason && (
-								<div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800">
-									<p className="text-sm font-medium text-red-500 dark:text-red-400 mb-1">Rejection Reason</p>
-									<p className="text-base font-semibold text-red-900 dark:text-red-300 whitespace-pre-wrap">{viewingRequest.rejection_reason}</p>
-								</div>
-							)}
+						{viewingRequest.rejection_reason && (
+							<div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800">
+								<p className="text-sm font-medium text-red-500 dark:text-red-400 mb-1">Rejection Reason</p>
+								<p className="text-base font-semibold text-red-900 dark:text-red-300 whitespace-pre-wrap">{viewingRequest.rejection_reason}</p>
+							</div>
+						)}
+						{viewingRequest.notes && (
+							<div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800">
+								<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Inventory Notes</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
+							</div>
+						)}
 						</div>
 
 						<div className="flex flex-wrap gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
@@ -553,13 +515,6 @@ export default function StockRequest() {
 								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Approve
-							</button>
-							<button
-								onClick={() => handleAskDetails(viewingRequest)}
-								disabled={viewingRequest.status !== "pending" || isActionProcessing}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								Ask Details
 							</button>
 							<button
 								onClick={() => handleReject(viewingRequest)}

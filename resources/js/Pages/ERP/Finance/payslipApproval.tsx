@@ -79,6 +79,7 @@ interface PayslipApprovalProps {
 	allowDisbursement?: boolean;
 	allowFinalApproveAll?: boolean;
 	headTitle?: string;
+	onModalStateChange?: (isOpen: boolean) => void;
 }
 
 const statusLabels: Record<FinanceApprovalStatus, string> = {
@@ -228,6 +229,7 @@ export default function PayslipApproval({
 	allowDisbursement = true,
 	allowFinalApproveAll = false,
 	headTitle = 'Payslip Approval - Solespace ERP',
+	onModalStateChange,
 }: PayslipApprovalProps = {}) {
 	const { auth } = usePage().props as any;
 	const normalizedApiBase = apiBase.replace(/\/+$/, '');
@@ -272,6 +274,15 @@ export default function PayslipApproval({
 	const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 	const [isBatchApproving, setIsBatchApproving] = useState(false);
 	const [approvalProgress, setApprovalProgress] = useState({ current: 0, total: 0 });
+	const isAnyModalOpen = viewModalOpen || showPreviewModal || isBatchApproving;
+
+	useEffect(() => {
+		onModalStateChange?.(isAnyModalOpen);
+
+		return () => {
+			onModalStateChange?.(false);
+		};
+	}, [isAnyModalOpen, onModalStateChange]);
 
 	// Load payslips from API
 	useEffect(() => {
@@ -540,13 +551,18 @@ export default function PayslipApproval({
 			confirmButtonText: "Reject",
 			cancelButtonText: "Cancel",
 			inputValidator: (value) => {
-				if (!value) {
+				const trimmed = (value || '').trim();
+				if (!trimmed) {
 					return "Please provide a reason";
+				}
+				if (trimmed.length < 3) {
+					return "Please provide at least 3 characters";
 				}
 			},
 		});
 
 		if (reason) {
+			const trimmedReason = reason.trim();
 			setIsApproving(true);
 			try {
 				const response = await fetch(buildApiUrl(`/${request.id}/reject`), {
@@ -557,10 +573,22 @@ export default function PayslipApproval({
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					body: JSON.stringify({ notes: reason }),
+					body: JSON.stringify({ notes: trimmedReason }),
 				});
 
-				if (!response.ok) throw new Error('Failed to reject payslip');
+				if (!response.ok) {
+					let errorMessage = 'Failed to reject payslip';
+					try {
+						const errorData = await response.json();
+						errorMessage = errorData?.error
+							|| errorData?.message
+							|| errorData?.errors?.notes?.[0]
+							|| errorMessage;
+					} catch {
+						// Ignore JSON parse errors and keep fallback message.
+					}
+					throw new Error(errorMessage);
+				}
 
 				await Swal.fire({
 					title: "Rejected",
@@ -572,7 +600,7 @@ export default function PayslipApproval({
 				setViewModalOpen(false);
 				loadPayslips();
 			} catch (error) {
-				await Swal.fire('Error', 'Failed to reject payslip', 'error');
+				await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to reject payslip', 'error');
 			} finally {
 				setIsApproving(false);
 			}
@@ -1555,16 +1583,7 @@ export default function PayslipApproval({
 			{showPreviewModal && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-						<div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800">
-							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-								Batch Approval Preview
-							</h2>
-							<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-								Review payslips before approving all
-							</p>
-						</div>
-
-						<div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+						<div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
 							{isLoadingPreview ? (
 								<div className="flex items-center justify-center py-12">
 									<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

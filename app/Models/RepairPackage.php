@@ -16,17 +16,32 @@ class RepairPackage extends Model
         'name',
         'description',
         'package_price',
+        'old_package_price',
+        'change_reason',
         'status',
+        'approval_status',
         'starts_at',
         'ends_at',
         'created_by',
         'updated_by',
+        'finance_reviewed_by',
+        'finance_reviewed_at',
+        'finance_notes',
+        'owner_reviewed_by',
+        'owner_reviewed_at',
+        'owner_notes',
+        'approval_workflow_version',
+        'current_approval_level',
+        'approval_id',
     ];
 
     protected $casts = [
         'package_price' => 'decimal:2',
+        'old_package_price' => 'decimal:2',
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',
+        'finance_reviewed_at' => 'datetime',
+        'owner_reviewed_at' => 'datetime',
     ];
 
     public function shopOwner()
@@ -42,6 +57,21 @@ class RepairPackage extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function financeReviewer()
+    {
+        return $this->belongsTo(User::class, 'finance_reviewed_by');
+    }
+
+    public function ownerReviewer()
+    {
+        return $this->belongsTo(ShopOwner::class, 'owner_reviewed_by');
+    }
+
+    public function approval()
+    {
+        return $this->morphOne(Approval::class, 'approvable');
     }
 
     public function services()

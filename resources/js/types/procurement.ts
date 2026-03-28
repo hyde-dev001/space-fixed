@@ -33,7 +33,7 @@ export interface PurchaseRequest {
     priority: 'high' | 'medium' | 'low';
     priority_label?: string;
     justification: string;
-    status: 'draft' | 'pending_finance' | 'pending_shop_owner' | 'approved' | 'rejected';
+    status: 'draft' | 'pending_finance' | 'pending_shop_owner' | 'pending_finance_final' | 'approved' | 'rejected';
     status_label?: string;
     rejection_reason?: string;
     requested_by: number;

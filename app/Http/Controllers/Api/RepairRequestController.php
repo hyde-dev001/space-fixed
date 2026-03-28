@@ -150,7 +150,7 @@ class RepairRequestController extends Controller
                     'duration' => $service->duration,
                 ])->values()->all();
 
-                $packageTotal = (float) $selectedPackage->package_price;
+                $packageTotal = $this->resolveEffectivePackagePrice($selectedPackage);
 
                 $requestedAddOnIds = collect((array) $request->add_on_service_ids)
                     ->map(fn ($id) => (int) $id)
@@ -1986,6 +1986,26 @@ class RepairRequestController extends Controller
         }
 
         return $currentStatus;
+    }
+
+    private function resolveEffectivePackagePrice(RepairPackage $package): float
+    {
+        $approvalStatus = strtolower((string) ($package->approval_status ?? 'none'));
+
+        $isNotYetApplied = in_array($approvalStatus, [
+            'pending_finance',
+            'finance_approved',
+            'pending_owner',
+            'owner_approved',
+            'finance_rejected',
+            'owner_rejected',
+        ], true);
+
+        if ($isNotYetApplied && $package->old_package_price !== null) {
+            return (float) $package->old_package_price;
+        }
+
+        return (float) $package->package_price;
     }
 
     private function generateRepairInvoiceReference(): string

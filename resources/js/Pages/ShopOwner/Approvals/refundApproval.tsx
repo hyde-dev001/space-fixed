@@ -279,6 +279,8 @@ interface RefundRequest {
 	rawStatus?: string;
 	shopOwnerStatus?: string;
 	financeStatus?: string;
+	requiresOwnerApproval?: boolean;
+	approvalStage?: string;
 	returnStatus?: string;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
@@ -451,10 +453,12 @@ export default function RefundApproval() {
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
-		const financeApprovedOrNotRequired = isIndividualRegistration || financeStatus === "approved";
+		const requiresOwnerApproval = request.requiresOwnerApproval !== false;
+		const financeInitialApproved = financeStatus === "approved_initial";
 
 		return request.status === "Pending"
-			&& financeApprovedOrNotRequired
+			&& requiresOwnerApproval
+			&& financeInitialApproved
 			&& shopOwnerStatus !== "approved"
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
@@ -478,10 +482,20 @@ export default function RefundApproval() {
 		}
 
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
-		if (!isIndividualRegistration && financeStatus !== "approved") {
+		if (request.requiresOwnerApproval === false) {
+			await Swal.fire({
+				title: "Owner Approval Not Required",
+				text: "This refund request does not require shop owner approval based on settings.",
+				icon: "info",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
+		if (!isIndividualRegistration && financeStatus !== "approved_initial") {
 			await Swal.fire({
 				title: "Finance Approval Required",
-				text: "Finance must approve this refund first before shop owner approval.",
+				text: "Finance initial approval is required before shop owner approval.",
 				icon: "info",
 				confirmButtonColor: "#2563eb",
 			});
@@ -536,7 +550,7 @@ export default function RefundApproval() {
 				
 				Swal.fire({
 					title: "Approved!",
-					text: data?.message || "The refund request has been approved.",
+					text: data?.message || "Shop owner approval recorded. Awaiting finance final approval.",
 					icon: "success",
 					confirmButtonColor: "#2563eb",
 				});

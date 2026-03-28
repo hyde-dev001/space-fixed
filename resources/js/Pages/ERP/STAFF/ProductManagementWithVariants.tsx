@@ -65,6 +65,14 @@ type ExistingShowroomFrame = {
 
 type SizeSystem = 'US' | 'UK' | 'EU' | 'AU' | 'CN';
 
+const resolveImagePreviewUrl = (pathOrUrl?: string | null): string => {
+  if (!pathOrUrl) return '';
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
+  if (pathOrUrl.startsWith('/storage/')) return pathOrUrl;
+  if (pathOrUrl.startsWith('storage/')) return `/${pathOrUrl}`;
+  return `/storage/${pathOrUrl.replace(/^\/+/, '')}`;
+};
+
 // Icon Components  
 const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -479,7 +487,7 @@ export default function ProductManagement() {
                 .map((img: any) => ({
                   imageId: Number(img.id),
                   colorVariantId: Number(cv.id),
-                  url: img.image_path || img.image_url,
+                  url: resolveImagePreviewUrl(img.image_url || img.image_path),
                   alt_text: img.alt_text || '',
                   sort_order: Number(img.sort_order || 0),
                 }));
@@ -507,8 +515,8 @@ export default function ProductManagement() {
                 .map((img: any) => ({
                   id: img.id?.toString() || Date.now().toString(),
                   file: null,
-                  preview: img.image_path || img.image_url,
-                  uploaded_path: img.image_path || img.image_url,
+                  preview: resolveImagePreviewUrl(img.image_url || img.image_path),
+                  uploaded_path: img.image_path || '',
                   is_thumbnail: img.is_thumbnail || false,
                   sort_order: img.sort_order || 0,
                   alt_text: img.alt_text || '',
@@ -1731,6 +1739,7 @@ export default function ProductManagement() {
                     colorVariants={colorVariants}
                     onColorVariantsChange={setColorVariants}
                     isEditing={!!editingProduct}
+                    lockStockEditing={!!editingProduct}
                   />
                 )}
               </div>

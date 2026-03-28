@@ -29,6 +29,9 @@ class PurchaseRequestPolicy
         return $this->canWithFallback($user, [
             'access-purchase-requests',
             'access-procurement-dashboard',
+            'access-finance-dashboard',
+            'access-approval-workflow',
+            'access-purchase-request-approval',
             'view-procurement',
             'procurement.view_purchase_requests',
         ]);
@@ -42,6 +45,9 @@ class PurchaseRequestPolicy
         return $this->canWithFallback($user, [
             'access-purchase-requests',
             'access-procurement-dashboard',
+            'access-finance-dashboard',
+            'access-approval-workflow',
+            'access-purchase-request-approval',
             'view-procurement',
             'procurement.view_purchase_requests',
         ])
@@ -110,10 +116,13 @@ class PurchaseRequestPolicy
         return $this->canWithFallback($user, [
             'access-purchase-requests',
             'access-procurement-dashboard',
+            'access-finance-dashboard',
+            'access-approval-workflow',
+            'access-purchase-request-approval',
             'procurement.approve_purchase_requests',
         ])
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
-            && $purchaseRequest->status === 'pending_finance';
+            && in_array($purchaseRequest->status, ['pending_finance', 'pending_finance_final']);
     }
 
     /**
@@ -124,10 +133,13 @@ class PurchaseRequestPolicy
         return $this->canWithFallback($user, [
             'access-purchase-requests',
             'access-procurement-dashboard',
+            'access-finance-dashboard',
+            'access-approval-workflow',
+            'access-purchase-request-approval',
             'procurement.reject_purchase_requests',
         ])
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
-            && in_array($purchaseRequest->status, ['pending_finance', 'approved']);
+            && in_array($purchaseRequest->status, ['pending_finance', 'pending_shop_owner', 'pending_finance_final']);
     }
 
     /**

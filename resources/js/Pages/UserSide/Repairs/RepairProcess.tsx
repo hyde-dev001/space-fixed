@@ -17,6 +17,10 @@ interface RepairPackage {
   name: string;
   description?: string | null;
   package_price: number;
+  effective_package_price?: number;
+  proposed_package_price?: number;
+  old_package_price?: number | null;
+  approval_status?: string | null;
   service_count: number;
   services_total_price: number;
   savings_amount: number;
@@ -138,6 +142,16 @@ const REGION_OPTIONS = [
   'Zamboanga Sibugay',
 ];
 
+const getEffectivePackagePrice = (pkg: RepairPackage): number => {
+  const effective = Number((pkg as any).effective_package_price);
+  if (Number.isFinite(effective)) {
+    return effective;
+  }
+
+  const fallback = Number(pkg.package_price);
+  return Number.isFinite(fallback) ? fallback : 0;
+};
+
 const SHOE_TYPE_OPTIONS = [
   'Sneakers',
   'Running Shoes',
@@ -201,6 +215,7 @@ const RepairProcess: React.FC = () => {
 
   useEffect(() => {
     const loadServices = async () => {
+      const timestamp = Date.now();
       setIsLoadingServices(true);
       setIsLoadingPackages(true);
 
@@ -214,10 +229,10 @@ const RepairProcess: React.FC = () => {
       // URL params determine shop scoping; localStorage is only for lightweight context.
       try {
         const apiUrl = shopId
-          ? `/api/repair-services?shop_id=${shopId}`
-          : '/api/repair-services';
+          ? `/api/repair-services?shop_id=${shopId}&_ts=${timestamp}`
+          : `/api/repair-services?_ts=${timestamp}`;
 
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, { cache: 'no-store' });
         const data = await response.json();
 
         if (data.success && Array.isArray(data.data)) {
@@ -255,9 +270,9 @@ const RepairProcess: React.FC = () => {
 
       try {
         const packageApiUrl = shopId
-          ? `/api/repair-packages/public?shop_id=${shopId}`
-          : '/api/repair-packages/public';
-        const packageResponse = await fetch(packageApiUrl);
+          ? `/api/repair-packages/public?shop_id=${shopId}&_ts=${timestamp}`
+          : `/api/repair-packages/public?_ts=${timestamp}`;
+        const packageResponse = await fetch(packageApiUrl, { cache: 'no-store' });
         const packageData = await packageResponse.json();
         if (packageData.success && Array.isArray(packageData.data)) {
           setRepairPackages(packageData.data);
@@ -453,7 +468,7 @@ const RepairProcess: React.FC = () => {
     [repairServices, selectedAddOnServiceIds]
   );
 
-  const packageTotal = selectedPackage ? Number(selectedPackage.package_price || 0) : 0;
+  const packageTotal = selectedPackage ? getEffectivePackagePrice(selectedPackage) : 0;
 
   const grandTotal = selectedPackage ? packageTotal + addOnsTotal : servicesTotal;
   const isSubmitDisabled = isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null);
@@ -492,7 +507,7 @@ const RepairProcess: React.FC = () => {
                 <p className="text-sm font-semibold text-black">{selectedPackage.name}</p>
                 <p className="text-xs text-gray-600">{selectedPackage.description || 'Repair package selected'}</p>
               </div>
-              <p className="text-sm font-semibold text-black whitespace-nowrap">₱{Number(selectedPackage.package_price).toLocaleString()}</p>
+              <p className="text-sm font-semibold text-black whitespace-nowrap">₱{getEffectivePackagePrice(selectedPackage).toLocaleString()}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-700 mb-1">Included services</p>
@@ -1329,7 +1344,7 @@ const RepairProcess: React.FC = () => {
                                     </p>
                                   </div>
                                 </div>
-                                <span className="text-sm font-semibold text-black">₱{Number(pkg.package_price || 0).toLocaleString()}</span>
+                                <span className="text-sm font-semibold text-black">₱{getEffectivePackagePrice(pkg).toLocaleString()}</span>
                               </label>
                             );
                           })}

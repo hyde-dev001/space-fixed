@@ -706,6 +706,67 @@ class ProductController extends Controller
                 'variants.*.sku' => 'nullable|string',
             ]);
 
+            $isStaffUpdate = Auth::guard('user')->check();
+
+            if ($isStaffUpdate) {
+                if (
+                    array_key_exists('stock_quantity', $validated)
+                    && (int) $validated['stock_quantity'] !== (int) $product->stock_quantity
+                ) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Staff cannot edit stock quantities in product edit.',
+                    ], 403);
+                }
+
+                if (isset($validated['variants']) && is_array($validated['variants'])) {
+                    $buildVariantQuantityMap = static function (array $variants): array {
+                        $map = [];
+
+                        foreach ($variants as $variant) {
+                            $size = strtolower(trim((string) ($variant['size'] ?? '')));
+                            $color = strtolower(trim((string) ($variant['color'] ?? '')));
+
+                            if ($size === '' && $color === '') {
+                                continue;
+                            }
+
+                            $quantity = (int) ($variant['quantity'] ?? 0);
+                            $key = $size . '|' . $color;
+
+                            $map[$key] = ($map[$key] ?? 0) + $quantity;
+                        }
+
+                        ksort($map);
+
+                        return $map;
+                    };
+
+                    $existingVariantQuantities = $buildVariantQuantityMap(
+                        $product->variants()
+                            ->get(['size', 'color', 'quantity'])
+                            ->map(static fn ($variant) => [
+                                'size' => $variant->size,
+                                'color' => $variant->color,
+                                'quantity' => $variant->quantity,
+                            ])
+                            ->all()
+                    );
+
+                    $incomingVariantQuantities = $buildVariantQuantityMap($validated['variants']);
+
+                    if ($existingVariantQuantities !== $incomingVariantQuantities) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Staff cannot edit stock quantities in product edit.',
+                        ], 403);
+                    }
+                }
+
+                // Ignore stock_quantity on staff updates even when unchanged.
+                unset($validated['stock_quantity']);
+            }
+
             // IMPORTANT: Prevent direct price changes from STAFF members working for COMPANY-type shops
             // Staff from company-type shops must use the price approval workflow
             // Individual shop owners and their staff can change prices directly

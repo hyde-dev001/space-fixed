@@ -143,6 +143,7 @@ class PurchaseRequest extends Model
             'draft' => 'Draft',
             'pending_finance' => 'Pending Finance',
             'pending_shop_owner' => 'Pending Shop Owner',
+            'pending_finance_final' => 'Pending Finance Final',
             'approved' => 'Approved',
             'rejected' => 'Rejected',
             default => ucfirst($this->status),
@@ -177,7 +178,7 @@ class PurchaseRequest extends Model
 
     public function approve(int $userId, ?string $notes = null, ?string $role = null, bool $requiresOwnerApproval = true): bool
     {
-        // Finance approval - moves to pending shop owner
+        // Finance initial approval
         if ($this->status === 'pending_finance') {
             $this->status = $requiresOwnerApproval ? 'pending_shop_owner' : 'approved';
             $this->reviewed_by = $userId;
@@ -189,21 +190,32 @@ class PurchaseRequest extends Model
             }
             
             if ($notes) {
-                $financePrefix = $requiresOwnerApproval ? 'Finance: ' : 'Finance Final: ';
+                $financePrefix = $requiresOwnerApproval ? 'Finance Initial: ' : 'Finance Final: ';
                 $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . $financePrefix . $notes;
             }
 
             return $this->save();
         }
 
-        // Shop Owner approval - final approval
+        // Shop Owner approval - forward back to Finance Final
         if ($this->status === 'pending_shop_owner') {
-            $this->status = 'approved';
-            $this->approved_by = $userId;
-            $this->approved_date = now();
+            $this->status = 'pending_finance_final';
             
             if ($notes) {
                 $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . "Shop Owner: " . $notes;
+            }
+
+            return $this->save();
+        }
+
+        // Finance final approval
+        if ($this->status === 'pending_finance_final') {
+            $this->status = 'approved';
+            $this->approved_by = $userId;
+            $this->approved_date = now();
+
+            if ($notes) {
+                $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . "Finance Final: " . $notes;
             }
 
             return $this->save();
@@ -214,7 +226,7 @@ class PurchaseRequest extends Model
 
     public function reject(int $userId, string $reason): bool
     {
-        if (!in_array($this->status, ['draft', 'pending_finance', 'pending_shop_owner'])) {
+        if (!in_array($this->status, ['draft', 'pending_finance', 'pending_shop_owner', 'pending_finance_final'])) {
             return false;
         }
 
@@ -253,12 +265,12 @@ class PurchaseRequest extends Model
 
     public function canBeApproved(): bool
     {
-        return in_array($this->status, ['pending_finance', 'pending_shop_owner']);
+        return in_array($this->status, ['pending_finance', 'pending_shop_owner', 'pending_finance_final']);
     }
 
     public function canBeRejected(): bool
     {
-        return in_array($this->status, ['draft', 'pending_finance', 'pending_shop_owner']);
+        return in_array($this->status, ['draft', 'pending_finance', 'pending_shop_owner', 'pending_finance_final']);
     }
 
     public function canBeEdited(): bool

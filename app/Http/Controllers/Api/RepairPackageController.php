@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
+use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -12,6 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class RepairPackageController extends Controller
 {
+    public function __construct(private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService)
+    {
+    }
+
     public function publicIndex(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -44,19 +49,27 @@ class RepairPackageController extends Controller
 
         $packages = $query->orderByDesc('created_at')->get()->map(function (RepairPackage $package) {
             $serviceTotal = $package->services->sum(fn ($service) => (float) $service->price);
+            $effectivePrice = $this->resolveEffectivePackagePrice($package);
 
             return [
                 'id' => $package->id,
                 'shop_owner_id' => $package->shop_owner_id,
                 'name' => $package->name,
                 'description' => $package->description,
-                'package_price' => (float) $package->package_price,
+                'package_price' => $effectivePrice,
+                'effective_package_price' => $effectivePrice,
+                'proposed_package_price' => (float) $package->package_price,
+                'old_package_price' => $package->old_package_price !== null ? (float) $package->old_package_price : null,
                 'status' => $package->status,
+                'approval_status' => $package->approval_status,
+                'change_reason' => $package->change_reason,
+                'finance_notes' => $package->finance_notes,
+                'owner_notes' => $package->owner_notes,
                 'starts_at' => optional($package->starts_at)?->toIso8601String(),
                 'ends_at' => optional($package->ends_at)?->toIso8601String(),
                 'service_count' => $package->services->count(),
                 'services_total_price' => round($serviceTotal, 2),
-                'savings_amount' => round(max($serviceTotal - (float) $package->package_price, 0), 2),
+                'savings_amount' => round(max($serviceTotal - $effectivePrice, 0), 2),
                 'services' => $package->services->map(fn ($service) => [
                     'id' => $service->id,
                     'name' => $service->name,
@@ -96,19 +109,27 @@ class RepairPackageController extends Controller
 
         $packages = $query->orderByDesc('created_at')->get()->map(function (RepairPackage $package) {
             $serviceTotal = $package->services->sum(fn ($service) => (float) $service->price);
+            $effectivePrice = $this->resolveEffectivePackagePrice($package);
 
             return [
                 'id' => $package->id,
                 'shop_owner_id' => $package->shop_owner_id,
                 'name' => $package->name,
                 'description' => $package->description,
-                'package_price' => (float) $package->package_price,
+                'package_price' => $effectivePrice,
+                'effective_package_price' => $effectivePrice,
+                'proposed_package_price' => (float) $package->package_price,
+                'old_package_price' => $package->old_package_price !== null ? (float) $package->old_package_price : null,
                 'status' => $package->status,
+                'approval_status' => $package->approval_status,
+                'change_reason' => $package->change_reason,
+                'finance_notes' => $package->finance_notes,
+                'owner_notes' => $package->owner_notes,
                 'starts_at' => optional($package->starts_at)?->toIso8601String(),
                 'ends_at' => optional($package->ends_at)?->toIso8601String(),
                 'service_count' => $package->services->count(),
                 'services_total_price' => round($serviceTotal, 2),
-                'savings_amount' => round(max($serviceTotal - (float) $package->package_price, 0), 2),
+                'savings_amount' => round(max($serviceTotal - $effectivePrice, 0), 2),
                 'services' => $package->services->map(fn ($service) => [
                     'id' => $service->id,
                     'name' => $service->name,
@@ -363,10 +384,85 @@ class RepairPackageController extends Controller
             ], 403);
         }
 
+        // Separate validation for price changes vs regular updates
+        $isPriceChange = $request->has('package_price') && 
+                        ((float)$request->package_price !== (float)$package->package_price);
+
+        // Check for duplicate/pending price change requests
+        if ($isPriceChange && $request->has('reason')) {
+            $existingPending = $package->approval_status && in_array($package->approval_status, [
+                'pending_finance',
+                'finance_approved',
+                'pending_owner',
+                'owner_approved',
+            ]);
+
+            if ($existingPending) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A price change request for this package is already pending approval. Please wait for the current request to be processed before submitting another.',
+                    'current_status' => $package->approval_status,
+                    'pending_request' => [
+                        'old_price' => (float)$package->old_package_price,
+                        'proposed_price' => (float)$package->package_price,
+                        'reason' => $package->change_reason,
+                        'status' => $package->approval_status,
+                    ],
+                ], 409); // 409 Conflict - resource already has an active request
+            }
+        }
+
+        if ($isPriceChange && $request->has('reason')) {
+            // Price change request - requires reason and enters approval workflow
+            $validator = Validator::make($request->all(), [
+                'package_price' => 'required|numeric|min:0',
+                'reason' => 'required|string|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $currentPrice = (float) $package->package_price;
+            $proposedPrice = (float) $request->package_price;
+            $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
+                (int) $package->shop_owner_id,
+                $currentPrice,
+                $proposedPrice
+            );
+
+            // Store the price change request for approval workflow
+            $package->update([
+                'old_package_price' => $package->package_price,
+                'package_price' => $request->package_price,
+                'change_reason' => $request->reason,
+                'approval_status' => 'pending_finance', // Start approval workflow
+                'approval_workflow_version' => $requiresOwnerApproval ? 'repair_finance_owner_finance' : 'repair_finance_only',
+                'current_approval_level' => 1,
+                'finance_reviewed_by' => null,
+                'finance_reviewed_at' => null,
+                'finance_notes' => null,
+                'owner_reviewed_by' => null,
+                'owner_reviewed_at' => null,
+                'owner_notes' => null,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Price change request submitted for Finance approval.',
+                'data' => $package->load('services:id,name,category,price,duration,status,shop_owner_id'),
+                'approval_status' => $package->approval_status,
+                'requires_owner_approval' => $requiresOwnerApproval,
+            ], 202); // 202 Accepted - request is queued for processing
+        }
+
+        // Regular update (name, description, status, services, dates) - no approval needed
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'package_price' => 'sometimes|required|numeric|min:0',
             'status' => 'sometimes|in:active,inactive',
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
@@ -381,7 +477,7 @@ class RepairPackageController extends Controller
             ], 422);
         }
 
-        $updateData = $request->only(['name', 'description', 'package_price', 'status', 'starts_at', 'ends_at']);
+        $updateData = $request->only(['name', 'description', 'status', 'starts_at', 'ends_at']);
         if (Auth::guard('user')->check()) {
             $updateData['updated_by'] = Auth::guard('user')->id();
         }
@@ -450,5 +546,25 @@ class RepairPackageController extends Controller
     {
         $shopOwnerId = $this->resolveShopOwnerId();
         return $shopOwnerId !== null && $package->shop_owner_id === $shopOwnerId;
+    }
+
+    private function resolveEffectivePackagePrice(RepairPackage $package): float
+    {
+        $approvalStatus = strtolower((string) ($package->approval_status ?? 'none'));
+
+        $isNotYetApplied = in_array($approvalStatus, [
+            'pending_finance',
+            'finance_approved',
+            'pending_owner',
+            'owner_approved',
+            'finance_rejected',
+            'owner_rejected',
+        ], true);
+
+        if ($isNotYetApplied && $package->old_package_price !== null) {
+            return (float) $package->old_package_price;
+        }
+
+        return (float) $package->package_price;
     }
 }

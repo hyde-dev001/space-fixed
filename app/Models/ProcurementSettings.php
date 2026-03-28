@@ -46,6 +46,14 @@ class ProcurementSettings extends Model
                 'require_finance_approval' => true,
                 'default_payment_terms' => 'Net 30',
                 'auto_generate_po' => false,
+                'settings_json' => [
+                    'approval_pages' => [
+                        'refund_approval' => ['enabled' => false, 'limit' => null],
+                        'price_approval' => ['enabled' => false, 'limit' => null],
+                        'purchase_request_approval' => ['enabled' => false, 'limit' => null],
+                        'repair_reject_approval' => ['enabled' => false, 'limit' => null],
+                    ],
+                ],
             ]
         );
     }

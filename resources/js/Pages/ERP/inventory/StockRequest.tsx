@@ -71,6 +71,23 @@ function formatRequestedSizeDisplay(value: string): string {
 	return `Size ${trimmed}`;
 }
 
+function formatDatetime(dateString: string): string {
+	try {
+		const date = new Date(dateString);
+		if (Number.isNaN(date.getTime())) return dateString;
+		return date.toLocaleString('en-US', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: true,
+		});
+	} catch {
+		return dateString;
+	}
+}
+
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -161,8 +178,11 @@ export default function StockRequest() {
 	const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(initialInventoryItems?.data ?? []);
 	const [isLoading, setIsLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [statusFilter, setStatusFilter] = useState<"All" | StockRequestApproval["status"]>("All");
+	const [priorityFilter, setPriorityFilter] = useState<"All" | "low" | "medium" | "high">("All");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+	const [isSubmittingCreateRequest, setIsSubmittingCreateRequest] = useState(false);
 	const [formData, setFormData] = useState<RequestFormState>(initialFormState);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
 	const isCreateFormDirty = useMemo(
@@ -224,14 +244,29 @@ export default function StockRequest() {
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
-		if (!query) return requests;
-		return requests.filter((r) =>
-			r.request_number.toLowerCase().includes(query) ||
-			r.product_name.toLowerCase().includes(query) ||
-			r.sku_code.toLowerCase().includes(query) ||
-			r.status.toLowerCase().includes(query),
-		);
-	}, [searchQuery, requests]);
+		let filtered = requests;
+
+		// Apply status filter
+		if (statusFilter !== "All") {
+			filtered = filtered.filter((r) => r.status === statusFilter);
+		}
+
+		// Apply priority filter
+		if (priorityFilter !== "All") {
+			filtered = filtered.filter((r) => r.priority === priorityFilter);
+		}
+
+		// Apply search filter
+		if (query) {
+			filtered = filtered.filter((r) =>
+				r.request_number.toLowerCase().includes(query) ||
+				r.product_name.toLowerCase().includes(query) ||
+				r.sku_code.toLowerCase().includes(query),
+			);
+		}
+
+		return filtered;
+	}, [searchQuery, statusFilter, priorityFilter, requests]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -243,6 +278,8 @@ export default function StockRequest() {
 	const approvedRequests = requests.filter((r) => r.status === "accepted").length;
 
 	const handleCreateRequest = async () => {
+		if (isSubmittingCreateRequest) return;
+
 		if (!formData.inventoryItemId || !formData.quantityNeeded.trim() || !formData.notes.trim()) {
 			await workflowFeedback.warning(
 				"Missing fields",
@@ -257,6 +294,7 @@ export default function StockRequest() {
 			return;
 		}
 
+		setIsSubmittingCreateRequest(true);
 		try {
 			await stockRequestApi.createFromInventory({
 				inventory_item_id: Number(formData.inventoryItemId),
@@ -278,6 +316,8 @@ export default function StockRequest() {
 			});
 		} catch {
 			await workflowFeedback.error("Could not submit the stock request. Please try again.", "Submission failed");
+		} finally {
+			setIsSubmittingCreateRequest(false);
 		}
 	};
 
@@ -308,6 +348,8 @@ export default function StockRequest() {
 	};
 
 	const requestCloseCreateModal = async () => {
+		if (isSubmittingCreateRequest) return;
+
 		if (!isCreateFormDirty) {
 			setIsCreateModalOpen(false);
 			setFormData(initialFormState);
@@ -370,22 +412,57 @@ export default function StockRequest() {
 						<div className="flex-1">
 							<input
 								type="text"
-								placeholder="Search by request no, product, SKU, or status..."
-								value={searchQuery}
-								onChange={(event) => {
-									setSearchQuery(event.target.value);
-									setCurrentPage(1);
-								}}
-								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-							/>
-						</div>
+							placeholder="Search by request no, product, or SKU..."
+							value={searchQuery}
+							onChange={(event) => {
+								setSearchQuery(event.target.value);
+								setCurrentPage(1);
+							}}
+							className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+						/>
 					</div>
+					<div className="sm:w-56">
+						<select
+							title="Filter by status"
+							aria-label="Filter by status"
+							value={statusFilter}
+							onChange={(event) => {
+								setStatusFilter(event.target.value as "All" | StockRequestApproval["status"]);
+								setCurrentPage(1);
+							}}
+							className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+						>
+							<option value="All">All Status</option>
+							<option value="pending">Pending</option>
+							<option value="accepted">Approved</option>
+							<option value="rejected">Rejected</option>
+							<option value="needs_details">Needs Details</option>
+						</select>
+					</div>
+					<div className="sm:w-56">
+						<select
+							title="Filter by priority"
+							aria-label="Filter by priority"
+							value={priorityFilter}
+							onChange={(event) => {
+								setPriorityFilter(event.target.value as "All" | "low" | "medium" | "high");
+								setCurrentPage(1);
+							}}
+							className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+						>
+							<option value="All">All Priorities</option>
+							<option value="low">Low</option>
+							<option value="medium">Medium</option>
+							<option value="high">High</option>
+						</select>
+					</div>
+				</div>
 
-					<div className="overflow-x-auto">
-						{isLoading ? (
-							<div className="py-10 text-center text-sm text-gray-500">Loading requests…</div>
-						) : (
-							<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+				<div className="overflow-x-auto">
+					{isLoading ? (
+						<div className="py-10 text-center text-sm text-gray-500">Loading requests…</div>
+					) : (
+						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 								<thead className="bg-gray-50 dark:bg-gray-800/50">
 									<tr>
 										<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Request no</th>
@@ -416,7 +493,7 @@ export default function StockRequest() {
 														</span>
 													</td>
 													<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
-														{new Date(request.requested_date).toLocaleDateString()}
+													{formatDatetime(request.requested_date)}
 													</td>
 													<td className="px-4 py-3">
 														<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[displayStatus]}`}>
@@ -446,9 +523,9 @@ export default function StockRequest() {
 								</tbody>
 							</table>
 						)}
-					</div>
+				</div>
 
-					<div className="mt-4 flex items-center justify-between">
+				<div className="mt-4 flex items-center justify-between">
 						<p className="text-sm text-gray-500">
 							Showing {filteredData.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredData.length)} of {filteredData.length} requests
 						</p>
@@ -482,7 +559,8 @@ export default function StockRequest() {
 					<button
 						type="button"
 						aria-label="Close create request modal"
-						className="absolute inset-0 bg-black/50"
+						disabled={isSubmittingCreateRequest}
+						className="absolute inset-0 bg-black/50 disabled:cursor-not-allowed"
 						onClick={() => {
 							void requestCloseCreateModal();
 						}}
@@ -494,7 +572,8 @@ export default function StockRequest() {
 								onClick={() => {
 									void requestCloseCreateModal();
 								}}
-								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+								disabled={isSubmittingCreateRequest}
+								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								×
 							</button>
@@ -602,15 +681,17 @@ export default function StockRequest() {
 								onClick={() => {
 									void requestCloseCreateModal();
 								}}
-								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+								disabled={isSubmittingCreateRequest}
+								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Cancel
 							</button>
 							<button
 								onClick={handleCreateRequest}
-								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+								disabled={isSubmittingCreateRequest}
+								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed"
 							>
-								Submit Request
+								{isSubmittingCreateRequest ? "Submitting..." : "Submit Request"}
 							</button>
 						</div>
 					</div>
@@ -680,13 +761,13 @@ export default function StockRequest() {
 									<p className="text-base text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.rejection_reason}</p>
 								</div>
 							)}
-						</div>
+					</div>
 
-						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
-							<button onClick={() => setViewingRequest(null)} className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors">Close</button>
-						</div>
+					<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
+						<button onClick={() => setViewingRequest(null)} className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors">Close</button>
 					</div>
 				</div>
+			</div>
 			)}
 		</AppLayoutERP>
 	);

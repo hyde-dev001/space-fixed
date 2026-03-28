@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 // ==================== Type Definitions ====================
 type EmployeeStatus = "active" | "inactive" | "on_leave";
 type AttendanceStatus = "finalized" | "pending" | "not_started";
-type PayrollWorkflowStatus = "pending" | "awaiting_checker" | "awaiting_final_approval" | "ready_for_disbursement" | "paid";
+type PayrollWorkflowStatus = "pending" | "awaiting_checker" | "awaiting_final_approval" | "ready_for_disbursement" | "paid" | "rejected";
 
 type Employee = {
 	id: number;
@@ -595,6 +595,7 @@ export default function GenerateSlip() {
 
 				const workflowStatusByEmployeeId = new Map<number, PayrollWorkflowStatus>();
 				const generatedAtByEmployeeId = new Map<number, string>();
+				const rejectedEmployeeIds = new Set<number>();
 				for (const row of payrollRows) {
 					const employeeId = Number(row?.employee_id ?? 0);
 					if (!employeeId) continue;
@@ -602,6 +603,12 @@ export default function GenerateSlip() {
 					const workflowStatusRaw = String(row?.workflow_status || '').toLowerCase();
 					const statusRaw = String(row?.status || '').toLowerCase();
 					const approvalStatusRaw = String(row?.approval_status || '').toLowerCase();
+
+					// Rejected payrolls should be regenerable in this screen.
+					if (approvalStatusRaw === 'rejected') {
+						rejectedEmployeeIds.add(employeeId);
+						continue;
+					}
 
 					let normalizedStatus: PayrollWorkflowStatus = 'pending';
 					if (workflowStatusRaw === 'paid' || statusRaw === 'paid') {
@@ -621,6 +628,15 @@ export default function GenerateSlip() {
 				}
 
 				setEmployeeData((prevData) => prevData.map((employee) => {
+					if (rejectedEmployeeIds.has(employee.id)) {
+						return {
+							...employee,
+							hasSlipForPeriod: false,
+							lastSlipGenerated: undefined,
+							payrollWorkflowStatus: 'rejected',
+						};
+					}
+
 					const workflowStatus = workflowStatusByEmployeeId.get(employee.id);
 					if (!workflowStatus) {
 						return {
@@ -1824,7 +1840,11 @@ export default function GenerateSlip() {
 										 employee.hourlyRate ? formatPHP(employee.hourlyRate) + "/hr" : "N/A"}
 									</td>
 									<td className="px-6 py-4">
-										{!employee.hasSlipForPeriod || employee.payrollWorkflowStatus === "pending" ? (
+										{employee.payrollWorkflowStatus === "rejected" ? (
+											<span className="inline-flex items-center px-2 py-1 rounded-full bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-xs font-semibold">
+												Rejected
+											</span>
+										) : !employee.hasSlipForPeriod || employee.payrollWorkflowStatus === "pending" ? (
 											<span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs font-semibold">
 												Pending
 											</span>

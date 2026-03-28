@@ -33,12 +33,6 @@ const MessageIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const DealIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4Zm1 16.93V19h-2v-1.07c-1.72-.36-3-1.89-3-3.68h2c0 1.1.9 2 2 2s2-.9 2-2c0-1.1-.9-2-2-2-2.21 0-4-1.79-4-4 0-1.79 1.28-3.32 3-3.68V4h2v1.07c1.72.36 3 1.89 3 3.68h-2c0-1.1-.9-2-2-2s-2 .9-2 2c0 1.1.9 2 2 2 2.21 0 4 1.79 4 4 0 1.79-1.28 3.32-3 3.68Z" />
-  </svg>
-);
-
 const ClockIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 1a11 11 0 1 0 11 11A11.01 11.01 0 0 0 12 1Zm1 11.41 3.29 3.3-1.42 1.41L11 13V6h2Z" />
@@ -222,7 +216,7 @@ export default function CRMDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           <MetricCard
             title="Active Customers"
             value={stats.activeCustomers.toLocaleString()}
@@ -240,15 +234,6 @@ export default function CRMDashboard() {
             icon={MessageIcon}
             color="warning"
             description="Unread or unresolved customer messages"
-          />
-          <MetricCard
-            title="Pending Reviews"
-            value={stats.pendingReviews.toLocaleString()}
-            change={0}
-            changeType="decrease"
-            icon={DealIcon}
-            color="success"
-            description="Customer reviews awaiting response"
           />
           <MetricCard
             title="Avg Rating"

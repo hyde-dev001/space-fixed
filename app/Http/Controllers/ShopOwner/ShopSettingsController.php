@@ -156,7 +156,6 @@ class ShopSettingsController extends Controller
             'approval_pages.refund_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.refund_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.price_approval.enabled' => ['required_with:approval_pages', 'boolean'],
-            'approval_pages.price_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.purchase_request_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
@@ -348,6 +347,11 @@ class ShopSettingsController extends Controller
             $record = is_array($input[$key] ?? null) ? $input[$key] : [];
             $enabled = (bool) ($record['enabled'] ?? $defaultValues['enabled']);
             $limitValue = $record['limit'] ?? $defaultValues['limit'];
+
+            // Price approval is toggle-only; threshold is not used.
+            if ($key === 'price_approval') {
+                $limitValue = null;
+            }
 
             $normalized[$key] = [
                 'enabled' => $enabled,

@@ -118,6 +118,24 @@ class PayrollController extends Controller
             $query->forPeriod($request->period);
         }
 
+        if ($request->filled('workflow_status')) {
+            $workflowStatus = strtolower((string) $request->workflow_status);
+
+            if ($workflowStatus === 'rejected') {
+                $query->where('approval_status', 'rejected');
+            } elseif ($workflowStatus === 'approved') {
+                $query->where(function ($q) {
+                    $q->where('status', 'approved')
+                      ->orWhere('approval_status', 'approved');
+                });
+            } elseif ($workflowStatus === 'pending') {
+                $query->where('approval_status', 'pending')
+                      ->where('status', 'pending');
+            } elseif (in_array($workflowStatus, ['paid', 'processed'], true)) {
+                $query->withStatus($workflowStatus);
+            }
+        }
+
         if ($request->filled('status')) {
             $query->withStatus($request->status);
         }
@@ -192,9 +210,18 @@ class PayrollController extends Controller
             ->first();
 
         if ($existingPayroll) {
-            return response()->json([
-                'error' => 'Payroll already exists for this employee and period',
-            ], 422);
+            if ((string) $existingPayroll->approval_status === 'rejected') {
+                DB::transaction(function () use ($existingPayroll) {
+                    // Remove stale approval workflow artifacts before regenerating.
+                    $existingPayroll->approval()->delete();
+                    $existingPayroll->components()->delete();
+                    $existingPayroll->delete();
+                });
+            } else {
+                return response()->json([
+                    'error' => 'Payroll already exists for this employee and period',
+                ], 422);
+            }
         }
 
         $extraEarnings = $this->payrollService->resolveAdditionalEarnings($employee, $request->payrollPeriod, [

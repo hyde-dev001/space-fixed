@@ -28,6 +28,8 @@ type ColorVariantManagerProps = {
   /** When true the "+ Add Color" button is hidden (e.g. when editing a product
    *  whose colours must come from inventory). */
   isEditing?: boolean;
+  /** When true, stock-affecting controls (size add/remove and quantity edits) are disabled. */
+  lockStockEditing?: boolean;
 };
 
 const PREDEFINED_COLORS = [
@@ -55,6 +57,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   onColorVariantsChange,
   blockedColorNames = [],
   isEditing = false,
+  lockStockEditing = false,
 }) => {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showSizePickerForColorId, setShowSizePickerForColorId] = useState<string | null>(null);
@@ -156,6 +159,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   };
 
   const addSizesToColor = (colorId: string, sizesToAdd: string[]) => {
+    if (lockStockEditing) return;
+
     const colorVariant = colorVariants.find(cv => cv.id === colorId);
     if (!colorVariant || sizesToAdd.length === 0) return;
 
@@ -188,6 +193,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   };
 
   const openSizePicker = (colorId: string) => {
+    if (lockStockEditing) return;
+
     const colorVariant = colorVariants.find(cv => cv.id === colorId);
     if (!colorVariant) return;
 
@@ -214,6 +221,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   };
 
   const updateSizeQuantityByStep = (colorId: string, sizeId: string, delta: number) => {
+    if (lockStockEditing) return;
+
     const colorVariant = colorVariants.find(cv => cv.id === colorId);
     if (!colorVariant) return;
 
@@ -225,6 +234,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   };
 
   const updateSizeQuantityFromInput = (colorId: string, sizeId: string, rawValue: string) => {
+    if (lockStockEditing) return;
+
     // Allow only digits so quantity always remains a non-negative integer.
     if (!/^\d*$/.test(rawValue)) return;
 
@@ -233,6 +244,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   };
 
   const removeSizeFromColor = (colorId: string, sizeId: string) => {
+    if (lockStockEditing) return;
+
     const colorVariant = colorVariants.find(cv => cv.id === colorId);
     if (!colorVariant) return;
 
@@ -593,14 +606,22 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                     <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Size & Stock
                     </h5>
-                    <button
-                      type="button"
-                      onClick={() => openSizePicker(colorVariant.id)}
-                      className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-                    >
-                      + Add Size
-                    </button>
+                    {!lockStockEditing && (
+                      <button
+                        type="button"
+                        onClick={() => openSizePicker(colorVariant.id)}
+                        className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        + Add Size
+                      </button>
+                    )}
                   </div>
+
+                  {lockStockEditing && (
+                    <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
+                      Stock editing is disabled while updating this product.
+                    </p>
+                  )}
 
                   {colorVariant.sizes.length === 0 ? (
                     <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
@@ -620,8 +641,9 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => removeSizeFromColor(colorVariant.id, sizeVariant.id)}
-                              className="text-red-600 hover:text-red-700 dark:hover:text-red-400"
+                              className="text-red-600 hover:text-red-700 dark:hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
                               title="Remove size"
+                              disabled={lockStockEditing}
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -632,8 +654,9 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                             <button
                               type="button"
                               onClick={() => updateSizeQuantityByStep(colorVariant.id, sizeVariant.id, -1)}
-                              className="h-10 w-10 rounded-full border border-gray-300 bg-gray-100 text-xl leading-none text-gray-700 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                              className="h-10 w-10 rounded-full border border-gray-300 bg-gray-100 text-xl leading-none text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                               aria-label={`Decrease quantity for ${getStoredSizeLabel(sizeVariant)}`}
+                              disabled={lockStockEditing}
                             >
                               -
                             </button>
@@ -661,12 +684,14 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                               }}
                               className="h-10 w-14 px-2 rounded-full border border-gray-300 bg-white text-center text-sm font-semibold text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
                               title={`Quantity for ${getStoredSizeLabel(sizeVariant)}`}
+                              disabled={lockStockEditing}
                             />
                             <button
                               type="button"
                               onClick={() => updateSizeQuantityByStep(colorVariant.id, sizeVariant.id, 1)}
-                              className="h-10 w-10 rounded-full border border-gray-300 bg-gray-100 text-xl leading-none text-gray-700 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                              className="h-10 w-10 rounded-full border border-gray-300 bg-gray-100 text-xl leading-none text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                               aria-label={`Increase quantity for ${getStoredSizeLabel(sizeVariant)}`}
+                              disabled={lockStockEditing}
                             >
                               +
                             </button>

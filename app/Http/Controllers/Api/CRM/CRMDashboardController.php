@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\CRM\CustomerReview;
 use App\Models\Order;
+use App\Models\ProductReview;
 use App\Models\RepairRequest;
+use App\Models\RepairReview;
+use App\Models\ShopReview;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -20,6 +23,69 @@ class CRMDashboardController extends Controller
     {
         $user = Auth::guard('user')->user() ?? Auth::user();
         return $user->shop_owner_id ?? $user->id;
+    }
+
+    private function shopOwnerIds(): array
+    {
+        $user = Auth::guard('user')->user() ?? Auth::user();
+        if (! $user) {
+            return [];
+        }
+
+        $ids = [];
+
+        if (!empty($user->shop_owner_id)) {
+            $ids[] = (int) $user->shop_owner_id;
+        }
+
+        if (!empty($user->id)) {
+            $ids[] = (int) $user->id;
+        }
+
+        return array_values(array_unique(array_filter($ids)));
+    }
+
+    /**
+     * Match CRM review average with the Customer Reviews page aggregation
+     * (ProductReview + RepairReview + ShopReview).
+     */
+    private function calculateAverageRating(array $shopOwnerIds): float
+    {
+        if (empty($shopOwnerIds)) {
+            return 0.0;
+        }
+
+        $productQuery = ProductReview::query()
+            ->where(function ($query) use ($shopOwnerIds) {
+                $query->whereIn('shop_owner_id', $shopOwnerIds)
+                    ->orWhereHas('product', function ($productQuery) use ($shopOwnerIds) {
+                        $productQuery->whereIn('shop_owner_id', $shopOwnerIds);
+                    });
+            });
+
+        $repairQuery = RepairReview::query()
+            ->where(function ($query) use ($shopOwnerIds) {
+                $query->whereIn('shop_owner_id', $shopOwnerIds)
+                    ->orWhereHas('repairRequest', function ($repairRequestQuery) use ($shopOwnerIds) {
+                        $repairRequestQuery->whereIn('shop_owner_id', $shopOwnerIds);
+                    });
+            });
+
+        $shopQuery = ShopReview::query()->whereIn('shop_owner_id', $shopOwnerIds);
+
+        $totalCount = (clone $productQuery)->count()
+            + (clone $repairQuery)->count()
+            + (clone $shopQuery)->count();
+
+        if ($totalCount === 0) {
+            return 0.0;
+        }
+
+        $totalRating = (float) ((clone $productQuery)->sum('rating')
+            + (clone $repairQuery)->sum('rating')
+            + (clone $shopQuery)->sum('rating'));
+
+        return round($totalRating / $totalCount, 1);
     }
 
     // ─── Shared data builder ──────────────────────────────────────────────────
@@ -65,10 +131,7 @@ class CRMDashboardController extends Controller
 
         // ── Average rating (1 decimal, 0 when no reviews) ────────────────────
 
-        $avgRating = round(
-            (float) CustomerReview::forShopOwner($shopOwnerId)->avg('rating'),
-            1
-        );
+        $avgRating = $this->calculateAverageRating($this->shopOwnerIds());
 
         // ── Engagement by channel ─────────────────────────────────────────────
 

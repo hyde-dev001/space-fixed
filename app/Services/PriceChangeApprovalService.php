@@ -15,17 +15,21 @@ class PriceChangeApprovalService
     ) {}
 
     /**
-     * Create a 4-step approval workflow for a price change
-     * Finance (1) → Shop Owner (2) → Finance (3) → Finance Final (4)
+     * Create approval workflow for a price change
+        * 1-step if owner approval not required: Finance (1) applies price
+     * 3-step if owner approval required: Finance (1) → Shop Owner (2) → Finance Final (3)
      */
-    public function createPriceChangeApproval(PriceChangeRequest $priceChange, User $shopOwner, User $requestedBy): Approval
+    public function createPriceChangeApproval(PriceChangeRequest $priceChange, User $shopOwner, User $requestedBy, bool $requiresOwnerApproval = true): Approval
     {
-        $approvalRoles = [
-            '1' => 'finance',           // Finance checks first
-            '2' => 'shop_owner',        // Shop owner approves
-            '3' => 'finance',           // Finance reviews again
-            '4' => 'finance_final'      // Finance Manager final approval
-        ];
+        $approvalRoles = $requiresOwnerApproval
+            ? [
+                '1' => 'finance',           // Finance initial review
+                '2' => 'shop_owner',        // Shop owner approves
+                '3' => 'finance'            // Finance final approval (applies price)
+            ]
+            : [
+                '1' => 'finance'            // Finance final approval (applies price)
+            ];
 
         // Create polymorphic approval record
         $approval = $this->approvalService->createApproval(
@@ -85,26 +89,30 @@ class PriceChangeApprovalService
         }
 
         // Keep intermediate states compatible with existing price change enum values
+        // Status='finance_approved' is used for intermediate approvals (levels 1-2)
+        // Only after Finance Final approval (level 3) does status change to 'owner_approved'
+        // This 3-step workflow: Finance → Owner → Finance Final
         $statusMapping = [
             1 => 'pending',
-            2 => 'finance_approved',
-            3 => 'finance_approved',
-            4 => 'owner_approved'
+            2 => 'finance_approved',   // After Finance level 1 approval
+            3 => 'finance_approved'    // After Owner level 2 approval (awaits Finance level 3)
         ];
 
         if ($result['is_final'] ?? false) {
-            // Final approval - ready to be applied
+            // Final approval (level 4) - ready to be applied
             $priceChange->update([
                 'status' => 'owner_approved',
                 'owner_rejection_reason' => null,  // Clear any previous rejection
                 'current_approval_level' => $approval->current_level
             ]);
         } else {
-            // Intermediate approval
+            // Intermediate approval at levels 1, 2, 3
             $nextLevel = $approval->current_level;
+            $newStatus = $statusMapping[$nextLevel] ?? 'pending';
+            
             $priceChange->update([
                 'current_approval_level' => $nextLevel,
-                'status' => $statusMapping[$nextLevel] ?? 'pending'
+                'status' => $newStatus
             ]);
 
             // Update appropriate field based on level

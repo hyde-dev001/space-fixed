@@ -57,6 +57,7 @@ const TrendingUpIcon = ({ className }: { className?: string }) => (
 interface PriceRequest {
   id: number;
   type: 'shoe' | 'repair';
+  requestType?: 'service' | 'package';
   item: string;
   currentPrice: string;
   requestedPrice: string;
@@ -215,9 +216,10 @@ function PriceApprovalContent() {
       // Map repair service price changes
       const repairRequests = repairResult.data.map((item: any) => {
         const mappedStatus = item.mapped_status || item.status;
+        const requestType = item.request_type === 'package' ? 'package' : 'service';
         const rawCurrentPrice = Number(item.old_price ?? item.price ?? 0);
         const rawRequestedPrice = Number(
-          (mappedStatus === 'finance_approved' || mappedStatus === 'pending_finance_final')
+          (requestType === 'service' && (mappedStatus === 'finance_approved' || mappedStatus === 'pending_finance_final'))
             ? (item.finance_notes ?? item.price ?? 0)
             : (item.price ?? item.finance_notes ?? 0)
         );
@@ -225,6 +227,7 @@ function PriceApprovalContent() {
         return {
           id: item.id,
           type: 'repair',
+          requestType,
           item: item.name,
           currentPrice: `₱${rawCurrentPrice.toLocaleString()}`,
           requestedPrice: `₱${rawRequestedPrice.toLocaleString()}`,
@@ -283,7 +286,7 @@ function PriceApprovalContent() {
       );
       matchesViewMode = isOwnerActionStep; // Awaiting owner review
     } else if (viewMode === 'recent') {
-      matchesViewMode = item.status === 'owner_approved'; // Recently approved
+      matchesViewMode = item.status === 'owner_approved' || item.status === 'pending_finance_final'; // Recently approved by owner
     }
     
     // Apply type filter
@@ -301,7 +304,7 @@ function PriceApprovalContent() {
     r.status === "finance_approved" &&
     (r.approval_workflow_version !== 'v4_multi_level' || (r.current_approval_level ?? 0) === 2)
   ).length;
-  const approvedCount = requests.filter(r => r.status === "owner_approved").length;
+  const approvedCount = requests.filter(r => r.status === "owner_approved" || r.status === "pending_finance_final").length;
   const rejectedCount = requests.filter(r => r.status === "owner_rejected").length;
 
   const handleViewClick = (request: PriceRequest) => {
@@ -373,6 +376,9 @@ function PriceApprovalContent() {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': csrfToken || '',
           },
+          body: request.type === 'repair'
+            ? JSON.stringify({ request_type: request.requestType || 'service' })
+            : undefined,
         });
 
         if (!response.ok) {
@@ -464,7 +470,9 @@ function PriceApprovalContent() {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': csrfToken || '',
           },
-          body: JSON.stringify({ reason }),
+          body: request.type === 'repair'
+            ? JSON.stringify({ reason, request_type: request.requestType || 'service' })
+            : JSON.stringify({ reason }),
         });
 
         if (!response.ok) {
@@ -809,10 +817,10 @@ function PriceApprovalContent() {
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                     {selectedRequest.approval_workflow_version === 'v4_multi_level' ? 'Price Approval - Forward to Finance' : 'Final Price Approval'}
                   </h2>
-                  {selectedRequest.status === 'owner_approved' && (
+                  {(selectedRequest.status === 'owner_approved' || selectedRequest.status === 'pending_finance_final') && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                       <CheckIcon className="w-3 h-3" />
-                      Approved & Applied
+                      {selectedRequest.status === 'pending_finance_final' ? 'Approved by Owner - Awaiting Finance Final' : 'Approved & Applied'}
                     </span>
                   )}
                   {isOwnerStepSkippedBySettings(selectedRequest) && (
@@ -972,6 +980,11 @@ function PriceApprovalContent() {
                     {isOwnerStepSkippedBySettings(selectedRequest)
                       ? '✓ Price Change Applied - Finalized by Finance (Owner step skipped by settings)'
                       : '✓ Price Change Applied - Request Finalized'}
+                  </div>
+                ) : selectedRequest.status === 'pending_finance_final' ? (
+                  /* Owner already approved, waiting for finance final */
+                  <div className="flex-1 px-4 py-3 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-semibold text-center">
+                    ✓ Approved by Owner - Forwarded to Finance for Final Approval
                   </div>
                 ) : selectedRequest.status === 'owner_rejected' ? (
                   /* Show rejected status */

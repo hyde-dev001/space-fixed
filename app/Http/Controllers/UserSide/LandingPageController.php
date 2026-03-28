@@ -889,15 +889,19 @@ class LandingPageController extends Controller
                 ->get()
                 ->map(function (RepairPackage $package) {
                     $serviceTotal = $package->services->sum(fn ($service) => (float) $service->price);
+                    $effectivePrice = $this->resolveEffectivePackagePrice($package);
 
                     return [
                         'id' => $package->id,
                         'name' => $package->name,
                         'description' => $package->description,
-                        'package_price' => (float) $package->package_price,
+                        'package_price' => $effectivePrice,
+                        'effective_package_price' => $effectivePrice,
+                        'proposed_package_price' => (float) $package->package_price,
+                        'approval_status' => $package->approval_status,
                         'service_count' => $package->services->count(),
                         'services_total_price' => round($serviceTotal, 2),
-                        'savings_amount' => round(max($serviceTotal - (float) $package->package_price, 0), 2),
+                        'savings_amount' => round(max($serviceTotal - $effectivePrice, 0), 2),
                         'services' => $package->services->map(fn ($service) => [
                             'id' => $service->id,
                             'name' => $service->name,
@@ -1005,15 +1009,19 @@ class LandingPageController extends Controller
             ->get()
             ->map(function (RepairPackage $package) {
                 $serviceTotal = $package->services->sum(fn ($service) => (float) $service->price);
+                $effectivePrice = $this->resolveEffectivePackagePrice($package);
 
                 return [
                     'id' => $package->id,
                     'name' => $package->name,
                     'description' => $package->description,
-                    'package_price' => (float) $package->package_price,
+                    'package_price' => $effectivePrice,
+                    'effective_package_price' => $effectivePrice,
+                    'proposed_package_price' => (float) $package->package_price,
+                    'approval_status' => $package->approval_status,
                     'service_count' => $package->services->count(),
                     'services_total_price' => round($serviceTotal, 2),
-                    'savings_amount' => round(max($serviceTotal - (float) $package->package_price, 0), 2),
+                    'savings_amount' => round(max($serviceTotal - $effectivePrice, 0), 2),
                     'services' => $package->services->map(fn ($service) => [
                         'id' => $service->id,
                         'name' => $service->name,
@@ -1079,6 +1087,26 @@ class LandingPageController extends Controller
         }
 
         return 'retail';
+    }
+
+    private function resolveEffectivePackagePrice(RepairPackage $package): float
+    {
+        $approvalStatus = strtolower((string) ($package->approval_status ?? 'none'));
+
+        $isNotYetApplied = in_array($approvalStatus, [
+            'pending_finance',
+            'finance_approved',
+            'pending_owner',
+            'owner_approved',
+            'finance_rejected',
+            'owner_rejected',
+        ], true);
+
+        if ($isNotYetApplied && $package->old_package_price !== null) {
+            return (float) $package->old_package_price;
+        }
+
+        return (float) $package->package_price;
     }
 
     private function isShowroomImageType(?string $value): bool

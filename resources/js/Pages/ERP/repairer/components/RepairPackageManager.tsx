@@ -108,6 +108,18 @@ const formatDateTime = (value?: string | null) => {
   }).format(new Date(value));
 };
 
+const EditIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const TrashIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
 type RepairPackageManagerProps = {
   serviceEndpoint?: string;
 };
@@ -234,10 +246,8 @@ export default function RepairPackageManager({
       return "Select at least 2 services to form a package.";
     }
 
-    const parsedPrice = parseFloat(formState.package_price);
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return "Package price must be a valid amount.";
-    }
+    // Price is now auto-calculated and derived from selected services
+    // No need to validate manual price entry
 
     return null;
   };
@@ -253,7 +263,7 @@ export default function RepairPackageManager({
     try {
       const payload = {
         ...formState,
-        package_price: parseFloat(formState.package_price),
+        package_price: selectedServicesTotal, // Use auto-calculated price from selected services
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
       };
@@ -262,7 +272,7 @@ export default function RepairPackageManager({
       if (response.data?.success) {
         await loadData();
         resetAndCloseModal();
-        Swal.fire({ icon: "success", title: "Created", text: "Repair package created successfully.", timer: 1800, showConfirmButton: false });
+        Swal.fire({ icon: "success", title: "Created", text: "Repair package created successfully. You can adjust pricing in the Repair Pricing section.", timer: 1800, showConfirmButton: false });
       }
     } catch (error: any) {
       console.error("Failed to create package", error);
@@ -285,7 +295,7 @@ export default function RepairPackageManager({
     try {
       const payload = {
         ...formState,
-        package_price: parseFloat(formState.package_price),
+        package_price: selectedServicesTotal, // Use auto-calculated price from selected services
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
       };
@@ -294,7 +304,7 @@ export default function RepairPackageManager({
       if (response.data?.success) {
         await loadData();
         resetAndCloseModal();
-        Swal.fire({ icon: "success", title: "Updated", text: "Repair package updated successfully.", timer: 1800, showConfirmButton: false });
+        Swal.fire({ icon: "success", title: "Updated", text: "Repair package updated successfully. Price changes can be made in the Repair Pricing section.", timer: 1800, showConfirmButton: false });
       }
     } catch (error: any) {
       console.error("Failed to update package", error);
@@ -382,16 +392,11 @@ export default function RepairPackageManager({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Package Price *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formState.package_price}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, package_price: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                  placeholder="0.00"
-                />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Auto-Calculated Price</label>
+                <div className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold flex items-center">
+                  {formatMoney(selectedServicesTotal)}
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price is based on selected services. Adjust in Repair Pricing section if needed.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Starts At (optional)</label>
@@ -664,8 +669,22 @@ export default function RepairPackageManager({
                 </td>
                 <td className="px-6 py-4 align-top">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => openEditModal(pkg)} className="text-blue-600 hover:text-blue-700 text-sm">Edit</button>
-                    <button onClick={() => deletePackage(pkg.id)} className="text-red-600 hover:text-red-700 text-sm">Delete</button>
+                    <button
+                      onClick={() => openEditModal(pkg)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      title="Edit package"
+                      aria-label="Edit package"
+                    >
+                      <EditIcon className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => deletePackage(pkg.id)}
+                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      title="Delete package"
+                      aria-label="Delete package"
+                    >
+                      <TrashIcon className="w-5 h-5" />
+                    </button>
                   </div>
                 </td>
               </tr>

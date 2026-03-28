@@ -20,6 +20,7 @@ export const resolveRefundStageBadge = (request: RefundStageSnapshot): RefundSta
 	const shopOwnerStatus = String(request.shopOwnerStatus || "pending").toLowerCase();
 	const financeStatus = String(request.financeStatus || "pending").toLowerCase();
 	const returnStatus = String(request.returnStatus || "awaiting_approval").toLowerCase();
+	const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
 
 	if (["succeeded", "completed", "paid"].includes(rawStatus) || request.refundedAt) {
 		return {
@@ -32,6 +33,27 @@ export const resolveRefundStageBadge = (request: RefundStageSnapshot): RefundSta
 		return {
 			label: "Refund Rejected",
 			className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+		};
+	}
+
+	if (financeStatus === "approved_initial" && shopOwnerStatus === "approved") {
+		return {
+			label: "Awaiting Finance Final",
+			className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
+		};
+	}
+
+	if (financeStatus === "approved_initial" && shopOwnerStatus !== "approved") {
+		return {
+			label: "Awaiting Shop Owner",
+			className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+		};
+	}
+
+	if (financeStatus === "pending" && requiresOwnerApproval) {
+		return {
+			label: "Awaiting Finance Initial",
+			className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
 		};
 	}
 

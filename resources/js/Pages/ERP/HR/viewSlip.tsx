@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
-type SlipStatus = "processed" | "pending" | "approved" | "paid";
+type SlipStatus = "processed" | "pending" | "approved" | "paid" | "rejected";
 
 type Deduction = {
     name: string;
@@ -90,6 +90,29 @@ const buildDeductionDetails = (apiPayroll: any) => {
     };
 };
 
+const resolveSlipStatus = (apiPayroll: any): SlipStatus => {
+    const approvalStatus = String(apiPayroll.approval_status || "").toLowerCase();
+    const status = String(apiPayroll.status || "").toLowerCase();
+
+    if (approvalStatus === "rejected") {
+        return "rejected";
+    }
+
+    if (status === "paid") {
+        return "paid";
+    }
+
+    if (status === "approved" || approvalStatus === "approved") {
+        return "approved";
+    }
+
+    if (status === "processed") {
+        return "processed";
+    }
+
+    return "pending";
+};
+
 const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
     const employeeName = apiPayroll.employee 
         ? `${apiPayroll.employee.first_name || ''} ${apiPayroll.employee.last_name || ''}`.trim()
@@ -118,7 +141,7 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
         generatedOn: apiPayroll.generated_at 
             ? new Date(apiPayroll.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
             : new Date(apiPayroll.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        status: apiPayroll.status as SlipStatus,
+        status: resolveSlipStatus(apiPayroll),
         deductionDetails,
         totalRegularHours: regularHours > 0 ? regularHours : attendanceDays * 8,
         totalOvertimeHours: toNumber(apiPayroll.overtime_hours),
@@ -136,6 +159,7 @@ const statusLabels: Record<SlipStatus, string> = {
     pending: "Pending",
     approved: "Approved",
     paid: "Paid",
+    rejected: "Rejected",
 };
 
 const statusStyles: Record<SlipStatus, string> = {
@@ -143,6 +167,7 @@ const statusStyles: Record<SlipStatus, string> = {
     pending: "bg-yellow-100 text-yellow-700 border border-yellow-200",
     approved: "bg-indigo-100 text-indigo-700 border border-indigo-200",
     paid: "bg-blue-100 text-blue-700 border border-blue-200",
+    rejected: "bg-red-100 text-red-700 border border-red-200",
 };
 
 // Action Icons
@@ -189,7 +214,7 @@ export default function ViewSlip() {
                 
                 const params = new URLSearchParams();
                 if (search) params.append('search', search);
-                if (status) params.append('status', status);
+                if (status) params.append('workflow_status', status);
                 if (month) params.append('period', month);
                 params.append('page', page.toString());
                 params.append('per_page', pageSize.toString());
@@ -383,6 +408,7 @@ export default function ViewSlip() {
                         <option value="pending">Pending</option>
                         <option value="approved">Approved</option>
                         <option value="paid">Paid</option>
+                        <option value="rejected">Rejected</option>
                     </select>
                 </div>
                 <div>

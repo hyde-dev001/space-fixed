@@ -10,14 +10,23 @@ use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
 use App\Services\PaymentSettlementService;
 use App\Services\PaymongoRefundService;
+use App\Services\ShopOwnerApprovalPolicyService;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 final class OrderRefundServiceStageWorkflowTest extends TestCase
 {
-    private PaymongoRefundService $paymongoRefundService;
+    private bool $requiresOwnerApproval = true;
 
-    private PaymentSettlementService $paymentSettlementService;
+    /** @var MockObject&PaymongoRefundService */
+    private MockObject $paymongoRefundService;
+
+    /** @var MockObject&PaymentSettlementService */
+    private MockObject $paymentSettlementService;
+
+    /** @var MockObject&ShopOwnerApprovalPolicyService */
+    private MockObject $shopOwnerApprovalPolicyService;
 
     private OrderRefundService $service;
 
@@ -27,17 +36,22 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
 
         $this->paymongoRefundService = $this->createMock(PaymongoRefundService::class);
         $this->paymentSettlementService = $this->createMock(PaymentSettlementService::class);
+        $this->shopOwnerApprovalPolicyService = $this->createMock(ShopOwnerApprovalPolicyService::class);
+        $this->shopOwnerApprovalPolicyService
+            ->method('requiresOwnerApprovalForRefund')
+            ->willReturnCallback(fn () => $this->requiresOwnerApproval);
 
         $this->service = new OrderRefundService(
             paymongoRefundService: $this->paymongoRefundService,
             paymentSettlementService: $this->paymentSettlementService,
+            shopOwnerApprovalPolicyService: $this->shopOwnerApprovalPolicyService,
         );
     }
 
     #[Test]
-    public function company_shop_owner_approval_requires_finance_approval_first(): void
+    public function shop_owner_approval_requires_finance_initial_approval_first(): void
     {
-        $refund = $this->makeRefund(registrationType: 'company');
+        $refund = $this->makeRefund();
 
         $result = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 10);
 
@@ -48,11 +62,13 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function individual_shop_owner_approval_auto_approves_finance_stage(): void
+    public function finance_can_finalize_immediately_when_owner_approval_is_not_required(): void
     {
-        $refund = $this->makeRefund(registrationType: 'individual');
+        $this->requiresOwnerApproval = false;
 
-        $result = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 10);
+        $refund = $this->makeRefund();
+
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 10);
 
         $this->assertSame('approved', $result['result']);
         $this->assertSame('approved', $refund->shop_owner_status);
@@ -61,15 +77,20 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function dual_approval_moves_refund_to_pending_customer_shipment(): void
+    public function staged_approval_moves_refund_to_pending_customer_shipment(): void
     {
         $refund = $this->makeRefund();
 
-        $financeApproval = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+        $financeInitial = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+        $this->assertSame('approved_initial', $refund->finance_status);
+        $this->assertSame('pending', $refund->shop_owner_status);
+
         $shopOwnerApproval = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 11);
+        $financeFinal = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
 
         $this->assertSame('approved', $shopOwnerApproval['result']);
-        $this->assertSame('approved', $financeApproval['result']);
+        $this->assertSame('approved', $financeInitial['result']);
+        $this->assertSame('approved', $financeFinal['result']);
         $this->assertSame('approved', $refund->shop_owner_status);
         $this->assertSame('approved', $refund->finance_status);
         $this->assertSame('pending_customer_shipment', $refund->return_status);
@@ -198,7 +219,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $refund = $this->makeRefund([
             'status' => 'pending_approval',
             'shop_owner_status' => 'pending',
-            'finance_status' => 'pending',
+            'finance_status' => 'approved_initial',
         ]);
 
         $result = $this->service->rejectRequestedRefund(

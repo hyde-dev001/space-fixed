@@ -414,25 +414,6 @@ export default function CustomerSupport() {
     ticket.customerName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleResolveConversation = async () => {
-    if (!selectedTicketId) return;
-    try {
-      await axios.patch(`/api/crm/conversations/${selectedTicketId}/status`, { status: "resolved" });
-      setTickets((prev) =>
-        prev.map((t) =>
-          t.id === selectedTicketId
-            ? { ...t, conversationStatus: "resolved", status: "idle" as const }
-            : t
-        )
-      );
-      setNotification({ type: "success", message: "Conversation marked as resolved." });
-      setTimeout(() => setNotification(null), 3000);
-    } catch {
-      setNotification({ type: "error", message: "Failed to resolve conversation." });
-      setTimeout(() => setNotification(null), 3000);
-    }
-  };
-
   const handleTransferToRepairer = async () => {
     if (!selectedTicket || !transferNote.trim()) {
       setNotification({ type: 'error', message: 'Please add a transfer note explaining why this needs technical support.' });
@@ -647,17 +628,6 @@ export default function CustomerSupport() {
                 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleResolveConversation}
-                    disabled={selectedTicket.conversationStatus === "resolved"}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-300 text-green-700 hover:bg-green-100 rounded-lg transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Mark conversation as resolved"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    {selectedTicket.conversationStatus === "resolved" ? "Resolved" : "Resolve"}
-                  </button>
                   <button
                     onClick={() => setShowTransferModal(true)}
                     className="p-1.5 bg-white border-2 border-black hover:bg-gray-50 rounded-lg transition-colors"

@@ -46,7 +46,12 @@ class PurchaseRequestController extends Controller
 
         // Status filter
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            $statusFilter = array_values(array_filter(array_map('trim', explode(',', (string) $request->status))));
+            if (count($statusFilter) > 1) {
+                $query->whereIn('status', $statusFilter);
+            } elseif (count($statusFilter) === 1) {
+                $query->where('status', $statusFilter[0]);
+            }
         }
 
         // Priority filter
@@ -74,6 +79,25 @@ class PurchaseRequestController extends Controller
 
         $purchaseRequests = $query->paginate($request->get('per_page', 15));
 
+            // Evaluate requires_owner_approval for each item and return explicit arrays
+            $purchaseRequests->setCollection(
+                $purchaseRequests->getCollection()->map(function ($purchaseRequest) {
+                    $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService
+                        ->requiresOwnerApprovalForPurchaseRequest(
+                            (int) $purchaseRequest->shop_owner_id,
+                            (float) $purchaseRequest->total_cost
+                        );
+
+                    $payload = $purchaseRequest->toArray();
+                    $payload['requires_owner_approval'] = $requiresOwnerApproval;
+                    $payload['approval_stage'] = $purchaseRequest->status === 'pending_finance_final'
+                        ? 'finance_final'
+                        : ($purchaseRequest->status === 'pending_finance' ? 'finance_initial' : null);
+
+                    return $payload;
+                })
+            );
+
         return response()->json($purchaseRequests);
     }
 
@@ -88,6 +112,23 @@ class PurchaseRequestController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
+
+            // Prevent duplicate PR creation for the same approved stock-request payload.
+            $hasMatchingActiveRequest = PurchaseRequest::query()
+                ->where('shop_owner_id', Auth::user()->shop_owner_id)
+                ->where('inventory_item_id', $data['inventory_item_id'] ?? null)
+                ->where('quantity', $data['quantity'])
+                ->where('requested_size', $data['requested_size'] ?? null)
+                ->where('status', '!=', 'rejected')
+                ->exists();
+
+            if ($hasMatchingActiveRequest) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'This approved stock request has already been processed into a purchase request.'
+                ], 422);
+            }
+
             $data['shop_owner_id'] = Auth::user()->shop_owner_id;
             $data['requested_by'] = Auth::id();
             $data['requested_date'] = now();
@@ -243,16 +284,31 @@ class PurchaseRequestController extends Controller
         }
 
         try {
+            $isFinanceFinalStage = $purchaseRequest->status === 'pending_finance_final';
             $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPurchaseRequest(
                 (int) $purchaseRequest->shop_owner_id,
                 (float) $purchaseRequest->total_cost
             );
 
-            $purchaseRequest->approve(Auth::id(), $request->approval_notes, null, $requiresOwnerApproval);
+            if ($isFinanceFinalStage) {
+                $purchaseRequest->approve(Auth::id(), $request->approval_notes, 'finance_final', false);
+            } else {
+                $purchaseRequest->approve(Auth::id(), $request->approval_notes, 'finance_initial', $requiresOwnerApproval);
+            }
+
+            $freshRequest = $purchaseRequest->fresh(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'approver']);
+
+            $payload = $freshRequest->toArray();
+            $payload['requires_owner_approval'] = $requiresOwnerApproval;
+            $payload['approval_stage'] = $freshRequest->status === 'pending_finance_final'
+                ? 'finance_final'
+                : ($freshRequest->status === 'pending_finance' ? 'finance_initial' : null);
 
             return response()->json([
-                'message' => 'Purchase request approved successfully.',
-                'purchase_request' => $purchaseRequest->fresh(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'approver'])
+                'message' => $isFinanceFinalStage
+                    ? 'Purchase request finalized by Finance successfully.'
+                    : 'Purchase request approved successfully.',
+                'purchase_request' => $payload
             ]);
 
         } catch (\Exception $e) {
@@ -305,7 +361,9 @@ class PurchaseRequestController extends Controller
 
         $metrics = [
             'total_purchase_requests' => PurchaseRequest::where('shop_owner_id', $shopOwnerId)->count(),
-            'pending_finance' => PurchaseRequest::where('shop_owner_id', $shopOwnerId)->pendingFinance()->count(),
+            'pending_finance' => PurchaseRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', ['pending_finance', 'pending_finance_final'])
+                ->count(),
             'approved_requests' => PurchaseRequest::where('shop_owner_id', $shopOwnerId)->approved()->count(),
             'rejected_requests' => PurchaseRequest::where('shop_owner_id', $shopOwnerId)->rejected()->count(),
             'draft_requests' => PurchaseRequest::where('shop_owner_id', $shopOwnerId)->draft()->count(),

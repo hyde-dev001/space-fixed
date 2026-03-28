@@ -375,6 +375,12 @@ class UploadInventoryController extends Controller
             $request->file('images'),
             $request->color_variant_id
         );
+
+        $this->syncInventoryImagesToLinkedProduct(
+            $item,
+            $request->color_variant_id ? (int) $request->color_variant_id : null,
+            $uploadedImages
+        );
         
         return response()->json([
             'message' => 'Images uploaded successfully',
@@ -398,6 +404,8 @@ class UploadInventoryController extends Controller
             return $authorizationError;
         }
         
+        $this->deleteLinkedProductImageByInventoryImage($image);
+
         // Delete file from storage
         if (Storage::disk('public')->exists($image->image_path)) {
             Storage::disk('public')->delete($image->image_path);
@@ -438,6 +446,8 @@ class UploadInventoryController extends Controller
             // Update main_image on inventory item
             $image->inventoryItem->main_image = $image->image_path;
             $image->inventoryItem->save();
+
+            $this->syncLinkedProductThumbnailByInventoryImage($image);
         });
         
         return response()->json([
@@ -568,8 +578,8 @@ class UploadInventoryController extends Controller
                     ProductColorVariantImage::create([
                         'product_color_variant_id' => $productColorVariant->id,
                         'image_path'               => $invImage->image_path,
-                        'is_thumbnail'             => $index === 0,
-                        'sort_order'               => $index,
+                        'is_thumbnail'             => (bool) ($invImage->is_thumbnail ?? ($index === 0)),
+                        'sort_order'               => (int) ($invImage->sort_order ?? $index),
                     ]);
                 }
 
@@ -929,6 +939,86 @@ class UploadInventoryController extends Controller
         }
         
         return $uploadedImages;
+    }
+
+    protected function syncInventoryImagesToLinkedProduct(InventoryItem $item, ?int $inventoryColorVariantId, array $inventoryImages): void
+    {
+        if (!$item->product_id || !$inventoryColorVariantId || empty($inventoryImages)) {
+            return;
+        }
+
+        $productColorVariant = ProductColorVariant::where('product_id', $item->product_id)
+            ->where('inventory_color_id', $inventoryColorVariantId)
+            ->first();
+
+        if (!$productColorVariant) {
+            return;
+        }
+
+        $nextSortOrder = (int) ProductColorVariantImage::where('product_color_variant_id', $productColorVariant->id)
+            ->max('sort_order') + 1;
+
+        foreach ($inventoryImages as $inventoryImage) {
+            if (!$inventoryImage instanceof InventoryImage) {
+                continue;
+            }
+
+            ProductColorVariantImage::updateOrCreate(
+                [
+                    'product_color_variant_id' => $productColorVariant->id,
+                    'image_path' => $inventoryImage->image_path,
+                ],
+                [
+                    'is_thumbnail' => (bool) $inventoryImage->is_thumbnail,
+                    'sort_order' => (int) ($inventoryImage->sort_order ?? $nextSortOrder),
+                ]
+            );
+
+            $nextSortOrder++;
+        }
+    }
+
+    protected function deleteLinkedProductImageByInventoryImage(InventoryImage $image): void
+    {
+        $inventoryItem = $image->inventoryItem;
+        if (!$inventoryItem || !$inventoryItem->product_id || !$image->inventory_color_variant_id) {
+            return;
+        }
+
+        $productColorVariant = ProductColorVariant::where('product_id', $inventoryItem->product_id)
+            ->where('inventory_color_id', $image->inventory_color_variant_id)
+            ->first();
+
+        if (!$productColorVariant) {
+            return;
+        }
+
+        ProductColorVariantImage::where('product_color_variant_id', $productColorVariant->id)
+            ->where('image_path', $image->image_path)
+            ->delete();
+    }
+
+    protected function syncLinkedProductThumbnailByInventoryImage(InventoryImage $image): void
+    {
+        $inventoryItem = $image->inventoryItem;
+        if (!$inventoryItem || !$inventoryItem->product_id || !$image->inventory_color_variant_id) {
+            return;
+        }
+
+        $productColorVariant = ProductColorVariant::where('product_id', $inventoryItem->product_id)
+            ->where('inventory_color_id', $image->inventory_color_variant_id)
+            ->first();
+
+        if (!$productColorVariant) {
+            return;
+        }
+
+        ProductColorVariantImage::where('product_color_variant_id', $productColorVariant->id)
+            ->update(['is_thumbnail' => false]);
+
+        ProductColorVariantImage::where('product_color_variant_id', $productColorVariant->id)
+            ->where('image_path', $image->image_path)
+            ->update(['is_thumbnail' => true]);
     }
 
     protected function normalizeSizeSystem(?string $sizeSystem): string

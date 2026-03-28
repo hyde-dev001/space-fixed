@@ -182,7 +182,7 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 
 		const result = await Swal.fire({
 			title: "Approve purchase request?",
-			text: `Give final approval for ${request.pr_number}? This will allow Procurement to proceed.`,
+			text: `Approve ${request.pr_number}? This will forward the request to Finance for final approval.`,
 			input: "textarea",
 			inputLabel: "Shop Owner Notes (optional)",
 			inputPlaceholder: "Add approval notes...",
@@ -205,7 +205,7 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 			await Swal.fire({
 				icon: "success",
 				title: "Approved",
-				text: `${request.pr_number} was approved. Procurement can now proceed with purchasing.`,
+				text: `${request.pr_number} was approved and forwarded to Finance for final approval.`,
 				timer: 1600,
 				showConfirmButton: false,
 			});
@@ -285,7 +285,7 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 	}, [isAnyModalOpen, onModalStateChange]);
 
 	return (
-		<AppLayout_shopOwner>
+		<AppLayout_shopOwner hideHeader={isAnyModalOpen}>
 			<Head title="Purchase Request Approval - Solespace ERP" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
@@ -420,11 +420,6 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/50" onClick={() => setViewingRequest(null)} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
-						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
-							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Purchase Request Details</h2>
-							<button onClick={() => setViewingRequest(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
-						</div>
-
 						<div className="p-6 space-y-4">
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">

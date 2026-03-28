@@ -1347,6 +1347,17 @@ Route::middleware(['auth:user', 'check.suspension', 'permission:access-hr-dashbo
         $initialHrDashboard = null;
     }
     return Inertia::render('ERP/HR/HR', compact('initialHrDashboard'));
+        // Evaluate requires_owner_approval for each request
+        $policyService = app(\App\Services\ShopOwnerApprovalPolicyService::class);
+        $requests = $requests->map(function ($request) use ($policyService) {
+            $payload = $request->toArray();
+            $payload['requires_owner_approval'] = $policyService->requiresOwnerApprovalForPurchaseRequest(
+                (int) $request->shop_owner_id,
+                (float) $request->total_cost
+            );
+
+            return $payload;
+        });
 })->name('erp.hr');
 
 // HR Audit Logs
@@ -1414,9 +1425,23 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
         $requests = \App\Models\PurchaseRequest::query()
             ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id)
-            ->where('status', 'pending_finance')
+            ->whereIn('status', ['pending_finance', 'pending_finance_final'])
             ->orderBy('requested_date', 'desc')
             ->get();
+
+        $policyService = app(\App\Services\ShopOwnerApprovalPolicyService::class);
+        $requests = $requests->map(function (\App\Models\PurchaseRequest $purchaseRequest) use ($policyService) {
+            $payload = $purchaseRequest->toArray();
+            $payload['requires_owner_approval'] = $policyService->requiresOwnerApprovalForPurchaseRequest(
+                (int) $purchaseRequest->shop_owner_id,
+                (float) $purchaseRequest->total_cost
+            );
+            $payload['approval_stage'] = $purchaseRequest->status === 'pending_finance_final'
+                ? 'finance_final'
+                : ($purchaseRequest->status === 'pending_finance' ? 'finance_initial' : null);
+
+            return $payload;
+        });
 
         return Inertia::render('ERP/Finance/PurchaseRequestApproval', [
             'requests' => $requests

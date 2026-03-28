@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 
@@ -238,64 +238,64 @@ export function OvertimeRequests() {
   const [itemsPerPage] = useState(7);
   const [paginationMeta, setPaginationMeta] = useState<any>(null);
 
+  const fetchOvertimeRequests = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+      const params = new URLSearchParams();
+      if (searchTerm) params.append('search', searchTerm);
+      if (selectedStatus) params.append('status', selectedStatus);
+      params.append('page', currentPage.toString());
+      params.append('per_page', itemsPerPage.toString());
+
+      const response = await fetch(`/api/hr/overtime-requests?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+          'Accept': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Overtime requests API response:', data);
+
+      // Check if response has Laravel pagination structure
+      if (data.data && Array.isArray(data.data)) {
+        const transformedData = data.data.map(transformOvertimeFromApi);
+        setOvertimeRequestsState(transformedData);
+        setPaginationMeta({
+          current_page: data.current_page,
+          last_page: data.last_page,
+          per_page: data.per_page,
+          total: data.total,
+        });
+      } else if (Array.isArray(data)) {
+        const transformedData = data.map(transformOvertimeFromApi);
+        setOvertimeRequestsState(transformedData);
+        setPaginationMeta(null);
+      } else {
+        console.error('Unexpected API response format:', data);
+        setOvertimeRequestsState([]);
+      }
+    } catch (error) {
+      console.error('Error fetching overtime requests:', error);
+      setOvertimeRequestsState([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [searchTerm, selectedStatus, currentPage, itemsPerPage]);
+
   // Fetch overtime requests from API
   useEffect(() => {
-    const fetchOvertimeRequests = async () => {
-      setIsLoading(true);
-      try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        
-        const params = new URLSearchParams();
-        if (searchTerm) params.append('search', searchTerm);
-        if (selectedStatus) params.append('status', selectedStatus);
-        params.append('page', currentPage.toString());
-        params.append('per_page', itemsPerPage.toString());
-
-        const response = await fetch(`/api/hr/overtime-requests?${params.toString()}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken || '',
-            'Accept': 'application/json',
-          },
-          credentials: 'include',
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Overtime requests API response:', data);
-
-        // Check if response has Laravel pagination structure
-        if (data.data && Array.isArray(data.data)) {
-          const transformedData = data.data.map(transformOvertimeFromApi);
-          setOvertimeRequestsState(transformedData);
-          setPaginationMeta({
-            current_page: data.current_page,
-            last_page: data.last_page,
-            per_page: data.per_page,
-            total: data.total,
-          });
-        } else if (Array.isArray(data)) {
-          const transformedData = data.map(transformOvertimeFromApi);
-          setOvertimeRequestsState(transformedData);
-          setPaginationMeta(null);
-        } else {
-          console.error('Unexpected API response format:', data);
-          setOvertimeRequestsState([]);
-        }
-      } catch (error) {
-        console.error('Error fetching overtime requests:', error);
-        setOvertimeRequestsState([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchOvertimeRequests();
-  }, [searchTerm, selectedStatus, currentPage, itemsPerPage]);
+  }, [fetchOvertimeRequests]);
 
   // Filter requests - only used for client-side filtering when no server pagination
   const filteredRequests = useMemo(() => {
@@ -364,7 +364,7 @@ export function OvertimeRequests() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to approve overtime request');
+        throw new Error(errorData.error || errorData.message || 'Failed to approve overtime request');
       }
 
       const data = await response.json();
@@ -429,23 +429,16 @@ export function OvertimeRequests() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to reject overtime request');
+        throw new Error(errorData.error || errorData.message || 'Failed to reject overtime request');
       }
 
       const data = await response.json();
-
-      // Update local state
-      setOvertimeRequestsState((prev) =>
-        prev.map((req) =>
-          req.id === requestToReject.id
-            ? { ...req, status: "rejected" as OvertimeStatus, rejectionReason: rejectionReason }
-            : req
-        )
-      );
       
       setIsRejectModalOpen(false);
       setRequestToReject(null);
       setRejectionReason("");
+
+      await fetchOvertimeRequests();
       
       Swal.fire({
         icon: "success",

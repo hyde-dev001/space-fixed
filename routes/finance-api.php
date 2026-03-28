@@ -44,7 +44,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Finance Module Routes - General Operations
  * Accessible by users with any Finance permissions (including pricing approvals)
  */
-Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-refund-approval', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-refund-approval|access-approval-workflow|access-purchase-request-approval', 'shop.isolation'])->group(function () {
 
     // ============================================
     // PURCHASE REQUEST FINANCE REVIEW

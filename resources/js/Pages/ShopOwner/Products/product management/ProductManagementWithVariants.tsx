@@ -63,6 +63,14 @@ type ShowroomFramePreview = {
   sortOrder: number;
 };
 
+const resolveImagePreviewUrl = (pathOrUrl?: string | null): string => {
+  if (!pathOrUrl) return '';
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
+  if (pathOrUrl.startsWith('/storage/')) return pathOrUrl;
+  if (pathOrUrl.startsWith('storage/')) return `/${pathOrUrl}`;
+  return `/storage/${pathOrUrl.replace(/^\/+/, '')}`;
+};
+
 // Icon Components  
 const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -368,7 +376,7 @@ export default function ProductManagement() {
               .filter((img: any) => isShowroomFrameImageType(img.image_type))
               .map((img: any, idx: number) => ({
                 id: String(img.id ?? `${cv.id || cv.color_name || 'color'}-${idx}`),
-                preview: img.image_path || img.image_url || '',
+                preview: resolveImagePreviewUrl(img.image_url || img.image_path),
                 colorName: String(cv.color_name || ''),
                 altText: String(img.alt_text || `Showroom frame ${idx + 1}`),
                 sortOrder: Number(img.sort_order ?? idx),
@@ -396,8 +404,8 @@ export default function ProductManagement() {
                 .map((img: any) => ({
                   id: img.id?.toString() || Date.now().toString(),
                   file: null,
-                  preview: img.image_path || img.image_url,
-                  uploaded_path: img.image_path || img.image_url,
+                  preview: resolveImagePreviewUrl(img.image_url || img.image_path),
+                  uploaded_path: img.image_path || '',
                   is_thumbnail: img.is_thumbnail || false,
                   sort_order: img.sort_order || 0,
                   alt_text: img.alt_text || '',

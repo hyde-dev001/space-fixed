@@ -105,8 +105,8 @@ const APPROVAL_ITEMS: ApprovalItemConfig[] = [
 	{
 		key: 'price_approval',
 		title: 'Price Approvals',
-		description: 'Require approval for staff-initiated price changes above your limit.',
-		helper: 'When disabled, owner approval is skipped and finance review remains as configured.',
+		description: 'Require approval for all staff-initiated price changes.',
+		helper: 'When enabled, every staff-initiated price change requires owner approval. No amount limit is applied.',
 	},
 	{
 		key: 'purchase_request_approval',
@@ -1493,6 +1493,7 @@ const ShopSetting: React.FC = () => {
 							{APPROVAL_ITEMS.map((item) => {
 								const itemData = approvalPages[item.key];
 								const errorKey = `approval_pages.${item.key}.limit`;
+								const isPriceApproval = item.key === 'price_approval';
 
 								return (
 									<div key={item.key} className="py-4 first:pt-0 last:pb-0">
@@ -1509,34 +1510,38 @@ const ShopSetting: React.FC = () => {
 											/>
 										</div>
 
-										{itemData.enabled && (
+										{itemData.enabled && !isPriceApproval && (
 											<div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4">
 												<p className="mb-3 text-sm text-gray-700">{item.helper}</p>
-												<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-													<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-xs">
-														<span className="text-sm font-medium text-gray-500">PHP</span>
-														<input
-															type="number"
-															min={0}
-															step="0.01"
-															value={itemData.limit ?? ''}
-															onChange={(event) => handleLimitChange(item.key, event.target.value)}
-															aria-label={`${item.title} limit in PHP`}
-															title={`${item.title} limit in PHP`}
-															placeholder="5000.00"
-															className="w-full border-0 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
-														/>
-													</div>
-													<button
-														type="button"
-														onClick={() => handleSaveLimit(item.key)}
-														disabled={processing}
-														className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-													>
-														{processing ? 'Saving...' : 'Save Limit'}
-													</button>
-												</div>
-												{errors[errorKey] && <p className="mt-2 text-xs text-red-600">{errors[errorKey]}</p>}
+												{!isPriceApproval && (
+													<>
+														<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+															<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-xs">
+																<span className="text-sm font-medium text-gray-500">PHP</span>
+																<input
+																	type="number"
+																	min={0}
+																	step="0.01"
+																	value={itemData.limit ?? ''}
+																	onChange={(event) => handleLimitChange(item.key, event.target.value)}
+																	aria-label={`${item.title} limit in PHP`}
+																	title={`${item.title} limit in PHP`}
+																	placeholder="5000.00"
+																	className="w-full border-0 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
+																/>
+															</div>
+															<button
+																type="button"
+																onClick={() => handleSaveLimit(item.key)}
+																disabled={processing}
+																className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+															>
+																{processing ? 'Saving...' : 'Save Limit'}
+															</button>
+														</div>
+														{errors[errorKey] && <p className="mt-2 text-xs text-red-600">{errors[errorKey]}</p>}
+													</>
+												)}
 											</div>
 										)}
 									</div>

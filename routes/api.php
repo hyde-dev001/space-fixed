@@ -384,8 +384,6 @@ Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:acce
  */
 Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
     Route::get('/',                  [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'index']);
-    Route::post('/{id}/respond',     [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'respond']);
-    Route::patch('/{id}/status',     [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'updateStatus']);
 });
 
 /**

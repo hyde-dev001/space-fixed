@@ -9,7 +9,7 @@ import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDr
 import type { StockRequestApproval } from "@/types/procurement";
 
 type RequestPriority = "high" | "medium" | "low";
-type PurchaseRequestStatus = "draft" | "pending_finance" | "approved" | "rejected";
+type PurchaseRequestStatus = "draft" | "pending_finance" | "pending_shop_owner" | "pending_finance_final" | "approved" | "rejected";
 type MetricColor = "success" | "warning" | "info";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
@@ -52,6 +52,8 @@ const formatStatus = (status: string): string => {
 	const map: Record<string, string> = {
 		draft: "Draft",
 		pending_finance: "Pending Finance",
+		pending_shop_owner: "Pending Shop Owner",
+		pending_finance_final: "Pending Finance Final",
 		approved: "Approved",
 		rejected: "Rejected",
 	};
@@ -67,6 +69,8 @@ const priorityBadgeClass: Record<string, string> = {
 const statusBadgeClass: Record<string, string> = {
 	draft: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 	pending_finance: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+	pending_shop_owner: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+	pending_finance_final: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
 	approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
@@ -171,6 +175,8 @@ export default function PurchaseRequest() {
 	const [acceptedStockRequests, setAcceptedStockRequests] = useState<StockRequestApproval[]>(initialAcceptedRequests?.data ?? []);
 	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [statusFilter, setStatusFilter] = useState<"All" | PurchaseRequestStatus>("All");
+	const [priorityFilter, setPriorityFilter] = useState<"All" | RequestPriority>("All");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestType | null>(null);
@@ -291,46 +297,58 @@ export default function PurchaseRequest() {
 		setIsCreateModalOpen(true);
 	};
 
-	// Inventory item IDs that already have an active (non-rejected) PR
-	const activeInventoryItemIds = useMemo(() => {
-		return new Set(
-			(purchaseRequests || [])
-				.filter((pr) => pr.status !== 'rejected')
-				.map((pr) => String(pr.inventory_item_id))
-				.filter(Boolean)
-		);
-	}, [purchaseRequests]);
-
-	// Map inventory_item_id → existing active PR number (for warning messages)
-	const activePrByInventoryItemId = useMemo(() => {
-		const map: Record<string, string> = {};
-		(purchaseRequests || [])
-			.filter((pr) => pr.status !== 'rejected')
-			.forEach((pr) => {
-				if (pr.inventory_item_id) {
-					map[String(pr.inventory_item_id)] = pr.pr_number;
-				}
-			});
-		return map;
-	}, [purchaseRequests]);
-
 	const filteredData = useMemo(() => {
 		if (!purchaseRequests || !Array.isArray(purchaseRequests)) return [];
-		const query = searchQuery.trim().toLowerCase();
-		if (!query) return purchaseRequests;
 
-		return purchaseRequests.filter((request) =>
+		let filtered = purchaseRequests;
+
+		if (statusFilter !== "All") {
+			filtered = filtered.filter((request) => request.status === statusFilter);
+		}
+
+		if (priorityFilter !== "All") {
+			filtered = filtered.filter((request) => request.priority === priorityFilter);
+		}
+
+		const query = searchQuery.trim().toLowerCase();
+		if (!query) return filtered;
+
+		return filtered.filter((request) =>
 			request.pr_number.toLowerCase().includes(query) ||
 			request.product_name.toLowerCase().includes(query) ||
 			request.supplier?.name.toLowerCase().includes(query) ||
 			request.status.toLowerCase().includes(query)
 		);
-	}, [searchQuery, purchaseRequests]);
+	}, [searchQuery, statusFilter, priorityFilter, purchaseRequests]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil((filteredData?.length || 0) / itemsPerPage));
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData?.slice(startIndex, startIndex + itemsPerPage) || [];
+
+	const buildRequestSignature = (inventoryItemId?: string | number | null, quantity?: string | number | null, requestedSize?: string | null) => {
+		const item = String(inventoryItemId ?? "").trim();
+		const qty = String(quantity ?? "").trim();
+		const size = String(requestedSize ?? "").trim().toLowerCase();
+		return `${item}|${qty}|${size}`;
+	};
+
+	// Legacy-safe "already used" detection (no stock_request_id column available yet)
+	const processedStockRequestSignatures = useMemo(() => {
+		return new Set(
+			(purchaseRequests || [])
+				.filter((pr) => pr.status !== 'rejected')
+				.map((pr) => buildRequestSignature(pr.inventory_item_id, pr.quantity, pr.requested_size))
+				.filter((signature) => signature !== "||")
+		);
+	}, [purchaseRequests]);
+
+	const availableAcceptedStockRequests = useMemo(() => {
+		return acceptedStockRequests.filter((sr) => {
+			const signature = buildRequestSignature(sr.inventory_item_id, sr.quantity_needed, sr.requested_size ?? "");
+			return !processedStockRequestSignatures.has(signature);
+		});
+	}, [acceptedStockRequests, processedStockRequestSignatures]);
 
 	const closeCreateModal = () => {
 		setIsCreateModalOpen(false);
@@ -366,11 +384,11 @@ export default function PurchaseRequest() {
 			return;
 		}
 
-		if (activeInventoryItemIds.has(formData.inventoryItemId)) {
-			const existingPrNumber = activePrByInventoryItemId[formData.inventoryItemId];
+		const selectedSignature = buildRequestSignature(formData.inventoryItemId, formData.quantity, formData.requestedSize);
+		if (processedStockRequestSignatures.has(selectedSignature)) {
 			await workflowFeedback.error(
-				`${existingPrNumber} already covers this product. You can only submit a new PR after the existing one is rejected.`,
-				"Duplicate PR",
+				"This approved stock request has already been used to create a purchase request.",
+				"Already Processed",
 			);
 			return;
 		}
@@ -473,6 +491,43 @@ export default function PurchaseRequest() {
 								}}
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							/>
+						</div>
+						<div className="sm:w-56">
+							<select
+								title="Filter by status"
+								aria-label="Filter by status"
+								value={statusFilter}
+								onChange={(event) => {
+									setStatusFilter(event.target.value as "All" | PurchaseRequestStatus);
+									setCurrentPage(1);
+								}}
+								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+							>
+								<option value="All">All Status</option>
+								<option value="draft">Draft</option>
+								<option value="pending_finance">Pending Finance</option>
+								<option value="pending_shop_owner">Pending Shop Owner</option>
+								<option value="pending_finance_final">Pending Finance Final</option>
+								<option value="approved">Approved</option>
+								<option value="rejected">Rejected</option>
+							</select>
+						</div>
+						<div className="sm:w-48">
+							<select
+								title="Filter by priority"
+								aria-label="Filter by priority"
+								value={priorityFilter}
+								onChange={(event) => {
+									setPriorityFilter(event.target.value as "All" | RequestPriority);
+									setCurrentPage(1);
+								}}
+								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+							>
+								<option value="All">All Priority</option>
+								<option value="high">High</option>
+								<option value="medium">Medium</option>
+								<option value="low">Low</option>
+							</select>
 						</div>
 					</div>
 
@@ -623,26 +678,15 @@ export default function PurchaseRequest() {
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 								>
 									<option value="">— Select an approved stock request —</option>
-									{acceptedStockRequests
-										.filter((sr) => !activeInventoryItemIds.has(String(sr.inventory_item_id)))
+									{availableAcceptedStockRequests
 										.map((sr) => (
 											<option key={sr.id} value={String(sr.id)}>
 												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{sr.requested_size ? `, ${formatRequestedSizeDisplay(sr.requested_size)}` : ""})
 											</option>
 										))}
 								</select>
-								{acceptedStockRequests.filter((sr) => !activeInventoryItemIds.has(String(sr.inventory_item_id))).length === 0 && (
+								{availableAcceptedStockRequests.length === 0 && (
 									<p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ No approved stock requests yet. Inventory staff must submit and get approval first.</p>
-								)}
-								{formData.inventoryItemId && activeInventoryItemIds.has(formData.inventoryItemId) && (
-									<div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 px-4 py-3">
-										<svg className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-											<path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-										</svg>
-										<span className="text-sm text-amber-700 dark:text-amber-300">
-											A PR for this product already exists (<strong>{activePrByInventoryItemId[formData.inventoryItemId]}</strong>). You cannot submit another until the existing one is rejected.
-										</span>
-									</div>
 								)}
 							</div>
 
@@ -746,7 +790,6 @@ export default function PurchaseRequest() {
 							</button>
 							<button
 								onClick={handleCreatePR}
-								disabled={!!(formData.inventoryItemId && activeInventoryItemIds.has(formData.inventoryItemId))}
 								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
 							>
 								Send to Finance

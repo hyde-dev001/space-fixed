@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
@@ -56,22 +56,56 @@ interface InventoryItem {
   sku: string;
   category: string;
   quantity: number;
-  price: string;
   image: string;
   status: "In Stock" | "Low Stock" | "Out of Stock";
   lastRestocked?: string;
 }
 
 const inventoryData: InventoryItem[] = [
-  { id: 1, name: "Nike Air Max 270", sku: "SKU-001", category: "Shoes", quantity: 45, price: "₱6,499", image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-01-28" },
-  { id: 2, name: "Adidas Ultraboost 22", sku: "SKU-002", category: "Shoes", quantity: 32, price: "₱8,999", image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-25" },
-  { id: 3, name: "New Balance 550", sku: "SKU-003", category: "Shoes", quantity: 8, price: "₱5,299", image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-20" },
-  { id: 4, name: "Puma RS-X", sku: "SKU-004", category: "Shoes", quantity: 28, price: "₱4,799", image: "/images/product/product-04.jpg", status: "In Stock", lastRestocked: "2026-01-30" },
-  { id: 5, name: "Adidas Samba", sku: "SKU-005", category: "Shoes", quantity: 0, price: "₱5,499", image: "/images/product/product-05.jpg", status: "Out of Stock", lastRestocked: "2026-01-15" },
-  { id: 6, name: "Premium Shoelaces", sku: "SKU-006", category: "Accessories", quantity: 120, price: "₱180", image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-02-01" },
-  { id: 7, name: "Cleaning Foam", sku: "SKU-007", category: "Care Products", quantity: 15, price: "₱220", image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-22" },
-  { id: 8, name: "Odor Eliminator Spray", sku: "SKU-008", category: "Care Products", quantity: 5, price: "₱260", image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-18" },
+  { id: 1, name: "Nike Air Max 270", sku: "SKU-001", category: "Shoes", quantity: 45, image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-01-28" },
+  { id: 2, name: "Adidas Ultraboost 22", sku: "SKU-002", category: "Shoes", quantity: 32, image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-25" },
+  { id: 3, name: "New Balance 550", sku: "SKU-003", category: "Shoes", quantity: 8, image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-20" },
+  { id: 4, name: "Puma RS-X", sku: "SKU-004", category: "Shoes", quantity: 28, image: "/images/product/product-04.jpg", status: "In Stock", lastRestocked: "2026-01-30" },
+  { id: 5, name: "Adidas Samba", sku: "SKU-005", category: "Shoes", quantity: 0, image: "/images/product/product-05.jpg", status: "Out of Stock", lastRestocked: "2026-01-15" },
+  { id: 6, name: "Premium Shoelaces", sku: "SKU-006", category: "Accessories", quantity: 120, image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-02-01" },
+  { id: 7, name: "Cleaning Foam", sku: "SKU-007", category: "Care Products", quantity: 15, image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-22" },
+  { id: 8, name: "Odor Eliminator Spray", sku: "SKU-008", category: "Care Products", quantity: 5, image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-18" },
 ];
+
+const formatCategoryLabel = (category: string) =>
+  category
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+const getCategoryBadgeClasses = (category: string) => {
+  const normalized = category.toLowerCase().replace(/\s+/g, "_");
+
+  if (normalized === "shoes") {
+    return "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200";
+  }
+
+  if (normalized === "repair_materials") {
+    return "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200";
+  }
+
+  if (normalized === "accessories") {
+    return "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200";
+  }
+
+  if (normalized === "care_products") {
+    return "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200";
+  }
+
+  return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200";
+};
+
+const isProductItem = (item: InventoryItem) => {
+  const normalized = item.category.toLowerCase().replace(/\s+/g, "_");
+  return normalized === "shoes" || normalized === "product" || normalized === "products";
+};
 
 interface MetricCardProps {
   title: string;
@@ -98,11 +132,11 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
+      <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
+          <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
           <div
@@ -127,6 +161,10 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function InventoryOverview() {
+  const pageProps = usePage().props as any;
+  const userRole = String(pageProps?.auth?.user?.role ?? pageProps?.auth?.user?.account_type ?? "").toLowerCase();
+  const isStaffAccount = userRole.includes("staff") || window.location.pathname.toLowerCase().includes("/staff/");
+
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -134,10 +172,14 @@ export default function InventoryOverview() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
+  const visibleInventoryData = isStaffAccount ? inventoryData.filter(isProductItem) : inventoryData;
+
+  const availableCategories = Array.from(new Set(visibleInventoryData.map((item) => item.category)));
+
   // Filter data
-  const filteredData = inventoryData.filter((item) => {
+  const filteredData = visibleInventoryData.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          item.sku.toLowerCase().includes(searchQuery.toLowerCase());
+                          item.category.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "All" || item.status === statusFilter;
     const matchesCategory = categoryFilter === "All" || item.category === categoryFilter;
     return matchesSearch && matchesStatus && matchesCategory;
@@ -150,9 +192,9 @@ export default function InventoryOverview() {
   const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
   // Calculate metrics
-  const totalItems = inventoryData.reduce((sum, item) => sum + item.quantity, 0);
-  const lowStockCount = inventoryData.filter(item => item.status === "Low Stock").length;
-  const outOfStockCount = inventoryData.filter(item => item.status === "Out of Stock").length;
+  const totalItems = visibleInventoryData.reduce((sum, item) => sum + item.quantity, 0);
+  const lowStockCount = visibleInventoryData.filter(item => item.status === "Low Stock").length;
+  const outOfStockCount = visibleInventoryData.filter(item => item.status === "Out of Stock").length;
 
   const handleViewClick = (item: InventoryItem) => {
     setSelectedItem(item);
@@ -222,7 +264,7 @@ export default function InventoryOverview() {
             <div className="flex-1">
               <input
                 type="text"
-                placeholder="Search by product name or SKU..."
+                placeholder="Search by product name or category..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -242,9 +284,11 @@ export default function InventoryOverview() {
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 <option value="All">All Categories</option>
-                <option value="Shoes">Shoes</option>
-                <option value="Accessories">Accessories</option>
-                <option value="Care Products">Care Products</option>
+                {availableCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {formatCategoryLabel(category)}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="sm:w-48">
@@ -271,10 +315,8 @@ export default function InventoryOverview() {
               <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-800">
                 <tr>
                   <th className="pb-2">Product</th>
-                  <th className="pb-2">SKU</th>
                   <th className="pb-2">Category</th>
                   <th className="pb-2">Quantity</th>
-                  <th className="pb-2">Price</th>
                   <th className="pb-2">Status</th>
                   <th className="pb-2">Action</th>
                 </tr>
@@ -292,12 +334,14 @@ export default function InventoryOverview() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 text-gray-600 dark:text-gray-400">{item.sku}</td>
-                    <td className="py-3 text-gray-600 dark:text-gray-400">{item.category}</td>
+                    <td className="py-3">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                        {formatCategoryLabel(item.category)}
+                      </span>
+                    </td>
                     <td className="py-3">
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
                     </td>
-                    <td className="py-3 text-gray-900 dark:text-gray-100">{item.price}</td>
                     <td className="py-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -362,7 +406,7 @@ export default function InventoryOverview() {
 
         {/* View Details Modal */}
         {viewModalOpen && selectedItem && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Inventory Item Details</h2>
@@ -390,16 +434,10 @@ export default function InventoryOverview() {
                     <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.name}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">SKU</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.sku}</p>
-                  </div>
-                  <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.category}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Price</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.price}</p>
+                    <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(selectedItem.category)}`}>
+                      {formatCategoryLabel(selectedItem.category)}
+                    </span>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Quantity Available</p>

@@ -173,6 +173,35 @@ const normalizeExpense = (expense: Expense) => ({
   tax_amount: Number(expense.tax_amount) || 0,
 });
 
+const normalizeApiDateString = (value: string) => {
+  // Some API values include 6-digit fractional seconds, which JS Date cannot parse reliably.
+  return value.replace(/\.(\d{3})\d+Z$/, '.$1Z');
+};
+
+const formatExpenseDate = (value: string) => {
+  const normalized = normalizeApiDateString(value);
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      date: value,
+      time: null as string | null,
+    };
+  }
+
+  return {
+    date: parsed.toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+    }),
+    time: parsed.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    }),
+  };
+};
+
 const Expense: React.FC = () => {
   const api = useFinanceApi();
   
@@ -689,7 +718,14 @@ const Expense: React.FC = () => {
             <tbody>
               {paginatedExpenses.map((expense) => (
                 <tr key={expense.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
-                  <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.date}</td>
+                  <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
+                    <div className="flex flex-col leading-tight">
+                      <span className="font-medium text-gray-900 dark:text-white">{formatExpenseDate(expense.date).date}</span>
+                      {formatExpenseDate(expense.date).time && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatExpenseDate(expense.date).time}</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">{expense.category}</td>
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.description}</td>
                   <td className="py-4 px-6 text-right text-sm font-semibold text-gray-900 dark:text-white">{formatCurrency(expense.amount)}</td>
@@ -748,7 +784,12 @@ const Expense: React.FC = () => {
             <div className="px-6 py-4 space-y-3">
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                 <span className="text-gray-500 dark:text-gray-400">Date</span>
-                <span className="font-semibold">{activeExpense.date}</span>
+                <div className="text-right">
+                  <p className="font-semibold text-gray-900 dark:text-white">{formatExpenseDate(activeExpense.date).date}</p>
+                  {formatExpenseDate(activeExpense.date).time && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatExpenseDate(activeExpense.date).time}</p>
+                  )}
+                </div>
               </div>
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                 <span className="text-gray-500 dark:text-gray-400">Amount</span>

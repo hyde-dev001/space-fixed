@@ -54,6 +54,8 @@ type Order = {
     return_status: string;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
+    customer_return_rider_name?: string | null;
+    customer_return_rider_phone?: string | null;
     customer_return_tracking_link?: string | null;
     customer_return_shipped_at?: string | null;
     return_confirmed_at?: string | null;
@@ -692,9 +694,30 @@ export default function JobOrdersPage() {
   };
 
   const handleConfirmReturnReceived = async (order: Order) => {
+    const latestRefund = order.latest_refund;
+    const returnCarrier = latestRefund?.customer_return_carrier || '-';
+    const returnRiderName = latestRefund?.customer_return_rider_name || '-';
+    const returnRiderPhone = latestRefund?.customer_return_rider_phone || '-';
+    const returnTrackingNumber = latestRefund?.customer_return_tracking_number || '-';
+    const returnTrackingLink = latestRefund?.customer_return_tracking_link || '-';
+    const returnShippedAt = latestRefund?.customer_return_shipped_at
+      ? new Date(latestRefund.customer_return_shipped_at).toLocaleString()
+      : '-';
+
     const result = await Swal.fire({
       title: 'Confirm Returned Item Received?',
-      text: `Mark returned item for order ${order.order_number} as received by staff?`,
+      html: `
+        <div style="text-align: left; margin-top: 0.75rem; line-height: 1.55;">
+          <p><strong>Order:</strong> ${order.order_number}</p>
+          <p style="margin-top: 0.5rem;"><strong>Carrier:</strong> ${returnCarrier}</p>
+          <p><strong>Rider Name:</strong> ${returnRiderName}</p>
+          <p><strong>Rider Number:</strong> ${returnRiderPhone}</p>
+          <p><strong>Tracking Number:</strong> ${returnTrackingNumber}</p>
+          <p><strong>Tracking Link:</strong> ${returnTrackingLink}</p>
+          <p><strong>Customer Marked Shipped At:</strong> ${returnShippedAt}</p>
+          <p style="margin-top: 0.75rem; color: #6b7280;">Confirm this after staff has physically received and verified the returned defective item.</p>
+        </div>
+      `,
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Yes, confirm',

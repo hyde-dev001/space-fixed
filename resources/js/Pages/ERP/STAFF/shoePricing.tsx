@@ -256,6 +256,13 @@ export default function ERPShoePricing() {
   };
 
   const handleSaveEdit = async () => {
+    const proposedPriceValue = Number.parseInt(editFormData.price, 10);
+
+    if (!Number.isInteger(proposedPriceValue) || proposedPriceValue <= 0) {
+      Swal.fire({ title: "Invalid Price", text: "Please enter a valid whole number greater than 0.", icon: "warning", confirmButtonColor: "#2563eb" });
+      return;
+    }
+
     if (!editFormData.reason.trim()) {
       Swal.fire({ title: "Reason Required", text: "Please provide a reason for changing the price.", icon: "warning", confirmButtonColor: "#2563eb" });
       return;
@@ -264,7 +271,8 @@ export default function ERPShoePricing() {
     if (!selectedShoe) return;
 
     const original = selectedShoe.price.replace(/\D/g, "");
-    if (editFormData.price === original) {
+    const normalizedProposedPrice = String(proposedPriceValue);
+    if (normalizedProposedPrice === original) {
       Swal.fire({ title: "No Changes", text: "Please make changes before saving.", icon: "info", confirmButtonColor: "#2563eb" });
       return;
     }
@@ -273,7 +281,7 @@ export default function ERPShoePricing() {
 
     const result = await Swal.fire({
       title: "Confirm Save",
-      html: `<div style="text-align: left;"><strong>New Price:</strong> ₱${editFormData.price}<br/><strong>Reason:</strong> ${editFormData.reason}</div>`,
+      html: `<div style="text-align: left;"><strong>New Price:</strong> ₱${normalizedProposedPrice}<br/><strong>Reason:</strong> ${editFormData.reason}</div>`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#2563eb",
@@ -297,7 +305,7 @@ export default function ERPShoePricing() {
             product_id: selectedShoe.id,
             product_name: selectedShoe.item,
             current_price: Number(original),
-            proposed_price: Number(editFormData.price),
+            proposed_price: proposedPriceValue,
             reason: editFormData.reason,
           }),
         });
@@ -689,16 +697,16 @@ export default function ERPShoePricing() {
                       <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-semibold text-gray-500 dark:text-gray-400">₱</span>
                         <input 
-                          type="number" 
-                          inputMode="decimal" 
-                          step="0.01" 
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={editFormData.price} 
                           onChange={(e) => { 
-                            const v = e.target.value; 
-                            if (v === '' || /^\d*\.?\d*$/.test(v)) setEditFormData({ ...editFormData, price: v }); 
+                            const digitsOnly = e.target.value.replace(/\D/g, "");
+                            setEditFormData({ ...editFormData, price: digitsOnly });
                           }} 
                           className="w-full pl-10 pr-4 py-3 text-lg rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </div>
                       

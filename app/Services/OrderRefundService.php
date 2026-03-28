@@ -12,6 +12,7 @@ class OrderRefundService
     public function __construct(
         private readonly PaymongoRefundService $paymongoRefundService,
         private readonly PaymentSettlementService $paymentSettlementService,
+        private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
     ) {
     }
 
@@ -196,6 +197,11 @@ class OrderRefundService
             ];
         }
 
+        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
+            (int) ($refund->shop_owner_id ?? 0),
+            (float) ($refund->amount ?? 0)
+        );
+
         $payload = [
             'approved_at' => $refund->approved_at ?? now(),
             'processed_by' => $processedBy,
@@ -206,13 +212,18 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'shop_owner') {
-            $registrationType = strtolower(trim((string) ($order->shopOwner?->registration_type ?? '')));
-            $isIndividualShop = $registrationType === 'individual';
-
-            if (!$isIndividualShop && (string) ($refund->finance_status ?? 'pending') !== 'approved') {
+            if (!$requiresOwnerApproval) {
                 return [
                     'result' => 'invalid_state',
-                    'message' => 'Shop owner approval requires finance approval first.',
+                    'message' => 'Shop owner approval is not required by policy for this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
+            if ((string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Shop owner approval requires finance initial approval first.',
                     'refund' => $refund,
                 ];
             }
@@ -228,26 +239,59 @@ class OrderRefundService
             $payload['shop_owner_status'] = 'approved';
             $payload['shop_owner_approved_at'] = now();
             $payload['shop_owner_approved_by'] = $processedBy;
-
-            if ($isIndividualShop && (string) ($refund->finance_status ?? 'pending') !== 'approved') {
-                $payload['finance_status'] = 'approved';
-                $payload['finance_approved_at'] = now();
-                $payload['finance_approved_by'] = null;
-            }
         }
 
         if ($stageNormalized === 'finance') {
-            if ((string) ($refund->finance_status ?? 'pending') === 'approved') {
-                return [
-                    'result' => 'already_approved',
-                    'message' => 'Finance has already approved this refund request.',
-                    'refund' => $refund,
-                ];
-            }
+            $financeStatus = (string) ($refund->finance_status ?? 'pending');
 
-            $payload['finance_status'] = 'approved';
-            $payload['finance_approved_at'] = now();
-            $payload['finance_approved_by'] = $processedBy;
+            if (!$requiresOwnerApproval) {
+                if ($financeStatus === 'approved') {
+                    return [
+                        'result' => 'already_approved',
+                        'message' => 'Finance has already approved this refund request.',
+                        'refund' => $refund,
+                    ];
+                }
+
+                $payload['finance_status'] = 'approved';
+                $payload['finance_approved_at'] = now();
+                $payload['finance_approved_by'] = $processedBy;
+                $payload['shop_owner_status'] = 'approved';
+                $payload['shop_owner_approved_at'] = $payload['shop_owner_approved_at'] ?? now();
+                $payload['shop_owner_approved_by'] = $payload['shop_owner_approved_by'] ?? null;
+            } else {
+                if ($financeStatus === 'approved') {
+                    return [
+                        'result' => 'already_approved',
+                        'message' => 'Finance has already finalized this refund request.',
+                        'refund' => $refund,
+                    ];
+                }
+
+                if ($financeStatus === 'pending') {
+                    $payload['finance_status'] = 'approved_initial';
+                    $payload['finance_approved_at'] = now();
+                    $payload['finance_approved_by'] = $processedBy;
+                } elseif ($financeStatus === 'approved_initial') {
+                    if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+                        return [
+                            'result' => 'invalid_state',
+                            'message' => 'Shop owner approval is required before finance final approval.',
+                            'refund' => $refund,
+                        ];
+                    }
+
+                    $payload['finance_status'] = 'approved';
+                    $payload['finance_approved_at'] = now();
+                    $payload['finance_approved_by'] = $processedBy;
+                } else {
+                    return [
+                        'result' => 'invalid_state',
+                        'message' => 'Refund request cannot be approved in its current finance state.',
+                        'refund' => $refund,
+                    ];
+                }
+            }
         }
 
         if ((string) ($refund->status ?? 'requested') === 'requested') {
@@ -265,13 +309,16 @@ class OrderRefundService
 
         $nextMessage = 'Refund approval recorded.';
         if ($stageNormalized === 'finance') {
-            $nextMessage = $isDualApproved
-                ? 'Finance approval recorded. Awaiting product return confirmation before payout.'
-                : 'Finance approval recorded. Awaiting shop owner approval.';
+            $newFinanceStatus = (string) ($payload['finance_status'] ?? $refund->finance_status);
+            if (!$requiresOwnerApproval) {
+                $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
+            } elseif ($newFinanceStatus === 'approved_initial') {
+                $nextMessage = 'Finance initial approval recorded. Awaiting shop owner approval.';
+            } else {
+                $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
+            }
         } elseif ($stageNormalized === 'shop_owner') {
-            $nextMessage = $isDualApproved
-                ? 'Shop owner approval recorded. Awaiting product return confirmation before payout.'
-                : 'Shop owner approval recorded. Awaiting finance approval.';
+            $nextMessage = 'Shop owner approval recorded. Awaiting finance final approval.';
         }
 
         return [
@@ -300,10 +347,9 @@ class OrderRefundService
             ];
         }
 
-        // Prevent rejection if stage has already approved or rejected
         if ($stageNormalized === 'finance') {
             $financeStatus = strtolower(trim((string) ($refund->finance_status ?? 'pending')));
-            if ($financeStatus !== 'pending') {
+            if (!in_array($financeStatus, ['pending', 'approved_initial'], true)) {
                 return [
                     'result' => 'already_' . $financeStatus,
                     'message' => 'Finance has already ' . $financeStatus . ' this refund request.',
@@ -318,6 +364,14 @@ class OrderRefundService
                 return [
                     'result' => 'already_' . $shopOwnerStatus,
                     'message' => 'Shop owner has already ' . $shopOwnerStatus . ' this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
+            if ((string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Shop owner can reject only after finance initial approval.',
                     'refund' => $refund,
                 ];
             }

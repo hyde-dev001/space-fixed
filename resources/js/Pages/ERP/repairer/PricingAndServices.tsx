@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -151,7 +151,34 @@ interface ServiceItem {
   duration: string;
   status: string;
   rejectionReason?: string;
+  type?: 'service' | 'package';
 }
+
+const toDisplayPackageStatus = (pkg: any): string => {
+  const approval = String(pkg.approval_status || '').toLowerCase();
+  if (approval === 'pending_finance' || approval === 'finance_approved' || approval === 'pending_owner' || approval === 'owner_approved') {
+    return 'Under Review';
+  }
+  if (approval === 'finance_rejected' || approval === 'owner_rejected') {
+    return 'Rejected';
+  }
+  if (approval === 'finalized') {
+    return 'Active';
+  }
+
+  // Fallback for payloads where approval_status is missing but request is in-flight:
+  // effective live price is returned in package_price while proposed price is in proposed_package_price.
+  const livePrice = Number(pkg.package_price);
+  const proposedPrice = Number(pkg.proposed_package_price);
+  if (Number.isFinite(livePrice) && Number.isFinite(proposedPrice) && Math.abs(livePrice - proposedPrice) > 0.0001) {
+    return 'Under Review';
+  }
+
+  const rawStatus = String(pkg.status || '').toLowerCase();
+  if (rawStatus === 'active') return 'Active';
+  if (rawStatus === 'inactive') return 'Inactive';
+  return pkg.status || 'Active';
+};
 
 export default function ERPPricingAndServices() {
   const { auth, initialServices } = usePage().props as any;
@@ -166,6 +193,7 @@ export default function ERPPricingAndServices() {
   const [addFormData, setAddFormData] = useState({ name: "", category: "Care", price: "", duration: "" });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [itemType, setItemType] = useState<"services" | "packages">("services");
 
   const mapApiService = (service: any) => ({
     name: service.name,
@@ -175,36 +203,67 @@ export default function ERPPricingAndServices() {
     status: service.status,
     rejectionReason: service.rejection_reason,
     id: service.id,
+    type: 'service',
+  });
+
+  const mapApiPackage = (pkg: any) => ({
+    name: pkg.name,
+    category: 'Package',
+    price: `₱${parseFloat(pkg.package_price).toFixed(0)}`,
+    duration: `${pkg.service_count} services`,
+    status: toDisplayPackageStatus(pkg),
+    rejectionReason: pkg.owner_notes || pkg.finance_notes || undefined,
+    id: pkg.id,
+    type: 'package',
   });
 
   const [servicePrices, setServicePrices] = useState<any[]>(() =>
     Array.isArray(initialServices) ? initialServices.map(mapApiService) : []
   );
+  const [packages, setPackages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch services from backend (used after mutations)
+  // Fetch services and packages from backend (used after mutations)
   const fetchServices = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/repair-services');
-      if (response.data.success) {
-        setServicePrices(response.data.data.map(mapApiService));
+      const timestamp = Date.now();
+      const [servicesRes, packagesRes] = await Promise.all([
+        axios.get('/api/repair-services', { params: { _ts: timestamp } }),
+        axios.get('/api/repair-packages', { params: { _ts: timestamp } }),
+      ]);
+      
+      if (servicesRes.data.success) {
+        setServicePrices(servicesRes.data.data.map(mapApiService));
+      }
+      if (packagesRes.data.success) {
+        setPackages(packagesRes.data.data.map(mapApiPackage));
       }
     } catch (error) {
-      console.error('Error fetching services:', error);
-      Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to load services' });
+      console.error('Error fetching services/packages:', error);
+      Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to load services and packages' });
     } finally {
       setLoading(false);
     }
   };
 
+  // Fetch packages on component mount
+  useEffect(() => {
+    fetchServices();
+  }, []);
+
   // Filter data based on search and status
-  const filteredData = servicePrices.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          item.category.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "All" || item.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const getDisplayData = () => {
+    const data = itemType === "services" ? servicePrices : packages;
+    return data.filter((item) => {
+      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            item.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === "All" || item.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  };
+
+  const filteredData = getDisplayData();
 
   const itemsPerPage = 7;
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -232,10 +291,22 @@ export default function ERPPricingAndServices() {
   const handleSaveEdit = async () => {
     if (!selectedService) return;
 
+    const proposedPriceValue = Number.parseInt(editFormData.price, 10);
+    if (!Number.isInteger(proposedPriceValue) || proposedPriceValue <= 0) {
+      Swal.fire({
+        title: "Invalid Price",
+        text: "Please enter a valid whole number greater than 0.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     const original = selectedService.price.replace(/\D/g, "");
+    const normalizedProposedPrice = String(proposedPriceValue);
 
     // Check if there are any changes
-    if (editFormData.price === original) {
+    if (normalizedProposedPrice === original) {
       Swal.fire({
         title: "No Changes",
         text: "Please make changes before saving.",
@@ -260,47 +331,76 @@ export default function ERPPricingAndServices() {
 
     const result = await Swal.fire({
       title: "Confirm Save",
-      html: `<div style="text-align: left;"><strong>New Price:</strong> ${editFormData.price}<br/><strong>Reason:</strong> ${editFormData.reason}</div>`,
+      html: `<div style="text-align: left;"><strong>New Price:</strong> ₱${normalizedProposedPrice}<br/><strong>Reason:</strong> ${editFormData.reason}</div>`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#2563eb",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, Save",
+      confirmButtonText: "Yes, Submit for Approval",
       cancelButtonText: "Cancel",
     });
 
     if (result.isConfirmed) {
       try {
-        const priceValue = editFormData.price;
+        const priceValue = proposedPriceValue;
+        const endpoint = selectedService.type === 'package' 
+          ? `/api/repair-packages/${(selectedService as any)?.id}`
+          : `/api/repair-services/${(selectedService as any)?.id}`;
         
-        const response = await axios.put(`/api/repair-services/${(selectedService as any)?.id}`, {
-          price: priceValue,
-          status: "Under Review",
-          reason: editFormData.reason,
-        });
+        const payload = selectedService.type === 'package'
+          ? { 
+              package_price: priceValue, 
+              reason: editFormData.reason 
+            }
+          : { 
+              price: priceValue, 
+              reason: editFormData.reason 
+            };
+        
+        const response = await axios.put(endpoint, payload);
 
         if (response.data.success) {
           await fetchServices(); // Refresh the list
           Swal.fire({
             title: "Success!",
-            text: "Service price updated successfully. Please wait for the Finance to approve it.",
+            text: `Price change submitted. Status: ${response.data.approval_status || 'Pending Finance Review'}. Please wait for approval.`,
             icon: "success",
             confirmButtonColor: "#2563eb",
           });
         }
       } catch (error: any) {
-        console.error('Error updating service:', error);
-        Swal.fire({
-          icon: "error",
-          title: "Error",
-          text: error.response?.data?.message || "Failed to update service",
-        });
+        console.error('Error updating price:', error);
+        
+        // Handle 409 Conflict - duplicate pending request
+        if (error.response?.status === 409) {
+          const pending = error.response?.data?.pending_request;
+          Swal.fire({
+            icon: "warning",
+            title: "Request Already Pending",
+            html: pending ? `<div style="text-align: left;">
+              <strong>A price change request is already pending approval:</strong><br/>
+              <br/>
+              <strong>Current Price:</strong> ₱${(pending.old_price || 0).toFixed(2)}<br/>
+              <strong>Proposed Price:</strong> ₱${(pending.proposed_price || 0).toFixed(2)}<br/>
+              <strong>Reason:</strong> ${pending.reason}<br/>
+              <strong>Status:</strong> ${pending.status || 'Pending'}<br/>
+              <br/>
+              Please wait for this request to be approved or rejected before submitting another.
+            </div>` : error.response?.data?.message || "A price change request is already pending for this item.",
+          });
+        } else {
+          Swal.fire({
+            icon: "error",
+            title: "Error",
+            text: error.response?.data?.message || "Failed to submit price change",
+          });
+        }
       }
     }
   };
 
   const parsePrice = (value: string) => {
-    const numeric = Number((value || "").replace(/[^\d.]/g, ""));
+    const numeric = Number((value || "").replace(/\D/g, ""));
     return Number.isFinite(numeric) ? numeric : 0;
   };
 
@@ -425,8 +525,42 @@ export default function ERPPricingAndServices() {
 
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
           <div className="mb-4">
-            <h2 className="text-lg font-semibold">Repair Services & Price</h2>
-            <p className="text-sm text-gray-500">Edit service prices and submit for Finance approval.</p>
+            <h2 className="text-lg font-semibold">Repair Services & Packages Pricing</h2>
+            <p className="text-sm text-gray-500">Edit service and package prices and submit for Finance approval.</p>
+          </div>
+
+          {/* Tabs for Services and Packages */}
+          <div className="mb-6 flex gap-2 border-b border-gray-200 dark:border-gray-800">
+            <button
+              onClick={() => {
+                setItemType("services");
+                setCurrentPage(1);
+                setSearchQuery("");
+                setStatusFilter("All");
+              }}
+              className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+                itemType === "services"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
+              }`}
+            >
+              Services ({servicePrices.length})
+            </button>
+            <button
+              onClick={() => {
+                setItemType("packages");
+                setCurrentPage(1);
+                setSearchQuery("");
+                setStatusFilter("All");
+              }}
+              className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+                itemType === "packages"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
+              }`}
+            >
+              Packages ({packages.length})
+            </button>
           </div>
           
           {/* Search and Filter */}
@@ -434,7 +568,7 @@ export default function ERPPricingAndServices() {
             <div className="flex-1">
               <input
                 type="text"
-                placeholder="Search by service name or category..."
+                placeholder={`Search by ${itemType === "services" ? "service name or category" : "package name"}...`}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -465,19 +599,21 @@ export default function ERPPricingAndServices() {
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-800">
                 <tr>
-                  <th className="pb-2">Service</th>
-                  <th className="pb-2">Category</th>
+                  <th className="pb-2">{itemType === "services" ? "Service" : "Package"}</th>
+                  {itemType === "services" && <th className="pb-2">Category</th>}
                   <th className="pb-2">Price</th>
-                  <th className="pb-2">Duration</th>
+                  <th className="pb-2">{itemType === "services" ? "Duration" : "Services"}</th>
                   <th className="pb-2">Status</th>
                   <th className="pb-2">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {paginatedServices.map((item) => (
-                  <tr key={item.name}>
+                  <tr key={`${item.type}-${item.id}`}>
                     <td className="py-3 font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
-                    <td className="py-3 text-gray-500">{item.category}</td>
+                    {itemType === "services" && (
+                      <td className="py-3 text-gray-500">{item.category}</td>
+                    )}
                     <td className="py-3 text-gray-900 dark:text-gray-100">{item.price}</td>
                     <td className="py-3 text-gray-500">{item.duration}</td>
                     <td className="py-3">
@@ -499,14 +635,14 @@ export default function ERPPricingAndServices() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => handleViewClick(item)}
-                          title="View service details"
+                          title="View details"
                           className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
                         >
                           <EyeIcon className="w-5 h-5" />
                         </button>
                         <button 
                           onClick={() => handleEditClick(item)}
-                          title="Edit service price"
+                          title="Edit price"
                           className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
                         >
                           <PencilIcon className="w-5 h-5" />
@@ -798,16 +934,13 @@ export default function ERPPricingAndServices() {
                           <div className="relative">
                             <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">₱</span>
                             <input
-                              type="number"
+                              type="text"
                               inputMode="numeric"
-                              min="0"
-                              step="1"
+                              pattern="[0-9]*"
                               value={editFormData.price}
                               onChange={(e) => {
-                                const value = e.target.value;
-                                if (value === '' || /^\d+$/.test(value)) {
-                                  setEditFormData({ ...editFormData, price: value });
-                                }
+                                const digitsOnly = e.target.value.replace(/\D/g, "");
+                                setEditFormData({ ...editFormData, price: digitsOnly });
                               }}
                               title="Proposed new price"
                               className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950/60 text-gray-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 dark:focus:border-blue-400 transition"

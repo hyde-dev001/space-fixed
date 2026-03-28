@@ -13,7 +13,6 @@ type MetricColor = "success" | "warning" | "info";
 interface NewRequestForm {
   materialId: string;
   quantity: string;
-  size: string;
   priority: Priority;
   notes: string;
 }
@@ -24,7 +23,6 @@ interface CartItem {
   materialName: string;
   skuCode: string;
   quantity: number;
-  size: string;
   priority: Priority;
   notes: string;
 }
@@ -162,7 +160,6 @@ export default function RequestMaterials() {
   const [formData, setFormData] = useState<NewRequestForm>({
     materialId: "",
     quantity: "",
-    size: "",
     priority: "Medium",
     notes: "",
   });
@@ -253,7 +250,7 @@ export default function RequestMaterials() {
 
     // Check if material already in cart
     const existingItemIndex = cart.findIndex(
-      (item) => item.materialId === formData.materialId && item.size === formData.size.trim()
+      (item) => item.materialId === formData.materialId
     );
 
     const newCartItem: CartItem = {
@@ -262,7 +259,6 @@ export default function RequestMaterials() {
       materialName: selectedMaterial.name,
       skuCode: selectedMaterial.sku || "N/A",
       quantity,
-      size: formData.size.trim(),
       priority: formData.priority,
       notes: formData.notes.trim(),
     };
@@ -278,7 +274,7 @@ export default function RequestMaterials() {
     }
 
     // Reset form
-    setFormData({ materialId: "", quantity: "", size: "", priority: "Medium", notes: "" });
+    setFormData({ materialId: "", quantity: "", priority: "Medium", notes: "" });
     
     await Swal.fire({
       title: "Added to cart",
@@ -319,7 +315,6 @@ export default function RequestMaterials() {
           inventory_item_id: Number(item.materialId),
           quantity_needed: item.quantity,
           priority: toPriorityPayload(item.priority),
-          requested_size: item.size || undefined,
           notes: item.notes,
         })),
       });
@@ -376,7 +371,6 @@ export default function RequestMaterials() {
         inventory_item_id: selectedMaterial.id,
         quantity_needed: quantity,
         priority: toPriorityPayload(formData.priority),
-        requested_size: formData.size.trim() || undefined,
         notes: formData.notes.trim(),
       });
 
@@ -387,7 +381,7 @@ export default function RequestMaterials() {
           icon: "success",
           confirmButtonColor: "#2563eb",
         });
-        setFormData({ materialId: "", quantity: "", size: "", priority: "Medium", notes: "" });
+        setFormData({ materialId: "", quantity: "", priority: "Medium", notes: "" });
         setCurrentPage(1);
         setIsCreateModalOpen(false);
         await loadPageData();
@@ -403,7 +397,7 @@ export default function RequestMaterials() {
   };
 
   return (
-    <AppLayoutERP hideHeader={isCreateModalOpen}>
+    <AppLayoutERP hideHeader={isCreateModalOpen || isCartOpen}>
       <Head title="Request Material - Repair - Solespace" />
 
       {isCreateModalOpen && <div className="fixed inset-0 z-40" />}
@@ -620,17 +614,6 @@ export default function RequestMaterials() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Shoe Size / Variant</label>
-                <input
-                  type="text"
-                  value={formData.size}
-                  onChange={(event) => setFormData((prev) => ({ ...prev, size: event.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-                  placeholder="Example: EU 42, Brown variant"
-                />
-              </div>
-
-              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Repair Notes</label>
                 <textarea
                   value={formData.notes}
@@ -705,7 +688,7 @@ export default function RequestMaterials() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                    <div className="grid grid-cols-2 gap-3 mb-3">
                       <div>
                         <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Quantity</label>
                         <input
@@ -743,24 +726,6 @@ export default function RequestMaterials() {
                           <option value="Low">Low</option>
                         </select>
                       </div>
-
-                      <div className="md:col-span-2">
-                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Size / Variant</label>
-                        <input
-                          type="text"
-                          value={item.size}
-                          onChange={(e) =>
-                            handleUpdateCartItem(item.id, {
-                              size: e.target.value,
-                            })
-                          }
-                          disabled={isSubmittingCart}
-                          aria-label="Size or variant"
-                          title="Enter size or variant"
-                          placeholder="E.g., EU 42"
-                          className="w-full mt-1 px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm disabled:opacity-50"
-                        />
-                      </div>
                     </div>
 
                     <div>
@@ -794,7 +759,7 @@ export default function RequestMaterials() {
                   disabled={isSubmittingCart}
                   className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50"
                 >
-                  Continue Shopping
+                  Continue Request
                 </button>
                 <button
                   onClick={handleSubmitCart}

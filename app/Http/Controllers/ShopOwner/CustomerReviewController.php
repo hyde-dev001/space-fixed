@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Models\ProductReview;
 use App\Models\RepairReview;
+use App\Models\ShopReview;
 use App\Models\ReviewReport;
 use App\Enums\NotificationType;
 use Illuminate\Http\JsonResponse;
@@ -26,8 +27,12 @@ class CustomerReviewController extends Controller
         $shopOwnerId = $shopOwner->id;
 
         // ── Product reviews ──────────────────────────────────────────────
-        $productReviews = ProductReview::where('shop_owner_id', $shopOwnerId)
-            ->where('is_approved', true)
+        $productReviews = ProductReview::where(function ($query) use ($shopOwnerId) {
+                $query->where('shop_owner_id', $shopOwnerId)
+                    ->orWhereHas('product', function ($productQuery) use ($shopOwnerId) {
+                        $productQuery->where('shop_owner_id', $shopOwnerId);
+                    });
+            })
             ->with([
                 'user:id,name,email',
                 'product:id,name',
@@ -48,8 +53,12 @@ class CustomerReviewController extends Controller
             ]);
 
         // ── Repair reviews ───────────────────────────────────────────────
-        $repairReviews = RepairReview::where('shop_owner_id', $shopOwnerId)
-            ->visible()
+        $repairReviews = RepairReview::where(function ($query) use ($shopOwnerId) {
+                $query->where('shop_owner_id', $shopOwnerId)
+                    ->orWhereHas('repairRequest', function ($repairRequestQuery) use ($shopOwnerId) {
+                        $repairRequestQuery->where('shop_owner_id', $shopOwnerId);
+                    });
+            })
             ->with([
                 'user:id,name,email',
                 'repairRequest:id,shoe_type',
@@ -69,9 +78,29 @@ class CustomerReviewController extends Controller
                 'createdAt'      => $r->created_at->format('Y-m-d'),
             ]);
 
+        // ── Shop reviews (submitted from /api/shops/{shopId}/reviews) ───────
+        $shopReviews = ShopReview::where('shop_owner_id', $shopOwnerId)
+            ->with([
+                'user:id,name,email',
+            ])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($r) => [
+                'id'             => 'shop_' . $r->id,
+                'customerName'   => $r->user?->name ?? 'Unknown Customer',
+                'rating'         => (int) $r->rating,
+                'comment'        => $r->comment ?? '',
+                'feedbackImages' => $r->images ?? [],
+                'serviceType'    => 'Shop Service',
+                'orderType'      => 'repair',
+                'responseStatus' => 'pending',
+                'createdAt'      => $r->created_at->format('Y-m-d'),
+            ]);
+
         // Merge and sort newest first
         $all = $productReviews
             ->concat($repairReviews)
+            ->concat($shopReviews)
             ->sortByDesc('createdAt')
             ->values();
 
@@ -89,55 +118,6 @@ class CustomerReviewController extends Controller
             'reviews' => $all,
             'stats'   => $stats,
         ]);
-    }
-
-    /**
-     * Shop owner writes a public response to a customer review.
-     * POST /api/shop-owner/reviews/{id}/respond
-     */
-    public function respond(Request $request, string $id): JsonResponse
-    {
-        $shopOwner   = Auth::guard('shop_owner')->user();
-        $validated   = $request->validate([
-            'response' => 'required|string|max:1000',
-        ]);
-
-        [$type, $rawId] = explode('_', $id, 2);
-        $reviewId = (int) $rawId;
-
-        if ($type === 'product') {
-            $review = ProductReview::where('id', $reviewId)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-
-            $review->update([
-                'shop_response'     => $validated['response'],
-                'shop_responded_at' => now(),
-            ]);
-
-            return response()->json([
-                'shopResponse'   => $review->shop_response,
-                'responseStatus' => 'responded',
-            ]);
-        }
-
-        if ($type === 'repair') {
-            $review = RepairReview::where('id', $reviewId)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-
-            $review->update([
-                'shop_response'     => $validated['response'],
-                'shop_responded_at' => now(),
-            ]);
-
-            return response()->json([
-                'shopResponse'   => $review->shop_response,
-                'responseStatus' => 'responded',
-            ]);
-        }
-
-        return response()->json(['error' => 'Invalid review type.'], 422);
     }
 
     /**

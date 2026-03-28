@@ -74,6 +74,18 @@ const formatDecimalHours = (decimalHours: number): string => {
     return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const getPHDateInputValue = () => {
+    const now = getPHTime();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const formatDateInputFromParts = (year: number, month: number, day: number) => {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
 export default function TimeIn() {
     const { auth } = usePage().props as any;
     const [currentTime, setCurrentTime] = useState<Date>(getPHTime());
@@ -86,8 +98,12 @@ export default function TimeIn() {
     const [totalHours, setTotalHours] = useState<string>('0:00:00');
     const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
     const [showLeaveModal, setShowLeaveModal] = useState(false);
-    const [leaveMonth, setLeaveMonth] = useState('');
-    const [leaveDay, setLeaveDay] = useState('');
+    const [leaveStartDate, setLeaveStartDate] = useState(getPHDateInputValue());
+    const [leaveEndDate, setLeaveEndDate] = useState('');
+    const [leaveCalendarMonth, setLeaveCalendarMonth] = useState(() => {
+        const now = getPHTime();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+    });
     const [leaveReason, setLeaveReason] = useState('');
     const [lastLeaveRequestTime, setLastLeaveRequestTime] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -821,36 +837,91 @@ export default function TimeIn() {
     };
 
     const handleRequestLeaveClick = () => {
+        const defaultDate = getPHDateInputValue();
+        setLeaveStartDate(defaultDate);
+        setLeaveEndDate('');
+        const now = getPHTime();
+        setLeaveCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+        setLeaveReason('');
         setShowLeaveModal(true);
     };
 
+    const handleLeaveDateClick = (dateValue: string) => {
+        if (dateValue < leaveToday) {
+            return;
+        }
+
+        if (!leaveStartDate || (leaveStartDate && leaveEndDate)) {
+            setLeaveStartDate(dateValue);
+            setLeaveEndDate('');
+            return;
+        }
+
+        if (dateValue === leaveStartDate) {
+            setLeaveEndDate('');
+            return;
+        }
+
+        if (dateValue < leaveStartDate) {
+            setLeaveEndDate(leaveStartDate);
+            setLeaveStartDate(dateValue);
+            return;
+        }
+
+        setLeaveEndDate(dateValue);
+    };
+
     const handleLeaveRequest = async () => {
-        if (!leaveMonth || !leaveDay || !leaveReason) {
+        const trimmedReason = leaveReason.trim();
+        const startDate = leaveStartDate;
+        const endDate = leaveEndDate || leaveStartDate;
+        const leaveRequestType = leaveEndDate ? 'multiple' : 'single';
+
+        if (!startDate || !endDate || !trimmedReason) {
             Swal.fire({
                 icon: 'warning',
                 title: 'Incomplete Form',
-                text: 'Please fill in all fields',
-                confirmButtonColor: '#9333ea'
+                text: 'Please complete all required fields.',
+                confirmButtonColor: '#2563eb'
             });
             return;
         }
 
-        // Parse the month and day to create start_date and end_date
-        const year = new Date().getFullYear();
-        const monthNumber = new Date(Date.parse(leaveMonth + " 1, 2000")).getMonth() + 1;
-        const dayNumber = parseInt(leaveDay);
-        const startDate = `${year}-${String(monthNumber).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
-        const endDate = startDate; // Single day leave
+        if (leaveRequestType === 'multiple' && endDate < startDate) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Invalid Date Range',
+                text: 'End date must be the same as or after start date.',
+                confirmButtonColor: '#2563eb'
+            });
+            return;
+        }
+
+        const startDisplay = new Date(`${startDate}T00:00:00`).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+        const endDisplay = new Date(`${endDate}T00:00:00`).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+        const dayCount = Math.floor(
+            (new Date(`${endDate}T00:00:00`).getTime() - new Date(`${startDate}T00:00:00`).getTime()) / 86400000,
+        ) + 1;
         
         const result = await Swal.fire({
             title: 'Submit Leave Request?',
             html: `<div class="text-left">
-                <p><strong>Date:</strong> ${leaveMonth} ${leaveDay}, ${year}</p>
-                <p><strong>Reason:</strong> ${leaveReason}</p>
+                <p><strong>Type:</strong> ${leaveRequestType === 'single' ? 'Single Day' : 'Multiple Days'}</p>
+                <p><strong>Date:</strong> ${leaveRequestType === 'single' ? startDisplay : `${startDisplay} to ${endDisplay}`}</p>
+                <p><strong>Duration:</strong> ${dayCount} day${dayCount > 1 ? 's' : ''}</p>
+                <p class="mt-2"><strong>Reason:</strong> ${trimmedReason}</p>
             </div>`,
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#9333ea',
+            confirmButtonColor: '#2563eb',
             cancelButtonColor: '#6b7280',
             confirmButtonText: 'Yes, submit it!',
             cancelButtonText: 'Cancel'
@@ -873,7 +944,7 @@ export default function TimeIn() {
                         leave_type: 'personal',
                         start_date: startDate,
                         end_date: endDate,
-                        reason: leaveReason,
+                        reason: trimmedReason,
                         is_half_day: false,
                     }),
                 });
@@ -883,10 +954,11 @@ export default function TimeIn() {
                     throw new Error(errorData.error || errorData.message || 'Failed to submit leave request');
                 }
 
-                const data = await response.json();
+                await response.json();
                 
-                setLeaveMonth('');
-                setLeaveDay('');
+                const defaultDate = getPHDateInputValue();
+                setLeaveStartDate(defaultDate);
+                setLeaveEndDate('');
                 setLeaveReason('');
                 setShowLeaveModal(false);
                 
@@ -894,7 +966,7 @@ export default function TimeIn() {
                     icon: 'success',
                     title: 'Request Submitted!',
                     html: '<p>Your leave request has been submitted successfully and is now under review by the Human Resources department.</p><p class="text-sm text-gray-600 mt-2">You will be notified once your request has been processed.</p>',
-                    confirmButtonColor: '#9333ea',
+                    confirmButtonColor: '#2563eb',
                     timer: 3000
                 });
             } catch (error: any) {
@@ -903,7 +975,7 @@ export default function TimeIn() {
                     icon: 'error',
                     title: 'Submission Failed',
                     text: error.message || 'An error occurred while submitting your leave request. Please try again.',
-                    confirmButtonColor: '#9333ea'
+                    confirmButtonColor: '#2563eb'
                 });
             } finally {
                 setIsLoading(false);
@@ -914,6 +986,35 @@ export default function TimeIn() {
     const handleOvertimeClick = () => {
         setShowOvertimeModal(true);
     };
+
+    const leavePreviewStartDate = leaveStartDate;
+    const leavePreviewEndDate = leaveEndDate || leaveStartDate;
+    const leaveRequestType = leaveEndDate ? 'multiple' : 'single';
+    const leaveRangeIsInvalid =
+        !!leaveEndDate &&
+        !!leaveStartDate &&
+        leaveEndDate < leaveStartDate;
+    const leavePreviewDays =
+        leavePreviewStartDate && leavePreviewEndDate && !leaveRangeIsInvalid
+            ? Math.floor(
+                  (new Date(`${leavePreviewEndDate}T00:00:00`).getTime() -
+                      new Date(`${leavePreviewStartDate}T00:00:00`).getTime()) /
+                      86400000,
+              ) + 1
+            : 0;
+    const leaveCalendarMonthLabel = leaveCalendarMonth.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+    });
+    const leaveCalendarYear = leaveCalendarMonth.getFullYear();
+    const leaveCalendarMonthIndex = leaveCalendarMonth.getMonth();
+    const leaveCalendarFirstDay = new Date(leaveCalendarYear, leaveCalendarMonthIndex, 1).getDay();
+    const leaveCalendarTotalDays = new Date(leaveCalendarYear, leaveCalendarMonthIndex + 1, 0).getDate();
+    const leaveCalendarCells: Array<number | null> = [
+        ...Array(leaveCalendarFirstDay).fill(null),
+        ...Array.from({ length: leaveCalendarTotalDays }, (_, index) => index + 1),
+    ];
+    const leaveToday = getPHDateInputValue();
 
     const handleOvertimeRequest = async () => {
         if (isLoading) return; // Prevent spam
@@ -1418,16 +1519,23 @@ export default function TimeIn() {
                 {/* Leave Request Modal */}
                 {showLeaveModal && (
                     <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-md w-full p-8 border border-gray-200 dark:border-gray-800">
-                            <div className="flex items-center justify-between mb-6">
+                        <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-4xl w-full p-8 md:p-10 border border-gray-200 dark:border-gray-800">
+                            <div className="flex items-start justify-between mb-6">
+                                <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
                                         <LeaveIcon />
                                     </div>
                                     Request Leave
                                 </h2>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                                    Click one day for a single leave. Click another day to set the end date for a leave range.
+                                </p>
+                                </div>
                                 <button
                                     onClick={() => setShowLeaveModal(false)}
+                                    title="Close leave request modal"
+                                    aria-label="Close leave request modal"
                                     className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                                 >
                                     <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1436,73 +1544,156 @@ export default function TimeIn() {
                                 </button>
                             </div>
 
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                                        Month
-                                    </label>
-                                    <select
-                                        value={leaveMonth}
-                                        onChange={(e) => setLeaveMonth(e.target.value)}
-                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                    >
-                                        <option value="">Select Month</option>
-                                        <option value="January">January</option>
-                                        <option value="February">February</option>
-                                        <option value="March">March</option>
-                                        <option value="April">April</option>
-                                        <option value="May">May</option>
-                                        <option value="June">June</option>
-                                        <option value="July">July</option>
-                                        <option value="August">August</option>
-                                        <option value="September">September</option>
-                                        <option value="October">October</option>
-                                        <option value="November">November</option>
-                                        <option value="December">December</option>
-                                    </select>
+                            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                                <div className="lg:col-span-3 rounded-2xl border border-gray-200 dark:border-gray-700 p-4 md:p-5">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setLeaveCalendarMonth(new Date(leaveCalendarYear, leaveCalendarMonthIndex - 1, 1))}
+                                            className="h-9 w-9 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                            aria-label="Previous month"
+                                            title="Previous month"
+                                        >
+                                            &lt;
+                                        </button>
+                                        <p className="text-base md:text-lg font-bold text-gray-900 dark:text-white">{leaveCalendarMonthLabel}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setLeaveCalendarMonth(new Date(leaveCalendarYear, leaveCalendarMonthIndex + 1, 1))}
+                                            className="h-9 w-9 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                            aria-label="Next month"
+                                            title="Next month"
+                                        >
+                                            &gt;
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-7 gap-2 mb-2">
+                                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName) => (
+                                            <div key={dayName} className="text-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 py-1">
+                                                {dayName}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="grid grid-cols-7 gap-2">
+                                        {leaveCalendarCells.map((day, index) => {
+                                            if (day === null) {
+                                                return <div key={`empty-${index}`} className="h-11 rounded-lg" />;
+                                            }
+
+                                            const cellDateValue = formatDateInputFromParts(leaveCalendarYear, leaveCalendarMonthIndex, day);
+                                            const isStart = cellDateValue === leaveStartDate;
+                                            const isEnd = !!leaveEndDate && cellDateValue === leaveEndDate;
+                                            const isInRange =
+                                                !!leaveStartDate &&
+                                                !!leaveEndDate &&
+                                                cellDateValue > leaveStartDate &&
+                                                cellDateValue < leaveEndDate;
+                                            const isToday = cellDateValue === leaveToday;
+                                            const isPastDate = cellDateValue < leaveToday;
+
+                                            return (
+                                                <button
+                                                    key={cellDateValue}
+                                                    type="button"
+                                                    disabled={isPastDate}
+                                                    onClick={() => handleLeaveDateClick(cellDateValue)}
+                                                    className={`h-11 rounded-lg text-sm font-semibold transition-all ${
+                                                        isPastDate
+                                                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-70'
+                                                            :
+                                                        isStart || isEnd
+                                                            ? 'bg-blue-600 text-white shadow-md'
+                                                            : isInRange
+                                                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                                                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-gray-700'
+                                                    } ${isToday && !(isStart || isEnd) ? 'ring-2 ring-blue-400' : ''}`}
+                                                    title={isPastDate ? `${cellDateValue} (past date)` : `Select ${cellDateValue}`}
+                                                    aria-label={isPastDate ? `${cellDateValue} is disabled` : `Select ${cellDateValue}`}
+                                                >
+                                                    {day}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                                        <span className="inline-flex items-center gap-1">
+                                            <span className="h-3 w-3 rounded bg-blue-600" /> Start/End
+                                        </span>
+                                        <span className="inline-flex items-center gap-1">
+                                            <span className="h-3 w-3 rounded bg-blue-100 dark:bg-blue-900/30" /> In Range
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setLeaveEndDate('')}
+                                            className="ml-auto text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                                        >
+                                            Clear End Date
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                                        Day
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="31"
-                                        value={leaveDay}
-                                        onChange={(e) => setLeaveDay(e.target.value)}
-                                        placeholder="Enter day (1-31)"
-                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                    />
-                                </div>
+                                <div className="lg:col-span-2 space-y-4">
+                                    <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-900/20 p-4">
+                                        <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Request Summary</p>
+                                        <p className="mt-1 text-sm text-blue-700/90 dark:text-blue-200">
+                                            {leavePreviewStartDate && leavePreviewEndDate && !leaveRangeIsInvalid
+                                                ? leaveRequestType === 'single'
+                                                    ? `${new Date(`${leavePreviewStartDate}T00:00:00`).toLocaleDateString('en-US', {
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          year: 'numeric',
+                                                      })} • ${leavePreviewDays} day`
+                                                    : `${new Date(`${leavePreviewStartDate}T00:00:00`).toLocaleDateString('en-US', {
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          year: 'numeric',
+                                                      })} to ${new Date(`${leavePreviewEndDate}T00:00:00`).toLocaleDateString('en-US', {
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          year: 'numeric',
+                                                      })} • ${leavePreviewDays} days`
+                                                : 'Select a valid date to preview your leave request.'}
+                                        </p>
+                                    </div>
 
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                                        Reason
-                                    </label>
-                                    <textarea
-                                        value={leaveReason}
-                                        onChange={(e) => setLeaveReason(e.target.value)}
-                                        placeholder="Enter reason for leave..."
-                                        rows={4}
-                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
-                                    />
-                                </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                            Reason <span className="text-red-500">*</span>
+                                        </label>
+                                        <textarea
+                                            value={leaveReason}
+                                            onChange={(e) => setLeaveReason(e.target.value)}
+                                            placeholder="Briefly explain your leave request..."
+                                            rows={8}
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                                        />
+                                    </div>
 
-                                <div className="flex gap-3 pt-4">
-                                    <button
-                                        onClick={() => setShowLeaveModal(false)}
-                                        className="flex-1 px-6 py-3 rounded-xl font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-300"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleLeaveRequest}
-                                        className="flex-1 px-6 py-3 rounded-xl font-semibold text-white bg-blue-500 hover:bg-purple-600 transition-all duration-300 shadow-lg hover:shadow-xl"
-                                    >
-                                        Submit Request
-                                    </button>
+                                    <div className="flex gap-3 pt-1">
+                                        <button
+                                            onClick={() => setShowLeaveModal(false)}
+                                            disabled={isLoading}
+                                            className="flex-1 px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleLeaveRequest}
+                                            disabled={
+                                                isLoading ||
+                                                !leaveReason.trim() ||
+                                                !leavePreviewStartDate ||
+                                                !leavePreviewEndDate ||
+                                                leaveRangeIsInvalid
+                                            }
+                                            className="flex-1 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                                        >
+                                            {isLoading ? 'Submitting...' : 'Submit Request'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

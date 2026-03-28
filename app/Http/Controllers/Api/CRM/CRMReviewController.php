@@ -3,39 +3,138 @@
 namespace App\Http\Controllers\API\CRM;
 
 use App\Http\Controllers\Controller;
-use App\Models\CRM\CustomerReview;
+use App\Models\ProductReview;
+use App\Models\RepairReview;
+use App\Models\ShopReview;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 
 class CRMReviewController extends Controller
 {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private function shopOwnerId(): int
+    private function shopOwnerIds(): array
     {
-        $user = Auth::user();
-        return $user->shop_owner_id ?? $user->id;
+        $user = Auth::guard('user')->user() ?? Auth::user();
+        if (! $user) {
+            return [];
+        }
+
+        $ids = [];
+
+        if (!empty($user->shop_owner_id)) {
+            $ids[] = (int) $user->shop_owner_id;
+        }
+
+        if (!empty($user->id)) {
+            $ids[] = (int) $user->id;
+        }
+
+        return array_values(array_unique(array_filter($ids)));
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    private function mergedReviews(array $shopOwnerIds): Collection
+    {
+        if (empty($shopOwnerIds)) {
+            return collect();
+        }
+
+        $productReviews = ProductReview::query()
+            ->where(function ($query) use ($shopOwnerIds) {
+                $query->whereIn('shop_owner_id', $shopOwnerIds)
+                    ->orWhereHas('product', function ($productQuery) use ($shopOwnerIds) {
+                        $productQuery->whereIn('shop_owner_id', $shopOwnerIds);
+                    });
+            })
+            ->with(['user:id,name,email', 'product:id,name'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (ProductReview $r) {
+                return [
+                    'id' => (int) $r->id,
+                    'customerName' => $r->user?->name ?? 'Unknown Customer',
+                    'customer' => $r->user ? ['id' => $r->user->id, 'name' => $r->user->name, 'email' => $r->user->email] : null,
+                    'order' => $r->order ? ['id' => $r->order->id, 'order_number' => $r->order->order_number] : null,
+                    'orderType' => 'product',
+                    'serviceType' => $r->product?->name ?? 'Product',
+                    'rating' => (int) $r->rating,
+                    'comment' => $r->comment ?? '',
+                    'feedbackImages' => $r->images ?? [],
+                    'createdAt' => $r->created_at->toDateTimeString(),
+                    'createdAtTs' => $r->created_at?->timestamp ?? 0,
+                ];
+            });
+
+        $repairReviews = RepairReview::query()
+            ->where(function ($query) use ($shopOwnerIds) {
+                $query->whereIn('shop_owner_id', $shopOwnerIds)
+                    ->orWhereHas('repairRequest', function ($repairRequestQuery) use ($shopOwnerIds) {
+                        $repairRequestQuery->whereIn('shop_owner_id', $shopOwnerIds);
+                    });
+            })
+            ->with(['user:id,name,email', 'repairRequest:id,shoe_type'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (RepairReview $r) {
+                return [
+                    'id' => (int) $r->id,
+                    'customerName' => $r->user?->name ?? 'Unknown Customer',
+                    'customer' => $r->user ? ['id' => $r->user->id, 'name' => $r->user->name, 'email' => $r->user->email] : null,
+                    'order' => null,
+                    'orderType' => 'repair',
+                    'serviceType' => $r->repairRequest?->shoe_type ?? 'Repair Service',
+                    'rating' => (int) $r->rating,
+                    'comment' => $r->review_text ?? '',
+                    'feedbackImages' => $r->review_images ?? [],
+                    'createdAt' => $r->created_at->toDateTimeString(),
+                    'createdAtTs' => $r->created_at?->timestamp ?? 0,
+                ];
+            });
+
+        $shopReviews = ShopReview::query()
+            ->whereIn('shop_owner_id', $shopOwnerIds)
+            ->with(['user:id,name,email'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (ShopReview $r) {
+                return [
+                    'id' => (int) $r->id,
+                    'customerName' => $r->user?->name ?? 'Unknown Customer',
+                    'customer' => $r->user ? ['id' => $r->user->id, 'name' => $r->user->name, 'email' => $r->user->email] : null,
+                    'order' => null,
+                    'orderType' => 'repair',
+                    'serviceType' => 'Shop Service',
+                    'rating' => (int) $r->rating,
+                    'comment' => $r->comment ?? '',
+                    'feedbackImages' => $r->images ?? [],
+                    'createdAt' => $r->created_at->toDateTimeString(),
+                    'createdAtTs' => $r->created_at?->timestamp ?? 0,
+                ];
+            });
+
+        return $productReviews
+            ->concat($repairReviews)
+            ->concat($shopReviews)
+            ->sortByDesc('createdAtTs')
+            ->values()
+            ->map(function (array $item) {
+                unset($item['createdAtTs']);
+                return $item;
+            });
+    }
 
     /**
      * Compute review aggregate stats for a given shop.
      * Shared between the JSON index() and the Inertia indexPage().
      */
-    private function buildStats(int $shopOwnerId): array
+    private function buildStats(Collection $reviews): array
     {
-        $base = CustomerReview::forShopOwner($shopOwnerId);
-
         return [
-            'total'          => (clone $base)->count(),
-            'pending'        => (clone $base)->withStatus('pending')->count(),
-            'in_progress'    => (clone $base)->withStatus('in_progress')->count(),
-            'responded'      => (clone $base)->withStatus('responded')->count(),
-            'average_rating' => round((float) (clone $base)->avg('rating'), 2),
+            'total'          => $reviews->count(),
+            'average_rating' => round((float) ($reviews->avg('rating') ?? 0), 2),
         ];
     }
 
@@ -55,32 +154,12 @@ class CRMReviewController extends Controller
             return redirect()->route('erp.profile');
         }
 
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
-
-        $reviews = CustomerReview::forShopOwner($shopOwnerId)
-            ->with(['customer:id,name,email', 'order:id,order_number'])
-            ->latest()
-            ->get()
-            ->map(fn(CustomerReview $r) => [
-                'id'              => $r->id,
-                // camelCase fields expected by CustomerReviews.tsx
-                'customerName'    => $r->customer?->name ?? 'Unknown Customer',
-                'customer'        => $r->customer ? ['id' => $r->customer->id, 'name' => $r->customer->name, 'email' => $r->customer->email] : null,
-                'order'           => $r->order    ? ['id' => $r->order->id, 'order_number' => $r->order->order_number] : null,
-                'orderType'       => $r->order_type,
-                'serviceType'     => $r->service_type,
-                'rating'          => $r->rating,
-                'comment'         => $r->comment,
-                'feedbackImages'  => $r->feedback_images ?? [],
-                'responseStatus'  => $r->response_status,
-                'staffResponse'   => $r->staff_response,
-                'respondedAt'     => $r->responded_at?->toDateTimeString(),
-                'createdAt'       => $r->created_at->toDateTimeString(),
-            ]);
+        $shopOwnerIds = $this->shopOwnerIds();
+        $reviews = $this->mergedReviews($shopOwnerIds);
 
         return Inertia::render('ERP/CRM/CustomerReviews', [
-            'initialReviews' => $reviews,
-            'initialStats'   => $this->buildStats($shopOwnerId),
+            'initialReviews' => $reviews->values(),
+            'initialStats'   => $this->buildStats($reviews),
         ]);
     }
 
@@ -98,102 +177,58 @@ class CRMReviewController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $shopOwnerId = $this->shopOwnerId();
+        $shopOwnerIds = $this->shopOwnerIds();
+        $allReviews = $this->mergedReviews($shopOwnerIds);
 
-        $query = CustomerReview::forShopOwner($shopOwnerId)
-            ->with(['customer:id,name,email', 'order:id,order_number'])
-            ->latest();
+        $orderType = strtolower((string) $request->get('order_type', ''));
+        $search = strtolower(trim((string) $request->get('search', '')));
+        $minRating = (int) $request->get('min_rating', 0);
+        $maxRating = (int) $request->get('max_rating', 5);
 
-        if ($request->filled('status')) {
-            $query->withStatus($request->status);
-        }
+        $filtered = $allReviews->filter(function (array $review) use ($orderType, $search, $minRating, $maxRating) {
+            if ($orderType !== '' && in_array($orderType, ['product', 'repair'], true) && $review['orderType'] !== $orderType) {
+                return false;
+            }
 
-        if ($request->filled('order_type')) {
-            $query->ofType($request->order_type);
-        }
+            $rating = (int) ($review['rating'] ?? 0);
+            if ($minRating > 0 && $rating < $minRating) {
+                return false;
+            }
+            if ($maxRating > 0 && $rating > $maxRating) {
+                return false;
+            }
 
-        if ($request->filled('min_rating')) {
-            $query->minRating((int) $request->min_rating);
-        }
+            if ($search !== '') {
+                $haystack = strtolower(trim(sprintf(
+                    '%s %s %s',
+                    $review['customerName'] ?? '',
+                    $review['comment'] ?? '',
+                    $review['serviceType'] ?? ''
+                )));
 
-        if ($request->filled('max_rating')) {
-            $query->where('rating', '<=', (int) $request->max_rating);
-        }
+                if (!str_contains($haystack, $search)) {
+                    return false;
+                }
+            }
 
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('comment', 'like', "%{$search}%")
-                  ->orWhere('service_type', 'like', "%{$search}%")
-                  ->orWhereHas('customer', fn($cu) => $cu->where('name', 'like', "%{$search}%"));
-            });
-        }
+            return true;
+        })->values();
 
-        $reviews = $query->paginate($request->get('per_page', 20));
-
-        return response()->json([
-            'reviews' => $reviews,
-            'stats'   => $this->buildStats($shopOwnerId),
-        ]);
-    }
-
-    /**
-     * POST /api/crm/reviews/{id}/respond
-     *
-     * Saves a staff response, marks response_status = responded,
-     * and records the responded_at timestamp.
-     */
-    public function respond(Request $request, int $id): JsonResponse
-    {
-        $shopOwnerId = $this->shopOwnerId();
-
-        $review = CustomerReview::forShopOwner($shopOwnerId)->findOrFail($id);
-
-        $validator = Validator::make($request->all(), [
-            'staff_response' => 'required|string|max:3000',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $review->update([
-            'staff_response'  => $request->staff_response,
-            'response_status' => 'responded',
-            'responded_at'    => now(),
-        ]);
+        $page = max(1, (int) $request->get('page', 1));
+        $perPage = max(1, (int) $request->get('per_page', 20));
+        $total = $filtered->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $items = $filtered->forPage($page, $perPage)->values();
 
         return response()->json([
-            'message' => 'Response saved successfully',
-            'review'  => $review->fresh(['customer:id,name,email']),
-        ]);
-    }
-
-    /**
-     * PATCH /api/crm/reviews/{id}/status
-     *
-     * Moves a review back to pending or marks it in_progress.
-     * (Use respond() to mark it as responded.)
-     */
-    public function updateStatus(Request $request, int $id): JsonResponse
-    {
-        $shopOwnerId = $this->shopOwnerId();
-
-        $review = CustomerReview::forShopOwner($shopOwnerId)->findOrFail($id);
-
-        $validator = Validator::make($request->all(), [
-            'status' => 'required|in:pending,in_progress',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $review->update(['response_status' => $request->status]);
-
-        return response()->json([
-            'message' => 'Status updated successfully',
-            'review'  => $review,
+            'reviews' => [
+                'data' => $items,
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
+            ],
+            'stats'   => $this->buildStats($allReviews),
         ]);
     }
 }

@@ -90,6 +90,15 @@ export default function EcommerceMetrics({ stats }: EcommerceMetricsProps) {
     return growth >= 0 ? 'success' : 'error';
   };
 
+  // Normalize API growth values so badge UI never renders NaN%.
+  const normalizeGrowth = (growth: unknown) => {
+    const numericGrowth = Number(growth);
+    return Number.isFinite(numericGrowth) ? numericGrowth : 0;
+  };
+
+  const revenueGrowth = normalizeGrowth(stats?.revenue?.growth_percentage);
+  const ordersGrowth = normalizeGrowth(stats?.orders?.growth_percentage);
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 md:gap-6">
       {/* Revenue Metric */}
@@ -107,9 +116,9 @@ export default function EcommerceMetrics({ stats }: EcommerceMetricsProps) {
               {stats ? formatCurrency(stats.revenue.total) : '₱0.00'}
             </h4>
           </div>
-          <Badge color={stats ? getGrowthColor(stats.revenue.growth_percentage) : 'success'}>
-            {stats && stats.revenue.growth_percentage >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-            {stats ? Math.abs(stats.revenue.growth_percentage).toFixed(2) : '0'}%
+          <Badge color={getGrowthColor(revenueGrowth)}>
+            {revenueGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+            {Math.abs(revenueGrowth).toFixed(2)}%
           </Badge>
         </div>
       </div>
@@ -129,9 +138,9 @@ export default function EcommerceMetrics({ stats }: EcommerceMetricsProps) {
             </h4>
           </div>
 
-          <Badge color={stats ? getGrowthColor(stats.orders.growth_percentage) : 'success'}>
-            {stats && stats.orders.growth_percentage >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-            {stats ? Math.abs(stats.orders.growth_percentage).toFixed(2) : '0'}%
+          <Badge color={getGrowthColor(ordersGrowth)}>
+            {ordersGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+            {Math.abs(ordersGrowth).toFixed(2)}%
           </Badge>
         </div>
       </div>

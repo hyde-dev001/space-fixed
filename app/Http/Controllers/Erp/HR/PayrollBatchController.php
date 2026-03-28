@@ -111,13 +111,22 @@ class PayrollBatchController extends Controller
                     ->first();
 
                 if ($existingPayroll) {
-                    $errors[] = [
-                        'employee_id'   => $employeeId,
-                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
-                        'message'       => 'Payroll already exists for this period',
-                        'severity'      => 'error',
-                    ];
-                    continue;
+                    if ((string) $existingPayroll->approval_status === 'rejected') {
+                        $warnings[] = [
+                            'employee_id'   => $employeeId,
+                            'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                            'message'       => 'Existing rejected payroll will be regenerated for this period',
+                            'severity'      => 'warning',
+                        ];
+                    } else {
+                        $errors[] = [
+                            'employee_id'   => $employeeId,
+                            'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                            'message'       => 'Payroll already exists for this period',
+                            'severity'      => 'error',
+                        ];
+                        continue;
+                    }
                 }
 
                 [$periodStart, $periodEnd] = $this->parsePeriod($payrollPeriod);
@@ -227,13 +236,22 @@ class PayrollBatchController extends Controller
                     ->first();
 
                 if ($existingPayroll) {
-                    $errors[] = [
-                        'employee_id'   => $employeeId,
-                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
-                        'error'         => 'Payroll already exists for this period',
-                        'error_code'    => 'DUPLICATE_PAYROLL',
-                    ];
-                    continue;
+                    if ((string) $existingPayroll->approval_status === 'rejected') {
+                        DB::transaction(function () use ($existingPayroll) {
+                            // Remove stale rejected record before regenerating to satisfy unique period constraint.
+                            $existingPayroll->approval()->delete();
+                            $existingPayroll->components()->delete();
+                            $existingPayroll->delete();
+                        });
+                    } else {
+                        $errors[] = [
+                            'employee_id'   => $employeeId,
+                            'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                            'error'         => 'Payroll already exists for this period',
+                            'error_code'    => 'DUPLICATE_PAYROLL',
+                        ];
+                        continue;
+                    }
                 }
 
                 [$periodStart, $periodEnd] = $this->parsePeriod($payrollPeriod);

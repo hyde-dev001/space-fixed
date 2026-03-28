@@ -199,7 +199,6 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/', [\App\Http\Controllers\ShopOwner\CustomerReviewController::class, 'index'])->name('shop_owner.reviews.index');
         // Static route MUST come before the dynamic {id} route to avoid collision
         Route::post('/report', [\App\Http\Controllers\ShopOwner\CustomerReviewController::class, 'reportReview'])->name('shop_owner.reviews.report');
-        Route::post('/{id}/respond', [\App\Http\Controllers\ShopOwner\CustomerReviewController::class, 'respond'])->name('shop_owner.reviews.respond');
     });
 
     // ============================================

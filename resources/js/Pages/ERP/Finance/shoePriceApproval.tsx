@@ -66,6 +66,12 @@ const DocumentIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+interface Approval {
+  id: number;
+  total_levels: number;
+  current_level: number;
+}
+
 interface PriceRequest {
   id: number;
   item: string;
@@ -84,7 +90,10 @@ interface PriceRequest {
   rejectionReason?: string;
   approvalWorkflowVersion?: string;
   currentApprovalLevel?: number;
+  approval?: Approval;
 }
+
+type StatusCategory = 'all' | 'pending_review' | 'forwarded' | 'approved' | 'rejected';
 
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
@@ -152,12 +161,12 @@ export default function ShoePriceApproval() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PriceRequest | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StatusCategory>('all');
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending"); // New: View toggle
 
   useEffect(() => {
     fetchRequests();
-  }, [statusFilter]);
+  }, []);
 
   // Check permissions on mount
   useEffect(() => {
@@ -182,9 +191,7 @@ export default function ShoePriceApproval() {
     try {
       setLoading(true);
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const url = statusFilter.toLowerCase() === "all" 
-        ? '/api/finance/price-changes' 
-        : `/api/finance/price-changes?status=${statusFilter}`;
+      const url = '/api/finance/price-changes';
 
       const response = await fetch(url, {
         credentials: 'include',
@@ -217,6 +224,11 @@ export default function ShoePriceApproval() {
         ownerReviewedAt: item.owner_reviewed_at ? new Date(item.owner_reviewed_at).toISOString().split('T')[0] : null,
         approvalWorkflowVersion: item.approval_workflow_version,
         currentApprovalLevel: item.current_approval_level,
+        approval: item.approval ? {
+          id: item.approval.id,
+          total_levels: item.approval.total_levels,
+          current_level: item.approval.current_level,
+        } : undefined,
       }));
       
       setRequests(apiRequests);
@@ -237,22 +249,37 @@ export default function ShoePriceApproval() {
   const filteredData = requests.filter((item) => {
     const matchesSearch = item.item.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          item.requestedBy.toLowerCase().includes(searchQuery.toLowerCase());
+    const totalLevels = item.approval?.total_levels ?? 3;
+    const requiresOwnerApproval = totalLevels === 3;
+    const isFinanceFinalQueue =
+      item.approvalWorkflowVersion === 'v4_multi_level' &&
+      item.status === 'finance_approved' &&
+      (item.currentApprovalLevel ?? 0) >= totalLevels;
+    const isForwardedToOwner =
+      requiresOwnerApproval &&
+      item.status === 'finance_approved' &&
+      (item.currentApprovalLevel ?? 0) < totalLevels;
+
+    let matchesStatusFilter = true;
+    if (statusFilter === 'pending_review') {
+      matchesStatusFilter = item.status === 'pending' || isFinanceFinalQueue;
+    } else if (statusFilter === 'forwarded') {
+      matchesStatusFilter = isForwardedToOwner;
+    } else if (statusFilter === 'approved') {
+      matchesStatusFilter = item.status === 'owner_approved';
+    } else if (statusFilter === 'rejected') {
+      matchesStatusFilter = item.status === 'finance_rejected' || item.status === 'owner_rejected';
+    }
     
     // Apply view mode filter
     let matchesViewMode = true;
     if (viewMode === 'pending') {
-      const isFinanceFinalQueue =
-        item.approvalWorkflowVersion === 'v4_multi_level' &&
-        item.status === 'finance_approved' &&
-        (item.currentApprovalLevel ?? 0) >= 3;
       matchesViewMode = item.status === 'pending' || isFinanceFinalQueue; // Initial finance review + finance final queue
     } else if (viewMode === 'recent') {
-      const isForwardedToOwner =
-        item.status === 'finance_approved' && (item.currentApprovalLevel ?? 0) < 3;
       matchesViewMode = isForwardedToOwner || item.status === 'owner_approved'; // Forwarded by Finance or fully approved
     }
     
-    return matchesSearch && matchesViewMode;
+    return matchesSearch && matchesStatusFilter && matchesViewMode;
   });
 
   const itemsPerPage = 5;
@@ -261,10 +288,11 @@ export default function ShoePriceApproval() {
   const paginatedRequests = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
   const pendingCount = requests.filter((r) => {
+    const totalLevels = r.approval?.total_levels ?? 3;
     const isFinanceFinalQueue =
       r.approvalWorkflowVersion === 'v4_multi_level' &&
       r.status === 'finance_approved' &&
-      (r.currentApprovalLevel ?? 0) >= 3;
+      (r.currentApprovalLevel ?? 0) >= totalLevels;
     return r.status === 'pending' || isFinanceFinalQueue;
   }).length;
   const financeApprovedCount = requests.filter(r => r.status === "finance_approved").length;
@@ -288,13 +316,16 @@ export default function ShoePriceApproval() {
     setViewModalOpen(false);
     setSelectedRequest(null);
 
+    // Determine if owner approval is required
+    const totalLevels = request.approval?.total_levels ?? 3;
+    const requiresOwnerApproval = totalLevels === 3;
     const isFinanceFinalStep =
       request.approvalWorkflowVersion === 'v4_multi_level' &&
       request.status === 'finance_approved' &&
-      (request.currentApprovalLevel ?? 0) >= 3;
+      (request.currentApprovalLevel ?? 0) >= totalLevels;
 
     const { value: notes } = await Swal.fire({
-      title: isFinanceFinalStep ? "Final Finance Approval" : "Approve & Forward to Owner",
+      title: isFinanceFinalStep ? "Final Finance Approval" : (requiresOwnerApproval ? "Approve & Forward to Owner" : "Approve & Apply Price"),
       html: `
         <div style="text-align: left; margin-top: 1rem; margin-bottom: 1rem;">
           <p style="margin-bottom: 0.5rem;"><strong>Item:</strong> ${request.item}</p>
@@ -302,7 +333,7 @@ export default function ShoePriceApproval() {
           <p style="margin-bottom: 0.5rem;"><strong>New Price:</strong> ${request.requestedPrice}</p>
           <p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
           <p style="margin-bottom: 1rem;"><strong>Reason:</strong> ${request.reason}</p>
-          <p style="color: #6b7280; font-size: 0.875rem;">${isFinanceFinalStep ? 'This is the final finance step and will apply the price change.' : 'This will forward the request to the Shop Owner for review.'}</p>
+          <p style="color: #6b7280; font-size: 0.875rem;">${isFinanceFinalStep ? 'This is the final finance step and will apply the price change.' : (requiresOwnerApproval ? 'This will forward the request to the Shop Owner for review.' : 'This will apply the price change immediately.')}</p>
         </div>
       `,
       input: "textarea",
@@ -312,7 +343,7 @@ export default function ShoePriceApproval() {
       showCancelButton: true,
       confirmButtonColor: "#10b981",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: isFinanceFinalStep ? "Approve & Apply Price" : "Approve & Forward",
+      confirmButtonText: isFinanceFinalStep ? "Approve & Apply Price" : (requiresOwnerApproval ? "Approve & Forward" : "Approve & Apply Price"),
       cancelButtonText: "Cancel",
     });
 
@@ -552,17 +583,37 @@ export default function ShoePriceApproval() {
           </div>
 
           {/* Search Filter */}
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder="Search by item or requestor..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-            />
+          <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2">
+              <input
+                type="text"
+                placeholder="Search by item or requestor..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              />
+            </div>
+            <div>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as StatusCategory);
+                  setCurrentPage(1);
+                }}
+                aria-label="Filter requests by status"
+                title="Filter requests by status"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending_review">Pending Finance Review</option>
+                <option value="forwarded">Forwarded to Owner</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
           </div>
 
           {/* Table */}
@@ -728,13 +779,16 @@ export default function ShoePriceApproval() {
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Finance Price Review</h2>
-                  {selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) < 3 && (
+                  {selectedRequest.status === 'finance_approved' &&
+                    ((selectedRequest.approval?.total_levels ?? 3) === 3) &&
+                    (selectedRequest.currentApprovalLevel ?? 0) < (selectedRequest.approval?.total_levels ?? 3) && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                       <CheckIcon className="w-3 h-3" />
                       Forwarded to Owner
                     </span>
                   )}
-                  {selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) >= 3 && (
+                  {selectedRequest.status === 'finance_approved' &&
+                    (selectedRequest.currentApprovalLevel ?? 0) >= (selectedRequest.approval?.total_levels ?? 3) && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                       <ClockIcon className="w-3 h-3" />
                       Pending Finance Final Approval
@@ -767,6 +821,8 @@ export default function ShoePriceApproval() {
                 </div>
                 <button
                   onClick={() => setViewModalOpen(false)}
+                  aria-label="Close details"
+                  title="Close"
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   <CloseIcon className="w-5 h-5" />
@@ -882,7 +938,7 @@ export default function ShoePriceApproval() {
 
               {/* Actions */}
               <div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                {(selectedRequest.status === 'pending' || (selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) >= 3)) ? (
+                {(selectedRequest.status === 'pending' || (selectedRequest.status === 'finance_approved' && (selectedRequest.currentApprovalLevel ?? 0) >= (selectedRequest.approval?.total_levels ?? 3))) ? (
                   <>
                     <button
                       onClick={() => {
@@ -902,10 +958,12 @@ export default function ShoePriceApproval() {
                       className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <CheckIcon className="w-5 h-5" />
-                      {(selectedRequest.currentApprovalLevel ?? 0) >= 3 ? 'Approve & Apply Price' : 'Approve & Forward to Owner'}
+                      {(selectedRequest.currentApprovalLevel ?? 0) >= (selectedRequest.approval?.total_levels ?? 3)
+                        ? 'Approve & Apply Price'
+                        : ((selectedRequest.approval?.total_levels ?? 3) === 3 ? 'Approve & Forward to Owner' : 'Approve & Apply Price')}
                     </button>
                   </>
-                ) : selectedRequest.status === 'finance_approved' ? (
+                ) : selectedRequest.status === 'finance_approved' && (selectedRequest.approval?.total_levels ?? 3) === 3 ? (
                   <div className="flex-1 px-4 py-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold text-center">
                     ✓ Forwarded to Owner - Awaiting Review
                   </div>
