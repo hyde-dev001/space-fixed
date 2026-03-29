@@ -50,6 +50,14 @@ class Supplier extends Model
     }
 
     /**
+     * Procurement purchase orders for this supplier.
+     */
+    public function purchaseOrders(): HasMany
+    {
+        return $this->hasMany(PurchaseOrder::class);
+    }
+
+    /**
      * Backward-compatible alias used by ERP SupplierController.
      */
     public function orders(): HasMany

@@ -20,7 +20,7 @@ class StockRequestApprovalController extends Controller
         // $this->authorize('viewAny', StockRequestApproval::class);
 
         $query = StockRequestApproval::query()
-            ->with(['shopOwner', 'inventoryItem', 'requester', 'approver'])
+            ->with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id);
 
         // Search
@@ -67,9 +67,10 @@ class StockRequestApprovalController extends Controller
     public function show($id)
     {
         $stockRequest = StockRequestApproval::with([
-            'shopOwner', 
-            'inventoryItem', 
-            'requester', 
+            'shopOwner',
+            'inventoryItem.sizes',
+            'inventoryItem.colorVariants.sizes',
+            'requester',
             'approver'
         ])->findOrFail($id);
 
@@ -90,6 +91,7 @@ class StockRequestApprovalController extends Controller
             'quantity_needed'   => 'required|integer|min:1',
             'priority'          => 'required|in:high,medium,low',
             'requested_size'    => 'nullable|string|max:20',
+            'requested_color'   => 'nullable|string|max:50',
             'notes'             => 'nullable|string|max:1000',
             'request_source'    => 'nullable|in:manual,repair',
             'repair_request_id' => 'nullable|exists:repair_requests,id',
@@ -122,6 +124,7 @@ class StockRequestApprovalController extends Controller
             'sku_code'          => $inventoryItem->sku ?? '',
             'quantity_needed'   => $validated['quantity_needed'],
             'requested_size'    => $validated['requested_size'] ?? null,
+            'requested_color'   => $validated['requested_color'] ?? null,
             'priority'          => $validated['priority'],
             'request_source'    => $validated['request_source'] ?? 'manual',
             'status'            => 'pending',

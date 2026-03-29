@@ -1,4 +1,4 @@
-import { Head, router, usePage } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -279,14 +279,9 @@ export default function SuppliersManagement() {
 										</td>
 										<td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate italic" title={supplier.notes}>{supplier.notes || "—"}</td>
 										<td className="px-4 py-3 text-sm">
-											<button
-												type="button"
-												onClick={() => router.visit(`/erp/procurement/supplier-order-monitoring?supplier=${encodeURIComponent(supplier.name)}`)}
-												className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-												title="View orders for this supplier"
-											>
+											<span className="font-semibold text-gray-900 dark:text-white">
 												{supplier.purchase_order_count} {supplier.purchase_order_count === 1 ? "order" : "orders"}
-											</button>
+											</span>
 											{supplier.last_order_date && <p className="text-xs text-gray-400 mt-0.5">Last: {supplier.last_order_date}</p>}
 										</td>
 											<td className="px-4 py-3 text-center">
@@ -516,13 +511,6 @@ export default function SuppliersManagement() {
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 							>
 								Close
-							</button>
-							<button
-								type="button"
-								onClick={() => { setViewingSupplier(null); router.visit(`/erp/procurement/supplier-order-monitoring?supplier=${encodeURIComponent(viewingSupplier.name)}`); }}
-								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
-							>
-								View Orders →
 							</button>
 						</div>
 					</div>

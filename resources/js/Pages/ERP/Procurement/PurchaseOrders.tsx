@@ -1,5 +1,5 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -15,13 +15,6 @@ interface PurchaseOrderFormState {
 	selectedPrId: number | null;
 	expectedDeliveryDate: string;
 	paymentTerms: string;
-	notes: string;
-}
-
-interface ReceivingFormState {
-	receivedQuantity: string;
-	defectiveQuantity: string;
-	actualDeliveryDate: string;
 	notes: string;
 }
 
@@ -48,6 +41,108 @@ const formatRequestedSizeDisplay = (value: string): string => {
 	if (!trimmed) return "";
 	if (hasSizeSystemPrefix(trimmed)) return trimmed;
 	return `Size ${trimmed}`;
+};
+
+const getRequestedSizeLabel = (value?: string | null): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "All Sizes";
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	if (["all", "all_sizes", "all_size", "any"].includes(normalized)) {
+		return "All Sizes";
+	}
+
+	return formatRequestedSizeDisplay(trimmed);
+};
+
+const isSizeBasedCategory = (category?: string | null): boolean => {
+	const normalized = (category ?? "").trim().toLowerCase();
+	return normalized === "shoes";
+};
+
+const isAllSizesRequest = (requestedSize?: string | null, category?: string | null): boolean => {
+	if (!isSizeBasedCategory(category)) return false;
+
+	const trimmed = (requestedSize ?? "").trim();
+	if (!trimmed) return true;
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	return ["all", "all_sizes", "all_size", "any"].includes(normalized);
+};
+
+const getEffectiveQuantity = (
+	quantity: number,
+	unitCost: number,
+	totalCost: number,
+	isAllSizes: boolean,
+): number => {
+	if (!isAllSizes) return quantity;
+	if (unitCost <= 0) return quantity;
+
+	const calculatedQuantity = Math.round(totalCost / unitCost);
+	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
+};
+
+const formatSizeRowLabel = (size?: string | null, sizeSystem?: string | null): string => {
+	const rawSize = (size ?? "").trim();
+	if (!rawSize) return "";
+	if (hasSizeSystemPrefix(rawSize)) return rawSize;
+
+	const normalizedSystem = (sizeSystem ?? "").trim().toUpperCase();
+	if (SIZE_SYSTEMS.includes(normalizedSystem as typeof SIZE_SYSTEMS[number])) {
+		return `${normalizedSystem} ${rawSize}`;
+	}
+
+	return `Size ${rawSize}`;
+};
+
+const getAvailableSizeLabels = (
+	inventoryItem: any,
+	requestedColor?: string | null,
+	requestedSize?: string | null,
+): string[] => {
+	if (!isAllSizesRequest(requestedSize, inventoryItem?.category)) return [];
+
+	const allSizes = Array.isArray(inventoryItem?.sizes) ? inventoryItem.sizes : [];
+	if (!allSizes.length) return [];
+
+	const requestedColorNormalized = (requestedColor ?? "").trim().toLowerCase();
+	const colorVariants = Array.isArray(inventoryItem?.color_variants) ? inventoryItem.color_variants : [];
+
+	if (requestedColorNormalized) {
+		const matchedVariant = colorVariants.find(
+			(variant: any) => String(variant?.color_name ?? "").trim().toLowerCase() === requestedColorNormalized,
+		);
+
+		if (matchedVariant) {
+			const variantSizes = Array.isArray(matchedVariant.sizes) ? matchedVariant.sizes : [];
+			if (variantSizes.length) {
+				return Array.from(new Set(
+					variantSizes
+						.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+						.filter((label: string) => label.length > 0)
+				));
+			}
+
+			const scopedByVariantId = allSizes.filter(
+				(sizeRow: any) => Number(sizeRow?.inventory_color_variant_id) === Number(matchedVariant.id),
+			);
+
+			if (scopedByVariantId.length) {
+				return Array.from(new Set(
+					scopedByVariantId
+						.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+						.filter((label: string) => label.length > 0)
+				));
+			}
+		}
+	}
+
+	return Array.from(new Set(
+		allSizes
+			.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+			.filter((label: string) => label.length > 0)
+	));
 };
 
 interface MetricCardProps {
@@ -96,6 +191,13 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
+const EyeIcon = ({ className }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+		<path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+		<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+	</svg>
+);
+
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -107,6 +209,95 @@ const ChevronRightIcon = ({ className }: { className?: string }) => (
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
 	</svg>
 );
+
+const CalendarIcon = ({ className }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+		<rect x="3" y="5" width="18" height="16" rx="2" />
+		<path strokeLinecap="round" strokeLinejoin="round" d="M16 3v4M8 3v4M3 10h18" />
+	</svg>
+);
+
+const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+const normalizeDate = (value: Date): Date => {
+	const normalized = new Date(value);
+	normalized.setHours(0, 0, 0, 0);
+	return normalized;
+};
+
+const toDateInputValue = (value: Date): string => {
+	const year = value.getFullYear();
+	const month = String(value.getMonth() + 1).padStart(2, "0");
+	const day = String(value.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+};
+
+const toDisplayDate = (dateValue: string): string => {
+	if (!dateValue) return "";
+	const parsed = new Date(`${dateValue}T00:00:00`);
+	if (Number.isNaN(parsed.getTime())) return "";
+	return parsed.toLocaleDateString("en-US", {
+		month: "2-digit",
+		day: "2-digit",
+		year: "numeric",
+	});
+};
+
+const normalizeApiDateString = (value: string): string => {
+	const trimmed = value.trim();
+	if (!trimmed) return trimmed;
+
+	let normalized = trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`;
+	normalized = normalized.replace(" ", "T");
+
+	// Some backend timestamps include 6-digit microseconds (e.g. .000000Z),
+	// while JS Date expects milliseconds. Normalize to 3-digit ms.
+	normalized = normalized.replace(/\.(\d{1,2})(?=(Z|[+-]\d{2}:\d{2})?$)/, (_, fraction: string) => `.${fraction.padEnd(3, "0")}`);
+	normalized = normalized.replace(/\.(\d{3})\d+(?=(Z|[+-]\d{2}:\d{2})?$)/, ".$1");
+
+	return normalized;
+};
+
+const formatReadableDate = (
+	dateValue?: string | null,
+	{ withTime = false }: { withTime?: boolean } = {},
+): string => {
+	if (!dateValue) return "—";
+	const normalized = normalizeApiDateString(dateValue);
+	const parsed = new Date(normalized);
+	if (Number.isNaN(parsed.getTime())) return dateValue;
+
+	return new Intl.DateTimeFormat("en-PH", withTime
+		? {
+			month: "short",
+			day: "numeric",
+			year: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+		}
+		: {
+			month: "short",
+			day: "numeric",
+			year: "numeric",
+		},
+	).format(parsed);
+};
+
+const formatRelativeDate = (dateValue?: string | null): string | null => {
+	if (!dateValue) return null;
+	const normalized = normalizeApiDateString(dateValue);
+	const parsed = new Date(normalized);
+	if (Number.isNaN(parsed.getTime())) return null;
+
+	const target = normalizeDate(parsed);
+	const current = normalizeDate(new Date());
+	const diffInDays = Math.round((target.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
+
+	if (diffInDays === 0) return "Today";
+	if (diffInDays > 0) return `In ${diffInDays} day${diffInDays === 1 ? "" : "s"}`;
+	const daysAgo = Math.abs(diffInDays);
+	return `${daysAgo} day${daysAgo === 1 ? "" : "s"} ago`;
+};
 
 const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCardProps) => {
 	const getColorClasses = () => {
@@ -151,8 +342,6 @@ const nextStatusMap: Partial<Record<PurchaseOrderStatus, PurchaseOrderStatus>> =
 	draft: "sent",
 	sent: "confirmed",
 	confirmed: "in_transit",
-	in_transit: "delivered",
-	delivered: "completed",
 };
 
 export default function PurchaseOrders() {
@@ -160,19 +349,21 @@ export default function PurchaseOrders() {
 	const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderType[]>(initialData?.data ?? []);
 	const [approvedPRs, setApprovedPRs] = useState<PurchaseRequest[]>(initialApprovedPRs ?? []);
 	const [loading, setLoading] = useState(false);
-	const [metrics, setMetrics] = useState({ total_orders: 0, active_orders: 0, completed_orders: 0 });
+	const [metrics, setMetrics] = useState({ total_purchase_orders: 0, active_orders: 0, completed_orders: 0 });
 	const [searchQuery, setSearchQuery] = useState("");
+	const [statusFilter, setStatusFilter] = useState<"all" | PurchaseOrderStatus>("all");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+	const [isCreatingPO, setIsCreatingPO] = useState(false);
 	const [viewingOrder, setViewingOrder] = useState<PurchaseOrderType | null>(null);
-	const [receivingOrder, setReceivingOrder] = useState<PurchaseOrderType | null>(null);
-	const [receivingData, setReceivingData] = useState<ReceivingFormState>({
-		receivedQuantity: "",
-		defectiveQuantity: "0",
-		actualDeliveryDate: new Date().toISOString().split("T")[0],
-		notes: "",
-	});
 	const [formData, setFormData] = useState<PurchaseOrderFormState>(initialFormState);
+	const [isDeliveryCalendarOpen, setIsDeliveryCalendarOpen] = useState(false);
+	const [deliveryCalendarMonth, setDeliveryCalendarMonth] = useState(() => {
+		const now = new Date();
+		return new Date(now.getFullYear(), now.getMonth(), 1);
+	});
+	const deliveryCalendarRef = useRef<HTMLDivElement | null>(null);
+	const today = useMemo(() => normalizeDate(new Date()), []);
 
 	const fetchPurchaseOrders = async () => {
 		try {
@@ -205,45 +396,148 @@ export default function PurchaseOrders() {
 		}
 	};
 
+	const upsertOrderInState = (updatedOrder: PurchaseOrderType) => {
+		setPurchaseOrders((prev) => prev.map((order) => (order.id === updatedOrder.id ? { ...order, ...updatedOrder } : order)));
+		setViewingOrder((prev: PurchaseOrderType | null) => (prev && prev.id === updatedOrder.id ? { ...prev, ...updatedOrder } : prev));
+	};
+
 	useEffect(() => {
 		fetchPurchaseOrders();
 		fetchApprovedPRs();
 		fetchMetrics();
 	}, []);
 
+	useEffect(() => {
+		if (!isDeliveryCalendarOpen) return;
+
+		const handleOutsideClick = (event: MouseEvent) => {
+			const target = event.target as Node;
+			if (deliveryCalendarRef.current && !deliveryCalendarRef.current.contains(target)) {
+				setIsDeliveryCalendarOpen(false);
+			}
+		};
+
+		document.addEventListener("mousedown", handleOutsideClick);
+		return () => {
+			document.removeEventListener("mousedown", handleOutsideClick);
+		};
+	}, [isDeliveryCalendarOpen]);
+
 	const selectedPrOption = useMemo(
 		() => approvedPRs.find((item) => item.id === formData.selectedPrId) ?? null,
 		[formData.selectedPrId, approvedPRs]
 	);
 
+	const selectedPrEffectiveQuantity = useMemo(() => {
+		if (!selectedPrOption) return null;
+
+		return getEffectiveQuantity(
+			selectedPrOption.quantity,
+			selectedPrOption.unit_cost,
+			selectedPrOption.total_cost,
+			isAllSizesRequest(selectedPrOption.requested_size, selectedPrOption.inventory_item?.category),
+		);
+	}, [selectedPrOption]);
+
+	const selectedPrAvailableSizeLabels = useMemo(() => {
+		if (!selectedPrOption) return [];
+
+		return getAvailableSizeLabels(
+			selectedPrOption.inventory_item,
+			selectedPrOption.requested_color,
+			selectedPrOption.requested_size,
+		);
+	}, [selectedPrOption]);
+
+	const viewingOrderAvailableSizeLabels = useMemo(() => {
+		if (!viewingOrder) return [];
+
+		return getAvailableSizeLabels(
+			viewingOrder.inventory_item,
+			viewingOrder.requested_color,
+			viewingOrder.requested_size,
+		);
+	}, [viewingOrder]);
+
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
-		if (!query) return purchaseOrders;
 
-		return purchaseOrders.filter((order) =>
-			order.po_number.toLowerCase().includes(query) ||
-			(order.purchase_request?.pr_number || "").toLowerCase().includes(query) ||
-			order.product_name.toLowerCase().includes(query) ||
-			(order.supplier?.name || "").toLowerCase().includes(query) ||
-			order.status.toLowerCase().includes(query)
-		);
-	}, [searchQuery, purchaseOrders]);
+		return purchaseOrders.filter((order) => {
+			const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+			if (!matchesStatus) return false;
+
+			if (!query) return true;
+
+			return (
+				order.po_number.toLowerCase().includes(query) ||
+				(order.purchase_request?.pr_number || "").toLowerCase().includes(query) ||
+				order.product_name.toLowerCase().includes(query) ||
+				(order.supplier?.name || "").toLowerCase().includes(query) ||
+				order.status.toLowerCase().includes(query)
+			);
+		});
+	}, [searchQuery, statusFilter, purchaseOrders]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-	const totalPoCount = metrics.total_orders;
+	const totalPoCount = metrics.total_purchase_orders;
 	const activePoCount = metrics.active_orders;
 	const completedPoCount = metrics.completed_orders;
 
 	const closeCreateModal = () => {
 		setIsCreateModalOpen(false);
+		setIsCreatingPO(false);
+		setIsDeliveryCalendarOpen(false);
+		setDeliveryCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
 		setFormData(initialFormState);
 	};
 
+	const selectedDeliveryDate = useMemo(() => {
+		if (!formData.expectedDeliveryDate) return null;
+		const parsed = new Date(`${formData.expectedDeliveryDate}T00:00:00`);
+		if (Number.isNaN(parsed.getTime())) return null;
+		return normalizeDate(parsed);
+	}, [formData.expectedDeliveryDate]);
+
+	const deliveryMonthLabel = useMemo(() => {
+		return deliveryCalendarMonth.toLocaleDateString("en-US", {
+			month: "long",
+			year: "numeric",
+		});
+	}, [deliveryCalendarMonth]);
+
+	const deliveryMonthYear = deliveryCalendarMonth.getFullYear();
+	const deliveryMonthIndex = deliveryCalendarMonth.getMonth();
+	const deliveryFirstWeekday = new Date(deliveryMonthYear, deliveryMonthIndex, 1).getDay();
+	const deliveryTotalDays = new Date(deliveryMonthYear, deliveryMonthIndex + 1, 0).getDate();
+	const deliveryCalendarCells: Array<number | null> = [
+		...Array(deliveryFirstWeekday).fill(null),
+		...Array.from({ length: deliveryTotalDays }, (_, idx) => idx + 1),
+	];
+	const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+	const canGoToPreviousDeliveryMonth = deliveryCalendarMonth > currentMonthStart;
+
+	const handleSelectDeliveryDate = (day: number) => {
+		const selectedDate = normalizeDate(new Date(deliveryMonthYear, deliveryMonthIndex, day));
+		if (selectedDate < today) return;
+
+		setFormData((prev) => ({ ...prev, expectedDeliveryDate: toDateInputValue(selectedDate) }));
+		setIsDeliveryCalendarOpen(false);
+	};
+
+	const toggleDeliveryCalendar = () => {
+		if (!isDeliveryCalendarOpen && selectedDeliveryDate) {
+			setDeliveryCalendarMonth(new Date(selectedDeliveryDate.getFullYear(), selectedDeliveryDate.getMonth(), 1));
+		}
+		setIsDeliveryCalendarOpen((prev) => !prev);
+	};
+
 	const handleCreatePO = async () => {
+		if (isCreatingPO) return;
+
 		if (!formData.selectedPrId || !formData.expectedDeliveryDate.trim() || !formData.paymentTerms.trim()) {
 			await Swal.fire({
 				icon: "warning",
@@ -255,12 +549,18 @@ export default function PurchaseOrders() {
 		}
 
 		try {
+			setIsCreatingPO(true);
+			const createdPrId = formData.selectedPrId;
 			await purchaseOrderApi.create({
 				pr_id: formData.selectedPrId,
 				expected_delivery_date: formData.expectedDeliveryDate,
 				payment_terms: formData.paymentTerms,
 				notes: formData.notes.trim() || undefined,
 			});
+
+			if (createdPrId) {
+				setApprovedPRs((prev) => prev.filter((pr) => pr.id !== createdPrId));
+			}
 
 			await Swal.fire({
 				icon: "success",
@@ -272,8 +572,7 @@ export default function PurchaseOrders() {
 			});
 
 			closeCreateModal();
-			fetchPurchaseOrders();
-			fetchMetrics();
+			await Promise.all([fetchPurchaseOrders(), fetchApprovedPRs(), fetchMetrics()]);
 		} catch (error) {
 			console.error("Failed to create PO:", error);
 			await Swal.fire({
@@ -282,6 +581,8 @@ export default function PurchaseOrders() {
 				text: "Failed to create purchase order. Please try again.",
 				confirmButtonColor: "#111827",
 			});
+		} finally {
+			setIsCreatingPO(false);
 		}
 	};
 
@@ -289,18 +590,6 @@ export default function PurchaseOrders() {
 		const nextStatus = nextStatusMap[order.status as PurchaseOrderStatus];
 		if (!nextStatus) return;
 
-		// Delivering requires goods receipt verification — open dedicated modal
-		if (nextStatus === "delivered") {
-			setReceivingOrder(order);
-			setReceivingData({
-				receivedQuantity: String(order.quantity),
-				defectiveQuantity: "0",
-				actualDeliveryDate: new Date().toISOString().split("T")[0],
-				notes: "",
-			});
-			return;
-		}
-
 		const result = await Swal.fire({
 			title: `Move to ${formatStatus(nextStatus)}?`,
 			text: `${order.po_number} will be updated from ${formatStatus(order.status)} to ${formatStatus(nextStatus)}.`,
@@ -315,7 +604,10 @@ export default function PurchaseOrders() {
 		if (!result.isConfirmed) return;
 
 		try {
-			await purchaseOrderApi.updateStatus(order.id, { status: nextStatus });
+			const updatedOrder = await purchaseOrderApi.updateStatus(order.id, { status: nextStatus });
+			upsertOrderInState(updatedOrder);
+			await Promise.all([fetchPurchaseOrders(), fetchMetrics()]);
+			setViewingOrder(null);
 
 			await Swal.fire({
 				title: "Updated",
@@ -324,124 +616,6 @@ export default function PurchaseOrders() {
 				timer: 1400,
 				showConfirmButton: false,
 			});
-
-			fetchPurchaseOrders();
-			fetchMetrics();
-			if (viewingOrder && viewingOrder.id === order.id) {
-				const updatedOrder = await purchaseOrderApi.getById(order.id);
-				setViewingOrder(updatedOrder);
-			}
-		} catch (error) {
-			console.error("Failed to update status:", error);
-			await Swal.fire({
-				title: "Error",
-				text: "Failed to update order status. Please try again.",
-				icon: "error",
-				confirmButtonColor: "#111827",
-			});
-		}
-	};
-
-	const handleConfirmReceiving = async () => {
-		if (!receivingOrder) return;
-
-		const received = Number(receivingData.receivedQuantity);
-		const defective = Number(receivingData.defectiveQuantity);
-
-		if (Number.isNaN(received) || received < 0) {
-			await Swal.fire({ icon: "warning", title: "Invalid", text: "Received quantity must be 0 or more.", confirmButtonColor: "#111827" });
-			return;
-		}
-		if (Number.isNaN(defective) || defective < 0) {
-			await Swal.fire({ icon: "warning", title: "Invalid", text: "Defective quantity must be 0 or more.", confirmButtonColor: "#111827" });
-			return;
-		}
-		if (defective > received) {
-			await Swal.fire({ icon: "warning", title: "Invalid", text: "Defective quantity cannot exceed received quantity.", confirmButtonColor: "#111827" });
-			return;
-		}
-
-		const hasShortOrDefective = received < receivingOrder.quantity || defective > 0;
-		if (hasShortOrDefective && !receivingData.notes.trim()) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Notes required",
-				text: "Please add notes when delivery is short or has defective items.",
-				confirmButtonColor: "#111827",
-			});
-			return;
-		}
-
-		try {
-			await purchaseOrderApi.markAsDelivered(receivingOrder.id, {
-				actual_delivery_date: receivingData.actualDeliveryDate || new Date().toISOString().split("T")[0],
-				received_quantity: received,
-				defective_quantity: defective,
-				notes: receivingData.notes || undefined,
-			});
-
-			const netAccepted = received - defective;
-			await Swal.fire({
-				title: "Goods Received",
-				html: defective > 0
-					? `<p>${receivingOrder.po_number} marked as delivered.</p><p class="mt-1 text-sm text-gray-500">Received: ${received} &nbsp;|&nbsp; Defective: ${defective} &nbsp;|&nbsp; <strong>Added to inventory: ${netAccepted}</strong></p>`
-					: `<p>${receivingOrder.po_number} marked as delivered.</p><p class="mt-1 text-sm text-gray-500">${netAccepted} units added to inventory.</p>`,
-				icon: "success",
-				confirmButtonColor: "#111827",
-				timer: 2500,
-				showConfirmButton: false,
-			});
-
-			setReceivingOrder(null);
-			fetchPurchaseOrders();
-			fetchMetrics();
-			if (viewingOrder && viewingOrder.id === receivingOrder.id) {
-				const updatedOrder = await purchaseOrderApi.getById(receivingOrder.id);
-				setViewingOrder(updatedOrder);
-			}
-		} catch (error) {
-			console.error("Failed to confirm receipt:", error);
-			await Swal.fire({ icon: "error", title: "Error", text: "Failed to confirm goods receipt. Please try again.", confirmButtonColor: "#111827" });
-		}
-	};
-
-	const handleSetOrderStatus = async (order: PurchaseOrderType, nextStatus: PurchaseOrderStatus) => {
-		if (order.status === nextStatus) return;
-
-		const result = await Swal.fire({
-			title: `Move to ${formatStatus(nextStatus)}?`,
-			text: `${order.po_number} will be updated from ${formatStatus(order.status)} to ${formatStatus(nextStatus)}.`,
-			icon: "question",
-			showCancelButton: true,
-			confirmButtonText: `Yes, mark as ${formatStatus(nextStatus)}`,
-			cancelButtonText: "Cancel",
-			confirmButtonColor: "#111827",
-			cancelButtonColor: "#6b7280",
-		});
-
-		if (!result.isConfirmed) return;
-
-		try {
-			if (nextStatus === "delivered") {
-				await purchaseOrderApi.markAsDelivered(order.id);
-			} else {
-				await purchaseOrderApi.updateStatus(order.id, { status: nextStatus });
-			}
-
-			await Swal.fire({
-				title: "Updated",
-				text: `${order.po_number} is now ${formatStatus(nextStatus)}.`,
-				icon: "success",
-				timer: 1400,
-				showConfirmButton: false,
-			});
-
-			fetchPurchaseOrders();
-			fetchMetrics();
-			if (viewingOrder && viewingOrder.id === order.id) {
-				const updatedOrder = await purchaseOrderApi.getById(order.id);
-				setViewingOrder(updatedOrder);
-			}
 		} catch (error) {
 			console.error("Failed to update status:", error);
 			await Swal.fire({
@@ -454,7 +628,7 @@ export default function PurchaseOrders() {
 	};
 
 	const handleCancelOrder = async (order: PurchaseOrderType) => {
-		if (order.status === "completed" || order.status === "cancelled") return;
+		if (["in_transit", "delivered", "completed", "cancelled"].includes(order.status)) return;
 
 		const { value: reason } = await Swal.fire({
 			title: "Cancel this PO?",
@@ -481,7 +655,10 @@ export default function PurchaseOrders() {
 		if (!reason) return;
 
 		try {
-			await purchaseOrderApi.cancel(order.id, { cancellation_reason: reason });
+			const cancelledOrder = await purchaseOrderApi.cancel(order.id, { cancellation_reason: reason });
+			upsertOrderInState(cancelledOrder);
+			await Promise.all([fetchPurchaseOrders(), fetchMetrics()]);
+			setViewingOrder(null);
 
 			await Swal.fire({
 				title: "Cancelled",
@@ -490,12 +667,6 @@ export default function PurchaseOrders() {
 				timer: 1400,
 				showConfirmButton: false,
 			});
-
-			fetchPurchaseOrders();
-			fetchMetrics();
-			if (viewingOrder && viewingOrder.id === order.id) {
-				setViewingOrder(null);
-			}
 		} catch (error) {
 			console.error("Failed to cancel order:", error);
 			await Swal.fire({
@@ -507,7 +678,7 @@ export default function PurchaseOrders() {
 		}
 	};
 
-	const isAnyModalOpen = isCreateModalOpen || Boolean(viewingOrder) || Boolean(receivingOrder);
+	const isAnyModalOpen = isCreateModalOpen || Boolean(viewingOrder);
 
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
@@ -521,7 +692,11 @@ export default function PurchaseOrders() {
 						<p className="text-gray-600 dark:text-gray-400">Create PO from approved PR, send to supplier, then track order progress end-to-end</p>
 					</div>
 					<button
-						onClick={() => setIsCreateModalOpen(true)}
+						onClick={() => {
+							setIsCreateModalOpen(true);
+							setDeliveryCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+							void fetchApprovedPRs();
+						}}
 						className="px-4 py-2 bg-blue-600 hover:bg-blue-900 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
 					>
 						+ New PO
@@ -537,14 +712,14 @@ export default function PurchaseOrders() {
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4">
 						<h2 className="text-lg font-semibold">Purchase Order Table</h2>
-						<p className="text-sm text-gray-500">Monitor supplier order lifecycle: Sent, Confirmed, In Transit, Delivered, and Completed</p>
+						<p className="text-sm text-gray-500">Procurement actions: mark as Sent, Confirmed, In Transit, or Cancel. Inventory handles Delivered/Completed.</p>
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">
 						<div className="flex-1">
 							<input
 								type="text"
-								placeholder="Search by PO no, PR no, product, supplier, or status..."
+								placeholder="Search by PO number, product, or supplier..."
 								value={searchQuery}
 								onChange={(event) => {
 									setSearchQuery(event.target.value);
@@ -552,6 +727,26 @@ export default function PurchaseOrders() {
 								}}
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							/>
+						</div>
+						<div className="sm:w-56">
+							<select
+								title="Filter by status"
+								value={statusFilter}
+								onChange={(event) => {
+									setStatusFilter(event.target.value as "all" | PurchaseOrderStatus);
+									setCurrentPage(1);
+								}}
+								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+							>
+								<option value="all">All Status</option>
+								<option value="draft">Draft</option>
+								<option value="sent">Sent</option>
+								<option value="confirmed">Confirmed</option>
+								<option value="in_transit">In Transit</option>
+								<option value="delivered">Delivered</option>
+								<option value="completed">Completed</option>
+								<option value="cancelled">Cancelled</option>
+							</select>
 						</div>
 					</div>
 
@@ -562,7 +757,7 @@ export default function PurchaseOrders() {
 						</div>
 					) : paginatedItems.length === 0 ? (
 						<div className="text-center py-8 text-gray-500 dark:text-gray-400">
-							{searchQuery ? "No purchase orders found matching your search." : "No purchase orders yet. Create your first PO."}
+							{searchQuery || statusFilter !== "all" ? "No purchase orders found matching your filters." : "No purchase orders yet. Create your first PO."}
 						</div>
 					) : (
 						<>
@@ -570,8 +765,6 @@ export default function PurchaseOrders() {
 								<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 									<thead className="bg-gray-50 dark:bg-gray-800/50">
 										<tr>
-											<th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">PO No</th>
-											<th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">PR No</th>
 											<th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Product</th>
 											<th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Supplier</th>
 											<th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Total Cost</th>
@@ -582,8 +775,6 @@ export default function PurchaseOrders() {
 									<tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
 										{paginatedItems.map((order) => (
 											<tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-												<td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{order.po_number}</td>
-												<td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{order.purchase_request?.pr_number || "—"}</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{order.product_name}</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{order.supplier?.name || "—"}</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{currency.format(order.total_cost)}</td>
@@ -596,9 +787,10 @@ export default function PurchaseOrders() {
 													<div className="flex gap-2">
 														<button
 															onClick={() => setViewingOrder(order)}
-															className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
+															className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
+															title="View details"
 														>
-															View
+															<EyeIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
 														</button>
 														{nextStatusMap[order.status as PurchaseOrderStatus] && (
 															<button
@@ -668,7 +860,12 @@ export default function PurchaseOrders() {
 									<option value="">-- Choose an approved PR --</option>
 									{approvedPRs.map((pr) => (
 										<option key={pr.id} value={pr.id}>
-											{pr.pr_number} - {pr.product_name} (Qty: {pr.quantity}{pr.requested_size ? `, ${formatRequestedSizeDisplay(pr.requested_size)}` : ""}, {currency.format(pr.total_cost)})
+											{pr.pr_number} - {pr.product_name} (Qty: {getEffectiveQuantity(
+												pr.quantity,
+												pr.unit_cost,
+												pr.total_cost,
+												isAllSizesRequest(pr.requested_size, pr.inventory_item?.category),
+											)}{pr.requested_size ? `, ${formatRequestedSizeDisplay(pr.requested_size)}` : ""}, {currency.format(pr.total_cost)})
 										</option>
 									))}
 								</select>
@@ -680,23 +877,119 @@ export default function PurchaseOrders() {
 							{selectedPrOption && (
 								<div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
 									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Supplier:</strong> {selectedPrOption.supplier?.name || "N/A"}</p>
-									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Quantity:</strong> {selectedPrOption.quantity} units</p>
+									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Quantity:</strong> {selectedPrEffectiveQuantity} units</p>
 									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Unit Cost:</strong> {currency.format(selectedPrOption.unit_cost)}</p>
 									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Total:</strong> {currency.format(selectedPrOption.total_cost)}</p>
+									{selectedPrAvailableSizeLabels.length > 0 && (
+										<p className="text-sm text-blue-900 dark:text-blue-200">
+											<strong>Available Sizes{selectedPrOption.requested_color ? ` (${selectedPrOption.requested_color})` : ""}:</strong> {selectedPrAvailableSizeLabels.join(", ")}
+										</p>
+									)}
 								</div>
 							)}
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
+								<div className="relative" ref={deliveryCalendarRef}>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Expected Delivery Date *</label>
-									<input
-										type="date"
+									<button
+										type="button"
 										title="Expected delivery date"
 										aria-label="Expected delivery date"
-										value={formData.expectedDeliveryDate}
-										onChange={(event) => setFormData((prev) => ({ ...prev, expectedDeliveryDate: event.target.value }))}
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									/>
+										onClick={toggleDeliveryCalendar}
+										className="w-full flex items-center justify-between px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-left focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+									>
+										<span className={formData.expectedDeliveryDate ? "text-gray-900 dark:text-white" : "text-gray-400 dark:text-gray-500"}>
+											{formData.expectedDeliveryDate ? toDisplayDate(formData.expectedDeliveryDate) : "mm/dd/yyyy"}
+										</span>
+										<CalendarIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+									</button>
+
+									{isDeliveryCalendarOpen && (
+										<div className="absolute left-0 mt-2 z-30 w-[320px] rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-xl">
+											<div className="flex items-center justify-between mb-4">
+												<button
+													type="button"
+													onClick={() => canGoToPreviousDeliveryMonth && setDeliveryCalendarMonth(new Date(deliveryMonthYear, deliveryMonthIndex - 1, 1))}
+													disabled={!canGoToPreviousDeliveryMonth}
+													className="w-9 h-9 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+													aria-label="Previous month"
+												>
+													&lt;
+												</button>
+												<p className="font-semibold text-gray-900 dark:text-white">{deliveryMonthLabel}</p>
+												<button
+													type="button"
+													onClick={() => setDeliveryCalendarMonth(new Date(deliveryMonthYear, deliveryMonthIndex + 1, 1))}
+													className="w-9 h-9 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+													aria-label="Next month"
+												>
+													&gt;
+												</button>
+											</div>
+
+											<div className="grid grid-cols-7 gap-2 mb-2">
+												{WEEKDAY_LABELS.map((dayLabel) => (
+													<div key={dayLabel} className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 text-center">
+														{dayLabel}
+													</div>
+												))}
+											</div>
+
+											<div className="grid grid-cols-7 gap-2">
+												{deliveryCalendarCells.map((day, index) => {
+													if (day === null) {
+														return <div key={`blank-${index}`} className="h-10" />;
+													}
+
+													const cellDate = normalizeDate(new Date(deliveryMonthYear, deliveryMonthIndex, day));
+													const isPast = cellDate < today;
+													const isSelected = selectedDeliveryDate ? selectedDeliveryDate.getTime() === cellDate.getTime() : false;
+
+													return (
+														<button
+															type="button"
+															key={`${deliveryMonthYear}-${deliveryMonthIndex}-${day}`}
+															disabled={isPast}
+															onClick={() => handleSelectDeliveryDate(day)}
+															className={`h-10 rounded-xl text-sm font-medium transition-colors ${
+																isSelected
+																	? "bg-blue-600 text-white"
+																	: isPast
+																		? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+																		: "bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/40"
+															}`}
+														>
+															{day}
+														</button>
+													);
+												})}
+											</div>
+
+											<div className="mt-4 flex items-center justify-between text-xs">
+												<button
+													type="button"
+													onClick={() => {
+														setFormData((prev) => ({ ...prev, expectedDeliveryDate: "" }));
+														setIsDeliveryCalendarOpen(false);
+													}}
+													className="text-blue-600 dark:text-blue-400 hover:underline"
+												>
+													Clear
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setDeliveryCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+														setFormData((prev) => ({ ...prev, expectedDeliveryDate: toDateInputValue(today) }));
+														setIsDeliveryCalendarOpen(false);
+													}}
+													className="text-blue-600 dark:text-blue-400 hover:underline"
+												>
+													Today
+												</button>
+											</div>
+										</div>
+									)}
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Payment Terms *</label>
@@ -729,8 +1022,20 @@ export default function PurchaseOrders() {
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-							<button onClick={closeCreateModal} className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-							<button onClick={handleCreatePO} className="flex-1 px-4 py-2 rounded-lg bg-black hover:bg-gray-900 text-white font-medium transition-colors">Create PO</button>
+							<button
+								onClick={closeCreateModal}
+								disabled={isCreatingPO}
+								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={handleCreatePO}
+								disabled={isCreatingPO}
+								className="flex-1 px-4 py-2 rounded-lg bg-black hover:bg-gray-900 text-white font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+							>
+								{isCreatingPO ? "Creating..." : "Create PO"}
+							</button>
 						</div>
 					</div>
 				</div>
@@ -745,64 +1050,93 @@ export default function PurchaseOrders() {
 							<button onClick={() => setViewingOrder(null)} title="Close purchase order details modal" aria-label="Close purchase order details modal" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
 						</div>
 
-						<div className="p-6 space-y-4">
-							<div className="grid grid-cols-2 gap-4">
-								<div>
-									<p className="text-sm text-gray-500 dark:text-gray-400">PO Number</p>
-									<p className="text-base font-medium text-gray-900 dark:text-white">{viewingOrder.po_number}</p>
-								</div>
-								<div>
-									<p className="text-sm text-gray-500 dark:text-gray-400">PR Number</p>
-									<p className="text-base font-medium text-gray-900 dark:text-white">{viewingOrder.purchase_request?.pr_number || "—"}</p>
-								</div>
-							</div>
-
-							<div>
-								<p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
-								<span className={`inline-block mt-1 px-2 py-1 text-xs font-semibold rounded-full ${statusBadgeClass[viewingOrder.status]}`}>
-									{formatStatus(viewingOrder.status)}
-								</span>
-							</div>
-
-							<div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-								<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Product Details</h3>
-								<div className="space-y-2">
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Product:</strong> {viewingOrder.product_name}</p>
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Supplier:</strong> {viewingOrder.supplier?.name || "—"}</p>
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Quantity Ordered:</strong> {viewingOrder.quantity} units</p>
-									{viewingOrder.received_quantity != null && (
-										<p className="text-sm text-gray-700 dark:text-gray-300">
-											<strong>Received:</strong> {viewingOrder.received_quantity} units
-											{(viewingOrder.defective_quantity ?? 0) > 0 && (
-												<span className="ml-2 text-amber-600 dark:text-amber-400">({viewingOrder.defective_quantity} defective — {viewingOrder.received_quantity - (viewingOrder.defective_quantity ?? 0)} accepted)</span>
-											)}
-										</p>
-									)}
-									{viewingOrder.requested_size && (
-										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Requested Size:</strong> <span className="text-indigo-600 dark:text-indigo-400">Size {viewingOrder.requested_size}</span></p>
-									)}
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Unit Cost:</strong> {currency.format(viewingOrder.unit_cost)}</p>
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Total Cost:</strong> {currency.format(viewingOrder.total_cost)}</p>
+						<div className="p-6 space-y-5">
+							<div className="rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-linear-to-br from-blue-50 via-white to-indigo-50 dark:from-blue-950/20 dark:via-gray-900 dark:to-indigo-950/20 p-4 sm:p-5">
+								<div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Purchase Summary</p>
+										<h3 className="mt-1 text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">{viewingOrder.product_name}</h3>
+										<p className="mt-1 text-sm text-gray-600 dark:text-gray-300">Supplier: {viewingOrder.supplier?.name || "—"}</p>
+									</div>
+									<span className={`inline-flex items-center self-start px-3 py-1 text-xs font-semibold rounded-full ${statusBadgeClass[viewingOrder.status]}`}>
+										{formatStatus(viewingOrder.status)}
+									</span>
 								</div>
 							</div>
 
-							<div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-								<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Order Information</h3>
-								<div className="space-y-2">
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Payment Terms:</strong> {viewingOrder.payment_terms}</p>
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Expected Delivery:</strong> {viewingOrder.expected_delivery_date || "—"}</p>
-									{viewingOrder.actual_delivery_date && (
-										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Actual Delivery:</strong> {viewingOrder.actual_delivery_date}</p>
-									)}
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Ordered By:</strong> {viewingOrder.orderer?.name || "—"}</p>
-									<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Ordered Date:</strong> {viewingOrder.ordered_date}</p>
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+								<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+									<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Product Details</h3>
+									<div className="space-y-2">
+										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Quantity Ordered:</strong> {getEffectiveQuantity(
+											viewingOrder.quantity,
+											viewingOrder.unit_cost,
+											viewingOrder.total_cost,
+											isAllSizesRequest(viewingOrder.requested_size, viewingOrder.inventory_item?.category),
+										)} units</p>
+										{viewingOrder.received_quantity != null && (
+											<p className="text-sm text-gray-700 dark:text-gray-300">
+												<strong>Received:</strong> {viewingOrder.received_quantity} units
+												{(viewingOrder.defective_quantity ?? 0) > 0 && (
+													<span className="ml-2 text-amber-600 dark:text-amber-400">({viewingOrder.defective_quantity} defective - {viewingOrder.received_quantity - (viewingOrder.defective_quantity ?? 0)} accepted)</span>
+												)}
+											</p>
+										)}
+										{(viewingOrder.requested_size || isAllSizesRequest(viewingOrder.requested_size, viewingOrder.inventory_item?.category)) && (
+											<p className="text-sm text-gray-700 dark:text-gray-300">
+												<strong>Requested Size:</strong> <span className="text-indigo-600 dark:text-indigo-400">{getRequestedSizeLabel(viewingOrder.requested_size)}</span>
+											</p>
+										)}
+										{viewingOrderAvailableSizeLabels.length > 0 && (
+											<p className="text-sm text-gray-700 dark:text-gray-300">
+												<strong>Available Sizes{viewingOrder.requested_color ? ` (${viewingOrder.requested_color})` : ""}:</strong> <span className="text-indigo-600 dark:text-indigo-400">{viewingOrderAvailableSizeLabels.join(", ")}</span>
+											</p>
+										)}
+									</div>
 								</div>
+
+								<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+									<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Cost Breakdown</h3>
+									<div className="space-y-2">
+										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Unit Cost:</strong> {currency.format(viewingOrder.unit_cost)}</p>
+										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Total Cost:</strong> {currency.format(viewingOrder.total_cost)}</p>
+										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Payment Terms:</strong> {viewingOrder.payment_terms}</p>
+									</div>
+								</div>
+							</div>
+
+							<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+								<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Order Timeline</h3>
+								<div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+									<div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-3">
+										<p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Expected Delivery</p>
+										<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{formatReadableDate(viewingOrder.expected_delivery_date)}</p>
+										{formatRelativeDate(viewingOrder.expected_delivery_date) && (
+											<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{formatRelativeDate(viewingOrder.expected_delivery_date)}</p>
+										)}
+									</div>
+									<div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-3">
+										<p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Actual Delivery</p>
+										<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{formatReadableDate(viewingOrder.actual_delivery_date)}</p>
+										{formatRelativeDate(viewingOrder.actual_delivery_date) && (
+											<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{formatRelativeDate(viewingOrder.actual_delivery_date)}</p>
+										)}
+									</div>
+									<div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-3">
+										<p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Ordered Date</p>
+										<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{formatReadableDate(viewingOrder.ordered_date, { withTime: true })}</p>
+										{formatRelativeDate(viewingOrder.ordered_date) && (
+											<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{formatRelativeDate(viewingOrder.ordered_date)}</p>
+										)}
+									</div>
+								</div>
+								<p className="mt-3 text-sm text-gray-700 dark:text-gray-300"><strong>Ordered By:</strong> {viewingOrder.orderer?.name || "—"}</p>
 							</div>
 
 							{viewingOrder.notes && (
-								<div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+								<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
 									<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Notes</h3>
-									<p className="text-sm text-gray-700 dark:text-gray-300">{viewingOrder.notes}</p>
+									<p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{viewingOrder.notes}</p>
 								</div>
 							)}
 						</div>
@@ -817,7 +1151,7 @@ export default function PurchaseOrders() {
 									Mark as {formatStatus(nextStatusMap[viewingOrder.status as PurchaseOrderStatus]!)}
 								</button>
 							)}
-							{viewingOrder.status !== "completed" && viewingOrder.status !== "cancelled" && (
+							{!["in_transit", "delivered", "completed", "cancelled"].includes(viewingOrder.status) && (
 								<button
 									onClick={() => handleCancelOrder(viewingOrder)}
 									className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
@@ -825,129 +1159,6 @@ export default function PurchaseOrders() {
 									Cancel PO
 								</button>
 							)}
-						</div>
-					</div>
-				</div>
-			)}
-		{/* ── Goods Receipt Verification Modal ── */}
-			{receivingOrder && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close goods receipt modal" className="absolute inset-0 bg-black/50" onClick={() => setReceivingOrder(null)} />
-					<div className="relative w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
-						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-							<div>
-								<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Goods Receipt Verification</h2>
-								<p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{receivingOrder.po_number} — {receivingOrder.product_name}</p>
-							</div>
-							<button onClick={() => setReceivingOrder(null)} title="Close goods receipt modal" aria-label="Close goods receipt modal" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none">×</button>
-						</div>
-
-						<div className="p-6 space-y-4">
-							{/* Ordered qty reference */}
-							<div className="flex items-center gap-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3">
-								<svg className="h-4 w-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20A10 10 0 0112 2z" /></svg>
-								<span className="text-sm text-blue-700 dark:text-blue-300">
-									Ordered quantity: <strong>{receivingOrder.quantity} units</strong>
-									{receivingOrder.requested_size && <span className="ml-2 text-blue-500">(Size {receivingOrder.requested_size})</span>}
-								</span>
-							</div>
-
-							{/* All sizes mode indicator */}
-							{!receivingOrder.requested_size && (() => {
-								const rec = Number(receivingData.receivedQuantity) || 0;
-								const def = Number(receivingData.defectiveQuantity) || 0;
-								const net = Math.max(0, rec - def);
-								return (
-									<div className="flex items-center gap-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 px-4 py-3">
-										<svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" /></svg>
-										<span className="text-sm text-purple-700 dark:text-purple-300">
-											All sizes mode: <strong>+{net}</strong> per size
-										</span>
-									</div>
-								);
-							})()}
-
-							<div className="grid grid-cols-2 gap-4">
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-										Received Quantity *
-										<span className="ml-1 text-xs text-gray-400 font-normal">(max: {receivingOrder.quantity})</span>
-									</label>
-									<input
-										type="number"
-										title="Received quantity"
-										aria-label="Received quantity"
-										min={0}
-										max={receivingOrder.quantity}
-										value={receivingData.receivedQuantity}
-										onChange={(e) => setReceivingData((prev) => ({ ...prev, receivedQuantity: e.target.value, defectiveQuantity: "0" }))}
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									/>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-										Defective / Damaged
-										<span className="ml-1 text-xs text-gray-400 font-normal">(0 if none)</span>
-									</label>
-									<input
-										type="number"
-										title="Defective or damaged quantity"
-										aria-label="Defective or damaged quantity"
-										min={0}
-										max={Number(receivingData.receivedQuantity) || 0}
-										value={receivingData.defectiveQuantity}
-										onChange={(e) => setReceivingData((prev) => ({ ...prev, defectiveQuantity: e.target.value }))}
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									/>
-								</div>
-							</div>
-
-							{/* Net accepted summary */}
-							{(() => {
-								const rec = Number(receivingData.receivedQuantity) || 0;
-								const def = Number(receivingData.defectiveQuantity) || 0;
-								const net = rec - def;
-								const short = receivingOrder.quantity - rec;
-								return (
-									<div className={`rounded-xl border px-4 py-3 ${net < receivingOrder.quantity ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" : "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"}`}>
-										<p className={`text-sm font-semibold ${net < receivingOrder.quantity ? "text-amber-700 dark:text-amber-300" : "text-green-700 dark:text-green-300"}`}>
-											✅ Net added to inventory: <span className="text-base">{Math.max(0, net)} units</span>
-										</p>
-										{short > 0 && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">⚠ Short by {short} unit{short !== 1 ? "s" : ""} vs ordered quantity</p>}
-										{def > 0 && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">⚠ {def} defective unit{def !== 1 ? "s" : ""} will NOT be added to inventory</p>}
-									</div>
-								);
-							})()}
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Actual Delivery Date *</label>
-								<input
-									type="date"
-									title="Actual delivery date"
-									aria-label="Actual delivery date"
-									value={receivingData.actualDeliveryDate}
-									onChange={(e) => setReceivingData((prev) => ({ ...prev, actualDeliveryDate: e.target.value }))}
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Notes <span className="text-xs text-gray-400 font-normal">(required if short/defective)</span></label>
-								<textarea
-									rows={2}
-									value={receivingData.notes}
-									onChange={(e) => setReceivingData((prev) => ({ ...prev, notes: e.target.value }))}
-									placeholder="Describe any missing items, damage, or supplier issues..."
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-								/>
-							</div>
-						</div>
-
-						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-							<button onClick={() => setReceivingOrder(null)} className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-							<button onClick={handleConfirmReceiving} className="flex-1 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors">
-								Confirm Receipt &amp; Update Inventory
-							</button>
 						</div>
 					</div>
 				</div>

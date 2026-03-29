@@ -88,6 +88,7 @@ export const stockRequestApi = {
         quantity_needed: number;
         priority: string;
         requested_size?: string;
+        requested_color?: string;
         notes?: string;
     }): Promise<StockRequestApproval> {
         const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(BASE_URL, data);
@@ -102,6 +103,7 @@ export const stockRequestApi = {
         quantity_needed: number;
         priority: string;
         requested_size?: string;
+        requested_color?: string;
         notes?: string;
     }): Promise<StockRequestApproval> {
         const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(INVENTORY_BASE_URL, data);

@@ -47,6 +47,7 @@ const OvertimeIcon = () => (
 
 interface AttendanceRecord {
     date: string;
+    searchDateText: string;
     clockIn: string;
     clockOut: string;
     totalHours: string;
@@ -59,6 +60,49 @@ interface AttendanceRecord {
     autoClockedOut?: boolean;
     autoClockoutReason?: string;
 }
+
+const normalizeAttendanceStatus = (status?: string | null, hasCheckOut?: boolean) => {
+    if (!status) {
+        return hasCheckOut ? 'Completed' : 'In Progress';
+    }
+
+    const normalized = status.toLowerCase().replace(/\s+/g, '_');
+
+    switch (normalized) {
+        case 'absent':
+            return 'Absent';
+        case 'late':
+            return 'Late';
+        case 'half_day':
+        case 'halfday':
+            return 'Half Day';
+        case 'present':
+            return hasCheckOut ? 'Completed' : 'In Progress';
+        default:
+            return status
+                .split(/[_\s]+/)
+                .filter(Boolean)
+                .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+                .join(' ');
+    }
+};
+
+const getAttendanceStatusBadgeClass = (status: string) => {
+    switch (status) {
+        case 'Completed':
+            return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        case 'In Progress':
+            return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+        case 'Absent':
+            return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        case 'Late':
+            return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+        case 'Half Day':
+            return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+        default:
+            return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+    }
+};
 
 // Helper function to get Philippines time (UTC+8)
 const getPHTime = () => {
@@ -97,6 +141,9 @@ export default function TimeIn() {
     const [isOnLunch, setIsOnLunch] = useState(false);
     const [totalHours, setTotalHours] = useState<string>('0:00:00');
     const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+    const [attendanceCurrentPage, setAttendanceCurrentPage] = useState(1);
+    const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
+    const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('all');
     const [showLeaveModal, setShowLeaveModal] = useState(false);
     const [leaveStartDate, setLeaveStartDate] = useState(getPHDateInputValue());
     const [leaveEndDate, setLeaveEndDate] = useState('');
@@ -135,6 +182,10 @@ export default function TimeIn() {
             setLastLeaveRequestTime(parseInt(savedTime));
         }
     }, []);
+
+    useEffect(() => {
+        setAttendanceCurrentPage(1);
+    }, [attendanceRecords.length, attendanceSearchQuery, attendanceStatusFilter]);
 
     const checkAttendanceStatus = async () => {
         try {
@@ -207,24 +258,43 @@ export default function TimeIn() {
                 const result = await response.json();
                 const records = result.data || [];
                 
-                const formattedRecords = records.map((record: any) => ({
-                    date: new Date(record.date).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        year: 'numeric' 
-                    }),
-                    clockIn: record.check_in_time ? formatTimeFromString(record.check_in_time) : '--:--',
-                    clockOut: record.check_out_time ? formatTimeFromString(record.check_out_time) : '--:--',
-                    totalHours: record.working_hours ? formatDecimalHours(record.working_hours) : '0:00:00',
-                    status: record.check_out_time ? 'Completed' : 'In Progress',
-                    isLate: record.is_late || false,
-                    minutesLate: record.minutes_late || 0,
-                    expectedCheckIn: record.expected_check_in ? formatTimeFromString(record.expected_check_in) : null,
-                    isEarlyDeparture: record.is_early_departure || false,
-                    minutesEarlyDeparture: record.minutes_early_departure || 0,
-                    autoClockedOut: record.auto_clocked_out || false,
-                    autoClockoutReason: record.auto_clockout_reason || null
-                }));
+                const formattedRecords = records.map((record: any) => {
+                    const parsedDate = new Date(
+                        typeof record.date === 'string' && !record.date.includes('T')
+                            ? `${record.date}T00:00:00`
+                            : record.date,
+                    );
+                    const fullMonthDate = parsedDate.toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                    });
+                    const shortMonthDate = parsedDate.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                    });
+                    const numericDate = parsedDate.toLocaleDateString('en-US');
+                    const isoDate = !Number.isNaN(parsedDate.getTime())
+                        ? `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`
+                        : '';
+
+                    return {
+                        date: fullMonthDate,
+                        searchDateText: `${fullMonthDate} ${shortMonthDate} ${numericDate} ${isoDate}`.toLowerCase(),
+                        clockIn: record.check_in_time ? formatTimeFromString(record.check_in_time) : '--:--',
+                        clockOut: record.check_out_time ? formatTimeFromString(record.check_out_time) : '--:--',
+                        totalHours: record.working_hours ? formatDecimalHours(record.working_hours) : '0:00:00',
+                        status: normalizeAttendanceStatus(record.status, Boolean(record.check_out_time)),
+                        isLate: record.is_late || false,
+                        minutesLate: record.minutes_late || 0,
+                        expectedCheckIn: record.expected_check_in ? formatTimeFromString(record.expected_check_in) : null,
+                        isEarlyDeparture: record.is_early_departure || false,
+                        minutesEarlyDeparture: record.minutes_early_departure || 0,
+                        autoClockedOut: record.auto_clocked_out || false,
+                        autoClockoutReason: record.auto_clockout_reason || null,
+                    };
+                });
 
                 setAttendanceRecords(formattedRecords);
             }
@@ -1050,6 +1120,27 @@ export default function TimeIn() {
         adjustedCheckoutMinutes !== null &&
         adjustedCheckoutMinutes > regularCloseMinutes;
     const isOnApprovedLeaveToday = Boolean(todayAttendance?.on_leave_today);
+    const attendanceRecordsPerPage = 10;
+    const attendanceStatusOptions = ['all', ...Array.from(new Set(attendanceRecords.map((record) => record.status)))];
+    const normalizedAttendanceSearchQuery = attendanceSearchQuery.trim().toLowerCase();
+    const filteredAttendanceRecords = attendanceRecords.filter((record) => {
+        const matchesStatus = attendanceStatusFilter === 'all' || record.status === attendanceStatusFilter;
+        const matchesSearch =
+            !normalizedAttendanceSearchQuery ||
+            record.date.toLowerCase().includes(normalizedAttendanceSearchQuery) ||
+            record.searchDateText.includes(normalizedAttendanceSearchQuery) ||
+            record.clockIn.toLowerCase().includes(normalizedAttendanceSearchQuery) ||
+            record.expectedCheckIn?.toLowerCase().includes(normalizedAttendanceSearchQuery) ||
+            record.clockOut.toLowerCase().includes(normalizedAttendanceSearchQuery) ||
+            record.totalHours.toLowerCase().includes(normalizedAttendanceSearchQuery) ||
+            record.status.toLowerCase().includes(normalizedAttendanceSearchQuery);
+
+        return matchesStatus && matchesSearch;
+    });
+    const attendanceTotalPages = Math.max(1, Math.ceil(filteredAttendanceRecords.length / attendanceRecordsPerPage));
+    const attendanceStartIndex = (attendanceCurrentPage - 1) * attendanceRecordsPerPage;
+    const attendanceEndIndex = attendanceStartIndex + attendanceRecordsPerPage;
+    const paginatedAttendanceRecords = filteredAttendanceRecords.slice(attendanceStartIndex, attendanceEndIndex);
 
     const handleOvertimeRequest = async () => {
         if (isLoading) return; // Prevent spam
@@ -1478,12 +1569,37 @@ export default function TimeIn() {
                 {/* Attendance Records Table */}
                 <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 shadow-sm overflow-hidden">
                     <div className="p-8 border-b border-gray-200 dark:border-gray-800">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                                <CalendarIcon />
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                                    <CalendarIcon />
+                                </div>
+                                Attendance History
+                            </h2>
+
+                            <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
+                                <input
+                                    type="text"
+                                    value={attendanceSearchQuery}
+                                    onChange={(e) => setAttendanceSearchQuery(e.target.value)}
+                                    placeholder="Search date, time, hours, status..."
+                                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-white sm:w-72"
+                                />
+                                <select
+                                    value={attendanceStatusFilter}
+                                    onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+                                    aria-label="Filter attendance history by status"
+                                    title="Filter attendance history by status"
+                                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                >
+                                    {attendanceStatusOptions.map((statusOption) => (
+                                        <option key={statusOption} value={statusOption}>
+                                            {statusOption === 'all' ? 'All Statuses' : statusOption}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
-                            Attendance History
-                        </h2>
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full">
@@ -1498,7 +1614,7 @@ export default function TimeIn() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {attendanceRecords.length === 0 ? (
+                                {filteredAttendanceRecords.length === 0 ? (
                                     <tr className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
                                         <td colSpan={6} className="px-8 py-12 text-center">
                                             <div className="flex flex-col items-center gap-3">
@@ -1506,17 +1622,19 @@ export default function TimeIn() {
                                                     <CalendarIcon />
                                                 </div>
                                                 <p className="text-gray-600 dark:text-gray-400 font-medium">
-                                                    No attendance records yet
+                                                    {attendanceRecords.length === 0 ? 'No attendance records yet' : 'No matching attendance records'}
                                                 </p>
                                                 <p className="text-sm text-gray-500 dark:text-gray-500">
-                                                    Start by clocking in to create your first record
+                                                    {attendanceRecords.length === 0
+                                                        ? 'Start by clocking in to create your first record'
+                                                        : 'Try a different keyword or status filter'}
                                                 </p>
                                             </div>
                                         </td>
                                     </tr>
                                 ) : (
-                                    attendanceRecords.map((record, index) => (
-                                        <tr key={index} className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+                                    paginatedAttendanceRecords.map((record, index) => (
+                                        <tr key={`${record.date}-${attendanceStartIndex + index}`} className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td className="px-8 py-4 text-gray-900 dark:text-white font-medium">{record.date}</td>
                                             <td className="px-8 py-4">
                                                 <div className="flex items-center gap-2">
@@ -1545,11 +1663,7 @@ export default function TimeIn() {
                                             </td>
                                             <td className="px-8 py-4 text-gray-900 dark:text-white font-mono">{record.totalHours}</td>
                                             <td className="px-8 py-4">
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                                                    record.status === 'Completed' 
-                                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
-                                                        : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                                }`}>
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getAttendanceStatusBadgeClass(record.status)}`}>
                                                     {record.status}
                                                 </span>
                                             </td>
@@ -1559,6 +1673,48 @@ export default function TimeIn() {
                             </tbody>
                         </table>
                     </div>
+
+                    {filteredAttendanceRecords.length > 0 && (
+                        <div className="flex flex-col gap-4 border-t border-gray-200 dark:border-gray-800 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                                Showing {attendanceStartIndex + 1} to {Math.min(attendanceEndIndex, filteredAttendanceRecords.length)} of {filteredAttendanceRecords.length} records
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setAttendanceCurrentPage((prev) => Math.max(prev - 1, 1))}
+                                    disabled={attendanceCurrentPage === 1}
+                                    className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Previous
+                                </button>
+
+                                {Array.from({ length: attendanceTotalPages }, (_, i) => i + 1).map((page) => (
+                                    <button
+                                        key={page}
+                                        type="button"
+                                        onClick={() => setAttendanceCurrentPage(page)}
+                                        className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+                                            attendanceCurrentPage === page
+                                                ? 'bg-blue-600 text-white shadow-sm'
+                                                : 'border border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                ))}
+
+                                <button
+                                    type="button"
+                                    onClick={() => setAttendanceCurrentPage((prev) => Math.min(prev + 1, attendanceTotalPages))}
+                                    disabled={attendanceCurrentPage === attendanceTotalPages}
+                                    className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
                 </>
                 ) : null}

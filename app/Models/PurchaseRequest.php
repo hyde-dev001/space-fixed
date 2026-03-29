@@ -20,6 +20,7 @@ class PurchaseRequest extends Model
         'product_name',
         'inventory_item_id',
         'requested_size',
+        'requested_color',
         'quantity',
         'unit_cost',
         'total_cost',

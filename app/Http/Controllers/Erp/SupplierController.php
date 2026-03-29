@@ -16,6 +16,16 @@ class SupplierController extends Controller
         $shopOwnerId = $request->user()->shop_owner_id;
         
         $suppliers = Supplier::where('shop_owner_id', $shopOwnerId)
+            ->withCount([
+                'purchaseOrders as purchase_order_count' => function ($query) use ($shopOwnerId) {
+                    $query->where('shop_owner_id', $shopOwnerId);
+                },
+            ])
+            ->withMax([
+                'purchaseOrders as last_order_date' => function ($query) use ($shopOwnerId) {
+                    $query->where('shop_owner_id', $shopOwnerId);
+                },
+            ], 'ordered_date')
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
@@ -68,11 +78,11 @@ class SupplierController extends Controller
     /**
      * Display the specified supplier
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $shopOwnerId = request()->user()->shop_owner_id;
+        $shopOwnerId = $request->user()->shop_owner_id;
         
-        $supplier = Supplier::with(['orders' => function ($query) {
+        $supplier = Supplier::with(['purchaseOrders' => function ($query) {
                 $query->latest()->limit(10);
             }])
             ->where('shop_owner_id', $shopOwnerId)
@@ -117,15 +127,15 @@ class SupplierController extends Controller
     /**
      * Remove the specified supplier (soft delete)
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $shopOwnerId = request()->user()->shop_owner_id;
+        $shopOwnerId = $request->user()->shop_owner_id;
         
         $supplier = Supplier::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
         
         // Check if supplier has active orders
-        $activeOrders = $supplier->orders()
+        $activeOrders = $supplier->purchaseOrders()
             ->whereIn('status', ['sent', 'confirmed', 'in_transit'])
             ->count();
         

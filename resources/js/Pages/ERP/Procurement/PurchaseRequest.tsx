@@ -17,6 +17,7 @@ interface PurchaseRequestFormState {
 	stockRequestId: string;
 	productName: string;
 	requestedSize: string;
+	requestedColor: string;
 	supplierId: string;
 	quantity: string;
 	unitCost: string;
@@ -29,6 +30,7 @@ const initialFormState: PurchaseRequestFormState = {
 	stockRequestId: "",
 	productName: "",
 	requestedSize: "",
+	requestedColor: "",
 	supplierId: "",
 	quantity: "",
 	unitCost: "",
@@ -85,6 +87,120 @@ const formatRequestedSizeDisplay = (value: string): string => {
 	if (!trimmed) return "";
 	if (hasSizeSystemPrefix(trimmed)) return trimmed;
 	return `Size ${trimmed}`;
+};
+
+const getRequestedSizeLabel = (value?: string | null): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "All Sizes";
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	if (["all", "all_sizes", "all_size", "any"].includes(normalized)) {
+		return "All Sizes";
+	}
+
+	return formatRequestedSizeDisplay(trimmed);
+};
+
+const isSizeBasedCategory = (category?: string | null): boolean => {
+	const normalized = (category ?? "").trim().toLowerCase();
+	return normalized === "shoes";
+};
+
+const shouldShowRequestedSize = (requestedSize?: string | null, category?: string | null): boolean => {
+	const trimmed = (requestedSize ?? "").trim();
+
+	// Always show when a specific size value is explicitly provided.
+	if (trimmed !== "") {
+		return true;
+	}
+
+	// Show "All Sizes" only for categories that actually have sizes.
+	return isSizeBasedCategory(category);
+};
+
+const isAllSizesRequest = (requestedSize?: string | null, category?: string | null): boolean => {
+	if (!isSizeBasedCategory(category)) return false;
+
+	const trimmed = (requestedSize ?? "").trim();
+	if (!trimmed) return true;
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	return ["all", "all_sizes", "all_size", "any"].includes(normalized);
+};
+
+const formatSizeRowLabel = (size?: string | null, sizeSystem?: string | null): string => {
+	const rawSize = (size ?? "").trim();
+	if (!rawSize) return "";
+	if (hasSizeSystemPrefix(rawSize)) return rawSize;
+
+	const normalizedSystem = (sizeSystem ?? "").trim().toUpperCase();
+	if (SIZE_SYSTEMS.includes(normalizedSystem as typeof SIZE_SYSTEMS[number])) {
+		return `${normalizedSystem} ${rawSize}`;
+	}
+
+	return `Size ${rawSize}`;
+};
+
+const getAvailableSizeLabels = (
+	inventoryItem: any,
+	requestedColor?: string | null,
+	requestedSize?: string | null,
+): string[] => {
+	if (!isAllSizesRequest(requestedSize, inventoryItem?.category)) return [];
+
+	const allSizes = Array.isArray(inventoryItem?.sizes) ? inventoryItem.sizes : [];
+	if (!allSizes.length) return [];
+
+	const requestedColorNormalized = (requestedColor ?? "").trim().toLowerCase();
+	const colorVariants = Array.isArray(inventoryItem?.color_variants) ? inventoryItem.color_variants : [];
+
+	if (requestedColorNormalized) {
+		const matchedVariant = colorVariants.find(
+			(variant: any) => String(variant?.color_name ?? "").trim().toLowerCase() === requestedColorNormalized,
+		);
+
+		if (matchedVariant) {
+			const variantSizes = Array.isArray(matchedVariant.sizes) ? matchedVariant.sizes : [];
+			if (variantSizes.length) {
+				return Array.from(new Set(
+					variantSizes
+						.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+						.filter((label: string) => label.length > 0)
+				));
+			}
+
+			const scopedByVariantId = allSizes.filter(
+				(sizeRow: any) => Number(sizeRow?.inventory_color_variant_id) === Number(matchedVariant.id),
+			);
+
+			if (scopedByVariantId.length) {
+				return Array.from(new Set(
+					scopedByVariantId
+						.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+						.filter((label: string) => label.length > 0)
+				));
+			}
+		}
+	}
+
+	return Array.from(new Set(
+		allSizes
+			.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+			.filter((label: string) => label.length > 0)
+	));
+};
+
+const getEffectiveQuantity = (
+	quantity: number,
+	unitCost: number,
+	totalCost: number,
+	isAllSizes: boolean,
+): number => {
+	if (!isAllSizes) return quantity;
+	if (unitCost <= 0) return quantity;
+
+	const calculatedQuantity = Math.round(totalCost / unitCost);
+	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
 };
 
 interface MetricCardProps {
@@ -187,6 +303,7 @@ export default function PurchaseRequest() {
 			formData.stockRequestId !== initialFormState.stockRequestId ||
 			formData.productName.trim() !== initialFormState.productName ||
 			formData.requestedSize.trim() !== initialFormState.requestedSize ||
+			formData.requestedColor.trim() !== initialFormState.requestedColor ||
 			formData.supplierId !== initialFormState.supplierId ||
 			formData.quantity.trim() !== initialFormState.quantity ||
 			formData.unitCost.trim() !== initialFormState.unitCost ||
@@ -238,7 +355,11 @@ export default function PurchaseRequest() {
 	const fetchMetrics = async () => {
 		try {
 			const data = await purchaseRequestApi.getMetrics();
-			setMetrics(data);
+			setMetrics({
+				total_requests: Number((data as any)?.total_requests ?? (data as any)?.total_purchase_requests ?? 0),
+				pending_finance: Number((data as any)?.pending_finance ?? 0),
+				approved: Number((data as any)?.approved ?? (data as any)?.approved_requests ?? 0),
+			});
 		} catch (error) {
 			console.error("Error fetching metrics:", error);
 		}
@@ -314,7 +435,6 @@ export default function PurchaseRequest() {
 		if (!query) return filtered;
 
 		return filtered.filter((request) =>
-			request.pr_number.toLowerCase().includes(query) ||
 			request.product_name.toLowerCase().includes(query) ||
 			request.supplier?.name.toLowerCase().includes(query) ||
 			request.status.toLowerCase().includes(query)
@@ -326,11 +446,17 @@ export default function PurchaseRequest() {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData?.slice(startIndex, startIndex + itemsPerPage) || [];
 
-	const buildRequestSignature = (inventoryItemId?: string | number | null, quantity?: string | number | null, requestedSize?: string | null) => {
+	const buildRequestSignature = (
+		inventoryItemId?: string | number | null,
+		quantity?: string | number | null,
+		requestedSize?: string | null,
+		requestedColor?: string | null,
+	) => {
 		const item = String(inventoryItemId ?? "").trim();
 		const qty = String(quantity ?? "").trim();
 		const size = String(requestedSize ?? "").trim().toLowerCase();
-		return `${item}|${qty}|${size}`;
+		const color = String(requestedColor ?? "").trim().toLowerCase();
+		return `${item}|${qty}|${size}|${color}`;
 	};
 
 	// Legacy-safe "already used" detection (no stock_request_id column available yet)
@@ -338,17 +464,32 @@ export default function PurchaseRequest() {
 		return new Set(
 			(purchaseRequests || [])
 				.filter((pr) => pr.status !== 'rejected')
-				.map((pr) => buildRequestSignature(pr.inventory_item_id, pr.quantity, pr.requested_size))
-				.filter((signature) => signature !== "||")
+				.map((pr) => buildRequestSignature(pr.inventory_item_id, pr.quantity, pr.requested_size, (pr as any).requested_color))
+				.filter((signature) => signature !== "|||")
 		);
 	}, [purchaseRequests]);
 
 	const availableAcceptedStockRequests = useMemo(() => {
 		return acceptedStockRequests.filter((sr) => {
-			const signature = buildRequestSignature(sr.inventory_item_id, sr.quantity_needed, sr.requested_size ?? "");
+			const signature = buildRequestSignature(sr.inventory_item_id, sr.quantity_needed, sr.requested_size ?? "", sr.requested_color ?? "");
 			return !processedStockRequestSignatures.has(signature);
 		});
 	}, [acceptedStockRequests, processedStockRequestSignatures]);
+
+	const selectedStockRequest = useMemo(
+		() => acceptedStockRequests.find((sr) => String(sr.id) === formData.stockRequestId),
+		[acceptedStockRequests, formData.stockRequestId],
+	);
+
+	const selectedStockRequestAvailableSizeLabels = useMemo(
+		() => getAvailableSizeLabels(selectedStockRequest?.inventory_item, formData.requestedColor, formData.requestedSize),
+		[selectedStockRequest, formData.requestedColor, formData.requestedSize],
+	);
+
+	const viewingRequestAvailableSizeLabels = useMemo(
+		() => getAvailableSizeLabels(viewingRequest?.inventory_item, (viewingRequest as any)?.requested_color, viewingRequest?.requested_size),
+		[viewingRequest],
+	);
 
 	const closeCreateModal = () => {
 		setIsCreateModalOpen(false);
@@ -384,7 +525,7 @@ export default function PurchaseRequest() {
 			return;
 		}
 
-		const selectedSignature = buildRequestSignature(formData.inventoryItemId, formData.quantity, formData.requestedSize);
+		const selectedSignature = buildRequestSignature(formData.inventoryItemId, formData.quantity, formData.requestedSize, formData.requestedColor);
 		if (processedStockRequestSignatures.has(selectedSignature)) {
 			await workflowFeedback.error(
 				"This approved stock request has already been used to create a purchase request.",
@@ -408,6 +549,7 @@ export default function PurchaseRequest() {
 				supplier_id: Number(formData.supplierId),
 				inventory_item_id: Number(formData.inventoryItemId),
 				requested_size: formData.requestedSize || undefined,
+				requested_color: formData.requestedColor || undefined,
 				quantity,
 				unit_cost: unitCost,
 				priority: formData.priority,
@@ -483,7 +625,7 @@ export default function PurchaseRequest() {
 						<div className="flex-1">
 							<input
 								type="text"
-								placeholder="Search by PR no, product, supplier, or status..."
+								placeholder="Search by product, supplier, or status..."
 								value={searchQuery}
 								onChange={(event) => {
 									setSearchQuery(event.target.value);
@@ -535,7 +677,6 @@ export default function PurchaseRequest() {
 						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 							<thead className="bg-gray-50 dark:bg-gray-800/50">
 								<tr>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">PR no</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product / Supplier</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Unit cost</th>
@@ -548,7 +689,7 @@ export default function PurchaseRequest() {
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 								{loading ? (
 									<tr>
-										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
 											<div className="flex justify-center items-center">
 												<svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 													<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -560,12 +701,18 @@ export default function PurchaseRequest() {
 								) : paginatedItems.length > 0 ? (
 									paginatedItems.map((request) => (
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.pr_number}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 												<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
 												<p className="text-xs text-gray-500 dark:text-gray-400">{request.supplier?.name || 'N/A'}</p>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+												{getEffectiveQuantity(
+													request.quantity,
+													request.unit_cost,
+													request.total_cost,
+													isAllSizesRequest(request.requested_size, request.inventory_item?.category),
+												)}
+											</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{currency.format(request.unit_cost)}</td>
 											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">{currency.format(request.total_cost)}</td>
 											<td className="px-4 py-3">
@@ -594,7 +741,7 @@ export default function PurchaseRequest() {
 									))
 								) : (
 									<tr>
-										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">No purchase requests found.</td>
+										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">No purchase requests found.</td>
 									</tr>
 								)}
 							</tbody>
@@ -671,6 +818,7 @@ export default function PurchaseRequest() {
 											inventoryItemId: sr ? String(sr.inventory_item_id) : "",
 											productName:   sr ? sr.product_name : "",
 											requestedSize: sr ? (sr.requested_size ?? "") : "",
+											requestedColor: sr ? (sr.requested_color ?? "") : "",
 											quantity:      sr ? String(sr.quantity_needed) : "",
 											priority:      sr ? sr.priority : prev.priority,
 										}));
@@ -681,7 +829,7 @@ export default function PurchaseRequest() {
 									{availableAcceptedStockRequests
 										.map((sr) => (
 											<option key={sr.id} value={String(sr.id)}>
-												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{sr.requested_size ? `, ${formatRequestedSizeDisplay(sr.requested_size)}` : ""})
+												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{shouldShowRequestedSize(sr.requested_size, sr.inventory_item?.category) ? `, ${getRequestedSizeLabel(sr.requested_size)}` : ""}{sr.requested_color ? `, Color ${sr.requested_color}` : ""})
 											</option>
 										))}
 								</select>
@@ -701,14 +849,31 @@ export default function PurchaseRequest() {
 								/>
 							</div>
 
-						{formData.requestedSize && (
+						{formData.stockRequestId && shouldShowRequestedSize(formData.requestedSize, selectedStockRequest?.inventory_item?.category) && (
 							<div className="flex items-center gap-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 px-4 py-3">
 								<svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
 									<path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h6" />
 									<rect x="3" y="3" width="18" height="18" rx="2" />
 								</svg>
 								<span className="text-sm text-indigo-700 dark:text-indigo-300">
-									Inventory requested <strong>{formatRequestedSizeDisplay(formData.requestedSize)}</strong> specifically
+									Requested size: <strong>{getRequestedSizeLabel(formData.requestedSize)}</strong>
+								</span>
+							</div>
+						)}
+						{selectedStockRequestAvailableSizeLabels.length > 0 && (
+							<div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3">
+								<p className="text-xs font-medium text-blue-700 dark:text-blue-300">Available Sizes {formData.requestedColor ? `for ${formData.requestedColor}` : ""}</p>
+								<p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mt-0.5">{selectedStockRequestAvailableSizeLabels.join(", ")}</p>
+							</div>
+						)}
+						{formData.requestedColor && (
+							<div className="flex items-center gap-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 px-4 py-3">
+								<svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+									<circle cx="12" cy="12" r="9" />
+									<path strokeLinecap="round" strokeLinejoin="round" d="M8 12h8" />
+								</svg>
+								<span className="text-sm text-purple-700 dark:text-purple-300">
+									Requested color: <strong>{formData.requestedColor}</strong>
 								</span>
 							</div>
 						)}
@@ -809,15 +974,9 @@ export default function PurchaseRequest() {
 						</div>
 
 						<div className="p-6 space-y-4">
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">PR No</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.pr_number}</p>
-								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
-									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>{formatStatus(viewingRequest.status)}</span>
-								</div>
+							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
+								<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>{formatStatus(viewingRequest.status)}</span>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
@@ -826,14 +985,33 @@ export default function PurchaseRequest() {
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{viewingRequest.supplier?.name || 'N/A'}</p>
 							</div>
 
-{viewingRequest.requested_size && (
-							<div className="flex items-center gap-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 px-4 py-3">
-								<svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-									<path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h6" />
-									<rect x="3" y="3" width="18" height="18" rx="2" />
-								</svg>
-								<span className="text-sm text-indigo-700 dark:text-indigo-300">
-									Requested Size: <strong>{formatRequestedSizeDisplay(viewingRequest.requested_size)}</strong>
+							{shouldShowRequestedSize(viewingRequest.requested_size, viewingRequest.inventory_item?.category) && (
+								<div className="flex items-center gap-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 px-4 py-3">
+									<svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+										<path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h6" />
+										<rect x="3" y="3" width="18" height="18" rx="2" />
+									</svg>
+									<span className="text-sm text-indigo-700 dark:text-indigo-300">
+										Requested Size: <strong>{getRequestedSizeLabel(viewingRequest.requested_size)}</strong>
+									</span>
+								</div>
+							)}
+
+							{viewingRequestAvailableSizeLabels.length > 0 && (
+								<div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3">
+									<p className="text-xs font-medium text-blue-700 dark:text-blue-300">Available Sizes {(viewingRequest as any).requested_color ? `for ${(viewingRequest as any).requested_color}` : ""}</p>
+									<p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mt-0.5">{viewingRequestAvailableSizeLabels.join(", ")}</p>
+								</div>
+							)}
+
+							{(viewingRequest as any).requested_color && (
+								<div className="flex items-center gap-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 px-4 py-3">
+									<svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+										<circle cx="12" cy="12" r="9" />
+										<path strokeLinecap="round" strokeLinejoin="round" d="M8 12h8" />
+									</svg>
+									<span className="text-sm text-purple-700 dark:text-purple-300">
+										Requested Color: <strong>{(viewingRequest as any).requested_color}</strong>
 									</span>
 								</div>
 							)}
@@ -841,7 +1019,14 @@ export default function PurchaseRequest() {
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantity}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">
+										{getEffectiveQuantity(
+											viewingRequest.quantity,
+											viewingRequest.unit_cost,
+											viewingRequest.total_cost,
+											isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category),
+										)}
+									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Unit Cost</p>

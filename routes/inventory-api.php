@@ -101,6 +101,7 @@ Route::middleware([
     Route::get('/supplier-orders-monitoring', [SupplierOrderMonitoringController::class, 'index'])->name('inventory.monitoring.index');
     Route::get('/supplier-orders-monitoring/metrics', [SupplierOrderMonitoringController::class, 'getMetrics'])->name('inventory.monitoring.metrics');
     Route::get('/supplier-orders-monitoring/{id}', [SupplierOrderMonitoringController::class, 'show'])->name('inventory.monitoring.show');
+    Route::post('/supplier-orders-monitoring/{id}/receive', [SupplierOrderMonitoringController::class, 'receiveOrder'])->name('inventory.monitoring.receive');
 
     // =====================================
     // Repair Material Approval Queue (Inventory)

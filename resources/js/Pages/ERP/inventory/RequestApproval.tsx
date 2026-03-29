@@ -424,7 +424,6 @@ export default function RequestApproval() {
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 													<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
-													<p className="text-xs text-gray-500 dark:text-gray-400">{request.sku_code}</p>
 											</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity_needed}</td>
 											<td className="px-4 py-3">
@@ -514,10 +513,6 @@ export default function RequestApproval() {
 							<div>
 								<p className="text-gray-500">Material</p>
 								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.product_name}</p>
-							</div>
-							<div>
-								<p className="text-gray-500">SKU</p>
-								<p className="font-semibold text-gray-900 dark:text-white">{selectedRequest.sku_code}</p>
 							</div>
 							<div>
 								<p className="text-gray-500">Requested quantity</p>

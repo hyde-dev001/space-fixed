@@ -20,6 +20,7 @@ class PurchaseOrder extends Model
         'product_name',
         'inventory_item_id',
         'requested_size',
+        'requested_color',
         'quantity',
         'received_quantity',
         'defective_quantity',
@@ -259,7 +260,7 @@ class PurchaseOrder extends Model
 
     public function cancel(int $userId, string $reason): bool
     {
-        if (in_array($this->status, ['completed', 'cancelled'])) {
+        if (in_array($this->status, ['in_transit', 'delivered', 'completed', 'cancelled'])) {
             return false;
         }
 
@@ -313,33 +314,68 @@ class PurchaseOrder extends Model
             $requestedSizeRaw = trim((string) $this->requested_size);
             $requestedSizeSystem = 'US';
             $requestedSizeValue = $requestedSizeRaw;
+            $requestedColor = trim((string) ($this->requested_color ?? ''));
 
             if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $requestedSizeRaw, $matches)) {
                 $requestedSizeSystem = strtoupper($matches[1]);
                 $requestedSizeValue = trim((string) $matches[2]);
             }
 
-            $sizeRow = $inventoryItem->sizes()
+            $targetColorVariant = null;
+            if ($requestedColor !== '') {
+                $targetColorVariant = $inventoryItem->colorVariants()
+                    ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
+                    ->first();
+            }
+
+            $sizeRowQuery = $inventoryItem->sizes()
                 ->where('size', $requestedSizeValue)
-                ->where('size_system', $requestedSizeSystem)
-                ->first();
+                ->where('size_system', $requestedSizeSystem);
+
+            if ($targetColorVariant) {
+                $sizeRowQuery->where('inventory_color_variant_id', $targetColorVariant->id);
+            }
+
+            $sizeRow = $sizeRowQuery->first();
 
             if ($sizeRow) {
                 $sizeRow->quantity += $netAccepted;
                 $sizeRow->save();
             } else {
-                // Size didn't exist yet — create it
+                // Size didn't exist yet — create it, scoped to color when available.
                 $inventoryItem->sizes()->create([
+                    'inventory_color_variant_id' => $targetColorVariant?->id,
                     'size'        => $requestedSizeValue,
                     'size_system' => $requestedSizeSystem,
                     'quantity'    => $netAccepted,
                 ]);
             }
 
-            $sizeUpdateContext = "size {$requestedSizeSystem} {$requestedSizeValue}";
+            if ($targetColorVariant) {
+                $targetColorVariant->quantity += $netAccepted;
+                $targetColorVariant->save();
+                $sizeUpdateContext = "size {$requestedSizeSystem} {$requestedSizeValue}, color {$targetColorVariant->color_name}";
+            } else {
+                $sizeUpdateContext = "size {$requestedSizeSystem} {$requestedSizeValue}";
+            }
         } else {
+            $requestedColor = trim((string) ($this->requested_color ?? ''));
+
             // All sizes requested (blank requested_size): apply to every existing size row.
-            $allSizeRows = $inventoryItem->sizes()->get();
+            $allSizeRowsQuery = $inventoryItem->sizes();
+            $targetColorVariant = null;
+
+            if ($requestedColor !== '') {
+                $targetColorVariant = $inventoryItem->colorVariants()
+                    ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
+                    ->first();
+
+                if ($targetColorVariant) {
+                    $allSizeRowsQuery->where('inventory_color_variant_id', $targetColorVariant->id);
+                }
+            }
+
+            $allSizeRows = $allSizeRowsQuery->get();
 
             if ($allSizeRows->isNotEmpty()) {
                 foreach ($allSizeRows as $sizeRow) {
@@ -348,7 +384,14 @@ class PurchaseOrder extends Model
                 }
 
                 $addedToParent = $netAccepted * $allSizeRows->count();
-                $sizeUpdateContext = "all sizes ({$allSizeRows->count()} rows)";
+                $sizeUpdateContext = $targetColorVariant
+                    ? "all sizes for color {$targetColorVariant->color_name} ({$allSizeRows->count()} rows)"
+                    : "all sizes ({$allSizeRows->count()} rows)";
+            } elseif ($targetColorVariant) {
+                // No per-size rows for the chosen color yet; still keep color stock accurate.
+                $targetColorVariant->quantity += $netAccepted;
+                $targetColorVariant->save();
+                $sizeUpdateContext = "color {$targetColorVariant->color_name}";
             }
         }
 

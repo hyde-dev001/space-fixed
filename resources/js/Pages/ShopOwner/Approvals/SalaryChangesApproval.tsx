@@ -54,20 +54,6 @@ const statusPill: Record<ChangeStatus, string> = {
 	cancelled: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
 };
 
-const changeTypeLabel: Record<ChangeType, string> = {
-	new_hire_rate_setup: "New Hire Setup",
-	minor_adjustment: "Minor Adj. (<=5%)",
-	major_adjustment: "Major Adj. (>5%)",
-	correction: "Correction",
-};
-
-const changeTypePill: Record<ChangeType, string> = {
-	new_hire_rate_setup: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
-	minor_adjustment: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-	major_adjustment: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-	correction: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-};
-
 const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	if (typeof document === "undefined") return null;
 	return createPortal(children, document.body);
@@ -317,7 +303,7 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 
 	const ViewModal: React.FC<{ adjustment: SalaryAdjustment }> = ({ adjustment }) => (
 		<ModalPortal>
-			<div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+			<div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
 				<div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
 					<div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
 						<div>
@@ -357,12 +343,6 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 								<p className="text-gray-500 dark:text-gray-400">Status</p>
 								<span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusPill[adjustment.status]}`}>
 									{adjustment.status.charAt(0).toUpperCase() + adjustment.status.slice(1)}
-								</span>
-							</div>
-							<div>
-								<p className="text-gray-500 dark:text-gray-400">Adjustment Type</p>
-								<span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${changeTypePill[adjustment.change_type]}`}>
-									{changeTypeLabel[adjustment.change_type]}
 								</span>
 							</div>
 							<div>
@@ -488,7 +468,6 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 										<th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Previous</th>
 										<th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">New</th>
 										<th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Change</th>
-										<th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Type</th>
 										<th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Effective</th>
 										<th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Status</th>
 										<th className="px-6 py-4 text-center text-sm font-semibold text-gray-900 dark:text-white">Actions</th>
@@ -513,11 +492,6 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 											<td className="px-6 py-4">
 												<span className={`font-medium ${adjustment.change_percent >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
 													{fmtPct(adjustment.change_percent)}
-												</span>
-											</td>
-											<td className="px-6 py-4">
-												<span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${changeTypePill[adjustment.change_type]}`}>
-													{changeTypeLabel[adjustment.change_type]}
 												</span>
 											</td>
 											<td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{fmtDate(adjustment.effective_date)}</td>

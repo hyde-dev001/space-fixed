@@ -7,6 +7,7 @@ use App\Models\PurchaseRequest;
 use App\Http\Requests\StorePurchaseRequestRequest;
 use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
+use App\Models\InventoryItem;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -28,8 +29,19 @@ class PurchaseRequestController extends Controller
     {
         $this->authorize('viewAny', PurchaseRequest::class);
 
+        $purchaseRequestRelations = [
+            'shopOwner',
+            'supplier',
+            'inventoryItem',
+            'inventoryItem.sizes',
+            'inventoryItem.colorVariants.sizes',
+            'requester',
+            'reviewer',
+            'approver',
+        ];
+
         $query = PurchaseRequest::query()
-            ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->with($purchaseRequestRelations)
             ->where('shop_owner_id', Auth::user()->shop_owner_id);
 
         // Search
@@ -82,13 +94,25 @@ class PurchaseRequestController extends Controller
             // Evaluate requires_owner_approval for each item and return explicit arrays
             $purchaseRequests->setCollection(
                 $purchaseRequests->getCollection()->map(function ($purchaseRequest) {
+                    $recalculatedTotalCost = $this->calculatePurchaseRequestTotalCost(
+                        [
+                            'inventory_item_id' => $purchaseRequest->inventory_item_id,
+                            'requested_size' => $purchaseRequest->requested_size,
+                            'requested_color' => $purchaseRequest->requested_color,
+                            'quantity' => $purchaseRequest->quantity,
+                            'unit_cost' => $purchaseRequest->unit_cost,
+                        ],
+                        (int) $purchaseRequest->shop_owner_id
+                    );
+
                     $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService
                         ->requiresOwnerApprovalForPurchaseRequest(
                             (int) $purchaseRequest->shop_owner_id,
-                            (float) $purchaseRequest->total_cost
+                            $recalculatedTotalCost
                         );
 
                     $payload = $purchaseRequest->toArray();
+                    $payload['total_cost'] = $recalculatedTotalCost;
                     $payload['requires_owner_approval'] = $requiresOwnerApproval;
                     $payload['approval_stage'] = $purchaseRequest->status === 'pending_finance_final'
                         ? 'finance_final'
@@ -119,6 +143,7 @@ class PurchaseRequestController extends Controller
                 ->where('inventory_item_id', $data['inventory_item_id'] ?? null)
                 ->where('quantity', $data['quantity'])
                 ->where('requested_size', $data['requested_size'] ?? null)
+                ->where('requested_color', $data['requested_color'] ?? null)
                 ->where('status', '!=', 'rejected')
                 ->exists();
 
@@ -132,7 +157,7 @@ class PurchaseRequestController extends Controller
             $data['shop_owner_id'] = Auth::user()->shop_owner_id;
             $data['requested_by'] = Auth::id();
             $data['requested_date'] = now();
-            $data['total_cost'] = $data['quantity'] * $data['unit_cost'];
+            $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $data['shop_owner_id']);
             
             // Generate PR number
             $data['pr_number'] = $this->generatePRNumber();
@@ -146,7 +171,14 @@ class PurchaseRequestController extends Controller
 
             return response()->json([
                 'message' => 'Purchase request created successfully.',
-                'purchase_request' => $purchaseRequest->load(['shopOwner', 'supplier', 'inventoryItem', 'requester'])
+                'purchase_request' => $purchaseRequest->load([
+                    'shopOwner',
+                    'supplier',
+                    'inventoryItem',
+                    'inventoryItem.sizes',
+                    'inventoryItem.colorVariants.sizes',
+                    'requester',
+                ])
             ], 201);
 
         } catch (\Exception $e) {
@@ -167,6 +199,8 @@ class PurchaseRequestController extends Controller
             'shopOwner', 
             'supplier', 
             'inventoryItem', 
+            'inventoryItem.sizes',
+            'inventoryItem.colorVariants.sizes',
             'requester', 
             'reviewer', 
             'approver',
@@ -174,6 +208,17 @@ class PurchaseRequestController extends Controller
         ])->findOrFail($id);
 
         $this->authorize('view', $purchaseRequest);
+
+        $purchaseRequest->total_cost = $this->calculatePurchaseRequestTotalCost(
+            [
+                'inventory_item_id' => $purchaseRequest->inventory_item_id,
+                'requested_size' => $purchaseRequest->requested_size,
+                'requested_color' => $purchaseRequest->requested_color,
+                'quantity' => $purchaseRequest->quantity,
+                'unit_cost' => $purchaseRequest->unit_cost,
+            ],
+            (int) $purchaseRequest->shop_owner_id
+        );
 
         return response()->json($purchaseRequest);
     }
@@ -198,7 +243,7 @@ class PurchaseRequestController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
-            $data['total_cost'] = $data['quantity'] * $data['unit_cost'];
+            $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);
             
             if ($request->submit_to_finance && $purchaseRequest->status === 'draft') {
                 $data['status'] = 'pending_finance';
@@ -210,7 +255,14 @@ class PurchaseRequestController extends Controller
 
             return response()->json([
                 'message' => 'Purchase request updated successfully.',
-                'purchase_request' => $purchaseRequest->load(['shopOwner', 'supplier', 'inventoryItem', 'requester'])
+                'purchase_request' => $purchaseRequest->load([
+                    'shopOwner',
+                    'supplier',
+                    'inventoryItem',
+                    'inventoryItem.sizes',
+                    'inventoryItem.colorVariants.sizes',
+                    'requester',
+                ])
             ]);
 
         } catch (\Exception $e) {
@@ -284,10 +336,26 @@ class PurchaseRequestController extends Controller
         }
 
         try {
+            $recalculatedTotalCost = $this->calculatePurchaseRequestTotalCost(
+                [
+                    'inventory_item_id' => $purchaseRequest->inventory_item_id,
+                    'requested_size' => $purchaseRequest->requested_size,
+                    'requested_color' => $purchaseRequest->requested_color,
+                    'quantity' => $purchaseRequest->quantity,
+                    'unit_cost' => $purchaseRequest->unit_cost,
+                ],
+                (int) $purchaseRequest->shop_owner_id
+            );
+
+            if (round((float) $purchaseRequest->total_cost, 2) !== round($recalculatedTotalCost, 2)) {
+                $purchaseRequest->total_cost = $recalculatedTotalCost;
+                $purchaseRequest->save();
+            }
+
             $isFinanceFinalStage = $purchaseRequest->status === 'pending_finance_final';
             $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPurchaseRequest(
                 (int) $purchaseRequest->shop_owner_id,
-                (float) $purchaseRequest->total_cost
+                $recalculatedTotalCost
             );
 
             if ($isFinanceFinalStage) {
@@ -348,6 +416,71 @@ class PurchaseRequestController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Calculate PR total cost with support for all-size requests.
+     *
+     * For blank/all requested_size values, quantity is treated per size row.
+     */
+    private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): float
+    {
+        $quantity = (int) ($data['quantity'] ?? 0);
+        $unitCost = (float) ($data['unit_cost'] ?? 0);
+
+        if ($quantity <= 0 || $unitCost < 0) {
+            return 0;
+        }
+
+        $requestedSize = trim((string) ($data['requested_size'] ?? ''));
+        $requestedColor = trim((string) ($data['requested_color'] ?? ''));
+
+        // Specific size keeps the original formula.
+        if (!$this->isAllSizesRequest($requestedSize)) {
+            return round($quantity * $unitCost, 2);
+        }
+
+        $inventoryItemId = $data['inventory_item_id'] ?? null;
+        if (!$inventoryItemId) {
+            return round($quantity * $unitCost, 2);
+        }
+
+        $inventoryItem = InventoryItem::query()
+            ->whereKey($inventoryItemId)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->first();
+
+        if (!$inventoryItem) {
+            return round($quantity * $unitCost, 2);
+        }
+
+        $sizeRowsQuery = $inventoryItem->sizes();
+
+        if ($requestedColor !== '') {
+            $targetColorVariant = $inventoryItem->colorVariants()
+                ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
+                ->first();
+
+            if ($targetColorVariant) {
+                $sizeRowsQuery->where('inventory_color_variant_id', $targetColorVariant->id);
+            }
+        }
+
+        $sizeRowCount = $sizeRowsQuery->count();
+        $effectiveQuantity = $quantity * max(1, $sizeRowCount);
+
+        return round($effectiveQuantity * $unitCost, 2);
+    }
+
+    private function isAllSizesRequest(?string $requestedSize): bool
+    {
+        $normalized = strtolower(trim((string) $requestedSize));
+        if ($normalized === '') {
+            return true;
+        }
+
+        $normalized = preg_replace('/[\s-]+/', '_', $normalized) ?? $normalized;
+        return in_array($normalized, ['all', 'all_sizes', 'all_size', 'any'], true);
     }
 
     /**

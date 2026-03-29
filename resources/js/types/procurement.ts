@@ -27,6 +27,7 @@ export interface PurchaseRequest {
     inventory_item_id?: number;
     inventory_item?: InventoryItem;
     requested_size?: string;
+    requested_color?: string;
     quantity: number;
     unit_cost: number;
     total_cost: number;
@@ -62,6 +63,8 @@ export interface PurchaseOrder {
     product_name: string;
     inventory_item_id?: number;
     inventory_item?: InventoryItem;
+    requested_size?: string;
+    requested_color?: string;
     quantity: number;
     received_quantity?: number;
     defective_quantity?: number;
@@ -101,6 +104,7 @@ export interface StockRequestApproval {
     sku_code: string;
     quantity_needed: number;
     requested_size?: string;
+    requested_color?: string;
     priority: 'high' | 'medium' | 'low';
     priority_label?: string;
     request_source?: 'manual' | 'repair';
@@ -241,6 +245,8 @@ export interface CreatePurchaseRequestPayload {
     product_name: string;
     supplier_id: number;
     inventory_item_id?: number;
+    requested_size?: string;
+    requested_color?: string;
     quantity: number;
     unit_cost: number;
     priority: 'high' | 'medium' | 'low';

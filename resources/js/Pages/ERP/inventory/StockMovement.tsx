@@ -12,10 +12,33 @@ interface StockMovementItem {
 	date: string;
 	time: string;
 	product: string;
+	variantDetails: string;
 	actionType: MovementTrack;
 	quantityChange: number;
 	updatedBy: string;
 }
+
+const extractVariantDetails = (notes?: string, referenceType?: string): string => {
+	const rawNotes = (notes ?? "").trim();
+	if (!rawNotes) return "—";
+
+	const normalized = rawNotes.replace(/\s+/g, " ");
+	const variantMatch = normalized.match(/(size\s+[^,)]+(?:,\s*color\s+[^)]+)?)/i);
+	if (variantMatch?.[1]) {
+		const detail = variantMatch[1].trim();
+		return detail.charAt(0).toUpperCase() + detail.slice(1);
+	}
+
+	if (/color/i.test(normalized) || /size/i.test(normalized) || /variant/i.test(normalized)) {
+		return normalized;
+	}
+
+	if (referenceType === "size_added" || referenceType === "colour_added") {
+		return normalized;
+	}
+
+	return "—";
+};
 
 const movementTypeMap: Record<string, MovementTrack> = {
 	stock_in: "Stock IN",
@@ -37,6 +60,7 @@ const mapApiMovement = (m: ApiStockMovement): StockMovementItem => {
 		date,
 		time,
 		product: m.inventory_item?.name ?? m.product?.name ?? "Unknown",
+		variantDetails: extractVariantDetails(m.notes, m.reference_type),
 		actionType: movementTypeMap[m.movement_type] ?? "Adjustments",
 		quantityChange: m.quantity_change,
 		updatedBy: m.performer?.name ?? "System",
@@ -86,11 +110,11 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 	};
 
 	return (
-		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-			<div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
+			<div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 			<div className="relative">
 				<div className="flex items-center justify-between mb-4">
-					<div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
+					<div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
 						<Icon className="text-white size-7 drop-shadow-sm" />
 					</div>
 				</div>
@@ -141,6 +165,7 @@ export default function StockMovement() {
 		return movements.filter((item) => {
 			const matchesSearch =
 				item.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				item.variantDetails.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.updatedBy.toLowerCase().includes(searchQuery.toLowerCase());
 			const matchesTrack = trackFilter === "All" || item.actionType === trackFilter;
 			return matchesSearch && matchesTrack;
@@ -233,6 +258,7 @@ export default function StockMovement() {
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Time</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
+									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Variant details</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Action type</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Quantity change</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">User who updated</th>
@@ -240,10 +266,10 @@ export default function StockMovement() {
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 						{loading ? (
-							<tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Loading stock movements...</td></tr>
+							<tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Loading stock movements...</td></tr>
 						) : loadError ? (
 							<tr>
-								<td colSpan={6} className="px-4 py-10 text-center text-sm text-red-500">
+								<td colSpan={7} className="px-4 py-10 text-center text-sm text-red-500">
 									<p>{loadError}</p>
 									<button
 										type="button"
@@ -262,6 +288,7 @@ export default function StockMovement() {
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.date}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.time}</td>
 											<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{movement.product}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.variantDetails}</td>
 											<td className="px-4 py-3">
 												<span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
 													{movement.actionType}
@@ -281,7 +308,7 @@ export default function StockMovement() {
 									))
 								) : (
 									<tr>
-										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
 											No stock movement records found.
 										</td>
 									</tr>

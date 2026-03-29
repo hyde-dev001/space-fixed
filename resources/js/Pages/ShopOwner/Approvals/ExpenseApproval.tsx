@@ -157,6 +157,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewing, setViewing] = useState<Expense | null>(null);
+	const [statusFilter, setStatusFilter] = useState<ExpenseStatus | 'all'>('all');
 
 	const fetchExpenses = async () => {
 		try {
@@ -180,13 +181,14 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 
 	const filteredData = useMemo(() => {
 		const q = searchQuery.trim().toLowerCase();
-		if (!q) return expenses;
 		return expenses.filter(
-			(e) =>
-				e.category?.toLowerCase().includes(q) ||
-				(e.description ?? "").toLowerCase().includes(q)
+			(e) => {
+				const matchesSearch = !q || e.category?.toLowerCase().includes(q) || (e.description ?? "").toLowerCase().includes(q);
+				const matchesStatus = statusFilter === 'all' || e.status === statusFilter;
+				return matchesSearch && matchesStatus;
+			}
 		);
-	}, [searchQuery, expenses]);
+	}, [searchQuery, statusFilter, expenses]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -318,9 +320,27 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 
 				{/* Table */}
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
-					<div className="mb-4">
-						<h2 className="text-lg font-semibold">Expense Records</h2>
-						<p className="text-sm text-gray-500">Review category, amount, and description before approving</p>
+					<div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+						<div>
+							<h2 className="text-lg font-semibold">Expense Records</h2>
+							<p className="text-sm text-gray-500">Review category, amount, and description before approving</p>
+						</div>
+						{/* Status Filter Dropdown */}
+						<select
+							value={statusFilter}
+							onChange={(e) => {
+								setStatusFilter(e.target.value as ExpenseStatus | 'all');
+								setCurrentPage(1);
+							}}
+							className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+						>
+							<option value="all">All Status</option>
+							<option value="submitted">Pending Approval</option>
+							<option value="approved">Approved</option>
+							<option value="rejected">Rejected</option>
+							<option value="draft">Draft</option>
+							<option value="posted">Posted</option>
+						</select>
 					</div>
 
 					<div className="mb-4">

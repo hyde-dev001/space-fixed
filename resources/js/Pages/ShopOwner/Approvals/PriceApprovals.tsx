@@ -513,78 +513,9 @@ function PriceApprovalContent() {
       <Head title="Price Approvals - Solespace ERP" />
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Price Approvals</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Review and approve Finance-vetted price changes</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Type Filter */}
-            <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-              <button
-                onClick={() => {
-                  setTypeFilter('all');
-                  setCurrentPage(1);
-                }}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  typeFilter === 'all'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                All Items
-              </button>
-              <button
-                onClick={() => {
-                  setTypeFilter('shoe');
-                  setCurrentPage(1);
-                }}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  typeFilter === 'shoe'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Shoe Products
-              </button>
-              <button
-                onClick={() => {
-                  setTypeFilter('repair');
-                  setCurrentPage(1);
-                }}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  typeFilter === 'repair'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Repair Services
-              </button>
-            </div>
-            {/* View Toggle */}
-            <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-              <button
-                onClick={() => setViewMode('pending')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'pending'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Pending Review
-              </button>
-              <button
-                onClick={() => setViewMode('recent')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'recent'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Recently Approved
-              </button>
-            </div>
-          </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Price Approvals</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Review and approve Finance-vetted price changes</p>
         </div>
 
         {/* Metrics */}
@@ -620,9 +551,40 @@ function PriceApprovalContent() {
 
         {/* Main Content */}
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Price Change Requests</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Review price change requests that have been approved by Finance</p>
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Price Change Requests</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Review price change requests that have been approved by Finance</p>
+            </div>
+            {/* Dropdowns */}
+            <div className="flex flex-col sm:flex-row gap-2">
+              {/* View Mode Dropdown */}
+              <select
+                value={viewMode}
+                onChange={(e) => {
+                  setViewMode(e.target.value as 'pending' | 'recent');
+                  setCurrentPage(1);
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              >
+                <option value="pending">Pending Review</option>
+                <option value="recent">Recently Approved</option>
+              </select>
+
+              {/* Type Filter Dropdown */}
+              <select
+                value={typeFilter}
+                onChange={(e) => {
+                  setTypeFilter(e.target.value as 'all' | 'shoe' | 'repair');
+                  setCurrentPage(1);
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              >
+                <option value="all">All Items</option>
+                <option value="shoe">Shoe Products</option>
+                <option value="repair">Repair Services</option>
+              </select>
+            </div>
           </div>
 
           {/* Search */}

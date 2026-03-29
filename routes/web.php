@@ -1699,8 +1699,8 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\SupplierOrder::with(['supplier', 'items'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+        $initialData = \App\Models\PurchaseOrder::with(['supplier', 'purchaseRequest.inventoryItem'])
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('ordered_date', 'desc')->paginate(200);
         return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
     })->name('supplier-order-monitoring');
 
@@ -1799,16 +1799,6 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
         $initialData = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->paginate(100);
         return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
     })->name('suppliers-management');
-
-    Route::get('/supplier-order-monitoring', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\SupplierOrder::with(['supplier', 'items'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
-        return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
-    })->name('supplier-order-monitoring');
 });
 
 // STAFF routes (both MANAGER and STAFF can access)

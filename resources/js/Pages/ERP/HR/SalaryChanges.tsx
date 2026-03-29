@@ -513,25 +513,8 @@ const SalaryChanges: React.FC = () => {
 
   const ViewModal: React.FC<{ change: SalaryChange }> = ({ change }) => (
     <ModalPortal>
-      <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="fixed inset-0 z-999999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
         <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl">
-          {/* Header */}
-          <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-t-2xl">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Salary Change #{change.id}</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{change.employee?.name} · {fmtDate(change.effective_date)}</p>
-            </div>
-            <button
-              onClick={() => setViewChange(null)}
-              aria-label="Close"
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
           <div className="p-6 space-y-6">
             {/* Retroactive Warning */}
             {change.retroactive && (
@@ -578,12 +561,6 @@ const SalaryChanges: React.FC = () => {
                 <p className="text-gray-500 dark:text-gray-400">Status</p>
                 <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusPill[change.status]}`}>
                   {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
-                </span>
-              </div>
-              <div>
-                <p className="text-gray-500 dark:text-gray-400">Change Type</p>
-                <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${changeTypePill[change.change_type]}`}>
-                  {changeTypeLabel[change.change_type]}
                 </span>
               </div>
               <div>
@@ -851,7 +828,6 @@ const SalaryChanges: React.FC = () => {
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Previous</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">New</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Change</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Type</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Effective</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Status</th>
                   <th className="px-6 py-4 text-center text-sm font-semibold text-gray-900 dark:text-white">Actions</th>
@@ -883,11 +859,6 @@ const SalaryChanges: React.FC = () => {
                     <td className="px-6 py-4">
                       <span className={`font-medium ${change.change_percent >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                         {fmtPct(change.change_percent)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${changeTypePill[change.change_type]}`}>
-                        {changeTypeLabel[change.change_type]}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{fmtDate(change.effective_date)}</td>

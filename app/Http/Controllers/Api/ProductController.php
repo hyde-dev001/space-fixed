@@ -191,6 +191,7 @@ class ProductController extends Controller
                 ->allowedSorts(['price', 'name', 'created_at', 'sales_count'])
                 ->defaultSort('-created_at')
                 ->where('is_active', true)
+                ->withSum('variants as variants_stock_quantity', 'quantity')
                 ->with([
                     'shopOwner:id,first_name,last_name,business_name,business_type,shop_latitude,shop_longitude',
                     'colorVariants' => function ($query) {
@@ -213,9 +214,22 @@ class ProductController extends Controller
 
             $products = $query->paginate($request->get('per_page', 12));
 
+            $inventoryStockByProductId = InventoryItem::query()
+                ->whereIn('product_id', $products->getCollection()->pluck('id')->all())
+                ->whereNotNull('product_id')
+                ->pluck('available_quantity', 'product_id');
+
             // Transform products to include full image URLs and shop owner info
-            $products->getCollection()->transform(function ($product) {
+            $products->getCollection()->transform(function ($product) use ($inventoryStockByProductId) {
                 $product->main_image = $product->main_image_url;
+
+                $linkedInventoryStock = $inventoryStockByProductId->get($product->id);
+                $variantStockQuantity = (int) ($product->variants_stock_quantity ?? 0);
+                $displayStockQuantity = $linkedInventoryStock !== null
+                    ? (int) $linkedInventoryStock
+                    : ($variantStockQuantity > 0 ? $variantStockQuantity : (int) $product->stock_quantity);
+
+                $product->stock_quantity = $displayStockQuantity;
 
                 $mediaImages = collect($product->image_urls ?? [])
                     ->pluck('url')

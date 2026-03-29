@@ -45,6 +45,7 @@ const Checkout: React.FC = () => {
   const qtyUpdatingRef = useRef<Record<string, boolean>>({});
   const [showMobileDetails, setShowMobileDetails] = useState(false);
   const [orderNote, setOrderNote] = useState('');
+  const [isCartLoading, setIsCartLoading] = useState(true);
   
   // Customer information
   const [customerName, setCustomerName] = useState('');
@@ -59,19 +60,19 @@ const Checkout: React.FC = () => {
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [addressesLoading, setAddressesLoading] = useState(false);
   const [addressSaving, setAddressSaving] = useState(false);
-  const [newAddressData, setNewAddressData] = useState({ 
-    name: '', 
-    phone: '', 
-    region: '', 
-    province: '', 
-    city: '', 
-    barangay: '', 
-    postal_code: '', 
-    address: '', 
-    is_default: false 
+  const [newAddressData, setNewAddressData] = useState({
+    name: '',
+    phone: '',
+    region: '',
+    province: '',
+    city: '',
+    barangay: '',
+    postal_code: '',
+    address: '',
+    is_default: false
   });
-  
-  
+
+
   // Payment method state
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'Online'>('COD');
 
@@ -88,9 +89,6 @@ const Checkout: React.FC = () => {
   };
 
   const subtotal = items.filter(item => selectedItems.has(item.id)).reduce((s, it) => s + it.price * it.qty, 0);
-  const FREE_SHIP_THRESHOLD = 4400;
-  const freeShipRemaining = Math.max(0, Math.round(FREE_SHIP_THRESHOLD - subtotal));
-  const progressPct = FREE_SHIP_THRESHOLD > 0 ? Math.min(100, Math.round((subtotal / FREE_SHIP_THRESHOLD) * 100)) : 0;
 
   const shopGroups = useMemo<ShopGroup[]>(() => {
     const groups = new Map<string, ShopGroup>();
@@ -115,6 +113,8 @@ const Checkout: React.FC = () => {
 
   // Load cart function (moved outside useEffect so it can be reused)
   const loadCart = async () => {
+    setIsCartLoading(true);
+    try {
       if (!user) {
         // If not authenticated, load from localStorage
         try {
@@ -126,14 +126,14 @@ const Checkout: React.FC = () => {
             const size = c.size || c.shoe_size || options.size || (c.meta && c.meta.size) || (c.attributes && c.attributes.size) || undefined;
             const color = c.color || options.color || undefined;
             const compareAt = options.compare_at_price !== undefined ? Number(options.compare_at_price) : undefined;
-            return { 
-              id: String(c.id), 
-              name: c.name || '', 
-              price, 
+            return {
+              id: String(c.id),
+              name: c.name || '',
+              price,
               compare_at_price: Number.isFinite(compareAt) ? compareAt : undefined,
               size,
               color,
-              qty: Number(c.qty || 1), 
+              qty: Number(c.qty || 1),
               image: c.image || undefined,
               stock_quantity: c.stock_quantity || undefined,
               pid: c.pid || String(c.id),
@@ -202,14 +202,14 @@ const Checkout: React.FC = () => {
             const size = c.size || options.size || undefined;
             const color = c.color || options.color || undefined;
             const compareAt = options.compare_at_price !== undefined ? Number(options.compare_at_price) : undefined;
-            return { 
-              id: String(c.id), 
-              name: c.name || '', 
-              price, 
+            return {
+              id: String(c.id),
+              name: c.name || '',
+              price,
               compare_at_price: Number.isFinite(compareAt) ? compareAt : undefined,
               size,
               color,
-              qty: Number(c.qty || 1), 
+              qty: Number(c.qty || 1),
               image: c.image || undefined,
               stock_quantity: c.stock_quantity || undefined,
               pid: c.pid || String(c.id),
@@ -225,7 +225,10 @@ const Checkout: React.FC = () => {
           setItems([]);
         }
       }
-    };
+    } finally {
+      setIsCartLoading(false);
+    }
+  };
 
   // Load cart from database on mount
   useEffect(() => {
@@ -1159,6 +1162,21 @@ const Checkout: React.FC = () => {
 
       <main className="flex-1 pt-16 xl:pt-28">
         <div className="max-w-7xl mx-auto pt-0 pb-6 xl:py-12 px-6 text-black">
+        {isCartLoading ? (
+          <div className="min-h-[72vh] flex flex-col items-center justify-center">
+            <div className="relative mb-5">
+              <div className="h-20 w-20 rounded-full border-4 border-slate-200 border-t-[#16233b] animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-[#16233b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 3h2l1 5h13l1-4H7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 16a2 2 0 11-4 0 2 2 0 014 0zm-8 0a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-xl font-semibold text-slate-900 tracking-wide">Loading...</p>
+          </div>
+        ) : (
+          <>
         {recoveryOrderId && recoveryReason && (
           <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
             <p className="text-sm font-medium text-amber-900 mb-2">
@@ -1179,18 +1197,19 @@ const Checkout: React.FC = () => {
 
         <div className="xl:hidden">
           {items.length === 0 ? (
-            <div className="min-h-[82vh] flex flex-col items-center justify-center text-center text-black">
-              <div className="relative">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="min-h-[72vh] flex flex-col items-center justify-center text-center text-black px-6">
+              <div className="relative rounded-full bg-linear-to-br from-slate-100 to-slate-200 p-6 shadow-inner">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l1 5h13l1-4H7" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 16a2 2 0 11-4 0 2 2 0 014 0zm-8 0a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <span className="absolute -top-2 -right-2 bg-black text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">{items.length}</span>
+                <span className="absolute -top-1 -right-1 bg-[#16233b] text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold">0</span>
               </div>
 
-              <h2 className="mt-6 text-xl font-semibold text-black">Your cart is empty</h2>
+              <h2 className="mt-6 text-2xl font-bold text-slate-900">Your cart is empty</h2>
+              <p className="mt-2 text-sm text-slate-600 max-w-xs">Discover your next pair and add products here. Your checkout will update instantly.</p>
 
-              <Link href="/products" className="mt-6 bg-black text-white px-6 py-3 rounded-md inline-block">Continue shopping</Link>
+              <Link href="/products" className="mt-6 inline-flex items-center justify-center rounded-lg bg-[#16233b] px-6 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-[#1b2c48]">Continue shopping</Link>
             </div>
           ) : (
             <>
@@ -1356,7 +1375,7 @@ const Checkout: React.FC = () => {
         <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
           {/* Left: cart items (span 2 on md) */}
           <div className={items.length === 0 ? 'md:col-span-3' : 'md:col-span-2'}>
-            <div className={items.length === 0 ? 'rounded bg-white' : 'border border-gray-100 rounded'}>
+            <div className={items.length === 0 ? 'rounded bg-white' : 'rounded-2xl border border-gray-200 bg-white shadow-sm'}>
               {items.length > 0 && (
                 <div className="hidden md:grid grid-cols-12 gap-4 p-4 border-b text-sm font-medium text-black">
                   <div className="col-span-1 flex items-center justify-center">
@@ -1377,18 +1396,19 @@ const Checkout: React.FC = () => {
 
               <div>
                 {items.length === 0 ? (
-                  <div className="min-h-[62vh] flex flex-col items-center justify-center text-center text-black">
-                    <div className="relative">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="min-h-[62vh] flex flex-col items-center justify-center text-center text-black rounded-2xl border border-slate-200 bg-linear-to-b from-white to-slate-50 px-8">
+                    <div className="relative rounded-full bg-linear-to-br from-slate-100 to-slate-200 p-6 shadow-inner">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l1 5h13l1-4H7" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 16a2 2 0 11-4 0 2 2 0 014 0zm-8 0a2 2 0 11-4 0 2 2 0 014 0z" />
                       </svg>
-                      <span className="absolute -top-2 -right-2 bg-black text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">{items.length}</span>
+                      <span className="absolute -top-1 -right-1 bg-[#16233b] text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold">0</span>
                     </div>
 
-                    <h2 className="mt-6 text-xl font-semibold text-black">Your cart is empty</h2>
+                    <h2 className="mt-6 text-2xl font-bold text-slate-900">Your cart is empty</h2>
+                    <p className="mt-2 max-w-md text-sm text-slate-600">Start shopping to see your selected products here. Once you add items, you can review quantity, shop grouping, and proceed to checkout.</p>
 
-                    <Link href="/products" className="mt-6 bg-black text-white px-6 py-3 rounded-md inline-block">Continue shopping</Link>
+                    <Link href="/products" className="mt-6 inline-flex items-center justify-center rounded-lg bg-[#16233b] px-6 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-[#1b2c48]">Continue shopping</Link>
                   </div>
                 ) : (
                   items.map(item => (
@@ -1442,7 +1462,7 @@ const Checkout: React.FC = () => {
           </div>
 
           {/* Right: summary (only when items exist) */}
-          {items.length > 0 && (
+          {items.length > 0 && !isCartLoading && (
             <aside>
 
             {/* Address Selection Modal */}
@@ -1979,7 +1999,7 @@ const Checkout: React.FC = () => {
               </>
             )}
             
-            <div className="border border-gray-100 rounded p-6 bg-white">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sticky top-32">
               <div className="flex items-baseline justify-between mb-4">
                 <div className="text-lg font-semibold text-black">Total</div>
                 <div className="text-2xl font-extrabold text-black">₱{subtotal.toLocaleString()} PHP</div>
@@ -2010,6 +2030,8 @@ const Checkout: React.FC = () => {
           </aside>
           )}
         </div>
+        </>
+        )}
         </div>
       </main>
 
@@ -2026,7 +2048,7 @@ export default Checkout;
 // If a shared footer component exists later, replace this markup with that component.
 export const CheckoutFooter: React.FC = () => {
   return (
-    <footer className="mt-32 bg-gray-100 text-slate-900">
+    <footer className="mt-48 bg-gray-100 text-slate-900">
       <div className="max-w-7xl mx-auto px-6 py-16">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>

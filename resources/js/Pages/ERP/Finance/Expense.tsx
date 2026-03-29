@@ -33,6 +33,19 @@ type Expense = {
   receipt_original_name?: string | null;
   receipt_mime_type?: string | null;
   receipt_size?: number | null;
+  procurement_details?: {
+    purchase_order_id?: number;
+    po_number?: string;
+    supplier_name?: string | null;
+    product_name?: string | null;
+    quantity?: number | null;
+    requested_size?: string | null;
+    requested_color?: string | null;
+    unit_cost?: number | string | null;
+    total_cost?: number | string | null;
+    expected_delivery_date?: string | null;
+    actual_delivery_date?: string | null;
+  } | null;
 };
 
 type MetricCardProps = {
@@ -799,6 +812,61 @@ const Expense: React.FC = () => {
                 <span className="text-gray-500 dark:text-gray-400">Description</span>
                 <span className="text-right max-w-[60%] text-gray-800 dark:text-gray-200">{activeExpense.description}</span>
               </div>
+
+              {activeExpense.procurement_details && (
+                <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Procured Stock Details</p>
+                  {activeExpense.procurement_details.po_number && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">PO Number</span>
+                      <span className="font-semibold text-right">{activeExpense.procurement_details.po_number}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.product_name && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">Product</span>
+                      <span className="font-semibold text-right max-w-[60%]">{activeExpense.procurement_details.product_name}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.supplier_name && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">Supplier</span>
+                      <span className="text-right max-w-[60%]">{activeExpense.procurement_details.supplier_name}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.quantity !== undefined && activeExpense.procurement_details.quantity !== null && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">Quantity</span>
+                      <span className="font-semibold text-right">{activeExpense.procurement_details.quantity}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.requested_size && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">Requested Size</span>
+                      <span className="text-right">{activeExpense.procurement_details.requested_size}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.requested_color && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">Requested Color</span>
+                      <span className="text-right">{activeExpense.procurement_details.requested_color}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.unit_cost !== undefined && activeExpense.procurement_details.unit_cost !== null && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">Unit Cost</span>
+                      <span className="font-semibold text-right">{formatCurrency(activeExpense.procurement_details.unit_cost)}</span>
+                    </div>
+                  )}
+                  {activeExpense.procurement_details.total_cost !== undefined && activeExpense.procurement_details.total_cost !== null && (
+                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                      <span className="text-gray-500 dark:text-gray-400">PO Total</span>
+                      <span className="font-semibold text-right">{formatCurrency(activeExpense.procurement_details.total_cost)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300 items-center">
                 <span className="text-gray-500 dark:text-gray-400">Status</span>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(activeExpense.status)}`}>

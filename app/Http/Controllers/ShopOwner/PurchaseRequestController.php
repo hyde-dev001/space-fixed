@@ -3,12 +3,23 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryItem;
 use App\Models\PurchaseRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class PurchaseRequestController extends Controller
 {
+    private const PURCHASE_REQUEST_RELATIONS = [
+        'supplier',
+        'inventoryItem',
+        'inventoryItem.sizes',
+        'inventoryItem.colorVariants.sizes',
+        'requester',
+        'reviewer',
+        'approver',
+    ];
+
     /**
      * Get the currently authenticated shop owner.
      */
@@ -26,7 +37,7 @@ class PurchaseRequestController extends Controller
         $shopOwner = $this->shopOwner();
 
         $query = PurchaseRequest::query()
-            ->with(['supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->with(self::PURCHASE_REQUEST_RELATIONS)
             ->where('shop_owner_id', $shopOwner->id);
 
         if ($request->filled('status')) {
@@ -47,6 +58,24 @@ class PurchaseRequestController extends Controller
         $query->orderBy($sortBy, $sortOrder);
 
         $purchaseRequests = $query->paginate($request->get('per_page', 50));
+
+        $purchaseRequests->setCollection(
+            $purchaseRequests->getCollection()->map(function ($purchaseRequest) use ($shopOwner) {
+                $payload = $purchaseRequest->toArray();
+                $payload['total_cost'] = $this->calculatePurchaseRequestTotalCost(
+                    [
+                        'inventory_item_id' => $purchaseRequest->inventory_item_id,
+                        'requested_size' => $purchaseRequest->requested_size,
+                        'requested_color' => $purchaseRequest->requested_color,
+                        'quantity' => $purchaseRequest->quantity,
+                        'unit_cost' => $purchaseRequest->unit_cost,
+                    ],
+                    (int) $shopOwner->id
+                );
+
+                return $payload;
+            })
+        );
 
         return response()->json($purchaseRequests);
     }
@@ -79,9 +108,22 @@ class PurchaseRequestController extends Controller
                 'shop_owner'
             );
 
+            $fresh = $purchaseRequest->fresh(self::PURCHASE_REQUEST_RELATIONS);
+            $payload = $fresh->toArray();
+            $payload['total_cost'] = $this->calculatePurchaseRequestTotalCost(
+                [
+                    'inventory_item_id' => $fresh->inventory_item_id,
+                    'requested_size' => $fresh->requested_size,
+                    'requested_color' => $fresh->requested_color,
+                    'quantity' => $fresh->quantity,
+                    'unit_cost' => $fresh->unit_cost,
+                ],
+                (int) $shopOwner->id
+            );
+
             return response()->json([
                 'message' => 'Purchase request approved by Shop Owner and forwarded to Finance for final approval.',
-                'purchase_request' => $purchaseRequest->fresh(['supplier', 'inventoryItem', 'requester', 'reviewer', 'approver']),
+                'purchase_request' => $payload,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -115,9 +157,22 @@ class PurchaseRequestController extends Controller
         try {
             $purchaseRequest->reject($shopOwner->id, $request->rejection_reason);
 
+            $fresh = $purchaseRequest->fresh(self::PURCHASE_REQUEST_RELATIONS);
+            $payload = $fresh->toArray();
+            $payload['total_cost'] = $this->calculatePurchaseRequestTotalCost(
+                [
+                    'inventory_item_id' => $fresh->inventory_item_id,
+                    'requested_size' => $fresh->requested_size,
+                    'requested_color' => $fresh->requested_color,
+                    'quantity' => $fresh->quantity,
+                    'unit_cost' => $fresh->unit_cost,
+                ],
+                (int) $shopOwner->id
+            );
+
             return response()->json([
                 'message' => 'Purchase request rejected and returned to procurement.',
-                'purchase_request' => $purchaseRequest->fresh(['supplier', 'inventoryItem', 'requester', 'reviewer']),
+                'purchase_request' => $payload,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -125,5 +180,64 @@ class PurchaseRequestController extends Controller
                 'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): float
+    {
+        $quantity = (int) ($data['quantity'] ?? 0);
+        $unitCost = (float) ($data['unit_cost'] ?? 0);
+
+        if ($quantity <= 0 || $unitCost < 0) {
+            return 0;
+        }
+
+        $requestedSize = trim((string) ($data['requested_size'] ?? ''));
+        $requestedColor = trim((string) ($data['requested_color'] ?? ''));
+
+        if (!$this->isAllSizesRequest($requestedSize)) {
+            return round($quantity * $unitCost, 2);
+        }
+
+        $inventoryItemId = $data['inventory_item_id'] ?? null;
+        if (!$inventoryItemId) {
+            return round($quantity * $unitCost, 2);
+        }
+
+        $inventoryItem = InventoryItem::query()
+            ->whereKey($inventoryItemId)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->first();
+
+        if (!$inventoryItem) {
+            return round($quantity * $unitCost, 2);
+        }
+
+        $sizeRowsQuery = $inventoryItem->sizes();
+
+        if ($requestedColor !== '') {
+            $targetColorVariant = $inventoryItem->colorVariants()
+                ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
+                ->first();
+
+            if ($targetColorVariant) {
+                $sizeRowsQuery->where('inventory_color_variant_id', $targetColorVariant->id);
+            }
+        }
+
+        $sizeRowCount = $sizeRowsQuery->count();
+        $effectiveQuantity = $quantity * max(1, $sizeRowCount);
+
+        return round($effectiveQuantity * $unitCost, 2);
+    }
+
+    private function isAllSizesRequest(?string $requestedSize): bool
+    {
+        $normalized = strtolower(trim((string) $requestedSize));
+        if ($normalized === '') {
+            return true;
+        }
+
+        $normalized = preg_replace('/[\s-]+/', '_', $normalized) ?? $normalized;
+        return in_array($normalized, ['all', 'all_sizes', 'all_size', 'any'], true);
     }
 }

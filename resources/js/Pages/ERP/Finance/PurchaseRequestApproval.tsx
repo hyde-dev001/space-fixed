@@ -8,6 +8,7 @@ import type { PurchaseRequest } from "@/services/purchaseRequestApi";
 type RequestPriority = "high" | "medium" | "low";
 type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "pending_finance_final" | "approved" | "rejected";
 type MetricColor = "success" | "warning" | "info";
+const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface PurchaseRequestApprovalItem extends PurchaseRequest {
 	requires_owner_approval?: boolean;
@@ -34,6 +35,114 @@ const statusDisplayName: Record<ApprovalStatus, string> = {
 	pending_finance_final: "Pending Finance Final",
 	approved: "Approved",
 	rejected: "Rejected",
+};
+
+const hasSizeSystemPrefix = (value: string): boolean => {
+	const normalized = value.trim().toUpperCase();
+	return SIZE_SYSTEMS.some((system) => normalized.startsWith(`${system} `));
+};
+
+const formatRequestedSizeDisplay = (value: string): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "";
+	if (hasSizeSystemPrefix(trimmed)) return trimmed;
+	return `Size ${trimmed}`;
+};
+
+const getRequestedSizeLabel = (value?: string | null): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "All Sizes";
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	if (["all", "all_sizes", "all_size", "any"].includes(normalized)) {
+		return "All Sizes";
+	}
+
+	return formatRequestedSizeDisplay(trimmed);
+};
+
+const isAllSizesRequest = (requestedSize?: string | null): boolean => {
+	const trimmed = (requestedSize ?? "").trim();
+	if (!trimmed) return true;
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	return ["all", "all_sizes", "all_size", "any"].includes(normalized);
+};
+
+const formatSizeRowLabel = (size?: string | null, sizeSystem?: string | null): string => {
+	const rawSize = (size ?? "").trim();
+	if (!rawSize) return "";
+	if (hasSizeSystemPrefix(rawSize)) return rawSize;
+
+	const normalizedSystem = (sizeSystem ?? "").trim().toUpperCase();
+	if (SIZE_SYSTEMS.includes(normalizedSystem as typeof SIZE_SYSTEMS[number])) {
+		return `${normalizedSystem} ${rawSize}`;
+	}
+
+	return `Size ${rawSize}`;
+};
+
+const getAvailableSizeLabels = (
+	inventoryItem: any,
+	requestedColor?: string | null,
+	requestedSize?: string | null,
+): string[] => {
+	if (!isAllSizesRequest(requestedSize)) return [];
+	if ((inventoryItem?.category ?? "").toLowerCase() !== "shoes") return [];
+
+	const allSizes = Array.isArray(inventoryItem?.sizes) ? inventoryItem.sizes : [];
+	if (!allSizes.length) return [];
+
+	const requestedColorNormalized = (requestedColor ?? "").trim().toLowerCase();
+	const colorVariants = Array.isArray(inventoryItem?.color_variants) ? inventoryItem.color_variants : [];
+
+	if (requestedColorNormalized) {
+		const matchedVariant = colorVariants.find(
+			(variant: any) => String(variant?.color_name ?? "").trim().toLowerCase() === requestedColorNormalized,
+		);
+
+		if (matchedVariant) {
+			const variantSizes = Array.isArray(matchedVariant.sizes) ? matchedVariant.sizes : [];
+			if (variantSizes.length) {
+				return Array.from(new Set(
+					variantSizes
+						.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+						.filter((label: string) => label.length > 0)
+				));
+			}
+
+			const scopedByVariantId = allSizes.filter(
+				(sizeRow: any) => Number(sizeRow?.inventory_color_variant_id) === Number(matchedVariant.id),
+			);
+
+			if (scopedByVariantId.length) {
+				return Array.from(new Set(
+					scopedByVariantId
+						.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+						.filter((label: string) => label.length > 0)
+				));
+			}
+		}
+	}
+
+	return Array.from(new Set(
+		allSizes
+			.map((sizeRow: any) => formatSizeRowLabel(sizeRow?.size, sizeRow?.size_system))
+			.filter((label: string) => label.length > 0)
+	));
+};
+
+const getEffectiveQuantity = (
+	quantity: number,
+	unitCost: number,
+	totalCost: number,
+	isAllSizes: boolean,
+): number => {
+	if (!isAllSizes) return quantity;
+	if (unitCost <= 0) return quantity;
+
+	const calculatedQuantity = Math.round(totalCost / unitCost);
+	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
 };
 
 interface MetricCardProps {
@@ -127,6 +236,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const [requests, setRequests] = useState<PurchaseRequestApprovalItem[]>(initialRequests || []);
 	const [loading, setLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [statusFilter, setStatusFilter] = useState<"all" | ApprovalStatus>("all");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestApprovalItem | null>(null);
 
@@ -134,7 +244,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 		try {
 			setLoading(true);
 			const response = await axios.get('/api/finance/purchase-requests', {
-				params: { status: 'pending_finance,pending_finance_final', per_page: 100 },
+				params: { status: 'pending_finance,pending_finance_final,pending_shop_owner,approved,rejected', per_page: 200 },
 			});
 			const data = response.data?.data || response.data || [];
 			setRequests(Array.isArray(data) ? data : []);
@@ -153,15 +263,20 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
-		if (!query) return requests;
 
-		return requests.filter((request) =>
-			request.pr_number?.toLowerCase().includes(query) ||
-			request.product_name?.toLowerCase().includes(query) ||
-			request.supplier?.name?.toLowerCase().includes(query) ||
-			request.status?.toLowerCase().includes(query)
-		);
-	}, [searchQuery, requests]);
+		return requests.filter((request) => {
+			const matchesStatus = statusFilter === "all" ? true : request.status === statusFilter;
+			if (!matchesStatus) return false;
+
+			if (!query) return true;
+
+			return (
+				request.product_name?.toLowerCase().includes(query) ||
+				request.supplier?.name?.toLowerCase().includes(query) ||
+				request.status?.toLowerCase().includes(query)
+			);
+		});
+	}, [searchQuery, statusFilter, requests]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -170,7 +285,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 
 	const totalRequests = requests.length;
 	const pendingCount = requests.filter((request) => request.status === "pending_finance" || request.status === "pending_finance_final").length;
-	const approvedCount = requests.filter((request) => request.status === "pending_shop_owner").length;
+	const approvedCount = requests.filter((request) => request.status === "approved").length;
 
 	const handleApprove = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
@@ -304,6 +419,19 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	};
 
 	const isAnyModalOpen = Boolean(viewingRequest);
+	const canApproveViewingRequest =
+		viewingRequest?.status === "pending_finance" || viewingRequest?.status === "pending_finance_final";
+	const canRejectViewingRequest = viewingRequest?.status === "pending_finance";
+
+	const viewingRequestAvailableSizeLabels = useMemo(() => {
+		if (!viewingRequest) return [];
+
+		return getAvailableSizeLabels(
+			(viewingRequest as any).inventory_item,
+			viewingRequest.requested_color,
+			viewingRequest.requested_size,
+		);
+	}, [viewingRequest]);
 
 	useEffect(() => {
 		onModalStateChange?.(isAnyModalOpen);
@@ -342,7 +470,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 						<div className="flex-1">
 							<input
 								type="text"
-								placeholder="Search by PR no, product, supplier, or status..."
+								placeholder="Search by product, supplier, or status..."
 								value={searchQuery}
 								onChange={(event) => {
 									setSearchQuery(event.target.value);
@@ -351,13 +479,30 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							/>
 						</div>
+						<div className="sm:w-64">
+							<select
+								aria-label="Filter by status"
+								value={statusFilter}
+								onChange={(event) => {
+									setStatusFilter(event.target.value as "all" | ApprovalStatus);
+									setCurrentPage(1);
+								}}
+								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+							>
+								<option value="all">All Status</option>
+								<option value="pending_finance">Pending Finance</option>
+								<option value="pending_shop_owner">Pending Shop Owner</option>
+								<option value="pending_finance_final">Pending Finance Final</option>
+								<option value="approved">Approved</option>
+								<option value="rejected">Rejected</option>
+							</select>
+						</div>
 					</div>
 
 					<div className="overflow-x-auto">
 						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 							<thead className="bg-gray-50 dark:bg-gray-800/50">
 								<tr>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">PR no</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product / Supplier</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Total Cost</th>
@@ -369,17 +514,23 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 								{loading ? (
 									<tr>
-										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Loading...</td>
+										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Loading...</td>
 									</tr>
 								) : paginatedItems.length > 0 ? (
 									paginatedItems.map((request) => (
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.pr_number}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 												<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
 												<p className="text-xs text-gray-500 dark:text-gray-400">{request.supplier?.name || 'N/A'}</p>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+												{getEffectiveQuantity(
+													request.quantity,
+													request.unit_cost,
+													request.total_cost,
+													isAllSizesRequest(request.requested_size),
+												)}
+											</td>
 											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">{currency.format(request.total_cost)}</td>
 											<td className="px-4 py-3">
 												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority]}`}>
@@ -409,7 +560,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 									))
 								) : (
 									<tr>
-										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">No purchase requests found.</td>
+										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">No purchase requests found.</td>
 									</tr>
 								)}
 							</tbody>
@@ -454,17 +605,11 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 						</div>
 
 						<div className="p-6 space-y-4">
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">PR No</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.pr_number}</p>
-								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
-									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>
-										{statusDisplayName[viewingRequest.status]}
-									</span>
-								</div>
+							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
+								<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status]}`}>
+									{statusDisplayName[viewingRequest.status]}
+								</span>
 							</div>
 
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
@@ -473,10 +618,36 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{viewingRequest.supplier?.name || 'N/A'}</p>
 							</div>
 
+							<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
+								<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
+								<p className="text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+							</div>
+
+							{viewingRequestAvailableSizeLabels.length > 0 && (
+								<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+									<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequestAvailableSizeLabels.join(", ")}</p>
+								</div>
+							)}
+
+							{viewingRequest.requested_color && (
+								<div className="rounded-xl bg-purple-50 dark:bg-purple-900/20 p-4 border border-purple-200 dark:border-purple-800">
+									<p className="text-sm font-medium text-purple-600 dark:text-purple-400 mb-1">Requested Color</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requested_color}</p>
+								</div>
+							)}
+
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantity}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">
+										{getEffectiveQuantity(
+											viewingRequest.quantity,
+											viewingRequest.unit_cost,
+											viewingRequest.total_cost,
+											isAllSizesRequest(viewingRequest.requested_size),
+										)}
+									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Unit Cost</p>
@@ -502,8 +673,12 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 						</div>
 
 						<div className="flex flex-wrap gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
-							<button onClick={() => handleApprove(viewingRequest)} className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors">Approve</button>
-							<button onClick={() => handleReject(viewingRequest)} className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors">Reject</button>
+							{canApproveViewingRequest && (
+								<button onClick={() => handleApprove(viewingRequest)} className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors">Approve</button>
+							)}
+							{canRejectViewingRequest && (
+								<button onClick={() => handleReject(viewingRequest)} className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors">Reject</button>
+							)}
 							<button onClick={() => setViewingRequest(null)} className="flex-1 min-w-35 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Close</button>
 						</div>
 					</div>

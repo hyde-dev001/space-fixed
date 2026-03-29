@@ -449,23 +449,23 @@ const managerInventoryItems: NavItem[] = [
     name: "Material Request Queue",
     route: "erp.inventory.request-material-approval",
   },
-];
-
-const procurementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="5" width="12" height="14" rx="2"></rect>
-    <path d="M7 9h4"></path>
-    <path d="M7 13h4"></path>
-    <circle cx="18" cy="10" r="3"></circle>
-    <path d="M18 8.5v1.8l1.2.7"></path>
-    <path d="M16 18h5"></path>
+        <rect x="3" y="5" width="12" height="14" rx="2"></rect>
+        <path d="M7 9h4"></path>
+        <path d="M7 13h4"></path>
+        <circle cx="18" cy="10" r="3"></circle>
+        <path d="M18 8.5v1.8l1.2.7"></path>
+        <path d="M16 18h5"></path>
       </svg>
     ),
     name: "Supplier Orders",
-    route: "erp.procurement.supplier-order-monitoring",
+    route: "erp.inventory.supplier-order-monitoring",
   },
+];
+
+const procurementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -783,7 +783,6 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.procurement.purchase-orders": "/erp/procurement/purchase-orders",
     "erp.procurement.stock-request-approval": "/erp/procurement/stock-request-approval",
     "erp.procurement.suppliers-management": "/erp/procurement/suppliers-management",
-    "erp.procurement.supplier-order-monitoring": "/erp/procurement/supplier-order-monitoring",
     "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     "erp.manager.suspend-approval": "/erp/manager/suspend-approval",

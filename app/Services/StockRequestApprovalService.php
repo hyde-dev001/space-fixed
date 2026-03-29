@@ -152,6 +152,8 @@ class StockRequestApprovalService
                 'supplier_id' => $supplierId,
                 'product_name' => $stockRequest->product_name,
                 'inventory_item_id' => $stockRequest->inventory_item_id,
+                'requested_size' => $stockRequest->requested_size,
+                'requested_color' => $stockRequest->requested_color,
                 'quantity' => $stockRequest->quantity_needed,
                 'unit_cost' => $unitCost,
                 'priority' => $stockRequest->priority,

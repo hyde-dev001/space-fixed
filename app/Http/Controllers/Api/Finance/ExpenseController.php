@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Finance;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\Expense;
+use App\Models\PurchaseOrder;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -50,6 +51,8 @@ class ExpenseController extends Controller
             ->defaultSort('-date')
             ->paginate($request->get('per_page', 15));
 
+        $this->appendProcurementDetails($expenses->getCollection(), (int) $shopId);
+
         return response()->json($expenses);
     }
 
@@ -63,7 +66,100 @@ class ExpenseController extends Controller
         $expense = Expense::where('shop_id', $shopId)
             ->findOrFail($id);
 
+        $this->appendProcurementDetails(collect([$expense]), (int) $shopId);
+
         return response()->json($expense);
+    }
+
+    /**
+     * Attach procurement purchase-order details to expense payloads when available.
+     */
+    private function appendProcurementDetails($expenses, int $shopId): void
+    {
+        $poIds = [];
+        $poNumbers = [];
+
+        foreach ($expenses as $expense) {
+            $meta = is_array($expense->meta) ? $expense->meta : [];
+            $poId = (int) ($expense->purchase_order_id ?? ($meta['purchase_order_id'] ?? 0));
+            if ($poId > 0) {
+                $poIds[] = $poId;
+            }
+
+            $metaPoNumber = strtoupper(trim((string) ($meta['po_number'] ?? '')));
+            if ($metaPoNumber !== '') {
+                $poNumbers[] = $metaPoNumber;
+            }
+
+            if (preg_match('/(PO-\d{4}-\d+)/i', (string) ($expense->description ?? ''), $matches) === 1) {
+                $poNumbers[] = strtoupper(trim((string) $matches[1]));
+            }
+        }
+
+        $poIds = array_values(array_unique(array_filter($poIds)));
+        $poNumbers = array_values(array_unique(array_filter($poNumbers)));
+
+        if (empty($poIds) && empty($poNumbers)) {
+            return;
+        }
+
+        $poQuery = PurchaseOrder::query()
+            ->with(['supplier:id,name'])
+            ->where('shop_owner_id', $shopId)
+            ->where(function ($query) use ($poIds, $poNumbers) {
+                if (!empty($poIds)) {
+                    $query->whereIn('id', $poIds);
+                }
+
+                if (!empty($poNumbers)) {
+                    if (!empty($poIds)) {
+                        $query->orWhereIn('po_number', $poNumbers);
+                    } else {
+                        $query->whereIn('po_number', $poNumbers);
+                    }
+                }
+            });
+
+        $purchaseOrders = $poQuery->get();
+        $poById = $purchaseOrders->keyBy('id');
+        $poByNumber = $purchaseOrders->keyBy(function ($po) {
+            return strtoupper((string) $po->po_number);
+        });
+
+        foreach ($expenses as $expense) {
+            $meta = is_array($expense->meta) ? $expense->meta : [];
+            $poId = (int) ($expense->purchase_order_id ?? ($meta['purchase_order_id'] ?? 0));
+            $poNumber = strtoupper(trim((string) ($meta['po_number'] ?? '')));
+
+            if ($poNumber === '' && preg_match('/(PO-\d{4}-\d+)/i', (string) ($expense->description ?? ''), $matches) === 1) {
+                $poNumber = strtoupper(trim((string) $matches[1]));
+            }
+
+            $purchaseOrder = null;
+            if ($poId > 0 && $poById->has($poId)) {
+                $purchaseOrder = $poById->get($poId);
+            } elseif ($poNumber !== '' && $poByNumber->has($poNumber)) {
+                $purchaseOrder = $poByNumber->get($poNumber);
+            }
+
+            if (!$purchaseOrder) {
+                continue;
+            }
+
+            $expense->setAttribute('procurement_details', [
+                'purchase_order_id' => $purchaseOrder->id,
+                'po_number' => $purchaseOrder->po_number,
+                'supplier_name' => $purchaseOrder->supplier?->name,
+                'product_name' => $purchaseOrder->product_name,
+                'quantity' => $purchaseOrder->quantity,
+                'requested_size' => $purchaseOrder->requested_size,
+                'requested_color' => $purchaseOrder->requested_color,
+                'unit_cost' => $purchaseOrder->unit_cost,
+                'total_cost' => $purchaseOrder->total_cost,
+                'expected_delivery_date' => $purchaseOrder->expected_delivery_date,
+                'actual_delivery_date' => $purchaseOrder->actual_delivery_date,
+            ]);
+        }
     }
 
     public function store(Request $request)

@@ -229,7 +229,7 @@ export default function RepairPriceApproval() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<RepairService | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("pending");
+  const [statusFilter, setStatusFilter] = useState<"all" | WorkflowStage>("all");
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending");
   const [isActionProcessing, setIsActionProcessing] = useState(false);
 
@@ -319,18 +319,19 @@ export default function RepairPriceApproval() {
     const matchesSearch = item.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          item.requestedBy.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          item.category.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const stage = getWorkflowStage(item as RepairPriceRequest);
+    const matchesStatus = statusFilter === 'all' ? true : stage === statusFilter;
     
     // Apply view mode filter
     let matchesViewMode = true;
     if (viewMode === 'pending') {
-      const stage = getWorkflowStage(item as RepairPriceRequest);
       matchesViewMode = stage === 'finance_initial' || stage === 'finance_final';
     } else if (viewMode === 'recent') {
-      const stage = getWorkflowStage(item as RepairPriceRequest);
       matchesViewMode = stage === 'owner_review' || stage === 'approved';
     }
     
-    return matchesSearch && matchesViewMode;
+    return matchesSearch && matchesStatus && matchesViewMode;
   });
 
   const itemsPerPage = 5;
@@ -641,17 +642,37 @@ export default function RepairPriceApproval() {
           </div>
 
           {/* Search Filter */}
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder="Search by service name, category, or requestor..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-            />
+          <div className="mb-4 flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Search by service name, category, or requestor..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              />
+            </div>
+            <div className="sm:w-64">
+              <select
+                aria-label="Filter by status"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as "all" | WorkflowStage);
+                  setCurrentPage(1);
+                }}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              >
+                <option value="all">All Status</option>
+                <option value="finance_initial">Pending Finance</option>
+                <option value="finance_final">Pending Finance Final Approval</option>
+                <option value="owner_review">Pending Owner</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
           </div>
 
           {/* Table */}

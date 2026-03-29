@@ -576,6 +576,60 @@ export const supplierOrderAPI = {
     },
 
     /**
+     * Get supplier orders for monitoring dashboard
+     */
+    async getMonitoring(filters?: SupplierOrderFilters): Promise<PaginatedResponse<SupplierOrder>> {
+        try {
+            const response = await axios.get(`${API_BASE}/supplier-orders-monitoring`, { params: filters });
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
+     * Get monitoring dashboard metrics.
+     */
+    async getMonitoringMetrics(): Promise<{
+        active_orders: number;
+        due_today: number;
+        overdue: number;
+        arriving_soon: number;
+    }> {
+        try {
+            const response = await axios.get(`${API_BASE}/supplier-orders-monitoring/metrics`);
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
+     * Confirm goods receipt from monitoring and update inventory.
+     */
+    async receiveMonitoringOrder(
+        id: number,
+        data: {
+            actual_delivery_date: string;
+            received_quantity: number;
+            defective_quantity: number;
+            size_receipts?: Array<{
+                inventory_size_id: number;
+                received_quantity: number;
+                defective_quantity: number;
+            }>;
+            notes?: string;
+        }
+    ): Promise<SupplierOrder> {
+        try {
+            const response = await axios.post(`${API_BASE}/supplier-orders-monitoring/${id}/receive`, data);
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
      * Generate PO number
      */
     async generatePO(): Promise<{ po_number: string }> {

@@ -103,6 +103,7 @@ class PurchaseOrderController extends Controller
             $data['product_name'] = $purchaseRequest->product_name;
             $data['inventory_item_id'] = $purchaseRequest->inventory_item_id;
             $data['requested_size'] = $purchaseRequest->requested_size;
+            $data['requested_color'] = $purchaseRequest->requested_color;
             $data['quantity'] = $purchaseRequest->quantity;
             $data['unit_cost'] = $purchaseRequest->unit_cost;
             $data['total_cost'] = $purchaseRequest->total_cost;
@@ -377,7 +378,7 @@ class PurchaseOrderController extends Controller
         
         $this->authorize('cancel', $purchaseOrder);
 
-        if (in_array($purchaseOrder->status, ['delivered', 'completed', 'cancelled'])) {
+        if (in_array($purchaseOrder->status, ['in_transit', 'delivered', 'completed', 'cancelled'])) {
             return response()->json([
                 'message' => 'Purchase order cannot be cancelled in its current state.'
             ], 403);

@@ -21,6 +21,65 @@ const formatRequestedSizeDisplay = (value: string): string => {
 	return `Size ${trimmed}`;
 };
 
+const getRequestedSizeLabel = (value?: string | null): string => {
+	const trimmed = (value ?? "").trim();
+	if (!trimmed) return "All Sizes";
+
+	const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+	if (["all", "all_sizes", "all_size", "any"].includes(normalized)) {
+		return "All Sizes";
+	}
+
+	return formatRequestedSizeDisplay(trimmed);
+};
+
+const isAllSizesRequest = (value?: string | null): boolean => {
+	const normalized = (value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+	if (!normalized) return true;
+	return ["all", "all_sizes", "all_size", "any"].includes(normalized);
+};
+
+const formatSizeRowLabel = (size?: string | null, sizeSystem?: string | null): string => {
+	const rawSize = (size ?? "").trim();
+	if (!rawSize) return "";
+	if (hasSizeSystemPrefix(rawSize)) return rawSize;
+
+	const normalizedSystem = (sizeSystem ?? "").trim().toUpperCase();
+	if (SIZE_SYSTEMS.includes(normalizedSystem as typeof SIZE_SYSTEMS[number])) {
+		return `${normalizedSystem} ${rawSize}`;
+	}
+
+	return `Size ${rawSize}`;
+};
+
+const getAvailableSizeLabelsForRequest = (request: StockRequestApproval): string[] => {
+	if (!isAllSizesRequest(request.requested_size)) return [];
+	if (request.inventory_item?.category !== "shoes") return [];
+
+	const requestedColor = (request.requested_color ?? "").trim().toLowerCase();
+	const allSizes = request.inventory_item?.sizes ?? [];
+	if (!allSizes.length) return [];
+
+	let scopedSizes = allSizes;
+	if (requestedColor) {
+		const matchedVariant = (request.inventory_item?.color_variants ?? []).find(
+			(variant) => String(variant.color_name).trim().toLowerCase() === requestedColor,
+		);
+
+		if (matchedVariant) {
+			scopedSizes = allSizes.filter(
+				(sizeRow) => Number(sizeRow.inventory_color_variant_id) === Number(matchedVariant.id),
+			);
+		}
+	}
+
+	const labels = scopedSizes
+		.map((sizeRow) => formatSizeRowLabel(sizeRow.size, sizeRow.size_system))
+		.filter((label) => label.length > 0);
+
+	return Array.from(new Set(labels));
+};
+
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -111,7 +170,10 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 
 export default function StockRequest() {
 	const { initialData } = usePage().props as any;
-	const [requests, setRequests] = useState<StockRequestApproval[]>(initialData?.data ?? []);
+	const sanitizeRequests = (items: StockRequestApproval[] = []): StockRequestApproval[] => {
+		return items.map((request) => ({ ...request, sku_code: "" }));
+	};
+	const [requests, setRequests] = useState<StockRequestApproval[]>(sanitizeRequests(initialData?.data ?? []));
 	const [loading, setLoading] = useState(false);
 	const [metrics, setMetrics] = useState<StockRequestMetrics>({ total: 0, pending: 0, accepted: 0, rejected: 0 });
 	const [searchQuery, setSearchQuery] = useState("");
@@ -126,7 +188,7 @@ export default function StockRequest() {
 			setLoading(true);
 			const response = await stockRequestApi.getAll({ per_page: 100 });
 			const data = (response as any).data || response || [];
-			setRequests(Array.isArray(data) ? data : []);
+			setRequests(sanitizeRequests(Array.isArray(data) ? data : []));
 		} catch (error) {
 			console.error("Failed to fetch stock requests:", error);
 			const shouldRetry = await workflowFeedback.errorWithRetry("Failed to load stock requests");
@@ -140,8 +202,13 @@ export default function StockRequest() {
 
 	const fetchMetrics = async () => {
 		try {
-			const data = await stockRequestApi.getMetrics();
-			setMetrics(data);
+			const data: any = await stockRequestApi.getMetrics();
+			setMetrics({
+				total: data?.total ?? data?.total_stock_requests ?? 0,
+				pending: data?.pending ?? data?.pending_requests ?? 0,
+				accepted: data?.accepted ?? data?.accepted_requests ?? 0,
+				rejected: data?.rejected ?? data?.rejected_requests ?? 0,
+			});
 		} catch (error) {
 			console.error("Failed to fetch metrics:", error);
 		}
@@ -195,6 +262,66 @@ export default function StockRequest() {
 			needs_details: "Needs Details",
 		};
 		return map[status] || status;
+	};
+
+	const parseBackendDate = (value: string) => {
+		const normalized = (value || "")
+			.trim()
+			// Normalize microseconds (6 digits) to milliseconds (3 digits) so Date can parse reliably.
+			.replace(/\.(\d{3})\d+Z$/i, ".$1Z")
+			.replace(/\.(\d{3})\d+$/i, ".$1");
+
+		const parsed = new Date(normalized);
+		return Number.isNaN(parsed.getTime()) ? null : parsed;
+	};
+
+	const formatTableDate = (value: string) => {
+		const parsed = parseBackendDate(value);
+		if (!parsed) return value;
+		return new Intl.DateTimeFormat(undefined, {
+			month: "short",
+			day: "2-digit",
+			year: "numeric",
+		}).format(parsed);
+	};
+
+	const formatTableTime = (value: string) => {
+		const parsed = parseBackendDate(value);
+		if (!parsed) return "";
+		return new Intl.DateTimeFormat(undefined, {
+			hour: "numeric",
+			minute: "2-digit",
+		}).format(parsed);
+	};
+
+	const formatDateTime = (value: string) => {
+		const parsed = parseBackendDate(value);
+		if (!parsed) return value;
+		return new Intl.DateTimeFormat(undefined, {
+			month: "short",
+			day: "2-digit",
+			year: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+		}).format(parsed);
+	};
+
+	const formatQuantity = (value: number) => {
+		return new Intl.NumberFormat().format(value ?? 0);
+	};
+
+	const getRequestSourceMeta = (source?: string) => {
+		if ((source || "manual") === "repair") {
+			return {
+				label: "Repair Job",
+				className: "border border-purple-200 bg-purple-100 text-purple-700 dark:border-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+			};
+		}
+
+		return {
+			label: "Manual Entry",
+			className: "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200",
+		};
 	};
 
 	const getRequesterRoleLabel = (request: StockRequestApproval) => {
@@ -360,7 +487,6 @@ export default function StockRequest() {
 						<table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 							<thead className="bg-gray-50 dark:bg-gray-800/50">
 								<tr>
-									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Request no</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Qty</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
@@ -374,19 +500,17 @@ export default function StockRequest() {
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 								{loading ? (
 									<tr>
-										<td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
 											Loading...
 										</td>
 									</tr>
 								) : paginatedItems.length > 0 ? (
 									paginatedItems.map((request) => (
-										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-											<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{request.request_number}</td>
+										<tr key={request.id} className="odd:bg-white even:bg-gray-50/40 hover:bg-blue-50/40 dark:odd:bg-transparent dark:even:bg-gray-800/20 dark:hover:bg-gray-800/40 transition-colors">
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 												<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
-												<p className="text-xs text-gray-500 dark:text-gray-400">{request.sku_code}</p>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{request.quantity_needed}</td>
+											<td className="px-4 py-3 text-sm font-medium tabular-nums text-gray-700 dark:text-gray-300">{formatQuantity(request.quantity_needed)}</td>
 											<td className="px-4 py-3">
 												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[request.priority] || ""}`}>
 													{formatPriority(request.priority)}
@@ -400,19 +524,20 @@ export default function StockRequest() {
 											</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 												<div className="flex flex-col gap-1">
-													<span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-														(request.request_source || 'manual') === 'repair'
-															? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-															: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-													}`}>
-														{(request.request_source || 'manual') === 'repair' ? 'Repair Job' : 'Manual'}
+													<span className={`inline-flex w-fit min-w-24 items-center justify-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${getRequestSourceMeta(request.request_source).className}`}>
+														{getRequestSourceMeta(request.request_source).label}
 													</span>
 													{request.repair_request_id && (
 														<span className="text-xs text-gray-500 dark:text-gray-400">Repair #{request.repair_request_id}</span>
 													)}
 												</div>
 											</td>
-											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{request.requested_date}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+												<div className="flex flex-col leading-tight">
+													<span className="font-medium tabular-nums">{formatTableDate(request.requested_date)}</span>
+													<span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{formatTableTime(request.requested_date)}</span>
+												</div>
+											</td>
 											<td className="px-4 py-3">
 												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status] || ""}`}>
 													{formatStatus(request.status)}
@@ -437,7 +562,7 @@ export default function StockRequest() {
 								) : (
 									<tr>
 										<td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-500">
-											No stock requests found.
+											No stock requests found for the current filters.
 										</td>
 									</tr>
 								)}
@@ -474,108 +599,135 @@ export default function StockRequest() {
 			</div>
 
 			{viewingRequest && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/50" onClick={() => setViewingRequest(null)} />
-					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
-						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
-							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Stock Request Details</h2>
-							<button
-								onClick={() => setViewingRequest(null)}
-								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
-							>
-								×
-							</button>
-						</div>
-
-						<div className="p-6 space-y-4">
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Request No</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.request_number}</p>
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" onClick={() => setViewingRequest(null)} />
+					<div className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-gray-200/90 bg-white shadow-2xl dark:border-gray-800/90 dark:bg-gray-900 max-h-[92vh]">
+						<div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
+							<div className="flex items-start justify-between gap-4">
+								<div>
+									<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Request Review</p>
+									<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Stock Request Details</h2>
 								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
+								<div className="flex items-center gap-3">
 									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[viewingRequest.status] || ""}`}>
 										{formatStatus(viewingRequest.status)}
 									</span>
+									<button
+										type="button"
+										onClick={() => setViewingRequest(null)}
+										className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+										aria-label="Close request details modal"
+									>
+										<span className="text-lg leading-none">x</span>
+									</button>
 								</div>
-							</div>
-
-							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Product</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.product_name}</p>
-								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">SKU: {viewingRequest.sku_code}</p>
-							</div>
-
-							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity Needed</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.quantity_needed}</p>
-								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Priority</p>
-									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[viewingRequest.priority] || ""}`}>
-										{formatPriority(viewingRequest.priority)}
-									</span>
-								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Requested Date</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{new Date(viewingRequest.requested_date).toLocaleString()}</p>
 							</div>
 						</div>
 
-						{viewingRequest.requested_size && (
-							<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
-								<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{formatRequestedSizeDisplay(viewingRequest.requested_size)}</p>
+						<div className="overflow-y-auto max-h-[calc(92vh-154px)] px-5 py-5 sm:px-6 sm:py-6">
+							<div className="space-y-5">
+								<div className="rounded-2xl border border-gray-200 bg-linear-to-br from-gray-50 to-white p-4 dark:border-gray-800 dark:from-gray-900 dark:to-gray-900/60">
+									<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Product</p>
+									<p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{viewingRequest.product_name}</p>
+								</div>
+
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
+										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Quantity Needed</p>
+										<p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{formatQuantity(viewingRequest.quantity_needed)}</p>
+									</div>
+									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
+										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Priority</p>
+										<div className="mt-2">
+											<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${priorityBadgeClass[viewingRequest.priority] || ""}`}>
+												{formatPriority(viewingRequest.priority)}
+											</span>
+										</div>
+									</div>
+									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
+										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Requested Date</p>
+										<p className="mt-1 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{formatDateTime(viewingRequest.requested_date)}</p>
+									</div>
+								</div>
+
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+									<div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/20">
+										<p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">Requested Size</p>
+										<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+									</div>
+									{(viewingRequest as any).requested_color ? (
+										<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+											<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
+											<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{(viewingRequest as any).requested_color}</p>
+										</div>
+									) : (
+										<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+											<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
+											<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">Not specified</p>
+										</div>
+									)}
+								</div>
+
+								{isAllSizesRequest(viewingRequest.requested_size) && getAvailableSizeLabelsForRequest(viewingRequest).length > 0 && (
+									<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+										<p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+											Available Sizes {viewingRequest.requested_color ? `for ${viewingRequest.requested_color}` : ""}
+										</p>
+										<p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+											{getAvailableSizeLabelsForRequest(viewingRequest).join(", ")}
+										</p>
+									</div>
+								)}
+
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
+									<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Request Source</p>
+									<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{getRequestSourceMeta(viewingRequest.request_source).label}</p>
+									<div className="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-500 dark:text-gray-400 sm:grid-cols-2">
+										<p>Requester Role: {getRequesterRoleLabel(viewingRequest)}</p>
+										{viewingRequest.repair_request_id ? <p>Repair Request ID: {viewingRequest.repair_request_id}</p> : <p>Repair Request ID: N/A</p>}
+									</div>
+								</div>
+
+								{viewingRequest.rejection_reason && (
+									<div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+										<p className="text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">Rejection Reason</p>
+										<p className="mt-1 text-sm font-medium whitespace-pre-wrap text-red-900 dark:text-red-300">{viewingRequest.rejection_reason}</p>
+									</div>
+								)}
+
+								<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+									<p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Inventory Notes</p>
+									<p className="mt-1 text-sm font-medium whitespace-pre-wrap text-gray-900 dark:text-white">{viewingRequest.notes || "No notes provided."}</p>
+								</div>
 							</div>
-						)}
-						<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-							<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Request Source</p>
-							<p className="text-base font-semibold text-gray-900 dark:text-white">
-								{(viewingRequest.request_source || 'manual') === 'repair' ? 'Repair Job' : 'Manual'}
-							</p>
-							<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Requester Role: {getRequesterRoleLabel(viewingRequest)}</p>
-							{viewingRequest.repair_request_id && (
-								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Repair Request ID: {viewingRequest.repair_request_id}</p>
-							)}
-						</div>
-						{viewingRequest.rejection_reason && (
-							<div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800">
-								<p className="text-sm font-medium text-red-500 dark:text-red-400 mb-1">Rejection Reason</p>
-								<p className="text-base font-semibold text-red-900 dark:text-red-300 whitespace-pre-wrap">{viewingRequest.rejection_reason}</p>
-							</div>
-						)}
-						{viewingRequest.notes && (
-							<div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800">
-								<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Inventory Notes</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
-							</div>
-						)}
 						</div>
 
-						<div className="flex flex-wrap gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
-							<button
-								onClick={() => handleAccept(viewingRequest)}
-								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								Approve
-							</button>
-							<button
-								onClick={() => handleReject(viewingRequest)}
-								disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								Reject
-							</button>
-							<button
-								onClick={() => setViewingRequest(null)}
-								disabled={isActionProcessing}
-								className="flex-1 min-w-35 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								Close
-							</button>
+						<div className="sticky bottom-0 border-t border-gray-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
+							<div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+								<button
+									onClick={() => setViewingRequest(null)}
+									disabled={isActionProcessing}
+									className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 sm:w-auto"
+								>
+									Close
+								</button>
+								<div className="flex w-full gap-3 sm:w-auto">
+									<button
+										onClick={() => handleReject(viewingRequest)}
+										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
+										className="flex-1 rounded-lg bg-red-600 px-4 py-2 font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-32"
+									>
+										Reject
+									</button>
+									<button
+										onClick={() => handleAccept(viewingRequest)}
+										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
+										className="flex-1 rounded-lg bg-green-600 px-4 py-2 font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-32"
+									>
+										Approve
+									</button>
+								</div>
+							</div>
 						</div>
 					</div>
 				</div>

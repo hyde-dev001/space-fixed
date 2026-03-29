@@ -259,6 +259,46 @@ export default function ERPInventoryOverview() {
     setViewModalOpen(true);
   };
 
+  const formatCategoryLabel = (category: string) =>
+    category
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+  const getCategoryBadgeClass = (category: string) => {
+    switch (category) {
+      case "shoes":
+        return "bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200";
+      case "accessories":
+        return "bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200";
+      case "care_products":
+        return "bg-cyan-50 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-200";
+      case "cleaning_materials":
+        return "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200";
+      case "packaging":
+        return "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200";
+      case "repair_materials":
+        return "bg-rose-50 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200";
+      default:
+        return "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200";
+    }
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "N/A";
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) return value;
+
+    return new Intl.DateTimeFormat("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(parsedDate);
+  };
+
   return (
     <AppLayoutERP>
       <Head title="Inventory Dashboard - Solespace" />
@@ -341,7 +381,7 @@ export default function ERPInventoryOverview() {
             <div className="flex-1">
               <input
                 type="text"
-                placeholder="Search by product name or SKU..."
+                placeholder="Search by product name..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -391,20 +431,18 @@ export default function ERPInventoryOverview() {
               <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-800">
                 <tr>
                   <th className="pb-2">Product</th>
-                  <th className="pb-2">SKU</th>
                   <th className="pb-2">Category</th>
                   <th className="pb-2">Quantity</th>
-                  <th className="pb-2">Price</th>
                   <th className="pb-2">Status</th>
                   <th className="pb-2">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {loading ? (
-                  <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
+                  <tr><td colSpan={5} className="py-10 text-center text-sm text-gray-500">Loading inventory...</td></tr>
                 ) : loadError ? (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-sm text-red-500">
+                    <td colSpan={5} className="py-10 text-center text-sm text-red-500">
                       <p>{loadError}</p>
                       <button
                         type="button"
@@ -418,7 +456,7 @@ export default function ERPInventoryOverview() {
                     </td>
                   </tr>
                 ) : paginatedItems.length === 0 ? (
-                  <tr><td colSpan={7} className="py-10 text-center text-sm text-gray-500">No inventory items found.</td></tr>
+                  <tr><td colSpan={5} className="py-10 text-center text-sm text-gray-500">No inventory items found.</td></tr>
                 ) : paginatedItems.map((item) => (
                   <tr key={item.id}>
                     <td className="py-3">
@@ -435,12 +473,14 @@ export default function ERPInventoryOverview() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 text-gray-600 dark:text-gray-400">{item.sku}</td>
-                    <td className="py-3 text-gray-600 dark:text-gray-400">{item.category}</td>
+                    <td className="py-3">
+                      <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${getCategoryBadgeClass(item.category)}`}>
+                        {formatCategoryLabel(item.category)}
+                      </span>
+                    </td>
                     <td className="py-3">
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{item.available_quantity}</span>
                     </td>
-                    <td className="py-3 text-gray-900 dark:text-gray-100">{item.price != null ? `₱${item.price.toLocaleString()}` : "N/A"}</td>
                     <td className="py-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -537,16 +577,10 @@ export default function ERPInventoryOverview() {
                     <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.name}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">SKU</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.sku}</p>
-                  </div>
-                  <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.category}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Price</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.price != null ? `₱${selectedItem.price.toLocaleString()}` : "N/A"}</p>
+                    <span className={`inline-block mt-1 px-2 py-1 rounded-full text-xs font-semibold ${getCategoryBadgeClass(selectedItem.category)}`}>
+                      {formatCategoryLabel(selectedItem.category)}
+                    </span>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Quantity Available</p>
@@ -568,7 +602,7 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div className="col-span-2">
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Updated</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedItem.updated_at}</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatDateTime(selectedItem.updated_at)}</p>
                   </div>
                 </div>
               </div>
