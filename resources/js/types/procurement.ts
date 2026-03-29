@@ -116,6 +116,9 @@ export interface StockRequestApproval {
     approved_by?: number;
     approver?: User;
     approved_date?: string;
+    inventory_approved_by?: number;
+    inventory_approved_date?: string;
+    inventory_approval_notes?: string;
     notes?: string;
     approval_notes?: string;
     rejection_reason?: string;
@@ -242,6 +245,7 @@ export interface SupplierFilters {
 
 // Request payload interfaces
 export interface CreatePurchaseRequestPayload {
+    stock_request_id?: number;
     product_name: string;
     supplier_id: number;
     inventory_item_id?: number;

@@ -12,6 +12,37 @@ use Illuminate\Support\Facades\DB;
 
 class StockRequestApprovalController extends Controller
 {
+    private function isInventoryWorkflow(Request $request): bool
+    {
+        $routeName = (string) optional($request->route())->getName();
+        return str_starts_with($routeName, 'inventory.request-material-approvals.');
+    }
+
+    private function isProcurementWorkflow(Request $request): bool
+    {
+        $routeName = (string) optional($request->route())->getName();
+        return str_starts_with($routeName, 'procurement.stock-requests.')
+            || str_starts_with($routeName, 'procurement.replenishment-requests.');
+    }
+
+    private function applyWorkflowVisibility($query, Request $request): void
+    {
+        if ($this->isInventoryWorkflow($request)) {
+            $query->where('request_source', 'repair');
+            return;
+        }
+
+        if ($this->isProcurementWorkflow($request)) {
+            $query->where(function ($workflowQuery) {
+                $workflowQuery->where('request_source', 'manual')
+                    ->orWhere(function ($repairQuery) {
+                        $repairQuery->where('request_source', 'repair')
+                            ->whereNotNull('inventory_approved_date');
+                    });
+            });
+        }
+    }
+
     /**
      * Display a listing of stock request approvals.
      */
@@ -22,6 +53,8 @@ class StockRequestApprovalController extends Controller
         $query = StockRequestApproval::query()
             ->with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id);
+
+        $this->applyWorkflowVisibility($query, $request);
 
         // Search
         if ($request->filled('search')) {
@@ -49,6 +82,10 @@ class StockRequestApprovalController extends Controller
         // Request source filter (manual | repair)
         if ($request->filled('request_source') && in_array($request->request_source, ['manual', 'repair'], true)) {
             $query->where('request_source', $request->request_source);
+
+            if ($this->isProcurementWorkflow($request) && $request->request_source === 'repair') {
+                $query->whereNotNull('inventory_approved_date');
+            }
         }
 
         // Sorting
@@ -141,6 +178,8 @@ class StockRequestApprovalController extends Controller
     public function approve(ApproveStockRequestRequest $request, $id)
     {
         $stockRequest = StockRequestApproval::findOrFail($id);
+        $isInventoryWorkflow = $this->isInventoryWorkflow($request);
+        $isProcurementWorkflow = $this->isProcurementWorkflow($request);
         
         // $this->authorize('approve', $stockRequest);
 
@@ -150,10 +189,37 @@ class StockRequestApprovalController extends Controller
             ], 403);
         }
 
+        if ($stockRequest->request_source === 'repair' && $isInventoryWorkflow) {
+            if ($stockRequest->inventory_approved_date) {
+                return response()->json([
+                    'message' => 'Repair material request is already approved by inventory and forwarded to procurement.',
+                ], 409);
+            }
+        }
+
+        if ($stockRequest->request_source === 'repair' && $isProcurementWorkflow && !$stockRequest->inventory_approved_date) {
+            return response()->json([
+                'message' => 'Repair material request must be approved by Inventory first before Procurement approval.',
+            ], 422);
+        }
+
         try {
             DB::beginTransaction();
 
-            $stockRequest->approve(Auth::id(), $request->approval_notes);
+            if ($stockRequest->request_source === 'repair' && $isInventoryWorkflow) {
+                $stockRequest->inventory_approved_by = Auth::id();
+                $stockRequest->inventory_approved_date = now();
+                $stockRequest->inventory_approval_notes = $request->approval_notes;
+
+                // Move needs-details requests back to pending once inventory signs off.
+                if ($stockRequest->status === 'needs_details') {
+                    $stockRequest->status = 'pending';
+                }
+
+                $stockRequest->save();
+            } else {
+                $stockRequest->approve(Auth::id(), $request->approval_notes);
+            }
 
             // TODO: Optionally auto-create PR if configured
             // if ($request->auto_create_pr) {
@@ -163,7 +229,9 @@ class StockRequestApprovalController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Stock request approved successfully.',
+                'message' => ($stockRequest->request_source === 'repair' && $isInventoryWorkflow)
+                    ? 'Repair material request approved by inventory and forwarded to procurement.'
+                    : 'Stock request approved successfully.',
                 'stock_request' => $stockRequest->fresh(['shopOwner', 'inventoryItem', 'requester', 'approver'])
             ]);
 
@@ -182,6 +250,8 @@ class StockRequestApprovalController extends Controller
     public function reject(Request $request, $id)
     {
         $stockRequest = StockRequestApproval::findOrFail($id);
+        $isInventoryWorkflow = $this->isInventoryWorkflow($request);
+        $isProcurementWorkflow = $this->isProcurementWorkflow($request);
         
         // $this->authorize('reject', $stockRequest);
 
@@ -189,6 +259,18 @@ class StockRequestApprovalController extends Controller
             return response()->json([
                 'message' => 'Stock request cannot be rejected in its current state.'
             ], 403);
+        }
+
+        if ($stockRequest->request_source === 'repair' && $isInventoryWorkflow && $stockRequest->inventory_approved_date) {
+            return response()->json([
+                'message' => 'Inventory cannot reject this request after it has already been forwarded to Procurement.',
+            ], 409);
+        }
+
+        if ($stockRequest->request_source === 'repair' && $isProcurementWorkflow && !$stockRequest->inventory_approved_date) {
+            return response()->json([
+                'message' => 'Repair material request must be approved by Inventory first before Procurement review.',
+            ], 422);
         }
 
         $validatedData = $request->validate([
@@ -217,6 +299,8 @@ class StockRequestApprovalController extends Controller
     public function requestDetails(Request $request, $id)
     {
         $stockRequest = StockRequestApproval::findOrFail($id);
+        $isInventoryWorkflow = $this->isInventoryWorkflow($request);
+        $isProcurementWorkflow = $this->isProcurementWorkflow($request);
         
         // $this->authorize('approve', $stockRequest);
 
@@ -230,6 +314,18 @@ class StockRequestApprovalController extends Controller
         if (!$approvalNotes) {
             return response()->json([
                 'message' => 'Approval notes are required.'
+            ], 422);
+        }
+
+        if ($stockRequest->request_source === 'repair' && $isInventoryWorkflow && $stockRequest->inventory_approved_date) {
+            return response()->json([
+                'message' => 'Inventory cannot request more details after forwarding to Procurement.',
+            ], 409);
+        }
+
+        if ($stockRequest->request_source === 'repair' && $isProcurementWorkflow && !$stockRequest->inventory_approved_date) {
+            return response()->json([
+                'message' => 'Repair material request must be approved by Inventory first before Procurement review.',
             ], 422);
         }
 
@@ -252,14 +348,15 @@ class StockRequestApprovalController extends Controller
     /**
      * Get stock request metrics.
      */
-    public function getMetrics()
+    public function getMetrics(Request $request)
     {
         // $this->authorize('viewAny', StockRequestApproval::class);
 
         $shopOwnerId = Auth::user()->shop_owner_id;
 
         $baseQuery = StockRequestApproval::where('shop_owner_id', $shopOwnerId);
-        $requestSource = request()->get('request_source');
+        $this->applyWorkflowVisibility($baseQuery, $request);
+        $requestSource = $request->get('request_source');
 
         if (in_array($requestSource, ['manual', 'repair'], true)) {
             $baseQuery->where('request_source', $requestSource);

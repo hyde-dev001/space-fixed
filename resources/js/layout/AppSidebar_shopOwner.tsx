@@ -36,18 +36,6 @@ const navItems: NavItem[] = [
   },
   {
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-        <path d="M3 9h18"></path>
-        <path d="M9 21V9"></path>
-      </svg>
-    ),
-    name: "Inventory Overview",
-    route: "shop-owner.inventory-overview",
-    path: "/shop-owner/inventory-overview",
-  },
-  {
-    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
       </svg>
@@ -242,7 +230,7 @@ const AppSidebar_shopOwner: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any).auth;
-  const shopOwner = auth?.shop_owner;
+  const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || (props as any)?.shop_owner;
   const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual";
   const rawBusinessType = shopOwner?.business_type?.toLowerCase();
   // Normalize business type - handle "both (retail & repair)" and "both"
@@ -284,6 +272,11 @@ const AppSidebar_shopOwner: React.FC = () => {
       return itemBusinessType === 'retail' || itemBusinessType === 'both';
     }
 
+    // Repair Reject Approval - business registration + repair-capable shops only
+    if (menuItem.route === 'shop-owner.repair-reject-approval') {
+      return (isCompany || canManageStaff) && (itemBusinessType === 'repair' || itemBusinessType === 'both');
+    }
+
     // Business-only features (require Business registration)
     const companyOnlyRoutes = [
       'shopOwner.user-access-control',
@@ -291,7 +284,6 @@ const AppSidebar_shopOwner: React.FC = () => {
       'shop-owner.price-approvals',
       'shop-owner.salary-adjustment-approvals',
       'shop-owner.purchase-request-approval',
-      'shop-owner.repair-reject-approval',
       'shopOwner.suspend-accounts'
     ];
 
@@ -306,7 +298,6 @@ const AppSidebar_shopOwner: React.FC = () => {
       'shop-owner.job-orders-repair',
       'shop-owner.product-uploder',
       'shop-owner.upload-services',
-      'shop-owner.inventory-overview',
     ];
 
     if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
@@ -316,7 +307,7 @@ const AppSidebar_shopOwner: React.FC = () => {
       }
 
       // For individual accounts, show based on business type
-      const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder', 'shop-owner.inventory-overview'];
+      const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
       const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.upload-services'];
 
       if (retailRoutes.includes(menuItem.route)) {
@@ -546,7 +537,23 @@ const AppSidebar_shopOwner: React.FC = () => {
               }}
             >
               <ul className="mt-2 space-y-1 ml-9">
-                {nav.subItems.map((subItem) => (
+                {nav.subItems.filter((subItem) => {
+                  if (subItem.route !== 'shop-owner.repair-reject-approval') {
+                    return true;
+                  }
+
+                  if (!shopOwner) {
+                    return false;
+                  }
+
+                  const rawSubItemBusinessType = String(shopOwner.business_type || '').toLowerCase();
+                  const subItemBusinessType = rawSubItemBusinessType.includes('both') ? 'both' : rawSubItemBusinessType;
+                  const isCompanySubItem = shopOwner.is_company === true || shopOwner.registration_type?.toLowerCase() === 'company';
+                  const canManageStaffSubItem = shopOwner.can_manage_staff === true;
+
+                  return (isCompanySubItem || canManageStaffSubItem)
+                    && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
+                }).map((subItem) => (
                   <li key={subItem.name}>
                     <Link
                       href={route(subItem.route)}

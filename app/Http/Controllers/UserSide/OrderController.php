@@ -414,13 +414,16 @@ class OrderController extends Controller
 
     public function requestRefund(Request $request)
     {
+        $maxImageKb = 20480; // 20 MB
+        $maxVideoKb = 262144; // 256 MB
+
         $validated = $request->validate([
             'order_id' => 'required|integer',
             'reason' => 'required|string|max:255',
             'refund_method' => 'nullable|string|max:100',
             'note' => 'nullable|string|max:1000',
             'media' => 'required|array|size:6',
-            'media.*' => 'required|file|max:20480|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
+            'media.*' => 'required|file|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -489,9 +492,23 @@ class OrderController extends Controller
 
         foreach ($mediaFiles as $mediaFile) {
             $mime = strtolower((string) $mediaFile->getMimeType());
+            $sizeKb = (int) ceil(((int) $mediaFile->getSize()) / 1024);
+
             if (str_starts_with($mime, 'video/')) {
+                if ($sizeKb > $maxVideoKb) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Video evidence must not exceed 256MB.',
+                    ], 422);
+                }
                 $videoCount++;
             } else {
+                if ($sizeKb > $maxImageKb) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Each image evidence file must not exceed 20MB.',
+                    ], 422);
+                }
                 $imageCount++;
             }
         }

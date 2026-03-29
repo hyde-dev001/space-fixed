@@ -45,16 +45,38 @@ class CheckManagerStaffAccess
 
         $userRole = strtoupper($user->role ?? '');
 
+        $managerPermissions = [
+            'access-manager-dashboard',
+            'access-audit-logs',
+            'access-manager-reports',
+            'access-inventory-overview',
+            'access-repair-reject-review',
+            'access-suspend-account',
+        ];
+
+        $staffAndRepairerPermissions = [
+            'access-staff-dashboard',
+            'access-staff-job-orders',
+            'access-product-upload-staff',
+            'access-product-management',
+            'access-shoe-pricing',
+            'access-staff-customers',
+            'access-staff-time-in',
+            'access-repairer-dashboard',
+            'access-repair-job-orders',
+            'access-upload-service',
+            'access-pricing-services',
+            'access-repair-stocks',
+            'access-repairer-support',
+        ];
+
         // Define access hierarchy: MANAGER can access both manager and staff pages
         $canAccess = false;
 
         if ($requiredLevel === 'manager') {
-            // Only MANAGER can access manager pages
-            $canAccess = ($userRole === 'MANAGER');
+            $canAccess = ($userRole === 'MANAGER') || $user->hasAnyPermission($managerPermissions);
         } elseif ($requiredLevel === 'staff') {
-            // Only STAFF and REPAIRER can access staff pages by default
-            // Manager has their own module and should not access staff pages without explicit permission
-            $canAccess = in_array($userRole, ['STAFF', 'REPAIRER']);
+            $canAccess = in_array($userRole, ['STAFF', 'REPAIRER']) || $user->hasAnyPermission($staffAndRepairerPermissions);
         }
 
         if (!$canAccess) {

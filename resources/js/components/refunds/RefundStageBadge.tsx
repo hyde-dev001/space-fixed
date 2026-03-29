@@ -5,6 +5,7 @@ export interface RefundStageSnapshot {
 	rawStatus?: string;
 	shopOwnerStatus?: string;
 	financeStatus?: string;
+	isIndividualRegistration?: boolean;
 	returnStatus?: string;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
@@ -19,6 +20,7 @@ export const resolveRefundStageBadge = (request: RefundStageSnapshot): RefundSta
 	const rawStatus = String(request.rawStatus || "").toLowerCase();
 	const shopOwnerStatus = String(request.shopOwnerStatus || "pending").toLowerCase();
 	const financeStatus = String(request.financeStatus || "pending").toLowerCase();
+	const isIndividualRegistration = request.isIndividualRegistration === true;
 	const returnStatus = String(request.returnStatus || "awaiting_approval").toLowerCase();
 	const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
 
@@ -52,7 +54,7 @@ export const resolveRefundStageBadge = (request: RefundStageSnapshot): RefundSta
 
 	if (financeStatus === "pending" && requiresOwnerApproval) {
 		return {
-			label: "Awaiting Finance Initial",
+			label: isIndividualRegistration ? "Awaiting Shop Owner" : "Awaiting Finance Initial",
 			className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
 		};
 	}
@@ -74,7 +76,7 @@ export const resolveRefundStageBadge = (request: RefundStageSnapshot): RefundSta
 	if (returnStatus === "received") {
 		if (financeStatus === "approved") {
 			return {
-				label: "Ready for Finance Payout",
+				label: isIndividualRegistration ? "Ready for Refund Payout" : "Ready for Finance Payout",
 				className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
 			};
 		}

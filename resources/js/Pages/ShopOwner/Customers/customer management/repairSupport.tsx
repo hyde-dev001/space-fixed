@@ -1,15 +1,16 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
-import Swal from "sweetalert2";
 
 interface Message {
   id: number;
   sender: "customer" | "shop_owner" | "system";
+  senderType?: string;
   senderName: string;
   content: string;
   timestamp: string;
+  createdAt?: string;
   images?: string[];
   parentMessageId?: number | null;
   parentMessage?: {
@@ -60,7 +61,6 @@ export default function RepairSupport() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [activatingPayment, setActivatingPayment] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
@@ -94,6 +94,20 @@ export default function RepairSupport() {
     const conversationIdParam = new URLSearchParams(window.location.search).get('conversation_id');
     const parsedConversationId = conversationIdParam ? Number(conversationIdParam) : NaN;
     return Number.isInteger(parsedConversationId) && parsedConversationId > 0 ? parsedConversationId : null;
+  };
+
+  const getVisiblePreviewText = (rawContent?: string) => {
+    const content = String(rawContent || "");
+    const isOrderSystemMessage =
+      content.includes("New Order Placed") ||
+      content.includes("**Order Number:**") ||
+      content.includes("Order Number:");
+
+    if (isOrderSystemMessage) {
+      return "Repair update available";
+    }
+
+    return content || "No messages yet";
   };
 
   useEffect(() => {
@@ -155,7 +169,7 @@ export default function RepairSupport() {
             shopAvatar,
             shopName,
             customerRole: conv.customer?.email || "",
-            lastMessage: conv.messages?.[0]?.content || "No messages yet",
+            lastMessage: getVisiblePreviewText(conv.messages?.[0]?.content),
             lastMessageTime: formatTime(conv.last_message_at),
             status: "active",
             messages: existingConv?.messages || [],
@@ -249,6 +263,20 @@ export default function RepairSupport() {
     if (minutes < 60) return `${minutes} mins`;
     if (hours < 24) return `${hours} hours`;
     return `${days} days`;
+  };
+
+  const resolveAttachmentUrl = (path: string) => {
+    if (!path) return path;
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('blob:')) {
+      return path;
+    }
+    if (path.startsWith('/')) {
+      return path;
+    }
+    if (path.startsWith('storage/')) {
+      return `/${path}`;
+    }
+    return `/storage/${path}`;
   };
 
   const getReplySenderLabel = (message: NonNullable<Message['parentMessage']>) => {
@@ -347,7 +375,12 @@ export default function RepairSupport() {
       
       const messages = (Array.isArray(conv.messages) ? conv.messages : []).map((msg: any) => ({
         id: msg.id,
-        sender: msg.sender_type === "customer" ? "customer" : "shop_owner",
+        sender: msg.sender_type === "customer"
+          ? "customer"
+          : msg.sender_type === "system"
+            ? "system"
+            : "shop_owner",
+        senderType: msg.sender_type,
         senderName: msg.sender_type === "customer" ? (conv.customer?.name || "Customer") : "You",
         content: msg.content || "",
         timestamp: new Date(msg.created_at).toLocaleTimeString("en-US", {
@@ -355,6 +388,7 @@ export default function RepairSupport() {
           minute: "2-digit",
           hour12: true,
         }),
+        createdAt: msg.created_at,
         images: msg.attachments || undefined,
         parentMessageId: msg.parent_message_id || null,
         parentMessage: msg.parent_message
@@ -543,84 +577,7 @@ export default function RepairSupport() {
     );
   };
 
-  const handleActivatePayment = async () => {
-    if (!selectedConversation?.repairRequest) return;
-
-    const validStatuses = ['repairer_accepted', 'received', 'completed', 'ready_for_pickup'];
-    if (!validStatuses.includes(selectedConversation.repairRequest.status)) {
-      setNotification({ 
-        type: 'error', 
-        message: 'Cannot activate payment at current status.' 
-      });
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
-
-    // Show confirmation dialog
-    const result = await Swal.fire({
-      title: 'Activate Payment?',
-      html: `
-        <p class="text-gray-700 mb-2">This will enable the customer to proceed with payment.</p>
-        <p class="font-semibold text-gray-900">Once activated, the customer can pay for the repair service.</p>
-      `,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, activate payment',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#6b7280',
-    });
-
-    if (!result.isConfirmed) return;
-
-    try {
-      setActivatingPayment(true);
-      const response = await axios.post(
-        `/api/shop-owner/conversations/${selectedConversationId}/activate-payment`
-      );
-
-      if (response.data.success) {
-        // Refresh conversation to get updated status
-        await fetchConversationMessages(selectedConversationId!);
-        
-        // Show success message
-        await Swal.fire({
-          title: 'Payment Activated!',
-          html: `
-            <p class="text-gray-700 mb-2">Payment has been successfully activated.</p>
-            <p class="text-gray-600">The customer can now proceed with payment before repair work begins.</p>
-          `,
-          icon: 'success',
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#10b981',
-        });
-        
-        setNotification({ 
-          type: 'success', 
-          message: response.data.message || 'Payment activated! Customer can now pay.' 
-        });
-        setTimeout(() => setNotification(null), 3000);
-      }
-    } catch (error: any) {
-      console.error("Error activating payment:", error);
-      
-      await Swal.fire({
-        title: 'Error',
-        text: error.response?.data?.message || 'Failed to activate payment. Please try again.',
-        icon: 'error',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#ef4444',
-      });
-      
-      setNotification({ 
-        type: 'error', 
-        message: error.response?.data?.message || 'Failed to activate payment. Please try again.' 
-      });
-      setTimeout(() => setNotification(null), 3000);
-    } finally {
-      setActivatingPayment(false);
-    }
-  };
+  const systemCardWidthClass = "w-[26rem] max-w-[calc(100vw-9rem)]";
 
   const filteredConversations = conversations.filter((conversation) =>
     conversation.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -629,11 +586,11 @@ export default function RepairSupport() {
 
   return (
     <AppLayoutShopOwner>
-      <Head title="Repair Support" />
+      <Head title="Technical Support - Solespace" />
       
       {/* Notification Toast */}
       {notification && (
-        <div className="fixed top-4 right-4 z-60 animate-in slide-in-from-top-2">
+        <div className="fixed top-20 right-4 z-999999 animate-in slide-in-from-top-2">
           <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg ${
             notification.type === 'success' 
               ? 'bg-green-500 text-white' 
@@ -663,19 +620,16 @@ export default function RepairSupport() {
         </div>
       )}
       
-      <div className="h-full flex flex-col bg-gray-50 overflow-hidden max-h-screen">
-        <div className="px-4 pt-4">
-          <p className="text-xs uppercase tracking-wider text-gray-500">Customer Management</p>
-        </div>
-        <div className="flex gap-4 h-[calc(100vh-120px)] p-4">
+      <div className="h-[calc(100dvh-84px)] box-border flex flex-col bg-gray-50 overflow-hidden">
+        <div className="flex h-full min-h-0">
           {/* Left Sidebar - Conversation List */}
-          <div className="w-80 bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden">
+          <div className="w-80 h-full min-h-0 shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="border-b border-gray-200 px-6 py-4 relative z-20">
-              <h1 className="text-2xl font-bold text-black mb-4">Repair Conversations</h1>
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h1 className="text-2xl font-bold text-black mb-3">Technical Support</h1>
               
-              {/* Search and Filter Menu */}
-              <div className="flex gap-2">
+              {/* Search and Filter */}
+              <div className="flex items-center gap-3">
                 <div className="relative flex-1">
                   <svg
                     className="absolute left-3 top-3 w-5 h-5 text-gray-400"
@@ -694,36 +648,34 @@ export default function RepairSupport() {
                   />
                 </div>
                 
-                {/* Filter Menu Button - Hover Dropdown */}
+                {/* Status Filter Dropdown */}
                 <div className="relative group">
                   <button
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-800"
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors shrink-0"
                     title="Filter by status"
                   >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                     </svg>
                   </button>
                   
-                  {/* Dropdown Menu - Hidden by default, visible on group hover */}
-                  <div className="hidden group-hover:block absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-2 whitespace-nowrap">
+                  {/* Dropdown Menu */}
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
                     {["all", "open", "in_progress", "resolved"].map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
-                          setStatusFilter(status);
-                        }}
-                        className={`flex items-center gap-3 w-full px-6 py-2 text-sm text-left transition-colors ${
+                        onClick={() => setStatusFilter(status)}
+                        className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center gap-3 ${
                           statusFilter === status
-                            ? "bg-blue-50 text-blue-600"
+                            ? 'bg-blue-50 text-blue-700 font-medium border-l-2 border-l-blue-500'
                             : "text-gray-700 hover:bg-gray-50"
                         }`}
                       >
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                        <span className={`w-2 h-2 rounded-full ${
                           statusFilter === status
-                            ? "bg-blue-600"
-                            : "bg-gray-400"
-                        }`}></span>
+                            ? 'bg-blue-500'
+                            : 'bg-gray-300'
+                        }`} />
                         {status.replace("_", " ").toUpperCase()}
                       </button>
                     ))}
@@ -733,11 +685,11 @@ export default function RepairSupport() {
             </div>
 
             {/* Conversation List */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {loading ? (
                 <div className="flex items-center justify-center h-full text-gray-500">
                   <div className="text-center">
-                    <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-8 w-8 text-purple-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -746,7 +698,7 @@ export default function RepairSupport() {
                 </div>
               ) : filteredConversations.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-gray-500">
-                  <p className="text-sm">No conversations found</p>
+                  <p className="text-sm">No technical support requests</p>
                 </div>
               ) : (
                 filteredConversations.map((conversation) => (
@@ -767,15 +719,10 @@ export default function RepairSupport() {
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between">
-                        <h3 className="font-semibold text-black text-sm">{conversation.customerName}</h3>
-                        <span className="text-xs text-gray-500 ml-2">{conversation.lastMessageTime}</span>
+                        <h3 className="font-semibold text-black text-sm truncate">{conversation.customerName}</h3>
+                        <span className="text-xs text-gray-500 ml-2 shrink-0">{conversation.lastMessageTime}</span>
                       </div>
-                      {conversation.repairRequest && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <p className="text-xs text-gray-600 truncate">{conversation.repairRequest.repair_type}</p>
-                          {getRepairStatusBadge(conversation.repairRequest.status)}
-                        </div>
-                      )}
+                      <p className="text-xs text-gray-500 truncate">{getStatusText(conversation.status)}</p>
                       <p className="text-xs text-gray-600 truncate mt-1">{conversation.lastMessage}</p>
                     </div>
                   </div>
@@ -787,9 +734,9 @@ export default function RepairSupport() {
 
           {/* Right Side - Chat Area */}
           {selectedConversation ? (
-            <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-white overflow-hidden">
               {/* Header */}
-              <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
+              <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white relative z-10">
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     {renderCustomerAvatar(selectedConversation.customerAvatar, selectedConversation.customerName)}
@@ -797,19 +744,15 @@ export default function RepairSupport() {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-black">{selectedConversation.customerName}</h2>
-                    {selectedConversation.repairRequest && (
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-gray-600">{selectedConversation.repairRequest.repair_type}</p>
-                        {getRepairStatusBadge(selectedConversation.repairRequest.status)}
-                      </div>
-                    )}
+                    <p className="text-xs text-gray-500">{getStatusText(selectedConversation.status)}</p>
                   </div>
                 </div>
-                
+
+                <div className="flex items-center gap-2 relative z-20" />
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4 bg-white">
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-4 bg-white">
                 {selectedConversation.messages.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-gray-500">
                     <p>No messages yet</p>
@@ -817,165 +760,258 @@ export default function RepairSupport() {
                 ) : (
                   <>
                     {selectedConversation.messages.map((message) => {
-                    // System messages (order notifications)
-                    if (message.sender === 'system' || (message as any).sender_type === 'system') {
+                      const customerName = selectedConversation.customerName || 'Customer';
+                      const customerAvatarUrl = selectedConversation.customerAvatar;
+                      const shopAvatarUrl = selectedConversation.shopAvatar;
+                      const shopName = selectedConversation.shopName || 'Shop';
+
+                      if (message.senderType === 'system' || message.sender === 'system') {
+                        const content = message.content || '';
+                        const typeMatch = content.match(/\*\*Type:\*\*\s*(.+?)(?=\*\*|$)/);
+                        const itemMatch = content.match(/\*\*Item:\*\*\s*(.+?)(?=\*\*|$)/);
+                        const deliveryMatch = content.match(/\*\*Delivery:\*\*\s*(.+?)(?=\*\*|$)/);
+                        const estimateMatch = content.match(/\*\*Estimate:\*\*\s*₱?(.+?)(?=\*\*|$)/);
+                        const statusMatch = content.match(/\*\*Status:\*\*\s*(.+?)(?=\*\*|$)/);
+                        const isRepairMessage = content.includes('Repair') || content.includes('Type:**');
+                        const isOrderMessage = content.includes('New Order Placed') || content.includes('Order Number:');
+
+                        if (isOrderMessage) {
+                          return null;
+                        }
+
+                        if (isRepairMessage) {
+                          const displayDate = message.createdAt
+                            ? new Date(message.createdAt).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : message.timestamp;
+
+                          return (
+                            <div key={message.id} className="flex justify-end my-6">
+                              <div className="flex items-start gap-3 flex-row-reverse">
+                                {renderShopAvatar(shopAvatarUrl, shopName, 'w-7 h-7')}
+                                <div className={`bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow ${systemCardWidthClass}`}>
+                                  <div className="flex items-start justify-between mb-4">
+                                    <div className="flex-1">
+                                      <h3 className="text-base font-semibold text-gray-900 mb-1">
+                                        {content.includes('Accepted') ? 'Repair Order Accepted' : 'Repair Update'}
+                                      </h3>
+                                      <p className="text-xs text-gray-500">{displayDate}</p>
+                                    </div>
+                                    {statusMatch?.[1]?.trim() && (
+                                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-800">
+                                        {statusMatch[1].trim()}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                    <div className="flex items-start gap-3">
+                                      <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Service:</span>
+                                      <span className="text-sm text-gray-900 font-medium">{typeMatch?.[1]?.trim() || 'Repair'}</span>
+                                    </div>
+                                    {itemMatch?.[1]?.trim() && (
+                                      <div className="flex items-start gap-3">
+                                        <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Item:</span>
+                                        <span className="text-sm text-gray-900 font-medium">{itemMatch[1].trim()}</span>
+                                      </div>
+                                    )}
+                                    {deliveryMatch?.[1]?.trim() && (
+                                      <div className="flex items-start gap-3">
+                                        <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Delivery:</span>
+                                        <span className="text-sm text-gray-900">{deliveryMatch[1].trim()}</span>
+                                      </div>
+                                    )}
+                                    {estimateMatch?.[1]?.trim() && (
+                                      <div className="flex items-start gap-3">
+                                        <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Estimate:</span>
+                                        <span className="text-sm text-gray-900 font-semibold">₱{estimateMatch[1].trim()}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="border-t border-gray-100 pt-3 mb-3">
+                                    <div className="flex items-center gap-3">
+                                      {shopAvatarUrl ? (
+                                        <img src={shopAvatarUrl} alt={shopName} className="w-10 h-10 rounded-full object-cover" />
+                                      ) : (
+                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-700 text-xs font-semibold">
+                                          {getInitials(shopName)}
+                                        </div>
+                                      )}
+                                      <p className="text-sm font-semibold text-gray-900">{shopName}</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
+                                    <p className="text-xs text-blue-900 leading-relaxed">
+                                      💡 We'll keep you updated on the progress of your repair.
+                                    </p>
+                                  </div>
+
+                                  <button
+                                    onClick={() => router.visit('/shop-owner/job-orders-repair')}
+                                    className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                                  >
+                                    View Full Details
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                      }
+
                       return (
-                        <div key={message.id} className="flex justify-center my-4">
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 max-w-md text-center shadow-sm">
-                            <p className="text-xs text-blue-800 whitespace-pre-line leading-relaxed">
-                              {message.content}
-                            </p>
-                            <span className="text-xs text-blue-400 mt-2 block">
-                              {message.timestamp}
-                            </span>
+                        <div
+                          key={message.id}
+                          className={`flex ${message.sender === 'shop_owner' ? 'justify-end' : 'justify-start'}`}
+                          onMouseEnter={() => setHoveredMessageId(message.id)}
+                          onMouseLeave={() => setHoveredMessageId(null)}
+                        >
+                          <div className={`flex items-start gap-2 ${message.sender === 'shop_owner' ? 'flex-row-reverse' : ''}`}>
+                            {message.sender === 'shop_owner'
+                              ? renderShopAvatar(shopAvatarUrl, shopName, 'w-7 h-7')
+                              : renderCustomerAvatar(customerAvatarUrl, customerName, 'w-7 h-7')}
+
+                            <div className={`flex flex-col ${message.sender === 'shop_owner' ? 'items-end' : 'items-start'}`}>
+                              {message.images && message.images.length > 0 ? (
+                                <div className="relative group">
+                                  <div className="flex flex-wrap gap-2 mb-2">
+                                    {message.images.map((img, idx) => (
+                                      <img
+                                        key={idx}
+                                        src={resolveAttachmentUrl(img)}
+                                        alt={`Attachment ${idx + 1}`}
+                                        className="rounded-lg max-w-37.5 max-h-37.5 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                        onClick={() => setFullscreenImage(resolveAttachmentUrl(img))}
+                                      />
+                                    ))}
+                                  </div>
+                                  {(message.content || message.parentMessage) && (
+                                    <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'shop_owner' ? 'items-end' : 'items-start'}`}>
+                                      {message.parentMessage && <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>}
+                                      {renderQuotedReply(message, message.sender === 'shop_owner')}
+                                      {message.content && (
+                                        <div className={`${message.sender === 'shop_owner' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-900'} px-4 py-2 text-sm rounded-lg shadow-sm inline-block w-fit max-w-full`}>
+                                          <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {hoveredMessageId === message.id && message.senderType !== 'system' && (
+                                    <div className={`absolute top-0 ${message.sender === 'shop_owner' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
+                                      <button
+                                        onClick={() => handleReply(message)}
+                                        title="Reply"
+                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                      >
+                                        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                                        title="React with emoji"
+                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                      >
+                                        <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  )}
+                                  {reactionPickerMessageId === message.id && (
+                                    <div className={`absolute -top-12 ${message.sender === 'shop_owner' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
+                                      {quickReactionList.map((emoji) => (
+                                        <button
+                                          key={`${message.id}-${emoji}`}
+                                          onClick={() => handleReactToMessage(message.id, emoji)}
+                                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
+                                        >
+                                          {emoji}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {messageReactions[message.id] && (
+                                    <button
+                                      onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
+                                      className={`absolute -bottom-3 ${message.sender === 'shop_owner' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
+                                    >
+                                      {messageReactions[message.id]}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="relative group">
+                                  <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'shop_owner' ? 'items-end' : 'items-start'}`}>
+                                    {message.parentMessage && <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>}
+                                    {renderQuotedReply(message, message.sender === 'shop_owner')}
+                                    <div className={`${message.sender === 'shop_owner' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-900'} inline-block w-fit max-w-full px-4 py-2 text-sm rounded-lg shadow-sm`}>
+                                      <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
+                                    </div>
+                                  </div>
+                                  {hoveredMessageId === message.id && message.senderType !== 'system' && (
+                                    <div className={`absolute top-0 ${message.sender === 'shop_owner' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
+                                      <button
+                                        onClick={() => handleReply(message)}
+                                        title="Reply"
+                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                      >
+                                        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                                        title="React with emoji"
+                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
+                                      >
+                                        <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  )}
+                                  {reactionPickerMessageId === message.id && (
+                                    <div className={`absolute -top-12 ${message.sender === 'shop_owner' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
+                                      {quickReactionList.map((emoji) => (
+                                        <button
+                                          key={`${message.id}-${emoji}`}
+                                          onClick={() => handleReactToMessage(message.id, emoji)}
+                                          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
+                                        >
+                                          {emoji}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {messageReactions[message.id] && (
+                                    <button
+                                      onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
+                                      className={`absolute -bottom-3 ${message.sender === 'shop_owner' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
+                                    >
+                                      {messageReactions[message.id]}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              <div className={`mt-2 ${message.sender === 'shop_owner' ? 'text-right' : 'text-left'}`}>
+                                <span className={`text-[11px] ${message.sender === 'shop_owner' ? 'text-gray-400' : 'text-gray-500'}`}>
+                                  {message.timestamp}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
-                    }
-                    
-                    // Regular messages
-                    return (
-                      <div
-                        key={message.id}
-                        className={`flex flex-col ${message.sender === "shop_owner" ? "items-end" : "items-start"}`}
-                        onMouseEnter={() => setHoveredMessageId(message.id)}
-                        onMouseLeave={() => setHoveredMessageId(null)}
-                      >
-                        {message.images && message.images.length > 0 ? (
-                          <div className="relative group">
-                            <div className="flex flex-wrap gap-2 mb-2">
-                              {message.images.map((img, idx) => (
-                                <img
-                                  key={idx}
-                                  src={img}
-                                  alt={`Attachment ${idx + 1}`}
-                                  className="rounded-lg max-w-37.5 max-h-37.5 object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => setFullscreenImage(img)}
-                                />
-                              ))}
-                            </div>
-                            {(message.content || message.parentMessage) && (
-                              <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'shop_owner' ? 'items-end' : 'items-start'}`}>
-                                {message.parentMessage && (
-                                  <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>
-                                )}
-                                {renderQuotedReply(message, message.sender === 'shop_owner')}
-                                {message.content && (
-                                  <div className={`${message.sender === "shop_owner" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-900"} px-4 py-2 text-sm rounded-lg shadow-sm inline-block w-fit max-w-full`}>
-                                    <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {hoveredMessageId === message.id && message.sender !== 'system' && (
-                              <div className={`absolute top-0 ${message.sender === 'shop_owner' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
-                                <button
-                                  onClick={() => handleReply(message)}
-                                  title="Reply"
-                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
-                                >
-                                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
-                                  title="React with emoji"
-                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
-                                >
-                                  <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
-                                  </svg>
-                                </button>
-                              </div>
-                            )}
-                            {reactionPickerMessageId === message.id && (
-                              <div className={`absolute -top-12 ${message.sender === 'shop_owner' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
-                                {quickReactionList.map((emoji) => (
-                                  <button
-                                    key={`${message.id}-${emoji}`}
-                                    onClick={() => handleReactToMessage(message.id, emoji)}
-                                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                            {messageReactions[message.id] && (
-                              <button
-                                onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
-                                className={`absolute -bottom-3 ${message.sender === 'shop_owner' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
-                              >
-                                {messageReactions[message.id]}
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="relative group">
-                            <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'shop_owner' ? 'items-end' : 'items-start'}`}>
-                              {message.parentMessage && (
-                                <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>
-                              )}
-                              {renderQuotedReply(message, message.sender === 'shop_owner')}
-                              <div className={`${message.sender === "shop_owner" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-900"} inline-block w-fit max-w-full px-4 py-2 text-sm rounded-lg shadow-sm`}>
-                                <p className="wrap-break-word text-sm leading-relaxed">{message.content}</p>
-                              </div>
-                            </div>
-                            {hoveredMessageId === message.id && message.sender !== 'system' && (
-                              <div className={`absolute top-0 ${message.sender === 'shop_owner' ? 'right-full mr-2' : 'left-full ml-2'} flex gap-1 z-10`}>
-                                <button
-                                  onClick={() => handleReply(message)}
-                                  title="Reply"
-                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
-                                >
-                                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10l-4 4 4 4" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 14h10a5 5 0 015 5" />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => setReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
-                                  title="React with emoji"
-                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-100 transition-colors"
-                                >
-                                  <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
-                                  </svg>
-                                </button>
-                              </div>
-                            )}
-                            {reactionPickerMessageId === message.id && (
-                              <div className={`absolute -top-12 ${message.sender === 'shop_owner' ? 'right-0' : 'left-0'} bg-white border border-gray-200 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-20`}>
-                                {quickReactionList.map((emoji) => (
-                                  <button
-                                    key={`${message.id}-${emoji}`}
-                                    onClick={() => handleReactToMessage(message.id, emoji)}
-                                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-base"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                            {messageReactions[message.id] && (
-                              <button
-                                onClick={() => handleReactToMessage(message.id, messageReactions[message.id])}
-                                className={`absolute -bottom-3 ${message.sender === 'shop_owner' ? 'right-2' : 'left-2'} bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm shadow-sm hover:bg-gray-50 transition-colors`}
-                              >
-                                {messageReactions[message.id]}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        <div className={`mt-2 ${message.sender === "shop_owner" ? "text-right" : "text-left"}`}>
-                          <span className={`text-[11px] ${message.sender === "shop_owner" ? "text-gray-400" : "text-gray-500"}`}>
-                            {message.timestamp}
-                          </span>
-                        </div>
-                      </div>
-                    );
                   })}
                     <div ref={messagesEndRef} />
                   </>
@@ -983,7 +1019,7 @@ export default function RepairSupport() {
               </div>
 
               {/* Message Input */}
-              <div className="border-t border-gray-200 bg-white px-6 py-4 rounded-b-2xl">
+              <div className="border-t border-gray-200 bg-white px-6 py-4">
                 {replyingToMessage && (
                   <div className="mb-3 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-start justify-between shadow-sm">
                     <div className="flex-1 min-w-0">
@@ -1084,7 +1120,7 @@ export default function RepairSupport() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-500">
+            <div className="flex-1 min-w-0 min-h-0 flex items-center justify-center text-gray-500 bg-white">
               <p>Select a conversation to start chatting</p>
             </div>
           )}
@@ -1094,7 +1130,7 @@ export default function RepairSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
           onClick={() => setFullscreenImage(null)}
         >
           <button

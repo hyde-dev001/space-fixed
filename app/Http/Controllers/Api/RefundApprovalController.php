@@ -50,12 +50,20 @@ class RefundApprovalController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
+        $registrationType = strtolower(trim((string) ($shopOwner->registration_type ?? '')));
+        $isIndividualRegistration = $registrationType === 'individual';
+
         $query = $this->baseListQuery($request)
             ->where('shop_owner_id', (int) $shopOwner->id);
 
         if (strtolower((string) $request->get('status', '')) === 'pending') {
-            $query->where('finance_status', 'approved_initial')
-                ->where('shop_owner_status', 'pending');
+            $query->where('shop_owner_status', 'pending');
+
+            if ($isIndividualRegistration) {
+                $query->whereIn('finance_status', ['pending', 'approved_initial']);
+            } else {
+                $query->where('finance_status', 'approved_initial');
+            }
         }
 
         $paginated = $query->paginate((int) $request->get('per_page', 50));
@@ -272,6 +280,13 @@ class RefundApprovalController extends Controller
             processedBy: null,
             executionNote: $validated['execution_note'] ?? null,
         );
+
+        if (in_array((string) ($result['result'] ?? ''), ['already_processing', 'already_refunded'], true)) {
+            return response()->json([
+                'message' => $result['message'] ?? 'Refund payout execution has already started for this request.',
+                'refund' => $this->transformRefund($result['refund']),
+            ], 409);
+        }
 
         if (in_array((string) ($result['result'] ?? ''), ['failed', 'invalid_state'], true)) {
             return response()->json([

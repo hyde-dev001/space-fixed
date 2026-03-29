@@ -40,6 +40,7 @@ const initialFormState: PurchaseRequestFormState = {
 };
 
 const PURCHASE_REQUEST_DRAFT_KEY = "erp.purchase-request.create-modal.draft";
+const STOCK_REQUEST_NOTE_MARKER_REGEX = /\[stock_request_id:(\d+)\]/i;
 
 const formatPriority = (priority: string): string => {
 	const map: Record<string, string> = {
@@ -446,35 +447,24 @@ export default function PurchaseRequest() {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData?.slice(startIndex, startIndex + itemsPerPage) || [];
 
-	const buildRequestSignature = (
-		inventoryItemId?: string | number | null,
-		quantity?: string | number | null,
-		requestedSize?: string | null,
-		requestedColor?: string | null,
-	) => {
-		const item = String(inventoryItemId ?? "").trim();
-		const qty = String(quantity ?? "").trim();
-		const size = String(requestedSize ?? "").trim().toLowerCase();
-		const color = String(requestedColor ?? "").trim().toLowerCase();
-		return `${item}|${qty}|${size}|${color}`;
-	};
-
-	// Legacy-safe "already used" detection (no stock_request_id column available yet)
-	const processedStockRequestSignatures = useMemo(() => {
+	const processedStockRequestIds = useMemo(() => {
 		return new Set(
 			(purchaseRequests || [])
-				.filter((pr) => pr.status !== 'rejected')
-				.map((pr) => buildRequestSignature(pr.inventory_item_id, pr.quantity, pr.requested_size, (pr as any).requested_color))
-				.filter((signature) => signature !== "|||")
+				.filter((pr) => pr.status !== "rejected")
+				.map((pr) => {
+					const noteValue = String(pr.notes || "");
+					const match = noteValue.match(STOCK_REQUEST_NOTE_MARKER_REGEX);
+					return match ? Number(match[1]) : null;
+				})
+				.filter((id): id is number => id !== null && !Number.isNaN(id))
 		);
 	}, [purchaseRequests]);
 
 	const availableAcceptedStockRequests = useMemo(() => {
 		return acceptedStockRequests.filter((sr) => {
-			const signature = buildRequestSignature(sr.inventory_item_id, sr.quantity_needed, sr.requested_size ?? "", sr.requested_color ?? "");
-			return !processedStockRequestSignatures.has(signature);
+			return !processedStockRequestIds.has(Number(sr.id));
 		});
-	}, [acceptedStockRequests, processedStockRequestSignatures]);
+	}, [acceptedStockRequests, processedStockRequestIds]);
 
 	const selectedStockRequest = useMemo(
 		() => acceptedStockRequests.find((sr) => String(sr.id) === formData.stockRequestId),
@@ -525,15 +515,6 @@ export default function PurchaseRequest() {
 			return;
 		}
 
-		const selectedSignature = buildRequestSignature(formData.inventoryItemId, formData.quantity, formData.requestedSize, formData.requestedColor);
-		if (processedStockRequestSignatures.has(selectedSignature)) {
-			await workflowFeedback.error(
-				"This approved stock request has already been used to create a purchase request.",
-				"Already Processed",
-			);
-			return;
-		}
-
 		const quantity = Number(formData.quantity);
 		const unitCost = Number(formData.unitCost);
 
@@ -545,6 +526,7 @@ export default function PurchaseRequest() {
 		try {
 			setLoading(true);
 			const requestData: Record<string, unknown> = {
+				stock_request_id: Number(formData.stockRequestId),
 				product_name: formData.productName,
 				supplier_id: Number(formData.supplierId),
 				inventory_item_id: Number(formData.inventoryItemId),

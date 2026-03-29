@@ -14,13 +14,25 @@ class StaffInventoryController extends Controller
     public function index(Request $request)
     {
         try {
+            // Support both User and ShopOwner guards
             $user = Auth::guard('user')->user();
+            $shopOwner = Auth::guard('shop_owner')->user();
 
-            if (!$user) {
+            if (!$user && !$shopOwner) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
-            $shopOwnerId = $user->role === 'shop_owner' ? (int) $user->id : (int) ($user->shop_owner_id ?? 0);
+            // Determine shop owner ID based on authenticated guard
+            $shopOwnerId = null;
+            
+            if ($shopOwner) {
+                // Direct shop owner authentication
+                $shopOwnerId = (int) $shopOwner->id;
+            } elseif ($user) {
+                // User (staff) authentication - get associated shop owner
+                $shopOwnerId = (int) ($user->shop_owner_id ?? 0);
+            }
+
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
             }

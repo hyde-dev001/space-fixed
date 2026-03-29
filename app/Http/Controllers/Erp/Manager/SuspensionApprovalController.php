@@ -126,8 +126,16 @@ class SuspensionApprovalController extends Controller
     {
         $validated = $request->validate([
             'action' => 'required|in:approve,reject',
-            'note' => 'nullable|string|min:3',
+            'note' => 'nullable|string|max:500',
         ]);
+
+        $reviewNote = isset($validated['note']) ? trim((string) $validated['note']) : '';
+
+        if ($validated['action'] === 'reject' && mb_strlen($reviewNote) < 3) {
+            return response()->json([
+                'message' => 'Rejection note must be at least 3 characters.',
+            ], 422);
+        }
 
         $shopOwnerId = $this->resolveManagerShopOwnerId();
         if (!$shopOwnerId) {
@@ -145,7 +153,7 @@ class SuspensionApprovalController extends Controller
         }
 
         $req->manager_id = Auth::guard('user')->id();
-        $req->manager_note = $validated['note'] ?? null;
+        $req->manager_note = $reviewNote !== '' ? $reviewNote : null;
         $req->manager_reviewed_at = now();
 
         if ($validated['action'] === 'approve') {

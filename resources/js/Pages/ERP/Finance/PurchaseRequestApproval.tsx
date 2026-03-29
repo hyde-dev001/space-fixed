@@ -37,6 +37,8 @@ const statusDisplayName: Record<ApprovalStatus, string> = {
 	rejected: "Rejected",
 };
 
+const STOCK_REQUEST_METADATA_LINE_REGEX = /^\s*(Source Stock Request:.*|\[stock_request_id:\d+\])\s*$/i;
+
 const hasSizeSystemPrefix = (value: string): boolean => {
 	const normalized = value.trim().toUpperCase();
 	return SIZE_SYSTEMS.some((system) => normalized.startsWith(`${system} `));
@@ -143,6 +145,21 @@ const getEffectiveQuantity = (
 
 	const calculatedQuantity = Math.round(totalCost / unitCost);
 	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
+};
+
+const isRepairMaterialsRequest = (request: PurchaseRequestApprovalItem): boolean => {
+	const category = String((request as any)?.inventory_item?.category || "").trim().toLowerCase();
+	return category === "repair_materials";
+};
+
+const sanitizePurchaseRequestNotes = (notes?: string | null): string => {
+	if (!notes) return "";
+
+	return notes
+		.split(/\r?\n/)
+		.filter((line) => !STOCK_REQUEST_METADATA_LINE_REGEX.test(line))
+		.join("\n")
+		.trim();
 };
 
 interface MetricCardProps {
@@ -433,6 +450,11 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 		);
 	}, [viewingRequest]);
 
+	const viewingRequestDisplayNotes = useMemo(() => {
+		if (!viewingRequest) return "";
+		return sanitizePurchaseRequestNotes(viewingRequest.notes);
+	}, [viewingRequest]);
+
 	useEffect(() => {
 		onModalStateChange?.(isAnyModalOpen);
 		return () => {
@@ -618,23 +640,27 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{viewingRequest.supplier?.name || 'N/A'}</p>
 							</div>
 
-							<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
-								<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
-								<p className="text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
-							</div>
+							{!isRepairMaterialsRequest(viewingRequest) && (
+								<>
+									<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
+										<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
+										<p className="text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+									</div>
 
-							{viewingRequestAvailableSizeLabels.length > 0 && (
-								<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-									<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequestAvailableSizeLabels.join(", ")}</p>
-								</div>
-							)}
+									{viewingRequestAvailableSizeLabels.length > 0 && (
+										<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+											<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
+											<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequestAvailableSizeLabels.join(", ")}</p>
+										</div>
+									)}
 
-							{viewingRequest.requested_color && (
-								<div className="rounded-xl bg-purple-50 dark:bg-purple-900/20 p-4 border border-purple-200 dark:border-purple-800">
-									<p className="text-sm font-medium text-purple-600 dark:text-purple-400 mb-1">Requested Color</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requested_color}</p>
-								</div>
+									{viewingRequest.requested_color && (
+										<div className="rounded-xl bg-purple-50 dark:bg-purple-900/20 p-4 border border-purple-200 dark:border-purple-800">
+											<p className="text-sm font-medium text-purple-600 dark:text-purple-400 mb-1">Requested Color</p>
+											<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requested_color}</p>
+										</div>
+									)}
+								</>
 							)}
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -664,10 +690,10 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.justification}</p>
 							</div>
 
-							{viewingRequest.notes && (
+							{viewingRequestDisplayNotes && (
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequestDisplayNotes}</p>
 								</div>
 							)}
 						</div>

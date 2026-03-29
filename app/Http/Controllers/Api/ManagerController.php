@@ -407,12 +407,25 @@ class ManagerController extends Controller
             return false;
         }
 
+        $managerPermissions = [
+            'access-manager-dashboard',
+            'access-audit-logs',
+            'access-manager-reports',
+            'access-inventory-overview',
+            'access-repair-reject-review',
+            'access-suspend-account',
+        ];
+
         $roleColumn = strtoupper((string) $user->role);
         if (in_array($roleColumn, ['MANAGER', 'FINANCE_MANAGER', 'SUPER_ADMIN'], true)) {
             return true;
         }
 
         if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['Manager', 'Finance Manager', 'Super Admin'])) {
+            return true;
+        }
+
+        if (method_exists($user, 'hasAnyPermission') && $user->hasAnyPermission($managerPermissions)) {
             return true;
         }
 

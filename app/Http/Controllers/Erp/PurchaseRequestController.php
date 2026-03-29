@@ -8,6 +8,7 @@ use App\Http\Requests\StorePurchaseRequestRequest;
 use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
 use App\Models\InventoryItem;
+use App\Models\StockRequestApproval;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -136,25 +137,50 @@ class PurchaseRequestController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
+            $shopOwnerId = (int) Auth::user()->shop_owner_id;
+            $stockRequestId = isset($data['stock_request_id']) ? (int) $data['stock_request_id'] : null;
+            $sourceStockRequest = null;
 
-            // Prevent duplicate PR creation for the same approved stock-request payload.
-            $hasMatchingActiveRequest = PurchaseRequest::query()
-                ->where('shop_owner_id', Auth::user()->shop_owner_id)
-                ->where('inventory_item_id', $data['inventory_item_id'] ?? null)
-                ->where('quantity', $data['quantity'])
-                ->where('requested_size', $data['requested_size'] ?? null)
-                ->where('requested_color', $data['requested_color'] ?? null)
-                ->where('status', '!=', 'rejected')
-                ->exists();
+            if ($stockRequestId) {
+                $sourceStockRequest = StockRequestApproval::query()
+                    ->where('id', $stockRequestId)
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->where('status', 'accepted')
+                    ->first();
 
-            if ($hasMatchingActiveRequest) {
-                DB::rollBack();
-                return response()->json([
-                    'message' => 'This approved stock request has already been processed into a purchase request.'
-                ], 422);
+                if (!$sourceStockRequest) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'Selected stock request is not available for purchase request creation.',
+                    ], 422);
+                }
+
+                $sourceMarker = "[stock_request_id:{$stockRequestId}]";
+                $alreadyProcessed = PurchaseRequest::query()
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->where('status', '!=', 'rejected')
+                    ->where('notes', 'LIKE', "%{$sourceMarker}%")
+                    ->exists();
+
+                if ($alreadyProcessed) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'This approved stock request has already been processed into a purchase request.'
+                    ], 422);
+                }
             }
 
-            $data['shop_owner_id'] = Auth::user()->shop_owner_id;
+            if ($sourceStockRequest) {
+                $sourceNumber = $sourceStockRequest->request_number ?: (string) $sourceStockRequest->id;
+                $sourceMarker = "[stock_request_id:{$sourceStockRequest->id}]";
+                $sourceSummary = "Source Stock Request: {$sourceNumber}";
+                $existingNotes = trim((string) ($data['notes'] ?? ''));
+                $data['notes'] = trim(implode("\n", array_filter([$existingNotes, $sourceSummary, $sourceMarker])));
+            }
+
+            unset($data['stock_request_id']);
+
+            $data['shop_owner_id'] = $shopOwnerId;
             $data['requested_by'] = Auth::id();
             $data['requested_date'] = now();
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $data['shop_owner_id']);

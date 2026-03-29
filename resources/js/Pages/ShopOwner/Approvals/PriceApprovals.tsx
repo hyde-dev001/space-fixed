@@ -1,8 +1,9 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import { canAccessProducts, canAccessServices } from "../../../utils/shopOwnerAccess";
 
 // Icons
 const CheckIcon = ({ className }: { className?: string }) => (
@@ -135,6 +136,16 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 function PriceApprovalContent() {
+  const { auth } = usePage().props as any;
+  const canReviewShoePriceChanges = canAccessProducts({
+    businessType: auth?.shop_owner?.business_type || auth?.business_type || 'both',
+    registrationType: auth?.shop_owner?.registration_type || auth?.registration_type || 'company',
+  });
+  const canReviewRepairPriceChanges = canAccessServices({
+    businessType: auth?.shop_owner?.business_type || auth?.business_type || 'both',
+    registrationType: auth?.shop_owner?.registration_type || auth?.registration_type || 'company',
+  });
+
   const [requests, setRequests] = useState<PriceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -148,46 +159,61 @@ function PriceApprovalContent() {
   // Fetch price change requests from API
   useEffect(() => {
     fetchRequests();
-  }, []);
+  }, [canReviewShoePriceChanges, canReviewRepairPriceChanges]);
+
+  useEffect(() => {
+    if (!canReviewRepairPriceChanges && typeFilter === 'repair') {
+      setTypeFilter(canReviewShoePriceChanges ? 'shoe' : 'all');
+      return;
+    }
+
+    if (!canReviewShoePriceChanges && typeFilter === 'shoe') {
+      setTypeFilter('all');
+    }
+  }, [canReviewShoePriceChanges, canReviewRepairPriceChanges, typeFilter]);
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      
-      // Fetch ALL owner-relevant requests (not just pending) for accurate metrics
-      // Fetch both shoe price changes AND repair service price changes
-      const [shoeResponse, repairResponse] = await Promise.all([
-        fetch('/api/shop-owner/price-changes/all', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': csrfToken || '',
-          },
-        }),
-        fetch('/api/shop-owner/repair-price-changes/all', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': csrfToken || '',
-          },
-        })
-      ]);
 
-      if (!shoeResponse.ok) {
+      // Fetch only endpoints allowed for the current business type.
+      let shoeResponse: Response | null = null;
+      if (canReviewShoePriceChanges) {
+        shoeResponse = await fetch('/api/shop-owner/price-changes/all', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+          },
+        });
+      }
+
+      let repairResponse: Response | null = null;
+      if (canReviewRepairPriceChanges) {
+        repairResponse = await fetch('/api/shop-owner/repair-price-changes/all', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+          },
+        });
+      }
+
+      if (shoeResponse && !shoeResponse.ok) {
         const errorData = await shoeResponse.json().catch(() => ({ message: 'Unknown error' }));
         console.error('Shoe API Error Response:', errorData);
         throw new Error(errorData.message || `HTTP ${shoeResponse.status}: ${shoeResponse.statusText}`);
       }
 
-      if (!repairResponse.ok) {
+      if (repairResponse && !repairResponse.ok) {
         const errorData = await repairResponse.json().catch(() => ({ message: 'Unknown error' }));
         console.error('Repair API Error Response:', errorData);
         throw new Error(errorData.message || `HTTP ${repairResponse.status}: ${repairResponse.statusText}`);
       }
 
-      const shoeResult = await shoeResponse.json();
-      const repairResult = await repairResponse.json();
+      const shoeResult = shoeResponse ? await shoeResponse.json() : { data: [] };
+      const repairResult = repairResponse ? await repairResponse.json() : { data: [] };
       
       // Map shoe price changes
       const shoeRequests = shoeResult.data.map((item: any) => ({
@@ -581,8 +607,8 @@ function PriceApprovalContent() {
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 <option value="all">All Items</option>
-                <option value="shoe">Shoe Products</option>
-                <option value="repair">Repair Services</option>
+                {canReviewShoePriceChanges && <option value="shoe">Shoe Products</option>}
+                {canReviewRepairPriceChanges && <option value="repair">Repair Services</option>}
               </select>
             </div>
           </div>

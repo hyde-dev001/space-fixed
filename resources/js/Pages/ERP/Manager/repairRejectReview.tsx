@@ -1,7 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { hasRole } from "../../../utils/permissions";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import axios from "axios";
 
@@ -140,6 +139,66 @@ const WrenchIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
+const normalizeMediaPath = (rawPath: unknown): string | null => {
+	if (typeof rawPath !== "string") {
+		return null;
+	}
+
+	const path = rawPath.trim();
+	if (!path) {
+		return null;
+	}
+
+	if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
+		return path;
+	}
+
+	if (path.startsWith("/storage/") || path.startsWith("/images/")) {
+		return path;
+	}
+
+	if (path.startsWith("storage/")) {
+		return `/${path}`;
+	}
+
+	if (path.startsWith("/")) {
+		return path;
+	}
+
+	return `/storage/${path.replace(/^\/+/, "")}`;
+};
+
+const parseMedia = (rawImages: unknown): string[] => {
+	let parsedImages: unknown = rawImages;
+
+	if (typeof rawImages === "string") {
+		try {
+			parsedImages = JSON.parse(rawImages);
+		} catch {
+			parsedImages = [];
+		}
+	}
+
+	if (!Array.isArray(parsedImages)) {
+		return [];
+	}
+
+	return parsedImages
+		.map((item) => {
+			if (typeof item === "string") {
+				return normalizeMediaPath(item);
+			}
+
+			if (item && typeof item === "object") {
+				const mediaItem = item as Record<string, unknown>;
+				return normalizeMediaPath(mediaItem.url ?? mediaItem.path ?? mediaItem.image_path);
+			}
+
+			return null;
+		})
+		.filter((path): path is string => Boolean(path));
+};
+
 interface RepairRejection {
 	id: number;
 	requestNumber: string;
@@ -263,10 +322,17 @@ export default function RepairRejectReview() {
 	});
 
 	useEffect(() => {
-		// Check if user has Manager role using Spatie
-		const isManager = hasRole(auth, "Manager");
+		const roleValue = String(auth?.user?.role || '').toUpperCase();
+		const roleNames = Array.isArray(auth?.user?.roles)
+			? auth.user.roles.map((role: string) => String(role).toUpperCase())
+			: [];
+		const permissions = Array.isArray(auth?.permissions) ? auth.permissions : [];
 
-		if (!isManager) {
+		const hasManagerRole = roleValue === 'MANAGER' || roleNames.includes('MANAGER');
+		const hasManagerPermission = permissions.includes('access-repair-reject-review') || permissions.includes('access-manager-dashboard');
+		const canAccessRejectionReview = hasManagerRole || hasManagerPermission;
+
+		if (!canAccessRejectionReview) {
 			setAccessDeniedOpen(true);
 		} else {
 			fetchRejections();
@@ -312,7 +378,7 @@ export default function RepairRejectReview() {
 					rejectedBy: item.manager_reviewed_by?.name,
 					rejectedAt: item.manager_reviewed_at,
 					decisionReason: item.manager_review_notes,
-					media: item.images ? JSON.parse(item.images) : [],
+					media: parseMedia(item.images),
 					repairerName: item.repairer?.name || 'Unassigned',
 					rawStatus: item.status,
 					workflowStage,
@@ -336,7 +402,6 @@ export default function RepairRejectReview() {
 	const filteredData = useMemo(() => {
 		return rejections.filter((item) => {
 			const matchesSearch =
-				item.requestNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.orderedBy.toLowerCase().includes(searchQuery.toLowerCase());
@@ -582,7 +647,7 @@ export default function RepairRejectReview() {
 						<div className="flex-1">
 							<input
 								type="text"
-								placeholder="Search by request number, service name, or customer..."
+								placeholder="Search by service name, customer, or rejected by..."
 								value={searchQuery}
 								onChange={(e) => {
 									setSearchQuery(e.target.value);
@@ -614,7 +679,7 @@ export default function RepairRejectReview() {
 						<table className="w-full text-sm">
 							<thead className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-800">
 								<tr>
-									<th className="pb-3 font-medium">Request</th>
+									<th className="pb-3 font-medium">Requested On</th>
 									<th className="pb-3 font-medium">Service</th>
 									<th className="pb-3 font-medium">Customer</th>
 									<th className="pb-3 font-medium">Rected By</th>
@@ -626,7 +691,7 @@ export default function RepairRejectReview() {
 								{paginatedRejections.map((rejection) => (
 									<tr key={rejection.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
 										<td className="py-4">
-											<p className="font-medium text-gray-900 dark:text-white">{rejection.requestNumber}</p>
+											<p className="font-medium text-gray-900 dark:text-white">{rejection.requestedOn}</p>
 										</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{rejection.serviceName}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{rejection.customerName}</td>
@@ -743,7 +808,7 @@ export default function RepairRejectReview() {
 								</div>
 								<div>
 									<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rejection Review Details</h3>
-									<p className="text-sm text-gray-500 dark:text-gray-400">{selectedRejection.requestNumber}</p>
+									<p className="text-sm text-gray-500 dark:text-gray-400">Requested on {selectedRejection.requestedOn}</p>
 								</div>
 							</div>
 							<button
@@ -911,7 +976,7 @@ export default function RepairRejectReview() {
 							<div>
 								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Access Denied</h3>
 								<p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-									You do not have permission to access repair rejection reviews. This page is restricted to Manager role only.
+									You do not have permission to access repair rejection reviews.
 								</p>
 							</div>
 						</div>
@@ -949,7 +1014,7 @@ export default function RepairRejectReview() {
 						</div>
 						<div className="px-6 py-5 space-y-4">
 							<div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 text-sm">
-								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Request:</span> {selectedRejection.requestNumber}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Requested on:</span> {selectedRejection.requestedOn}</p>
 								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Service:</span> {selectedRejection.serviceName}</p>
 								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Customer:</span> {selectedRejection.customerName}</p>
 								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Reason:</span> {selectedRejection.rejectionReason}</p>
@@ -1004,7 +1069,7 @@ export default function RepairRejectReview() {
 						</div>
 						<div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
 							<div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 text-sm">
-								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Repair:</span> {overrideTarget.requestNumber}</p>
+								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Requested on:</span> {overrideTarget.requestedOn}</p>
 								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Customer:</span> {overrideTarget.customerName}</p>
 								<p className="text-gray-800 dark:text-gray-200"><span className="font-semibold">Service:</span> {overrideTarget.serviceName}</p>
 							</div>

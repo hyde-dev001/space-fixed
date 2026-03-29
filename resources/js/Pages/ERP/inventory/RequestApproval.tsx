@@ -47,6 +47,14 @@ const formatDateTime = (value?: string): string => {
 	return date.toLocaleString();
 };
 
+const getWorkflowStatus = (request: StockRequestApproval): RequestStatus => {
+	if (request.request_source === "repair" && request.inventory_approved_date && request.status === "pending") {
+		return "accepted";
+	}
+
+	return request.status as RequestStatus;
+};
+
 const ClipboardIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
 		<path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
@@ -166,21 +174,22 @@ export default function RequestApproval() {
 	const filteredRequests = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 		return requests.filter((request) => {
+			const workflowStatus = getWorkflowStatus(request);
 			const matchesQuery = !query ||
 				request.request_number.toLowerCase().includes(query) ||
 				request.product_name.toLowerCase().includes(query) ||
 				request.sku_code.toLowerCase().includes(query) ||
 				(request.requester?.name ?? "repairer").toLowerCase().includes(query) ||
-				statusLabel[request.status].toLowerCase().includes(query);
+				statusLabel[workflowStatus].toLowerCase().includes(query);
 
-			const matchesStatus = statusFilter === "all" || request.status === statusFilter;
+			const matchesStatus = statusFilter === "all" || workflowStatus === statusFilter;
 			return matchesQuery && matchesStatus;
 		});
 	}, [requests, searchQuery, statusFilter]);
 
 	const totalRequests = requests.length;
-	const pendingRequests = requests.filter((request) => request.status === "pending").length;
-	const approvedRequests = requests.filter((request) => request.status === "accepted").length;
+	const pendingRequests = requests.filter((request) => getWorkflowStatus(request) === "pending").length;
+	const approvedRequests = requests.filter((request) => getWorkflowStatus(request) === "accepted").length;
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredRequests.length / itemsPerPage));
@@ -189,7 +198,7 @@ export default function RequestApproval() {
 	const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
 
 	const handleApprove = async (request: StockRequestApproval) => {
-		if (!(["pending", "needs_details"] as const).includes(request.status)) {
+		if (!( ["pending", "needs_details"] as const).includes(getWorkflowStatus(request))) {
 			await Swal.fire({
 				icon: "warning",
 				title: "Cannot approve",
@@ -209,7 +218,7 @@ export default function RequestApproval() {
 			await Swal.fire({
 				icon: "success",
 				title: "Request approved",
-				text: `${request.request_number} has been approved.`,
+				text: `${request.request_number} has been approved by Inventory and forwarded to Procurement.`,
 				confirmButtonColor: "#16a34a",
 			});
 		} catch (error: any) {
@@ -225,7 +234,7 @@ export default function RequestApproval() {
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
-		if (!(["pending", "needs_details"] as const).includes(request.status)) {
+		if (!( ["pending", "needs_details"] as const).includes(getWorkflowStatus(request))) {
 			await Swal.fire({
 				icon: "warning",
 				title: "Cannot reject",
@@ -281,7 +290,7 @@ export default function RequestApproval() {
 	};
 
 	const handleRequestDetails = async (request: StockRequestApproval) => {
-		if (request.status !== "pending") {
+		if (getWorkflowStatus(request) !== "pending") {
 			await Swal.fire({
 				icon: "warning",
 				title: "Cannot request details",
@@ -337,6 +346,8 @@ export default function RequestApproval() {
 	};
 
 	const isReviewModalOpen = Boolean(selectedRequest);
+	const selectedWorkflowStatus = selectedRequest ? getWorkflowStatus(selectedRequest) : null;
+	const selectedReviewedAt = selectedRequest?.inventory_approved_date || selectedRequest?.approved_date;
 
 	return (
 		<AppLayoutERP hideHeader={isReviewModalOpen}>
@@ -420,7 +431,10 @@ export default function RequestApproval() {
 										</td>
 									</tr>
 								) : paginatedRequests.length > 0 ? (
-									paginatedRequests.map((request) => (
+									paginatedRequests.map((request) => {
+										const workflowStatus = getWorkflowStatus(request);
+
+										return (
 										<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 													<p className="font-medium text-gray-900 dark:text-white">{request.product_name}</p>
@@ -436,8 +450,8 @@ export default function RequestApproval() {
 													<p className="text-xs text-gray-500 dark:text-gray-400">Repairer</p>
 											</td>
 											<td className="px-4 py-3">
-												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[request.status]}`}>
-														{statusLabel[request.status]}
+												<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[workflowStatus]}`}>
+													{statusLabel[workflowStatus]}
 												</span>
 											</td>
 											<td className="px-4 py-3 text-center">
@@ -451,7 +465,8 @@ export default function RequestApproval() {
 												</button>
 											</td>
 										</tr>
-									))
+										);
+									})
 								) : (
 									<tr>
 										<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
@@ -540,14 +555,14 @@ export default function RequestApproval() {
 							</div>
 							<div>
 								<p className="text-gray-500">Status</p>
-								<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[selectedRequest.status]}`}>
-									{statusLabel[selectedRequest.status]}
+								<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass[selectedWorkflowStatus || "pending"]}`}>
+									{statusLabel[selectedWorkflowStatus || "pending"]}
 								</span>
 							</div>
-							{selectedRequest.approved_date && (
+							{selectedReviewedAt && (
 								<div>
 									<p className="text-gray-500">Reviewed at</p>
-									<p className="font-semibold text-gray-900 dark:text-white">{formatDateTime(selectedRequest.approved_date)}</p>
+									<p className="font-semibold text-gray-900 dark:text-white">{formatDateTime(selectedReviewedAt)}</p>
 								</div>
 							)}
 							<div className="md:col-span-2">
@@ -568,14 +583,14 @@ export default function RequestApproval() {
 							</button>
 							<button
 								onClick={() => handleReject(selectedRequest)}
-								disabled={actionLoading || !(["pending", "needs_details"] as const).includes(selectedRequest.status)}
+								disabled={actionLoading || !( ["pending", "needs_details"] as const).includes(getWorkflowStatus(selectedRequest))}
 								className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
 							>
 								{actionLoading ? "Processing..." : "Reject"}
 							</button>
 							<button
 								onClick={() => handleApprove(selectedRequest)}
-								disabled={actionLoading || !(["pending", "needs_details"] as const).includes(selectedRequest.status)}
+								disabled={actionLoading || !( ["pending", "needs_details"] as const).includes(getWorkflowStatus(selectedRequest))}
 								className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
 							>
 								{actionLoading ? "Processing..." : "Approve"}

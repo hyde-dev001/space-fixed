@@ -163,7 +163,18 @@ const UserAccessControl: React.FC = () => {
   // Get shop owner data from auth
   const auth = pageProps.auth;
   const shopOwner = auth?.shop_owner;
-  const businessType = shopOwner?.business_type?.toLowerCase(); // 'retail', 'repair', 'both'
+  const rawBusinessType =
+    shopOwner?.business_type
+    || auth?.user?.shop_owner?.business_type
+    || pageProps?.shop_owner?.business_type
+    || auth?.business_type
+    || auth?.user?.business_type
+    || '';
+  const normalizedBusinessType = String(rawBusinessType).trim().toLowerCase() === 'both (retail & repair)'
+    ? 'both'
+    : String(rawBusinessType).trim().toLowerCase();
+  const isRetailCapable = normalizedBusinessType === 'retail' || normalizedBusinessType === 'both';
+  const isRepairCapable = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
   const currentUserId = Number(auth?.user?.id ?? 0);
   const currentAccountEmail = String(auth?.user?.email ?? shopOwner?.email ?? '').trim().toLowerCase();
   
@@ -434,11 +445,6 @@ const UserAccessControl: React.FC = () => {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
 
-  // Additional Roles State (Phase 7)
-  const [availableRoles, setAvailableRoles] = useState<Array<{ name: string; permissionCount: number }>>([]);
-  const [selectedAdditionalRoles, setSelectedAdditionalRoles] = useState<string[]>([]);
-  const [isSavingRoles, setIsSavingRoles] = useState(false);
-
   // Permission Categories State (Phase 6+) - Collapsible categories for better UX
   const [expandedCategories, setExpandedCategories] = useState<{
     finance: boolean;
@@ -502,12 +508,46 @@ const UserAccessControl: React.FC = () => {
       ...(availablePermissions.grouped.manager || []),
       ...(availablePermissions.grouped.inventory || []),
       ...(availablePermissions.grouped.procurement || []),
-      // Only include repairer permissions if business type is not retail-only
-      ...(businessType !== 'retail' ? (availablePermissions.grouped.repairer || []) : []),
-      ...(availablePermissions.grouped.staff || []),
+      ...(isRepairCapable ? (availablePermissions.grouped.repairer || []) : []),
+      ...(isRetailCapable ? (availablePermissions.grouped.staff || []) : []),
     ];
     const newPermissions = Array.from(new Set([...selectedPermissions, ...allPermissions]));
     setSelectedPermissions(newPermissions);
+  };
+
+  const isStaffPermission = (permission: string) => {
+    return permission.startsWith('access-staff-')
+      || permission.includes('staff-job-orders')
+      || permission.includes('product-management')
+      || permission.includes('product-upload-staff')
+      || permission.includes('shoe-pricing')
+      || permission.includes('staff-time-in')
+      || permission.includes('staff-leave')
+      || permission.includes('color-variant-manager')
+      || permission.includes('staff-customers');
+  };
+
+  const isRepairerPermission = (permission: string) => {
+    return permission.startsWith('access-repairer-')
+      || permission.includes('repair-job-orders')
+      || permission.includes('pricing-services')
+      || permission.includes('repairer-support')
+      || permission.includes('repair-stocks')
+      || permission.includes('upload-service');
+  };
+
+  const filterPermissionsByBusinessType = (permissions: string[]) => {
+    return permissions.filter((permission) => {
+      if (!isRetailCapable && isStaffPermission(permission)) {
+        return false;
+      }
+
+      if (!isRepairCapable && isRepairerPermission(permission)) {
+        return false;
+      }
+
+      return true;
+    });
   };
 
   const clearAllPermissions = () => {
@@ -710,9 +750,16 @@ const UserAccessControl: React.FC = () => {
       { value: 'Staff', label: 'Staff' },
     ];
 
-    // Filter out Repairer if business type is retail only
-    if (businessType === 'retail') {
+    if (normalizedBusinessType === 'repair') {
+      return allRoles.filter(role => role.value !== 'Staff');
+    }
+
+    if (normalizedBusinessType === 'retail') {
       return allRoles.filter(role => role.value !== 'Repairer');
+    }
+
+    if (!isRetailCapable && !isRepairCapable) {
+      return allRoles.filter(role => !['Repairer', 'Staff'].includes(role.value));
     }
 
     return allRoles;
@@ -728,6 +775,14 @@ const UserAccessControl: React.FC = () => {
     employees.forEach((employee) => {
       const normalizedRole = normalizeRoleName(employee.role);
 
+      if (!isRetailCapable && normalizedRole === 'Staff') {
+        return;
+      }
+
+      if (!isRepairCapable && normalizedRole === 'Repairer') {
+        return;
+      }
+
       roleOptions.set(normalizedRole, {
         value: normalizedRole,
         label: roleLabels[normalizedRole] || normalizedRole,
@@ -735,7 +790,7 @@ const UserAccessControl: React.FC = () => {
     });
 
     return Array.from(roleOptions.values());
-  }, [employees, businessType]);
+  }, [employees, normalizedBusinessType, isRetailCapable, isRepairCapable]);
 
   const handleAddEmployee = async () => {
     // Check required fields
@@ -1060,29 +1115,6 @@ const UserAccessControl: React.FC = () => {
     fetchPermissions();
   }, []);
 
-  // Fetch available roles on component mount
-  useEffect(() => {
-    const fetchRoles = async () => {
-      try {
-        const response = await fetch('/shop-owner/roles/available', {
-          headers: {
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableRoles(data.roles || []);
-        }
-      } catch (error) {
-        console.error('Failed to fetch roles:', error);
-      }
-    };
-    
-    fetchRoles();
-  }, []);
-
   // Open permission management modal
   const openPermissionModal = async (employee: Employee) => {
     if (!employee.userId) {
@@ -1095,9 +1127,56 @@ const UserAccessControl: React.FC = () => {
       return;
     }
 
-    setSelectedEmployee(employee);
-    setSelectedPermissions(employee.directPermissions || []);
-    setIsPermissionModalOpen(true);
+    if (!employee.id) {
+      console.warn('Warning: Employee object missing id property', employee);
+    }
+
+    // Fetch fresh permission data from server
+    try {
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/shop-owner/employees/${employee.userId}/permissions`, {
+        headers: {
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf || ''
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load permissions');
+      }
+
+      const data = await response.json();
+      
+      // Update the employee with fresh permission data
+      const updatedEmployee: Employee = {
+        ...employee,
+        permissions: data.allPermissions,
+        rolePermissions: data.rolePermissions,
+        directPermissions: data.directPermissions,
+        additionalRoles: data.additionalRoles || data.additional_roles || employee.additionalRoles || []
+      };
+
+      console.log('Fresh permissions loaded:', {
+        employee: updatedEmployee.name,
+        userId: employee.userId,
+        directPermissions: data.directPermissions,
+        rolePermissions: data.rolePermissions
+      });
+
+      setSelectedEmployee(updatedEmployee);
+      setSelectedPermissions(data.directPermissions || []);
+      setIsPermissionModalOpen(true);
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load permissions';
+      console.error('Error loading permissions:', errorMessage);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: errorMessage + '. Please try again.',
+        timer: 3000
+      });
+    }
   };
 
   // Toggle permission selection
@@ -1113,58 +1192,161 @@ const UserAccessControl: React.FC = () => {
 
   // Save permission changes
   const savePermissions = async () => {
-    if (!selectedEmployee || !selectedEmployee.userId) return;
+    if (!selectedEmployee || !selectedEmployee.userId) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Employee information is missing. Please try again.',
+      });
+      return;
+    }
 
     setIsSavingPermissions(true);
 
     try {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/shop-owner/employees/${selectedEmployee.userId}/permissions/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrf || ''
-        },
-        body: JSON.stringify({
-          permissions: selectedPermissions
-        })
-      });
+      const knownPermissions = new Set((availablePermissions?.all || []).filter((p): p is string => typeof p === 'string'));
+      const normalizePermissions = (values: string[]) =>
+        Array.from(
+          new Set(
+            values
+              .filter((value): value is string => typeof value === 'string')
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+              .filter((value) => knownPermissions.size === 0 || knownPermissions.has(value))
+          )
+        );
 
-      if (!response.ok) {
-        throw new Error('Failed to update permissions');
+      if (!csrf) {
+        throw new Error('CSRF token not found. Please refresh the page.');
       }
 
-      const data = await response.json();
+      let permissionsToSync = filterPermissionsByBusinessType(normalizePermissions(selectedPermissions));
 
-      // Update local employee data
-      setEmployees(employees.map(emp => 
-        emp.id === selectedEmployee.id 
-          ? { 
-              ...emp, 
-              permissions: data.allPermissions,
-              rolePermissions: data.rolePermissions,
-              directPermissions: data.directPermissions
-            }
-          : emp
-      ));
+      console.log('Saving permissions for employee:', selectedEmployee.userId, 'Permissions:', permissionsToSync);
+
+      const postSyncPermissions = async (permissionsPayload: string[]) => {
+        const response = await fetch(`/shop-owner/employees/${selectedEmployee.userId}/permissions/sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            permissions: permissionsPayload
+          })
+        });
+
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(`Server error: ${response.status} ${response.statusText}. Please try again.`);
+        }
+
+        return { response, data };
+      };
+
+      let { response, data } = await postSyncPermissions(permissionsToSync);
+
+      // If backend reports invalid permissions, remove them and retry once.
+      if (!response.ok && response.status === 422 && Array.isArray(data?.invalid_permissions) && data.invalid_permissions.length > 0) {
+        const invalidSet = new Set(
+          data.invalid_permissions.filter((permission: unknown): permission is string => typeof permission === 'string')
+        );
+        permissionsToSync = permissionsToSync.filter((permission) => !invalidSet.has(permission));
+        setSelectedPermissions(permissionsToSync);
+        ({ response, data } = await postSyncPermissions(permissionsToSync));
+      }
+
+      if (!response.ok) {
+        // Handle specific error responses from backend
+        let errorMessage = 'Failed to update permissions';
+        
+        // Check for Laravel validation errors (422 status)
+        if (data.errors && typeof data.errors === 'object') {
+          const validationErrors = Object.values(data.errors).flat();
+          if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+            errorMessage = validationErrors.join('\n');
+          }
+        } else if (data.invalid_permissions && Array.isArray(data.invalid_permissions)) {
+          // Check for our custom invalid_permissions array
+          errorMessage = `Invalid permissions: ${data.invalid_permissions.join(', ')}`;
+          if (data.error) {
+            errorMessage = data.error;
+          }
+        } else if (data.error) {
+          errorMessage = data.error;
+        } else if (data.message) {
+          errorMessage = data.message;
+        }
+        
+        const forbiddenPerms = data.forbidden_permissions;
+        if (forbiddenPerms && Array.isArray(forbiddenPerms)) {
+          errorMessage += `\n\nForbidden permissions:\n${forbiddenPerms.join(', ')}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      console.log('Permission sync response:', data);
+
+      // Verify the employee exists in our local state before updating
+      const employeeIndex = employees.findIndex(emp => emp.id === selectedEmployee.id);
+      if (employeeIndex === -1) {
+        console.warn('Employee not found in local state. Using userId for matching:', selectedEmployee.userId);
+      }
+
+      // Update local employee data - use userId as fallback
+      setEmployees(employees.map(emp => {
+        const isTargetEmployee = emp.id === selectedEmployee.id || emp.userId === selectedEmployee.userId;
+        if (isTargetEmployee) {
+          return {
+            ...emp,
+            permissions: data.allPermissions || [],
+            rolePermissions: data.rolePermissions || [],
+            directPermissions: data.directPermissions || []
+          };
+        }
+        return emp;
+      }));
 
       setIsPermissionModalOpen(false);
+      setSelectedPermissions([]);
       
       Swal.fire({
         icon: 'success',
         title: 'Success!',
-        text: 'Permissions updated successfully',
+        text: `Permissions updated successfully for ${selectedEmployee.name}`,
         timer: 2000,
         showConfirmButton: false
       });
 
     } catch (error) {
+      let displayMessage = 'Failed to update permissions. Please try again.';
+      
+      if (error instanceof Error && error.message) {
+        displayMessage = error.message;
+      } else if (typeof error === 'string') {
+        displayMessage = error;
+      }
+      
       console.error('Failed to update permissions:', error);
+      
       Swal.fire({
         icon: 'error',
-        title: 'Error',
-        text: 'Failed to update permissions. Please try again.',
+        title: 'Error Updating Permissions',
+        text: displayMessage,
+        didOpen: () => {
+          // Auto-close after 5 seconds if user doesn't interact
+          setTimeout(() => {
+            if (Swal.isVisible()) {
+              Swal.hideLoading();
+            }
+          }, 5000);
+        }
       });
     } finally {
       setIsSavingPermissions(false);
@@ -2496,7 +2678,7 @@ const UserAccessControl: React.FC = () => {
                   )}
 
                   {/* Repairer Module - Only show if business type is not retail-only */}
-                  {businessType !== 'retail' && availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
+                  {isRepairCapable && availablePermissions.grouped.repairer && availablePermissions.grouped.repairer.length > 0 && (
                     <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                       <button
                         onClick={() => toggleCategory('repairer')}
@@ -2571,7 +2753,7 @@ const UserAccessControl: React.FC = () => {
                   )}
 
                   {/* Staff Module */}
-                  {availablePermissions.grouped.staff && availablePermissions.grouped.staff.length > 0 && (
+                  {isRetailCapable && availablePermissions.grouped.staff && availablePermissions.grouped.staff.length > 0 && (
                     <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                       <button
                         onClick={() => toggleCategory('staff')}
@@ -2685,7 +2867,7 @@ const UserAccessControl: React.FC = () => {
                         Saving...
                       </>
                     ) : (
-                      'Save Permissions'
+                      'Save Access Changes'
                     )}
                   </Button>
                 </div>

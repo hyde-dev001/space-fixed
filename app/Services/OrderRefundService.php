@@ -202,6 +202,14 @@ class OrderRefundService
             (float) ($refund->amount ?? 0)
         );
 
+        $registrationType = strtolower(trim((string) ($order->shopOwner?->registration_type ?? '')));
+        $isIndividualRegistration = $registrationType === 'individual';
+
+        // Individual shops should route refund approvals directly to shop owner without finance pre-approval.
+        if ($isIndividualRegistration) {
+            $requiresOwnerApproval = true;
+        }
+
         $payload = [
             'approved_at' => $refund->approved_at ?? now(),
             'processed_by' => $processedBy,
@@ -220,7 +228,10 @@ class OrderRefundService
                 ];
             }
 
-            if ((string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+            $financeStatus = (string) ($refund->finance_status ?? 'pending');
+            $financePreapproved = $financeStatus === 'approved_initial';
+
+            if (!$isIndividualRegistration && !$financePreapproved) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Shop owner approval requires finance initial approval first.',
@@ -239,6 +250,12 @@ class OrderRefundService
             $payload['shop_owner_status'] = 'approved';
             $payload['shop_owner_approved_at'] = now();
             $payload['shop_owner_approved_by'] = $processedBy;
+
+            if ($isIndividualRegistration && $financeStatus !== 'approved') {
+                $payload['finance_status'] = 'approved';
+                $payload['finance_approved_at'] = now();
+                $payload['finance_approved_by'] = null;
+            }
         }
 
         if ($stageNormalized === 'finance') {
@@ -318,7 +335,9 @@ class OrderRefundService
                 $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
             }
         } elseif ($stageNormalized === 'shop_owner') {
-            $nextMessage = 'Shop owner approval recorded. Awaiting finance final approval.';
+            $nextMessage = $isIndividualRegistration
+                ? 'Shop owner approval recorded. Awaiting customer return shipment.'
+                : 'Shop owner approval recorded. Awaiting finance final approval.';
         }
 
         return [
@@ -330,6 +349,8 @@ class OrderRefundService
 
     public function rejectRequestedRefund(OrderRefund $refund, string $rejectionReason, string $stage = 'finance', ?int $processedBy = null): array
     {
+        $refund->loadMissing('order.shopOwner');
+
         if (!in_array((string) $refund->status, ['requested', 'pending_approval'], true)) {
             return [
                 'result' => 'invalid_state',
@@ -360,6 +381,8 @@ class OrderRefundService
 
         if ($stageNormalized === 'shop_owner') {
             $shopOwnerStatus = strtolower(trim((string) ($refund->shop_owner_status ?? 'pending')));
+            $registrationType = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? '')));
+            $isIndividualRegistration = $registrationType === 'individual';
             if ($shopOwnerStatus !== 'pending') {
                 return [
                     'result' => 'already_' . $shopOwnerStatus,
@@ -368,7 +391,7 @@ class OrderRefundService
                 ];
             }
 
-            if ((string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+            if (!$isIndividualRegistration && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Shop owner can reject only after finance initial approval.',
@@ -555,7 +578,10 @@ class OrderRefundService
             ];
         }
 
-        $refund->update([
+        $claimed = OrderRefund::query()
+            ->whereKey($refund->id)
+            ->whereNotIn('status', ['processing', 'succeeded'])
+            ->update([
             'status' => 'processing',
             'paymongo_payment_id' => $paymentId,
             'amount' => round($amount, 2),
@@ -565,6 +591,19 @@ class OrderRefundService
                 ? trim((string) ($refund->reason_note ? $refund->reason_note . "\n\n" : '') . 'Finance payout note: ' . $executionNote)
                 : $refund->reason_note,
         ]);
+
+        if ($claimed === 0) {
+            $freshRefund = OrderRefund::query()->find($refund->id) ?? $refund;
+            $freshStatus = (string) ($freshRefund->status ?? 'processing');
+
+            return [
+                'result' => $freshStatus === 'succeeded' ? 'already_refunded' : 'already_processing',
+                'message' => 'Refund execution has already started for this request.',
+                'refund' => $freshRefund,
+            ];
+        }
+
+        $refund->refresh();
 
         $gatewayResult = $this->paymongoRefundService->createRefund(
             secretKey: $secretKey,

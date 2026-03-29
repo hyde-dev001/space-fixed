@@ -10,6 +10,7 @@ type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "approved" | "r
 type StatusFilter = ApprovalStatus | "all";
 type MetricColor = "success" | "warning" | "info";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
+const STOCK_REQUEST_METADATA_LINE_REGEX = /^\s*(Source Stock Request:.*|\[stock_request_id:\d+\])\s*$/i;
 
 interface PurchaseRequestApprovalItem {
 	id: number;
@@ -183,6 +184,16 @@ const getEffectiveQuantity = (
 
 	const calculatedQuantity = Math.round(totalCost / unitCost);
 	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
+};
+
+const sanitizePurchaseRequestNotes = (notes?: string | null): string => {
+	if (!notes) return "";
+
+	return notes
+		.split(/\r?\n/)
+		.filter((line) => !STOCK_REQUEST_METADATA_LINE_REGEX.test(line))
+		.join("\n")
+		.trim();
 };
 
 interface MetricCardProps {
@@ -443,6 +454,11 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 		);
 	}, [viewingRequest]);
 
+	const viewingRequestDisplayNotes = useMemo(() => {
+		if (!viewingRequest) return "";
+		return sanitizePurchaseRequestNotes(viewingRequest.notes);
+	}, [viewingRequest]);
+
 	useEffect(() => {
 		onModalStateChange?.(isAnyModalOpen);
 		return () => {
@@ -675,10 +691,10 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 								<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.justification}</p>
 							</div>
 
-							{viewingRequest.notes && (
+							{viewingRequestDisplayNotes && (
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Review Notes</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequest.notes}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white whitespace-pre-wrap">{viewingRequestDisplayNotes}</p>
 								</div>
 							)}
 						</div>

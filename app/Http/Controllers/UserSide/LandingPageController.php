@@ -727,15 +727,6 @@ class LandingPageController extends Controller
                 });
 
             $productsCollection = $featuredProductsQuery->get();
-
-            // Keep showroom populated for premium-active shops even if no items are marked featured yet.
-            if ($productsCollection->isEmpty()) {
-                $productsCollection = (clone $baseProductsQuery)
-                    ->when($showroomSlotLimit > 0, function ($query) use ($showroomSlotLimit) {
-                        $query->take($showroomSlotLimit);
-                    })
-                    ->get();
-            }
         } else {
             $productsCollection = $baseProductsQuery->get();
         }

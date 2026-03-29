@@ -32,7 +32,7 @@ class HasActiveRetailPremium
         }
 
         $subscription = ShopOwnerSubscription::where('shop_owner_id', $shopOwner->id)
-            ->active()
+            ->showroomEntitled()
             ->latest('starts_at')
             ->latest('id')
             ->first();
@@ -41,7 +41,7 @@ class HasActiveRetailPremium
             return $this->deny(
                 $request,
                 403,
-                'Active premium subscription is required to access the virtual showroom.',
+                'A valid premium subscription is required to access the virtual showroom.',
                 ['shop_owner_id' => $shopOwner->id]
             );
         }

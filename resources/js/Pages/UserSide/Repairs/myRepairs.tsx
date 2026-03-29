@@ -4,6 +4,9 @@ import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 
+const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
+
 type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
 type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected';
 
@@ -319,6 +322,7 @@ const MyRepairs: React.FC = () => {
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
 
   // Review modal states (Phase 10D)
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -904,6 +908,7 @@ const MyRepairs: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
+    setIsSubmittingRefund(true);
     try {
       const formData = new FormData();
       formData.append('repair_id', refundOrderId.toString());
@@ -925,9 +930,25 @@ const MyRepairs: React.FC = () => {
         body: formData,
       });
 
+      const raw = await response.text();
+      let data: any = null;
+
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to submit refund request');
+        if (data?.message) {
+          throw new Error(data.message);
+        }
+
+        if (response.status === 413) {
+          throw new Error('Upload is too large. Please compress your video and try again.');
+        }
+
+        throw new Error(`Refund request failed (${response.status}). Please try again.`);
       }
 
       setShowRefundModal(false);
@@ -951,6 +972,8 @@ const MyRepairs: React.FC = () => {
         text: error instanceof Error ? error.message : 'Unable to submit refund request. Please try again.',
         confirmButtonColor: '#000000',
       });
+    } finally {
+      setIsSubmittingRefund(false);
     }
   };
 
@@ -969,6 +992,30 @@ const MyRepairs: React.FC = () => {
           icon: 'warning',
           title: 'Video Limit Exceeded',
           text: 'You can only upload 1 video. Please remove the existing video before uploading a new one.',
+          confirmButtonColor: '#000000',
+        });
+        e.target.value = '';
+        return;
+      }
+
+      const oversizedVideo = newVideos.find(file => file.size > MAX_REFUND_VIDEO_SIZE_BYTES);
+      if (oversizedVideo) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Video Too Large',
+          text: 'Refund video must be 256MB or smaller.',
+          confirmButtonColor: '#000000',
+        });
+        e.target.value = '';
+        return;
+      }
+
+      const oversizedImage = newImages.find(file => file.size > MAX_REFUND_IMAGE_SIZE_BYTES);
+      if (oversizedImage) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Image Too Large',
+          text: 'Each refund image must be 20MB or smaller.',
           confirmButtonColor: '#000000',
         });
         e.target.value = '';
@@ -2256,7 +2303,7 @@ const MyRepairs: React.FC = () => {
                         )}
                       </label>
                       <p className="text-xs text-gray-600 mb-3">
-                        <strong>Note:</strong> You must upload 5 images and 1 video to complete your refund request.
+                        <strong>Note:</strong> You must upload 5 images and 1 video. Images must be 20MB or smaller; video must be 256MB or smaller.
                       </p>
                       
                       <div className="grid grid-cols-6 gap-3">
@@ -2397,7 +2444,7 @@ const MyRepairs: React.FC = () => {
               </div>
               <div className="px-8 py-4 border-t flex justify-between gap-3 shrink-0">
                 <div>
-                  {refundStep === 2 && (
+                  {refundStep === 2 && !isSubmittingRefund && (
                     <button
                       onClick={() => setRefundStep(1)}
                       className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
@@ -2407,19 +2454,21 @@ const MyRepairs: React.FC = () => {
                   )}
                 </div>
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setShowRefundModal(false);
-                      setRefundOrderId(null);
-                      setRefundStep(1);
-                      setRefundReason('');
-                      setRefundMedia([]);
-                      setRefundNote('');
-                    }}
-                    className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
-                  >
-                    Close
-                  </button>
+                  {!isSubmittingRefund && (
+                    <button
+                      onClick={() => {
+                        setShowRefundModal(false);
+                        setRefundOrderId(null);
+                        setRefundStep(1);
+                        setRefundReason('');
+                        setRefundMedia([]);
+                        setRefundNote('');
+                      }}
+                      className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                    >
+                      Close
+                    </button>
+                  )}
                   {refundStep === 1 ? (
                     <button
                       onClick={() => {
@@ -2452,14 +2501,14 @@ const MyRepairs: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundReason || !isMediaRequirementMet()}
+                      disabled={!refundReason || !isMediaRequirementMet() || isSubmittingRefund}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && isMediaRequirementMet()
+                        refundReason && isMediaRequirementMet() && !isSubmittingRefund
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
                     >
-                      Submit Refund Request
+                      {isSubmittingRefund ? 'Submitting...' : 'Submit Refund Request'}
                     </button>
                   )}
                 </div>

@@ -82,18 +82,14 @@ export default function OrderSuccess() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <Navigation />
-      <div className="max-w-2xl mx-auto px-4 py-16 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-          {loading && (
-            <div className="py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto"></div>
-              <p className="mt-4 text-gray-600">{message}</p>
-            </div>
-          )}
+      {loading && (
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto"></div>
+          <p className="mt-4 text-gray-600">{message}</p>
         </div>
-      </div>
+      )}
     </div>
   );
 }

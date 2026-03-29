@@ -3,6 +3,9 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 
+const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
+
 type OrderItem = {
   id: number;
   product_name: string;
@@ -87,6 +90,8 @@ const MyOrders: React.FC = () => {
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
 
   const isReturnRefundOrder = (order: Order): boolean => {
     const refundStatus = String(order.refund_status || '').toLowerCase();
@@ -369,6 +374,10 @@ const MyOrders: React.FC = () => {
     switch (status) {
       case 'refunded':
         return 'rounded-full border border-green-300 bg-green-50 text-green-700';
+      case 'refund_processing':
+        return 'rounded-full border border-blue-300 bg-blue-50 text-blue-700';
+      case 'refund_rejected':
+        return 'rounded-full border border-red-300 bg-red-50 text-red-700';
       case 'delivered':
         return 'rounded-full border border-green-300 bg-green-50 text-green-700';
       case 'cancelled':
@@ -389,6 +398,10 @@ const MyOrders: React.FC = () => {
     switch (status) {
       case 'refunded':
         return 'Refunded';
+      case 'refund_processing':
+        return 'Refund Processing';
+      case 'refund_rejected':
+        return 'Refund Rejected';
       case 'to_ship':
         return 'To Ship';
       case 'shipped':
@@ -457,6 +470,15 @@ const MyOrders: React.FC = () => {
   const getDisplayStatus = (order: Order): string => {
     if (isOrderRefunded(order)) {
       return 'refunded';
+    }
+
+    const refundStageText = getRefundStageText(order);
+    if (refundStageText === 'Refund Rejected') {
+      return 'refund_rejected';
+    }
+
+    if (isReturnRefundOrder(order)) {
+      return 'refund_processing';
     }
 
     return order.status;
@@ -620,13 +642,18 @@ const MyOrders: React.FC = () => {
       return;
     }
 
-    // perform cancel with reason and optional note
-    await cancelOrder(cancelTargetOrderId, selectedReason, cancelNote, cancelTargetOrderItemId);
-    setShowCancelModal(false);
-    setCancelTargetOrderId(null);
-    setCancelTargetOrderItemId(null);
-    setSelectedReason('');
-    setCancelNote('');
+    setIsSubmittingCancel(true);
+    try {
+      // perform cancel with reason and optional note
+      await cancelOrder(cancelTargetOrderId, selectedReason, cancelNote, cancelTargetOrderItemId);
+      setShowCancelModal(false);
+      setCancelTargetOrderId(null);
+      setCancelTargetOrderItemId(null);
+      setSelectedReason('');
+      setCancelNote('');
+    } finally {
+      setIsSubmittingCancel(false);
+    }
   };
 
   const handleSubmitRefund = async () => {
@@ -657,6 +684,7 @@ const MyOrders: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
+    setIsSubmittingRefund(true);
     try {
       const formData = new FormData();
       formData.append('order_id', refundOrderId.toString());
@@ -678,10 +706,25 @@ const MyOrders: React.FC = () => {
         body: formData,
       });
 
-      const data = await response.json();
+      const raw = await response.text();
+      let data: any = null;
+
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to submit refund request');
+        if (data?.message) {
+          throw new Error(data.message);
+        }
+
+        if (response.status === 413) {
+          throw new Error('Upload is too large. Please compress your video and try again.');
+        }
+
+        throw new Error(`Refund request failed (${response.status}). Please try again.`);
       }
 
       setShowRefundModal(false);
@@ -726,6 +769,8 @@ const MyOrders: React.FC = () => {
         text: error instanceof Error ? error.message : 'Unable to submit refund request. Please try again.',
         confirmButtonColor: '#000000',
       });
+    } finally {
+      setIsSubmittingRefund(false);
     }
   };
 
@@ -744,6 +789,30 @@ const MyOrders: React.FC = () => {
           icon: 'warning',
           title: 'Video Limit Exceeded',
           text: 'You can only upload 1 video. Please remove the existing video before uploading a new one.',
+          confirmButtonColor: '#000000',
+        });
+        e.target.value = '';
+        return;
+      }
+
+      const oversizedVideo = newVideos.find(file => file.size > MAX_REFUND_VIDEO_SIZE_BYTES);
+      if (oversizedVideo) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Video Too Large',
+          text: 'Refund video must be 256MB or smaller.',
+          confirmButtonColor: '#000000',
+        });
+        e.target.value = '';
+        return;
+      }
+
+      const oversizedImage = newImages.find(file => file.size > MAX_REFUND_IMAGE_SIZE_BYTES);
+      if (oversizedImage) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Image Too Large',
+          text: 'Each refund image must be 20MB or smaller.',
           confirmButtonColor: '#000000',
         });
         e.target.value = '';
@@ -931,9 +1000,9 @@ const MyOrders: React.FC = () => {
                 (order.items || []).map((item, idx) => {
                   const displayStatus = getDisplayStatus(order);
                   const refundStageText = getRefundStageText(order);
-                  const shouldShowRefundStageBadge = isOnlinePaymentOrder(order)
-                    && (order.refund_status || order.refund_stage)
-                    && !isOrderRefunded(order);
+                  const shouldShowRefundDetails = displayStatus === 'refund_rejected'
+                    && isOnlinePaymentOrder(order)
+                    && Boolean(order.refund_stage?.rejection_reason || order.refund_status_note);
 
                   return (
                   <div
@@ -966,21 +1035,10 @@ const MyOrders: React.FC = () => {
                           >
                             {getStatusText(displayStatus)}
                           </span>
-                          {shouldShowRefundStageBadge && (
-                            <div className="mt-2 text-right">
-                              <span
-                                className={`inline-flex items-center px-3 py-1 text-[11px] font-semibold tracking-wider uppercase border ${
-                                  refundStageText === 'Refund Rejected'
-                                    ? 'text-red-700 border-red-300 bg-red-50'
-                                    : 'text-blue-700 border-blue-300 bg-blue-50'
-                                }`}
-                              >
-                                {refundStageText || 'Refund Processing'}
-                              </span>
-                              {(order.refund_stage?.rejection_reason || order.refund_status_note) && (
-                                <p className="mt-1 text-xs text-gray-500">{order.refund_stage?.rejection_reason || order.refund_status_note}</p>
-                              )}
-                            </div>
+                          {shouldShowRefundDetails && (
+                            <p className="mt-2 text-right text-xs text-gray-500">
+                              {order.refund_stage?.rejection_reason || order.refund_status_note || refundStageText}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1253,10 +1311,20 @@ const MyOrders: React.FC = () => {
                 </button>
                 <button
                   onClick={handleSubmitCancel}
-                  disabled={!selectedReason}
-                  className={`${actionButtonBaseClass} ${selectedReason ? actionButtonDangerClass : actionButtonDisabledClass}`}
+                  disabled={!selectedReason || isSubmittingCancel}
+                  className={`${actionButtonBaseClass} ${!selectedReason || isSubmittingCancel ? actionButtonDisabledClass : actionButtonDangerClass}`}
                 >
-                  Cancel Order
+                  {isSubmittingCancel ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity="0.75" />
+                      </svg>
+                      Cancelling...
+                    </>
+                  ) : (
+                    'Cancel Order'
+                  )}
                 </button>
               </div>
             </div>
@@ -1317,7 +1385,7 @@ const MyOrders: React.FC = () => {
                         )}
                       </label>
                       <p className="text-xs text-gray-600 mb-3">
-                        <strong>Note:</strong> You must upload 5 images and 1 video to complete your refund request.
+                        <strong>Note:</strong> You must upload 5 images and 1 video. Images must be 20MB or smaller; video must be 256MB or smaller.
                       </p>
                       
                       <div className="grid grid-cols-6 gap-3">
@@ -1430,7 +1498,7 @@ const MyOrders: React.FC = () => {
               </div>
               <div className="px-8 py-4 border-t flex justify-between gap-3 shrink-0">
                 <div>
-                  {refundStep === 2 && (
+                  {refundStep === 2 && !isSubmittingRefund && (
                     <button
                       onClick={() => setRefundStep(1)}
                       className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
@@ -1440,19 +1508,21 @@ const MyOrders: React.FC = () => {
                   )}
                 </div>
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setShowRefundModal(false);
-                      setRefundOrderId(null);
-                      setRefundStep(1);
-                      setRefundReason('');
-                      setRefundMedia([]);
-                      setRefundNote('');
-                    }}
-                    className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
-                  >
-                    Close
-                  </button>
+                  {!isSubmittingRefund && (
+                    <button
+                      onClick={() => {
+                        setShowRefundModal(false);
+                        setRefundOrderId(null);
+                        setRefundStep(1);
+                        setRefundReason('');
+                        setRefundMedia([]);
+                        setRefundNote('');
+                      }}
+                      className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                    >
+                      Close
+                    </button>
+                  )}
                   {refundStep === 1 ? (
                     <button
                       onClick={() => {
@@ -1485,14 +1555,14 @@ const MyOrders: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundReason || !isMediaRequirementMet()}
+                      disabled={!refundReason || !isMediaRequirementMet() || isSubmittingRefund}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && isMediaRequirementMet()
+                        refundReason && isMediaRequirementMet() && !isSubmittingRefund
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
                     >
-                      Submit Refund Request
+                      {isSubmittingRefund ? 'Submitting...' : 'Submit Refund Request'}
                     </button>
                   )}
                 </div>

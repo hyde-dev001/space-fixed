@@ -792,14 +792,6 @@ export default function PurchaseOrders() {
 														>
 															<EyeIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
 														</button>
-														{nextStatusMap[order.status as PurchaseOrderStatus] && (
-															<button
-																onClick={() => handleProgressOrder(order)}
-																className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 font-medium"
-															>
-																Progress
-															</button>
-														)}
 													</div>
 												</td>
 											</tr>

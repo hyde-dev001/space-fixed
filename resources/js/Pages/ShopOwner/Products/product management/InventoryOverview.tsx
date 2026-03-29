@@ -1,5 +1,5 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 
@@ -61,16 +61,7 @@ interface InventoryItem {
   lastRestocked?: string;
 }
 
-const inventoryData: InventoryItem[] = [
-  { id: 1, name: "Nike Air Max 270", sku: "SKU-001", category: "Shoes", quantity: 45, image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-01-28" },
-  { id: 2, name: "Adidas Ultraboost 22", sku: "SKU-002", category: "Shoes", quantity: 32, image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-25" },
-  { id: 3, name: "New Balance 550", sku: "SKU-003", category: "Shoes", quantity: 8, image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-20" },
-  { id: 4, name: "Puma RS-X", sku: "SKU-004", category: "Shoes", quantity: 28, image: "/images/product/product-04.jpg", status: "In Stock", lastRestocked: "2026-01-30" },
-  { id: 5, name: "Adidas Samba", sku: "SKU-005", category: "Shoes", quantity: 0, image: "/images/product/product-05.jpg", status: "Out of Stock", lastRestocked: "2026-01-15" },
-  { id: 6, name: "Premium Shoelaces", sku: "SKU-006", category: "Accessories", quantity: 120, image: "/images/product/product-01.jpg", status: "In Stock", lastRestocked: "2026-02-01" },
-  { id: 7, name: "Cleaning Foam", sku: "SKU-007", category: "Care Products", quantity: 15, image: "/images/product/product-02.jpg", status: "In Stock", lastRestocked: "2026-01-22" },
-  { id: 8, name: "Odor Eliminator Spray", sku: "SKU-008", category: "Care Products", quantity: 5, image: "/images/product/product-03.jpg", status: "Low Stock", lastRestocked: "2026-01-18" },
-];
+const defaultInventoryData: InventoryItem[] = [];
 
 const formatCategoryLabel = (category: string) =>
   category
@@ -165,12 +156,56 @@ export default function InventoryOverview() {
   const userRole = String(pageProps?.auth?.user?.role ?? pageProps?.auth?.user?.account_type ?? "").toLowerCase();
   const isStaffAccount = userRole.includes("staff") || window.location.pathname.toLowerCase().includes("/staff/");
 
+  const [inventoryData, setInventoryData] = useState<InventoryItem[]>(defaultInventoryData);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  // Fetch inventory data from API
+  useEffect(() => {
+    const fetchInventoryData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Use shop owner endpoint for authenticated shop owners
+        const response = await fetch('/api/shop-owner/inventory/overview');
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch inventory data: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        // Format the API response to match our InventoryItem interface
+        const formattedItems: InventoryItem[] = data.items.data.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          sku: item.sku,
+          category: item.category,
+          quantity: item.quantity,
+          image: item.image || '/images/product/product-placeholder.jpg',
+          status: item.status as "In Stock" | "Low Stock" | "Out of Stock",
+          lastRestocked: item.last_updated ? new Date(item.last_updated).toISOString().split('T')[0] : undefined,
+        }));
+
+        setInventoryData(formattedItems);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load inventory data';
+        setError(errorMessage);
+        console.error('Inventory fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInventoryData();
+  }, []);
 
   const visibleInventoryData = isStaffAccount ? inventoryData.filter(isProductItem) : inventoryData;
 
@@ -221,38 +256,67 @@ export default function InventoryOverview() {
           </div>
         </div>
 
+        {/* Error State */}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
+            <div className="shrink-0">
+              <AlertIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-red-900 dark:text-red-200">Error Loading Inventory</h3>
+              <p className="text-sm text-red-700 dark:text-red-300 mt-1">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm animate-pulse">
+                <div className="h-14 w-14 bg-gray-200 dark:bg-gray-800 rounded-2xl mb-4" />
+                <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-3/4 mb-2" />
+                <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded w-1/2" />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <MetricCard
-            title="Total Items in Stock"
-            value={totalItems}
-            change={12}
-            changeType="increase"
-            icon={BoxIcon}
-            color="info"
-            description="Across all categories"
-          />
-          <MetricCard
-            title="Low Stock Items"
-            value={lowStockCount}
-            change={5}
-            changeType="decrease"
-            icon={AlertIcon}
-            color="warning"
-            description="Need attention"
-          />
-          <MetricCard
-            title="Out of Stock"
-            value={outOfStockCount}
-            change={2}
-            changeType="decrease"
-            icon={TrendUpIcon}
-            color="success"
-            description="Awaiting restock"
-          />
-        </div>
+        {!loading && !error && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <MetricCard
+              title="Total Items in Stock"
+              value={totalItems}
+              change={12}
+              changeType="increase"
+              icon={BoxIcon}
+              color="info"
+              description="Across all categories"
+            />
+            <MetricCard
+              title="Low Stock Items"
+              value={lowStockCount}
+              change={5}
+              changeType="decrease"
+              icon={AlertIcon}
+              color="warning"
+              description="Need attention"
+            />
+            <MetricCard
+              title="Out of Stock"
+              value={outOfStockCount}
+              change={2}
+              changeType="decrease"
+              icon={TrendUpIcon}
+              color="success"
+              description="Awaiting restock"
+            />
+          </div>
+        )}
 
         {/* Inventory Table */}
+        {!loading && !error && (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
           <div className="mb-4">
             <h2 className="text-lg font-semibold">Stock Inventory</h2>
@@ -309,100 +373,112 @@ export default function InventoryOverview() {
             </div>
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-800">
-                <tr>
-                  <th className="pb-2">Product</th>
-                  <th className="pb-2">Category</th>
-                  <th className="pb-2">Quantity</th>
-                  <th className="pb-2">Status</th>
-                  <th className="pb-2">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {paginatedItems.map((item) => (
-                  <tr key={item.id}>
-                    <td className="py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
-                          <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-gray-100">{item.name}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
-                        {formatCategoryLabel(item.category)}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
-                    </td>
-                    <td className="py-3">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          item.status === "In Stock"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                            : item.status === "Low Stock"
-                            ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                            : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <button
-                        onClick={() => handleViewClick(item)}
-                        className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
-                        title="View Details"
-                      >
-                        <EyeIcon className="w-5 h-5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {filteredData.length > 0 && (
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 mt-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> of <span className="font-medium">{filteredData.length}</span> items
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title="Previous page"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title="Next page"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+          {/* Empty State */}
+          {paginatedItems.length === 0 && !loading ? (
+            <div className="py-12 text-center">
+              <BoxIcon className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <p className="text-gray-600 dark:text-gray-400 mb-2">No inventory items found</p>
+              <p className="text-sm text-gray-500 dark:text-gray-500">Try adjusting your search or filters</p>
             </div>
+          ) : (
+            <>
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-800">
+                    <tr>
+                      <th className="pb-2">Product</th>
+                      <th className="pb-2">Category</th>
+                      <th className="pb-2">Quantity</th>
+                      <th className="pb-2">Status</th>
+                      <th className="pb-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {paginatedItems.map((item) => (
+                      <tr key={item.id}>
+                        <td className="py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
+                              <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-gray-100">{item.name}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                            {formatCategoryLabel(item.category)}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
+                        </td>
+                        <td className="py-3">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              item.status === "In Stock"
+                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                : item.status === "Low Stock"
+                                ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+                                : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <button
+                            onClick={() => handleViewClick(item)}
+                            className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
+                            title="View Details"
+                          >
+                            <EyeIcon className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {filteredData.length > 0 && (
+                <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 mt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> of <span className="font-medium">{filteredData.length}</span> items
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Previous page"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Next page"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
+        )}
 
         {/* View Details Modal */}
         {viewModalOpen && selectedItem && (

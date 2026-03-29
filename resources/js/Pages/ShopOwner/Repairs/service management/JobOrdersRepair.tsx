@@ -408,6 +408,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function JobOrdersRepair() {
+  const POLL_INTERVAL_MS = 10000;
+  const POLL_BACKOFF_MS = 30000;
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<string>("under-review");
   const [searchTerm, setSearchTerm] = useState("");
@@ -430,6 +432,10 @@ export default function JobOrdersRepair() {
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
+  const isFetchingOrdersRef = useRef(false);
+  const pendingFetchOrdersRef = useRef(false);
+  const pollingDelayRef = useRef(POLL_INTERVAL_MS);
+  const pollingTimeoutRef = useRef<number | null>(null);
   // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
   const { repair_workload_limit: propLimit } = usePage().props as any;
   const initialLimit = typeof propLimit === 'number' && propLimit >= 1 ? propLimit : readRepairRequestLimit();
@@ -451,11 +457,6 @@ export default function JobOrdersRepair() {
     "Customer request is outside scope",
     "Other (please specify in notes)",
   ];
-
-  // Fetch repair requests from backend
-  useEffect(() => {
-    fetchOrders();
-  }, []);
 
   useEffect(() => {
     const refreshOverrides = () => {
@@ -499,8 +500,16 @@ export default function JobOrdersRepair() {
       return;
     }
 
+    if (isFetchingOrdersRef.current) {
+      pendingFetchOrdersRef.current = true;
+      return;
+    }
+
+    isFetchingOrdersRef.current = true;
+
     try {
       setIsLoading(true);
+      const currentOverrides = readDeliveryMethodOverrides();
       const response = await axios.get('/api/shop-owner/repairs/');
 
       if (response.data.success) {
@@ -536,7 +545,7 @@ export default function JobOrdersRepair() {
           shoeType: repair.shoe_type,
           brand: repair.brand,
           intakeDeliveryMethod: repair.intake_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
-          serviceType: deliveryMethodOverrides[String(repair.id)] || (repair.delivery_method === 'pickup' ? 'pickup' : 'walkin'),
+          serviceType: currentOverrides[String(repair.id)] || (repair.delivery_method === 'pickup' ? 'pickup' : 'walkin'),
           returnDeliveryMethod: repair.return_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
           pickupAddressLine: repair.pickup_address?.address_line || null,
           pickupBarangay: repair.pickup_address?.barangay || null,
@@ -584,24 +593,51 @@ export default function JobOrdersRepair() {
           payment_policy: repair.payment_policy || 'deposit_50'
         }));
         setOrders(mappedOrders);
+        setError(null);
+        pollingDelayRef.current = POLL_INTERVAL_MS;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch repair requests:', error);
-      setError('Failed to load repair requests');
+
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        pollingDelayRef.current = POLL_BACKOFF_MS;
+      } else {
+        setError('Failed to load repair requests');
+      }
     } finally {
       setIsLoading(false);
+      isFetchingOrdersRef.current = false;
+
+      if (pendingFetchOrdersRef.current) {
+        pendingFetchOrdersRef.current = false;
+        void fetchOrders();
+      }
     }
   };
 
   useEffect(() => {
     if (useStaticData) return;
 
-    const intervalId = window.setInterval(() => {
-      fetchOrders();
-    }, 10000);
+    let cancelled = false;
+
+    const runPolling = async () => {
+      if (cancelled) return;
+
+      await fetchOrders();
+
+      if (cancelled) return;
+
+      pollingTimeoutRef.current = window.setTimeout(runPolling, pollingDelayRef.current);
+    };
+
+    void runPolling();
 
     return () => {
-      window.clearInterval(intervalId);
+      cancelled = true;
+      if (pollingTimeoutRef.current !== null) {
+        window.clearTimeout(pollingTimeoutRef.current);
+        pollingTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -1556,6 +1592,22 @@ export default function JobOrdersRepair() {
     return "Not specified";
   };
 
+  const getReturnDeliveryMethod = (order: RepairOrder): "walk_in" | "customer_pickup" | "shop_delivery" => {
+    if (order.returnDeliveryMethod === "walk_in" || order.returnDeliveryMethod === "customer_pickup" || order.returnDeliveryMethod === "shop_delivery") {
+      return order.returnDeliveryMethod;
+    }
+
+    return order.serviceType === "walkin" ? "walk_in" : "customer_pickup";
+  };
+
+  const formatReturnDeliveryMethod = (order: RepairOrder) => {
+    const method = getReturnDeliveryMethod(order);
+
+    if (method === "walk_in") return "Customer Pick-up at Shop";
+    if (method === "shop_delivery") return "Shop Delivery to Customer";
+    return "Customer Arranges Courier Pickup";
+  };
+
   const getShippingAddress = (order: RepairOrder) => {
     const returnParts = [
       order.returnAddressLine,
@@ -2128,11 +2180,19 @@ export default function JobOrdersRepair() {
                           )}
                           {order.status === "ready-for-pickup" && isWalkInReturn(order) && (
                             <button
-                              type="button"
-                              disabled
-                              className="text-gray-400 cursor-not-allowed"
-                              title="In-shop receive is marked by repairer"
-                              aria-label="In-shop receive is marked by repairer"
+                              onClick={() => handleActivatePickup(String(order.database_id))}
+                              disabled={!isFullyPaidForRelease(order)}
+                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
+                                !isFullyPaidForRelease(order)
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
+                              }`}
+                              title={
+                                !isFullyPaidForRelease(order)
+                                  ? getReleasePaymentBlockedMessage(order)
+                                  : 'Mark repaired shoe as received in-shop'
+                              }
+                              aria-label="Mark Received"
                             >
                               <PackageIcon className="size-5" />
                             </button>
@@ -2381,6 +2441,12 @@ export default function JobOrdersRepair() {
                       <span className="text-sm text-gray-600 dark:text-gray-400">Intake Delivery Method</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">
                         {formatServiceType(viewOrder.serviceType)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Return Delivery Method</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatReturnDeliveryMethod(viewOrder)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">

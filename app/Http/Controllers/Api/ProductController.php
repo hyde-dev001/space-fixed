@@ -62,14 +62,9 @@ class ProductController extends Controller
     private function getActivePremiumSubscription(int $shopOwnerId): ?ShopOwnerSubscription
     {
         return ShopOwnerSubscription::where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'active')
-            ->where(function ($q) {
-                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-            })
-            ->where(function ($q) {
-                $q->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-            })
+            ->showroomEntitled()
             ->latest('ends_at')
+            ->latest('id')
             ->first();
     }
 
@@ -123,7 +118,7 @@ class ProductController extends Controller
         if (!$subscription) {
             return response()->json([
                 'success' => false,
-                'message' => 'Active premium subscription required for virtual showroom actions.',
+                'message' => 'A valid premium subscription is required for virtual showroom actions.',
             ], 403);
         }
 
@@ -548,16 +543,51 @@ class ProductController extends Controller
                     ]);
                 }
 
-                // Create variants if provided
+                // Create variants if provided. Normalize duplicate size/color entries
+                // to avoid SQL unique key violations on (product_id, size, color).
                 if (isset($validated['variants']) && is_array($validated['variants'])) {
+                    $variantBuckets = [];
+
                     foreach ($validated['variants'] as $variantData) {
+                        $size = trim((string) ($variantData['size'] ?? ''));
+                        $color = trim((string) ($variantData['color'] ?? ''));
+                        $quantity = (int) ($variantData['quantity'] ?? 0);
+
+                        if ($size === '' || $color === '') {
+                            continue;
+                        }
+
+                        $bucketKey = strtolower($size) . '|' . strtolower($color);
+
+                        if (!isset($variantBuckets[$bucketKey])) {
+                            $variantBuckets[$bucketKey] = [
+                                'size' => $size,
+                                'color' => $color,
+                                'quantity' => 0,
+                                'image' => $variantData['image'] ?? null,
+                                'sku' => $variantData['sku'] ?? null,
+                            ];
+                        }
+
+                        $variantBuckets[$bucketKey]['quantity'] += max($quantity, 0);
+
+                        if (empty($variantBuckets[$bucketKey]['image']) && !empty($variantData['image'])) {
+                            $variantBuckets[$bucketKey]['image'] = $variantData['image'];
+                        }
+
+                        if (empty($variantBuckets[$bucketKey]['sku']) && !empty($variantData['sku'])) {
+                            $variantBuckets[$bucketKey]['sku'] = $variantData['sku'];
+                        }
+                    }
+
+                    foreach ($variantBuckets as $variantRow) {
                         ProductVariant::create([
                             'product_id' => $product->id,
-                            'size' => $variantData['size'],
-                            'color' => $variantData['color'],
-                            'quantity' => $variantData['quantity'],
-                            'image' => $variantData['image'] ?? null,
-                            'sku' => $variantData['sku'] ?? null,
+                            'size' => $variantRow['size'],
+                            'color' => $variantRow['color'],
+                            'quantity' => $variantRow['quantity'],
+                            'image' => $variantRow['image'],
+                            'sku' => $variantRow['sku'],
                             'is_active' => true,
                         ]);
                     }

@@ -907,11 +907,7 @@ const Products: React.FC<Props> = () => {
                         )}
                       </div>
 
-                      <div className="mb-1 hidden min-h-[1.1rem] xl:mb-1.5 xl:block">
-                        {shopDist !== null && (
-                          <p className="text-xs text-black/50">📍 {formatDistance(shopDist)}</p>
-                        )}
-                      </div>
+                      {/* Distance indicator hidden */}
                       
                       <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
                         <div className="flex flex-col gap-0.5">

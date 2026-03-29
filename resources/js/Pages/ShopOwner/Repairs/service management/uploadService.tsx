@@ -15,47 +15,6 @@ type Service = {
   status: "Active" | "Inactive" | "Pending";
 };
 
-type PackageAnalytics = {
-  overview: {
-    total_packages: number;
-    active_packages: number;
-    inactive_packages: number;
-    total_bookings: number;
-    package_revenue: number;
-    package_base_revenue: number;
-    add_on_revenue: number;
-    average_order_value: number;
-    add_on_attach_rate: number;
-    bookings_last_30_days: number;
-    revenue_last_30_days: number;
-  };
-  top_packages: Array<{
-    id: number;
-    name: string;
-    status: "active" | "inactive";
-    booking_count: number;
-    revenue: number;
-    add_on_revenue: number;
-    average_order_value: number;
-    savings_amount: number;
-    last_booked_at?: string | null;
-  }>;
-  monthly_trend: Array<{
-    month: string;
-    bookings: number;
-    revenue: number;
-  }>;
-  recent_bookings: Array<{
-    repair_request_id: number;
-    order_number: string;
-    package_name: string;
-    booked_at?: string | null;
-    final_total: number;
-    add_ons_total: number;
-    status: string;
-  }>;
-};
-
 type MetricCardProps = {
   title: string;
   value: number | string;
@@ -183,7 +142,6 @@ export default function UploadService() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [analytics, setAnalytics] = useState<PackageAnalytics | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -224,14 +182,6 @@ export default function UploadService() {
   useEffect(() => {
     fetchServices();
   }, []);
-
-  useEffect(() => {
-    if (activeTab === "packages") {
-      axios.get("/api/repair-packages/analytics")
-        .then((res) => { if (res.data?.success) setAnalytics(res.data.data || null); })
-        .catch(() => {});
-    }
-  }, [activeTab]);;
 
   const handleAddService = async () => {
     if (!formData.name || !formData.category || !formData.price || !formData.duration) {
@@ -641,134 +591,6 @@ export default function UploadService() {
                 Create bundled repair offers using your uploaded individual services.
               </p>
             </div>
-
-            {analytics && (
-              <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Package Analytics</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Bundle adoption, revenue, and add-on usage from package bookings.</p>
-                </div>
-
-                <div className="p-6 space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Packages</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{analytics.overview.total_packages}</p>
-                      <p className="mt-1 text-xs text-gray-500">{analytics.overview.active_packages} active • {analytics.overview.inactive_packages} inactive</p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Bookings</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{analytics.overview.total_bookings}</p>
-                      <p className="mt-1 text-xs text-gray-500">{analytics.overview.bookings_last_30_days} in the last 30 days</p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Revenue</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">₱{Number(analytics.overview.package_revenue).toFixed(2)}</p>
-                      <p className="mt-1 text-xs text-gray-500">₱{Number(analytics.overview.revenue_last_30_days).toFixed(2)} in the last 30 days</p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Avg Order</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">₱{Number(analytics.overview.average_order_value).toFixed(2)}</p>
-                      <p className="mt-1 text-xs text-gray-500">Add-ons ₱{Number(analytics.overview.add_on_revenue).toFixed(2)}</p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">Add-on Attach Rate</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{analytics.overview.add_on_attach_rate}%</p>
-                      <p className="mt-1 text-xs text-gray-500">Orders with add-ons attached</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    <div className="xl:col-span-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Top Package Performance</h4>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50 dark:bg-gray-800/60 text-gray-500 uppercase text-xs">
-                            <tr>
-                              <th className="px-4 py-3 text-left">Package</th>
-                              <th className="px-4 py-3 text-left">Bookings</th>
-                              <th className="px-4 py-3 text-left">Revenue</th>
-                              <th className="px-4 py-3 text-left">Avg Order</th>
-                              <th className="px-4 py-3 text-left">Last Booked</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                            {analytics.top_packages.length === 0 ? (
-                              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">No package bookings yet.</td></tr>
-                            ) : (
-                              analytics.top_packages.slice(0, 5).map((item) => (
-                                <tr key={item.id} className="text-gray-700 dark:text-gray-200">
-                                  <td className="px-4 py-3 align-top">
-                                    <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
-                                    <p className="text-xs text-gray-500">Savings ₱{Number(item.savings_amount).toFixed(2)} • Add-ons ₱{Number(item.add_on_revenue).toFixed(2)}</p>
-                                  </td>
-                                  <td className="px-4 py-3">{item.booking_count}</td>
-                                  <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">₱{Number(item.revenue).toFixed(2)}</td>
-                                  <td className="px-4 py-3">₱{Number(item.average_order_value).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-gray-500">{item.last_booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(item.last_booked_at)) : "—"}</td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div className="space-y-6">
-                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Monthly Trend</h4>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          {analytics.monthly_trend.length === 0 ? (
-                            <p className="text-sm text-gray-500">No trend data yet.</p>
-                          ) : (
-                            analytics.monthly_trend.map((item) => (
-                              <div key={item.month} className="flex items-center justify-between rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
-                                <div>
-                                  <p className="text-sm font-medium text-gray-900 dark:text-white">{item.month}</p>
-                                  <p className="text-xs text-gray-500">{item.bookings} booking{item.bookings !== 1 ? "s" : ""}</p>
-                                </div>
-                                <p className="text-sm font-semibold text-gray-900 dark:text-white">₱{Number(item.revenue).toFixed(2)}</p>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Recent Package Bookings</h4>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          {analytics.recent_bookings.length === 0 ? (
-                            <p className="text-sm text-gray-500">No recent package bookings yet.</p>
-                          ) : (
-                            analytics.recent_bookings.map((booking) => (
-                              <div key={booking.repair_request_id} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-3">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{booking.package_name}</p>
-                                    <p className="text-xs text-gray-500">{booking.order_number} • {booking.booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(booking.booked_at)) : "—"}</p>
-                                  </div>
-                                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{booking.status.replace(/_/g, " ")}</span>
-                                </div>
-                                <div className="mt-2 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
-                                  <span>Add-ons ₱{Number(booking.add_ons_total).toFixed(2)}</span>
-                                  <span className="font-semibold text-gray-900 dark:text-white">₱{Number(booking.final_total).toFixed(2)}</span>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             <RepairPackageManager serviceEndpoint="/api/shop-owner/repair-services/" />
           </div>

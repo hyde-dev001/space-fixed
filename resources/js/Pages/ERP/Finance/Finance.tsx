@@ -35,6 +35,8 @@ export default function FinancePage() {
   const [error, setError] = useState<string | null>(null);
   const [isPurchaseRequestModalOpen, setIsPurchaseRequestModalOpen] = useState(false);
   const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
+  const rawBusinessType = String(auth?.user?.shop_owner?.business_type ?? auth?.shop_owner?.business_type ?? '').toLowerCase().trim();
+  const normalizedBusinessType = rawBusinessType.includes('both') ? 'both' : rawBusinessType;
 
   // Mark page as successfully loaded
   useEffect(() => {
@@ -43,14 +45,43 @@ export default function FinancePage() {
 
   const section: Section = useMemo(() => {
     // Extract section from the URL query parameter
+    const allowedSectionsByBusiness: Record<'retail' | 'repair' | 'both' | 'unknown', Section[]> = {
+      retail: ["invoice-generation", "create-invoice", "expense-tracking", "shoe-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"],
+      repair: ["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"],
+      both: ["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"],
+      unknown: ["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"],
+    };
+
+    const businessScope = (normalizedBusinessType === 'retail' || normalizedBusinessType === 'repair' || normalizedBusinessType === 'both')
+      ? normalizedBusinessType
+      : 'unknown';
+
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const value = urlParams.get("section") || "invoice-generation";
-      if (["invoice-generation", "create-invoice", "expense-tracking", "repair-pricing", "shoe-pricing", "purchase-request-approval", "payslip-approvals", "refund-approvals"].includes(value)) return value as Section;
+      const allowed = allowedSectionsByBusiness[businessScope];
+      if (allowed.includes(value as Section)) return value as Section;
       return "invoice-generation";
     }
     return "invoice-generation";
-  }, []);
+  }, [normalizedBusinessType]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentSection = urlParams.get('section') as Section | null;
+
+    const sectionBlockedForBusiness =
+      (normalizedBusinessType === 'retail' && currentSection === 'repair-pricing')
+      || (normalizedBusinessType === 'repair' && currentSection === 'shoe-pricing');
+
+    if (sectionBlockedForBusiness) {
+      urlParams.set('section', 'invoice-generation');
+      const nextUrl = `${window.location.pathname}?${urlParams.toString()}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [normalizedBusinessType]);
 
   const headTitle = useMemo(() => {
     if (section === "invoice-generation") return "Invoices - Solespace ERP";

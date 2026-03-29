@@ -141,8 +141,13 @@ class CustomerController extends Controller
     public function getCustomers(Request $request)
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user || !in_array($user->role, ['STAFF', 'MANAGER'])) {
+
+        $staffPermissions = [
+            'access-staff-dashboard',
+            'access-staff-customers',
+        ];
+
+        if (!$user || (!in_array($user->role, ['STAFF', 'MANAGER']) && !$user->hasAnyPermission($staffPermissions))) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

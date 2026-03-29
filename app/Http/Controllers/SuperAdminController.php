@@ -39,6 +39,7 @@ class SuperAdminController extends Controller
                     'id' => $admin->id,
                     'firstName' => $admin->first_name,
                     'lastName' => $admin->last_name,
+                    'role' => $admin->role,
                     'email' => $admin->email,
                     'status' => $admin->status,
                     'createdAt' => $admin->created_at->format('Y-m-d H:i:s'),
@@ -579,7 +580,9 @@ class SuperAdminController extends Controller
     public function usersList(Request $request)
     {
         $status = $request->query('status');
-        $query = User::orderBy('created_at', 'desc')->with('employee');
+        $query = User::orderBy('created_at', 'desc')
+            ->whereNull('shop_owner_id')
+            ->with('employee');
         if ($status) {
             $query->where('status', $status);
         }
@@ -831,6 +834,15 @@ class SuperAdminController extends Controller
 
         // TODO: Implement rejection logic
         return back()->with('success', 'Shop owner rejected successfully');
+    }
+
+    /**
+     * Create a new admin
+     */
+    public function storeAdmin(Request $request)
+    {
+        // Backward-compatible endpoint used by admin.create-admin.store route.
+        return $this->createAdmin($request);
     }
 
     /**

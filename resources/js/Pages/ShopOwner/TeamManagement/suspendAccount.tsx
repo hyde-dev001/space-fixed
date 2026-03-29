@@ -145,6 +145,8 @@ const SuspendAccount: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<SuspensionRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [approvalNote, setApprovalNote] = useState("");
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
 
   // Fetch requests from API
   const fetchRequests = async () => {
@@ -231,7 +233,9 @@ const SuspendAccount: React.FC = () => {
   };
 
   const confirmApprove = async () => {
-    if (!selectedRequest) return;
+    if (!selectedRequest || isApproving) return;
+
+    setIsApproving(true);
 
     try {
       const response = await fetch(`/api/shop-owner/suspension-requests/${selectedRequest.id}/review`, {
@@ -268,6 +272,8 @@ const SuspendAccount: React.FC = () => {
         title: 'Error',
         text: 'Failed to approve suspension request',
       });
+    } finally {
+      setIsApproving(false);
     }
   };
 
@@ -283,6 +289,8 @@ const SuspendAccount: React.FC = () => {
   };
 
   const confirmReject = async () => {
+    if (isRejecting) return;
+
     if (!rejectionReason.trim()) {
       Swal.fire({
         title: "Error",
@@ -294,6 +302,8 @@ const SuspendAccount: React.FC = () => {
     }
 
     if (!selectedRequest) return;
+
+    setIsRejecting(true);
 
     try {
       const response = await fetch(`/api/shop-owner/suspension-requests/${selectedRequest.id}/review`, {
@@ -330,6 +340,8 @@ const SuspendAccount: React.FC = () => {
         title: 'Error',
         text: 'Failed to reject suspension request',
       });
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -689,7 +701,14 @@ const SuspendAccount: React.FC = () => {
 
       {rejectionModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
-          <div className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]" onClick={() => { setRejectionModalOpen(false); setRejectionReason(""); }}></div>
+          <div
+            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]"
+            onClick={() => {
+              if (isRejecting) return;
+              setRejectionModalOpen(false);
+              setRejectionReason("");
+            }}
+          ></div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-6 shadow-xl relative z-[100001]">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
               Reject Suspension Request
@@ -701,6 +720,7 @@ const SuspendAccount: React.FC = () => {
             <textarea
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
+              disabled={isRejecting}
               placeholder="Provide a reason for rejection..."
               className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 mb-4"
               rows={4}
@@ -708,17 +728,20 @@ const SuspendAccount: React.FC = () => {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={confirmReject}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold"
+                disabled={isRejecting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Reject
+                {isRejecting ? "Rejecting..." : "Reject"}
               </button>
               <button
                 onClick={() => {
+                  if (isRejecting) return;
                   setRejectionModalOpen(false);
                   setRejectionReason("");
                   handleViewDetails(selectedRequest);
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold"
+                disabled={isRejecting}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -728,7 +751,14 @@ const SuspendAccount: React.FC = () => {
       )}
       {approvalModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
-          <div className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]" onClick={() => { setApprovalModalOpen(false); setApprovalNote(""); }}></div>
+          <div
+            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]"
+            onClick={() => {
+              if (isApproving) return;
+              setApprovalModalOpen(false);
+              setApprovalNote("");
+            }}
+          ></div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-6 shadow-xl relative z-[100001]">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
               Approve Suspension Request
@@ -739,6 +769,7 @@ const SuspendAccount: React.FC = () => {
             <textarea
               value={approvalNote}
               onChange={(e) => setApprovalNote(e.target.value)}
+              disabled={isApproving}
               placeholder="Add an optional note for approval..."
               className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 mb-4"
               rows={4}
@@ -746,17 +777,20 @@ const SuspendAccount: React.FC = () => {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={confirmApprove}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                disabled={isApproving}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Approve
+                {isApproving ? "Approving..." : "Approve"}
               </button>
               <button
                 onClick={() => {
+                  if (isApproving) return;
                   setApprovalModalOpen(false);
                   setApprovalNote("");
                   handleViewDetails(selectedRequest);
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold"
+                disabled={isApproving}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>

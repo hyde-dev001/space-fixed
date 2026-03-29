@@ -28,15 +28,19 @@ class StockRequestApproval extends Model
         'requested_by',
         'requested_date',
         'approved_by',
+        'inventory_approved_by',
         'approved_date',
         'notes',
         'approval_notes',
+        'inventory_approval_notes',
+        'inventory_approved_date',
         'rejection_reason',
     ];
 
     protected $casts = [
         'requested_date' => 'datetime',
         'approved_date' => 'datetime',
+        'inventory_approved_date' => 'datetime',
         'quantity_needed' => 'integer',
         'repair_request_id' => 'integer',
     ];
@@ -72,6 +76,11 @@ class StockRequestApproval extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function inventoryApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'inventory_approved_by');
     }
 
     // Scopes

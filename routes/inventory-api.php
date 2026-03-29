@@ -106,7 +106,7 @@ Route::middleware([
     // =====================================
     // Repair Material Approval Queue (Inventory)
     // =====================================
-    Route::prefix('request-material-approvals')->group(function () {
+    Route::prefix('request-material-approvals')->middleware('check.user.business.type:repair,both')->group(function () {
         Route::get('/', [StockRequestApprovalController::class, 'index'])->name('inventory.request-material-approvals.index');
         Route::get('/metrics', [StockRequestApprovalController::class, 'getMetrics'])->name('inventory.request-material-approvals.metrics');
         Route::post('/', [StockRequestApprovalController::class, 'store'])->name('inventory.request-material-approvals.store');

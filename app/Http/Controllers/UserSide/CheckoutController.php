@@ -10,6 +10,7 @@ use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Finance\Invoice;
@@ -477,6 +478,26 @@ class CheckoutController extends Controller
             $allocatedShippingFee = 0.0;
             $shopIndex = 0;
             $ordersHasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
+            $requestedPaymentMethod = strtolower((string) ($validated['payment_method'] ?? 'paymongo'));
+
+            $isCodCheckout = in_array($requestedPaymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+            if (!$isCodCheckout && !empty($shopOwnerIds)) {
+                $shopsMissingPaymongoCount = ShopOwner::query()
+                    ->whereIn('id', $shopOwnerIds)
+                    ->where(function ($query) {
+                        $query->whereNull('paymongo_secret_key')
+                            ->orWhere('paymongo_secret_key', '');
+                    })
+                    ->count();
+
+                if ($shopsMissingPaymongoCount > 0) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'shop_payment_not_configured',
+                        'message' => 'One or more shops in your cart have not set up online payments yet. Please choose Cash on Delivery or remove those items.',
+                    ], 503);
+                }
+            }
 
             DB::beginTransaction();
 
@@ -484,7 +505,6 @@ class CheckoutController extends Controller
                 // Create separate order for each shop owner
                 foreach ($itemsByShop as $shopOwnerId => $shopItems) {
                     $orderTotal = 0;
-                    $requestedPaymentMethod = strtolower((string) ($validated['payment_method'] ?? 'paymongo'));
 
                     // Calculate expected total for duplicate check
                     $expectedTotal = collect($shopItems)->sum(fn($si) => $si['item']['price'] * $si['item']['qty']);

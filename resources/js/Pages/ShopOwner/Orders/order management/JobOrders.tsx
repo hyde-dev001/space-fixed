@@ -160,6 +160,12 @@ const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const MinusIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+  </svg>
+);
+
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -250,6 +256,7 @@ export default function JobOrdersPage() {
   const [carrierPhone, setCarrierPhone] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
+  const [isConfirmingShipping, setIsConfirmingShipping] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
@@ -461,7 +468,7 @@ export default function JobOrdersPage() {
 
       if (returnStatus === 'received' && financeStatus === 'approved') {
         return {
-          label: 'Ready for Finance Refund',
+          label: isIndividualRegistration ? 'Ready for Refund Payout' : 'Ready for Finance Refund',
           className: 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40',
         };
       }
@@ -571,9 +578,9 @@ export default function JobOrdersPage() {
   const handleShipOrder = (order: Order) => {
     setSelectedOrder(order);
     setEta("");
-    setEtaPreset("");
+    setEtaPreset(order.eta || "1-2 business days");
     // Prepopulate if values already exist (view-only for shipped orders)
-    setCarrierCompany(order.carrierCompany || "");
+    setCarrierCompany(order.carrierCompany || "Lalamove");
     setCarrierName(order.carrierName || "");
     setCarrierPhone(order.carrierPhone || "");
     setTrackingNumber(order.trackingNumber || "");
@@ -788,7 +795,33 @@ export default function JobOrdersPage() {
       return;
     }
 
+    const trackingLinkValue = trackingLink.trim();
+
+    if (!trackingLinkValue) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please enter a Tracking Link",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     try {
+      new URL(trackingLinkValue);
+    } catch {
+      await Swal.fire({
+        title: "Invalid Tracking Link",
+        text: "Please enter a valid URL (include https://)",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    try {
+      setIsConfirmingShipping(true);
+
       // Fetch fresh CSRF token
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
@@ -820,7 +853,7 @@ export default function JobOrdersPage() {
           carrier_company: carrierCompany,
           carrier_name: carrierName,
           carrier_phone: carrierPhone,
-          tracking_link: trackingLink || null,
+          tracking_link: trackingLinkValue,
           eta: etaDate,
         })
       });
@@ -903,7 +936,7 @@ export default function JobOrdersPage() {
                   carrierName,
                   carrierPhone,
                   trackingNumber: normalizedTrackingNumber,
-                  trackingLink,
+                  trackingLink: trackingLinkValue,
                   eta: etaDate,
                 }
               : o
@@ -938,6 +971,8 @@ export default function JobOrdersPage() {
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
       });
+    } finally {
+      setIsConfirmingShipping(false);
     }
   };
 
@@ -976,65 +1011,34 @@ export default function JobOrdersPage() {
       });
       
       if (response.data.success) {
+        setOrders((prev) =>
+          prev.map((order) =>
+            order.id === orderId
+              ? {
+                  ...order,
+                  pickup_enabled: true,
+                  pickup_enabled_at: new Date().toISOString(),
+                }
+              : order
+          )
+        );
+
+        setViewOrder((prev) =>
+          prev && prev.id === orderId
+            ? {
+                ...prev,
+                pickup_enabled: true,
+                pickup_enabled_at: new Date().toISOString(),
+              }
+            : prev
+        );
+
         await Swal.fire({
           title: 'Pickup Activated!',
           text: 'Customer can now confirm they received their order.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
-        
-        // Refresh orders list
-        const ordersResponse = await fetch('/api/shop-owner/orders', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-          }
-        });
-        
-        if (ordersResponse.ok) {
-          const data = await ordersResponse.json();
-          const payload = Array.isArray(data) ? data : (data.data || []);
-          const mappedOrders: Order[] = payload.map((order: any) => {
-            const itemSubtotal = parseAmount(order.total_amount);
-            const shippingFee = parseAmount(order.shipping_fee);
-            const grandTotal = parseAmount(order.grand_total || itemSubtotal + shippingFee);
-
-            return {
-              id: order.id,
-              order_number: order.order_number,
-              customer: order.customer_name || 'Unknown',
-              email: order.customer_email || '',
-              phone: order.customer_phone || '',
-              shippingAddress: order.shipping_address || '',
-              total_amount: itemSubtotal,
-              shipping_fee: shippingFee,
-              grand_total: grandTotal,
-              paymentStatus: order.payment_status || 'pending',
-              paymentMethod: order.payment_method || '',
-              status: order.status as any,
-              orderedAt: new Date(order.created_at).toLocaleString(),
-              items: order.items || [],
-              quantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
-              product: order.items?.[0]?.product_name || '',
-              carrierCompany: order.carrier_company || undefined,
-              carrierName: order.carrier_name || undefined,
-              carrierPhone: order.carrier_phone || undefined,
-              trackingNumber: order.tracking_number || undefined,
-              trackingLink: order.tracking_link || undefined,
-              eta: order.eta || undefined,
-              pickup_enabled: order.pickup_enabled || false,
-              pickup_enabled_at: order.pickup_enabled_at || null,
-              latest_refund: order.latest_refund || null,
-            };
-          });
-          setOrders(mappedOrders);
-          
-          // Update viewOrder if it's the same order
-          if (viewOrder && viewOrder.id === orderId) {
-            const updatedOrder = mappedOrders.find(o => o.id === orderId);
-            if (updatedOrder) setViewOrder(updatedOrder);
-          }
-        }
       }
     } catch (error: any) {
       await Swal.fire({
@@ -1183,7 +1187,7 @@ export default function JobOrdersPage() {
                   <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search..."
+                    title="Search orders"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full lg:w-64 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -1226,9 +1230,6 @@ export default function JobOrdersPage() {
                     <input
                       type="checkbox"
                       title="Select all orders on this page"
-                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
                       checked={
                         paginatedOrders.length > 0 &&
                         selectedOrders.length === paginatedOrders.length
@@ -1312,11 +1313,23 @@ export default function JobOrdersPage() {
                             <span>Shipping Fee</span>
                             <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
                           </div>
-                          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                          <div className={`flex items-center justify-between gap-2 text-sm font-semibold ${
+                            order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
                             <span>Grand Total</span>
                             <span className="inline-flex items-center gap-1">
-                              <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
-                                <PlusIcon className="size-3" />
+                              <span className={`inline-flex items-center justify-center rounded-full ${
+                                order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                                  ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                                  : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                              }`}>
+                                {order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                                  <MinusIcon className="size-3" />
+                                ) : (
+                                  <PlusIcon className="size-3" />
+                                )}
                               </span>
                               {formatOrderTotal(order.grand_total)}
                             </span>
@@ -1474,7 +1487,7 @@ export default function JobOrdersPage() {
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
               </div>
@@ -1508,11 +1521,11 @@ export default function JobOrdersPage() {
                       Estimated Delivery Date *
                     </label>
                     <select
+                      title="Estimated delivery date"
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select ETA</option>
                       <option value="1-2 business days">1-2 business days</option>
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
@@ -1522,14 +1535,14 @@ export default function JobOrdersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Carrier Business *
+                      Shipping Business *
                     </label>
                     <select
+                      title="Shipping business"
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select carrier</option>
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
@@ -1539,30 +1552,30 @@ export default function JobOrdersPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Carrier Name *
+                        Rider Name *
                       </label>
                       <input
                         type="text"
+                        title="Rider name"
                         value={carrierName}
                         onChange={(e) => setCarrierName(e.target.value)}
-                        placeholder="Rider name"
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Carrier Phone *
+                        Rider Phone *
                       </label>
                       <input
                         type="tel"
+                        title="Rider phone"
                         value={carrierPhone}
                         onChange={(e) => {
-                          // Allow digits only and limit to 10 characters
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          // Allow digits only and limit to 11 characters
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
                           setCarrierPhone(digits);
                         }}
-                        maxLength={10}
-                        placeholder="9XXXXXXXXX (10 digits)"
+                        maxLength={11}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -1572,9 +1585,11 @@ export default function JobOrdersPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Number *</label>
                     <input
                       type="text"
+                      title="Tracking number"
                       value={trackingNumber}
-                      onChange={(e) => setTrackingNumber(e.target.value)}
-                      placeholder="Enter tracking number provided by courier"
+                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       disabled={selectedOrder.status === 'shipped'}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -1582,22 +1597,23 @@ export default function JobOrdersPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link (optional)</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
                     <input
                       type="url"
+                      title="Tracking link"
                       value={trackingLink}
                       onChange={(e) => setTrackingLink(e.target.value)}
-                      placeholder="https://tracking.example.com/track/..."
+                      required
                       disabled={selectedOrder.status === 'shipped'}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Optional link so customers can track delivery in real time.</p>
+                    <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Auto Message
+                        Message
                       </label>
                       <button
                         type="button"
@@ -1625,9 +1641,20 @@ export default function JobOrdersPage() {
                 <button
                   type="button"
                   onClick={handleConfirmShipping}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  disabled={isConfirmingShipping}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
                 >
-                  Confirm Shipping
+                  {isConfirmingShipping ? (
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="size-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                        <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                      Confirming...
+                    </span>
+                  ) : (
+                    'Confirm Shipping'
+                  )}
                 </button>
                 <button
                   type="button"
@@ -1726,9 +1753,21 @@ export default function JobOrdersPage() {
                         </div>
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
-                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
-                              <PlusIcon className="size-3" />
+                          <span className={`inline-flex items-center gap-1 text-sm font-semibold ${
+                            viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            <span className={`inline-flex items-center justify-center rounded-full ${
+                              viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
+                                ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                                : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                            }`}>
+                              {viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                                <MinusIcon className="size-3" />
+                              ) : (
+                                <PlusIcon className="size-3" />
+                              )}
                             </span>
                             {formatOrderTotal(viewOrder.grand_total)}
                           </span>
@@ -1761,9 +1800,21 @@ export default function JobOrdersPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
-                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
-                              <PlusIcon className="size-3" />
+                          <span className={`inline-flex items-center gap-1 text-sm font-semibold ${
+                            viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            <span className={`inline-flex items-center justify-center rounded-full ${
+                              viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
+                                ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                                : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                            }`}>
+                              {viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                                <MinusIcon className="size-3" />
+                              ) : (
+                                <PlusIcon className="size-3" />
+                              )}
                             </span>
                             {formatOrderTotal(viewOrder.grand_total)}
                           </span>

@@ -20,6 +20,7 @@ class SuperAdminUserManagementController extends Controller
         $department = $request->input('department');
 
         $query = User::with(['shopOwner', 'employee'])
+            ->whereNull('shop_owner_id')
             ->orderBy('created_at', 'desc');
 
         // Search by name/email/phone

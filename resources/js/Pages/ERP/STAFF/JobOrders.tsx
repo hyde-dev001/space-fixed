@@ -161,6 +161,12 @@ const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const MinusIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+  </svg>
+);
+
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -264,6 +270,8 @@ export default function JobOrdersPage() {
   const [carrierPhone, setCarrierPhone] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
+  const [isConfirmingShipping, setIsConfirmingShipping] = useState(false);
+  const [isActivatingReceive, setIsActivatingReceive] = useState(false);
 
   const mapApiOrder = (order: any): Order => {
     const itemSubtotal = parseAmount(order.total_amount);
@@ -854,6 +862,8 @@ export default function JobOrdersPage() {
     }
 
     try {
+      setIsConfirmingShipping(true);
+
       // Fetch fresh CSRF token
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
@@ -949,10 +959,17 @@ export default function JobOrdersPage() {
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
       });
+    } finally {
+      setIsConfirmingShipping(false);
     }
   };
 
   const handleActivatePickup = async (orderId: number) => {
+    if (isActivatingReceive) return;
+
+    const targetOrder = orders.find((order) => order.id === orderId);
+    if (targetOrder?.pickup_enabled) return;
+
     const result = await Swal.fire({
       title: 'Activate Pickup Confirmation?',
       text: 'This will allow the customer to confirm they have received their order.',
@@ -964,6 +981,8 @@ export default function JobOrdersPage() {
     });
 
     if (!result.isConfirmed) return;
+
+    setIsActivatingReceive(true);
 
     try {
       const response = await axios.post(`/api/staff/orders/${orderId}/activate-pickup`);
@@ -981,35 +1000,22 @@ export default function JobOrdersPage() {
           )
         );
 
+        setViewOrder((prev) =>
+          prev && prev.id === orderId
+            ? {
+                ...prev,
+                pickup_enabled: true,
+                pickup_enabled_at: new Date().toISOString(),
+              }
+            : prev
+        );
+
         await Swal.fire({
           title: 'Pickup Activated!',
           text: 'Customer can now confirm they received their order.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
-        
-        // Refresh orders list
-        const ordersResponse = await fetch('/api/staff/orders', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-          }
-        });
-        
-        if (ordersResponse.ok) {
-          const data = await ordersResponse.json();
-          const mappedOrders: Order[] = data.map(mapApiOrder);
-          setOrders(mappedOrders);
-          
-          // Update viewOrder if it's the same order
-          if (viewOrder && viewOrder.id === orderId) {
-            const updatedOrder = mappedOrders.find(o => o.id === orderId);
-            if (updatedOrder) setViewOrder(updatedOrder);
-          }
-        }
-
-        setIsViewModalOpen(false);
-        setViewOrder(null);
       }
     } catch (error: any) {
       await Swal.fire({
@@ -1017,6 +1023,8 @@ export default function JobOrdersPage() {
         text: error.response?.data?.message || 'Failed to activate pickup',
         icon: 'error',
       });
+    } finally {
+      setIsActivatingReceive(false);
     }
   };
 
@@ -1370,11 +1378,23 @@ export default function JobOrdersPage() {
                             <span>Shipping Fee</span>
                             <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
                           </div>
-                          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                          <div className={`flex items-center justify-between gap-2 text-sm font-semibold ${
+                            order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
                             <span>Grand Total</span>
                             <span className="inline-flex items-center gap-1">
-                              <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
-                                <PlusIcon className="size-3" />
+                              <span className={`inline-flex items-center justify-center rounded-full ${
+                                order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                                  ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                                  : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                              }`}>
+                                {order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                                  <MinusIcon className="size-3" />
+                                ) : (
+                                  <PlusIcon className="size-3" />
+                                )}
                               </span>
                               {formatOrderTotal(order.grand_total)}
                             </span>
@@ -1677,9 +1697,20 @@ export default function JobOrdersPage() {
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
                 <button
                   onClick={handleConfirmShipping}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  disabled={isConfirmingShipping}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
                 >
-                  Confirm Shipping
+                  {isConfirmingShipping ? (
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="size-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                        <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                      Confirming...
+                    </span>
+                  ) : (
+                    'Confirm Shipping'
+                  )}
                 </button>
                 <button
                   onClick={() => {
@@ -1786,9 +1817,21 @@ export default function JobOrdersPage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
-                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                        <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 p-0.5 dark:bg-emerald-900/30">
-                          <PlusIcon className="size-3" />
+                      <span className={`inline-flex items-center gap-1 text-sm font-semibold ${
+                        viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}>
+                        <span className={`inline-flex items-center justify-center rounded-full ${
+                          viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
+                            ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                            : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                        }`}>
+                          {viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                            <MinusIcon className="size-3" />
+                          ) : (
+                            <PlusIcon className="size-3" />
+                          )}
                         </span>
                         {formatOrderTotal(viewOrder.grand_total)}
                       </span>
@@ -1838,13 +1881,18 @@ export default function JobOrdersPage() {
                     Confirm Return Received
                   </button>
                 )}
-                {viewOrder.status === "shipped" && !viewOrder.pickup_enabled && (
+                {viewOrder.status === "shipped" && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}
-                    className="px-4 py-2 border border-black rounded-lg font-medium transition-colors bg-white hover:bg-gray-100 text-black"
-                    title="Activate pickup confirmation"
+                    disabled={isActivatingReceive || Boolean(viewOrder.pickup_enabled)}
+                    className={`px-4 py-2 border rounded-lg font-medium transition-colors ${
+                      isActivatingReceive || viewOrder.pickup_enabled
+                        ? 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed'
+                        : 'border-black bg-white hover:bg-gray-100 text-black'
+                    }`}
+                    title={viewOrder.pickup_enabled ? 'Pickup already activated' : 'Activate pickup confirmation'}
                   >
-                    Activate Receive
+                    {viewOrder.pickup_enabled ? 'Activated' : isActivatingReceive ? 'Activating...' : 'Activate Receive'}
                   </button>
                 )}
                 <button

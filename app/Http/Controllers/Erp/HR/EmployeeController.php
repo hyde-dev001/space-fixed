@@ -25,6 +25,34 @@ use Carbon\Carbon;
 class EmployeeController extends Controller
 {
     use LogsHRActivity;
+
+    /**
+     * Keep linked user login status aligned with employee suspension/reactivation.
+     */
+    private function syncLinkedUserStatus(Employee $employee, int $shopOwnerId, string $employeeStatus): void
+    {
+        $normalizedStatus = strtolower(trim($employeeStatus));
+        $targetUserStatus = match ($normalizedStatus) {
+            'active' => 'active',
+            'suspended' => 'suspended',
+            default => null,
+        };
+
+        if (!$targetUserStatus) {
+            return;
+        }
+
+        $linkedUser = $employee->user;
+        if (!$linkedUser) {
+            $linkedUser = User::where('shop_owner_id', $shopOwnerId)
+                ->where('email', $employee->email)
+                ->first();
+        }
+
+        if ($linkedUser && $linkedUser->status !== $targetUserStatus) {
+            $linkedUser->update(['status' => $targetUserStatus]);
+        }
+    }
     /**
      * Display a listing of employees.
      */
@@ -373,6 +401,10 @@ class EmployeeController extends Controller
 
         $employee->update($data);
 
+        if (isset($data['status'])) {
+            $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, (string) $data['status']);
+        }
+
         // Audit log
         $this->auditUpdated(
             AuditLog::MODULE_EMPLOYEE,
@@ -439,9 +471,37 @@ class EmployeeController extends Controller
             'suspensionReason' => $request->reason,
         ]);
 
+        $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'suspended');
+
         return response()->json([
             'message' => 'Employee suspended successfully',
             'employee' => $employee
+        ]);
+    }
+
+    /**
+     * Reactivate a suspended employee and linked user login account.
+     */
+    public function activate(Request $request, $id): JsonResponse
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
+
+        $employee->update([
+            'status' => 'active',
+            'suspension_reason' => null,
+        ]);
+
+        $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'active');
+
+        return response()->json([
+            'message' => 'Employee account reactivated successfully',
+            'employee' => $employee,
         ]);
     }
 
@@ -459,13 +519,17 @@ class EmployeeController extends Controller
 
         $totalEmployees = Employee::forShopOwner($user->shop_owner_id)->count();
         $activeEmployees = Employee::forShopOwner($user->shop_owner_id)->active()->count();
-        $onLeaveEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'on-leave')->count();
+        $onLeaveEmployees = Employee::forShopOwner($user->shop_owner_id)
+            ->whereIn('status', ['on_leave', 'on-leave'])
+            ->count();
+        $probationEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'probation')->count();
         $suspendedEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'suspended')->count();
 
         return response()->json([
             'totalEmployees' => $totalEmployees,
             'activeEmployees' => $activeEmployees,
             'onLeaveEmployees' => $onLeaveEmployees,
+            'probationEmployees' => $probationEmployees,
             'suspendedEmployees' => $suspendedEmployees,
             'inactiveEmployees' => $totalEmployees - $activeEmployees,
         ]);

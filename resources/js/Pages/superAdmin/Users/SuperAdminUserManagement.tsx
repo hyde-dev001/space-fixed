@@ -756,7 +756,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Role</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created By</th>
@@ -780,11 +779,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                           <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                        {user.role || 'Customer'}
-                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -1049,12 +1043,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                           Age
                         </label>
                         <p className="text-sm text-gray-900 dark:text-white">{selectedUser.age}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Role
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedUser.role}</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1366,12 +1354,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                             Age
                           </label>
                           <p className="text-base text-gray-900 dark:text-white">{selectedUser.age}</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            Role
-                          </label>
-                          <p className="text-base text-gray-900 dark:text-white">{selectedUser.role || 'Customer'}</p>
                         </div>
                       </div>
                     </div>

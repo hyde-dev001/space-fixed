@@ -137,11 +137,6 @@ class Approval extends Model
             return false;
         }
 
-        // Cannot approve own request
-        if ($user->id === $this->requested_by) {
-            return false;
-        }
-
         $requiredRole = $this->getApproverRoleForLevel();
         if (!$requiredRole) {
             return false;
@@ -156,15 +151,21 @@ class Approval extends Model
      */
     public function userHasApprovalRole($user, string $role): bool
     {
-        return match ($role) {
-            'finance' => $user->hasRole('finance')
-                || $user->hasRole('Finance')
-                || $user->hasRole('Finance Manager')
-                || $user->hasRole('finance-manager')
+        $normalizedRole = str_replace([' ', '-'], '_', strtolower(trim($role)));
+
+        return match ($normalizedRole) {
+            'finance' => $this->userHasAnyRoleSafe($user, [
+                    'finance',
+                    'Finance',
+                    'Finance Manager',
+                    'finance-manager',
+                ])
                 || $this->userHasAnyPermissionSafe($user, [
                     'access-shoe-price-approval',
                     'access-repair-price-approval',
                     'approve-expenses',
+                    'access-approval-workflow',
+                    'access-shoe-pricing',
                 ]),
             'shop_owner' => $this->isExactShopOwnerIdentity($user)
                 || (
@@ -175,14 +176,19 @@ class Approval extends Model
                     )
                 ),
             'finance_final' => (
-                $user->hasRole('Finance Manager')
-                || $user->hasRole('finance-manager')
+                $this->userHasAnyRoleSafe($user, [
+                    'Finance Manager',
+                    'finance-manager',
+                    'Finance',
+                    'finance',
+                ])
                 || $this->userHasPermissionSafe($user, 'access-approval-workflow')
             ) && $this->userHasAnyPermissionSafe($user, [
                 'access-shoe-price-approval',
                 'access-repair-price-approval',
                 'approve-expenses',
                 'access-approval-workflow',
+                'access-shoe-pricing',
             ]),
             default => false
         };
@@ -215,6 +221,17 @@ class Approval extends Model
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function userHasAnyRoleSafe($user, array $roles): bool
+    {
+        foreach ($roles as $role) {
+            if ($this->userHasRoleSafe($user, $role)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isExactShopOwnerIdentity($user): bool

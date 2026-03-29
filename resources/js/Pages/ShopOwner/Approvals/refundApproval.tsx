@@ -453,12 +453,14 @@ export default function RefundApproval() {
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
-		const requiresOwnerApproval = request.requiresOwnerApproval !== false;
-		const financeInitialApproved = financeStatus === "approved_initial";
+		const requiresOwnerApproval = isIndividualRegistration ? true : request.requiresOwnerApproval !== false;
+		const financeReadyForOwner = isIndividualRegistration
+			? ["pending", "approved_initial", "approved"].includes(financeStatus)
+			: financeStatus === "approved_initial";
 
 		return request.status === "Pending"
 			&& requiresOwnerApproval
-			&& financeInitialApproved
+			&& financeReadyForOwner
 			&& shopOwnerStatus !== "approved"
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
@@ -482,7 +484,7 @@ export default function RefundApproval() {
 		}
 
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
-		if (request.requiresOwnerApproval === false) {
+		if (!isIndividualRegistration && request.requiresOwnerApproval === false) {
 			await Swal.fire({
 				title: "Owner Approval Not Required",
 				text: "This refund request does not require shop owner approval based on settings.",
@@ -651,10 +653,12 @@ export default function RefundApproval() {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 		const returnStatus = String(request.returnStatus || "").toLowerCase();
+		const hasExecutionStarted = Boolean(request.refundExecutedAt);
 
 		return financeStatus === "approved"
 			&& shopOwnerStatus === "approved"
 			&& ["in_transit", "received"].includes(returnStatus)
+			&& !hasExecutionStarted
 			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
 	};
 
@@ -696,8 +700,22 @@ export default function RefundApproval() {
 
 			const data = await response.json();
 			if (!response.ok) {
+				if (response.status === 409) {
+					setSelectedRequest((prev) => (prev && prev.id === request.id ? { ...prev, ...(data?.refund || {}) } : prev));
+					await fetchRefundRequests();
+					await Swal.fire({
+						title: "Already Started",
+						text: data?.message || "Refund execution has already started for this request.",
+						icon: "info",
+						confirmButtonColor: "#2563eb",
+					});
+					return;
+				}
+
 				throw new Error(data?.message || "Failed to execute refund payout.");
 			}
+
+			setSelectedRequest((prev) => (prev && prev.id === request.id ? { ...prev, ...(data?.refund || {}) } : prev));
 
 			Swal.fire({
 				title: "Payout Execution Started",
@@ -835,7 +853,7 @@ export default function RefundApproval() {
 											</span>
 										</td>
 											<td className="py-4">
-												<RefundStageBadge request={request} />
+												<RefundStageBadge request={{ ...request, isIndividualRegistration }} />
 											</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">

@@ -114,12 +114,6 @@ const APPROVAL_ITEMS: ApprovalItemConfig[] = [
 		description: 'Require approval for purchase requests that exceed your threshold.',
 		helper: 'When disabled, owner approval is skipped and finance checks continue to apply.',
 	},
-	{
-		key: 'repair_reject_approval',
-		title: 'Repair Reject Approval',
-		description: 'Require approval before high-value repair rejections are finalized.',
-		helper: 'When disabled, owner approval is skipped for this workflow.',
-	},
 ];
 
 const REPAIR_REQUEST_LIMIT_KEY = 'repair_request_limit';
@@ -939,34 +933,13 @@ const ShopSetting: React.FC = () => {
 
 						<div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
 							{shop_settings.required_documents.map((doc) => {
-								const statusLabel =
-									doc.status === 'approved'
-										? 'Approved'
-										: doc.status === 'pending'
-											? 'Pending Review'
-											: doc.status === 'rejected'
-												? 'Rejected'
-												: 'Not Uploaded';
-
-								const statusClass =
-									doc.status === 'approved'
-										? 'border-green-200 bg-green-50 text-green-700'
-										: doc.status === 'pending'
-											? 'border-amber-200 bg-amber-50 text-amber-700'
-											: doc.status === 'rejected'
-												? 'border-red-200 bg-red-50 text-red-700'
-												: 'border-gray-200 bg-gray-50 text-gray-600';
-
 								return (
 									<div key={doc.key} className="rounded-xl border border-gray-200 bg-gray-50/40 p-4">
-										<div className="mb-3 flex items-start justify-between gap-2">
+										<div className="mb-3 flex items-start gap-2">
 											<div className="pr-2">
 												<h3 className="text-sm font-semibold text-gray-900">{doc.title}</h3>
 												<p className="mt-1 text-xs text-gray-600">{doc.description}</p>
 											</div>
-											<span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}>
-												{statusLabel}
-											</span>
 										</div>
 
 										<div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -1404,32 +1377,6 @@ const ShopSetting: React.FC = () => {
 							<div>
 								<p className="mb-1.5 text-sm font-medium text-gray-700">Shop Location <span className="font-normal text-gray-400">(drag pin or click map to adjust)</span></p>
 								<div ref={mapRef} className="h-72 w-full rounded-xl border border-gray-200 overflow-hidden z-0" />
-							</div>
-
-							{/* Coordinates */}
-							<div className="grid grid-cols-2 gap-3">
-								<div>
-									<label className="mb-1 block text-xs font-medium text-gray-600">Latitude</label>
-									<input
-										type="number"
-										step="0.00000001"
-										value={geoLat}
-										onChange={(e) => setGeoLat(e.target.value)}
-										className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
-										placeholder="14.55470000"
-									/>
-								</div>
-								<div>
-									<label className="mb-1 block text-xs font-medium text-gray-600">Longitude</label>
-									<input
-										type="number"
-										step="0.00000001"
-										value={geoLng}
-										onChange={(e) => setGeoLng(e.target.value)}
-										className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
-										placeholder="120.98420000"
-									/>
-								</div>
 							</div>
 
 							{/* Radius slider — company only */}

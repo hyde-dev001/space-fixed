@@ -137,7 +137,21 @@ export default function CustomersPage() {
   const itemsPerPage = 10;
 
   const { auth, initialCustomers = [], initialStats } = usePage().props as any;
-  const userRole = auth?.user?.role;
+  const userRole = String(auth?.user?.role || '').toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles)
+    ? auth.user.roles.map((role: string) => String(role).toUpperCase())
+    : [];
+  const userPermissions = Array.isArray(auth?.permissions)
+    ? auth.permissions
+    : [];
+
+  const canAccessStaffModule =
+    userPermissions.includes('access-staff-dashboard') ||
+    userPermissions.includes('access-staff-customers') ||
+    userRole === 'STAFF' ||
+    userRole === 'MANAGER' ||
+    userRoles.includes('STAFF') ||
+    userRoles.includes('MANAGER');
 
   const customers = initialCustomers as Customer[];
   const stats = initialStats || {
@@ -162,7 +176,7 @@ export default function CustomersPage() {
     });
   }, [customers, searchTerm, filterStatus]);
 
-  if (userRole !== "STAFF" && userRole !== "MANAGER") {
+  if (!canAccessStaffModule) {
     return (
       <AppLayoutERP>
         <div className="max-w-xl mx-auto mt-24 text-center p-8 bg-white dark:bg-gray-900 rounded-xl shadow">

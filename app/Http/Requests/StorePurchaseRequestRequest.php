@@ -22,6 +22,7 @@ class StorePurchaseRequestRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'stock_request_id' => 'nullable|integer|exists:stock_request_approvals,id',
             'product_name' => 'required|string|max:255',
             'supplier_id' => 'required|exists:suppliers,id',
             'inventory_item_id' => 'nullable|exists:inventory_items,id',
@@ -42,6 +43,7 @@ class StorePurchaseRequestRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'stock_request_id.exists' => 'Selected stock request no longer exists.',
             'product_name.required' => 'Product name is required.',
             'supplier_id.required' => 'Supplier is required.',
             'supplier_id.exists' => 'Selected supplier does not exist.',

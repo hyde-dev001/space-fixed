@@ -17,6 +17,8 @@ type ShopOwner = {
   country?: string;
   city_state?: string;
   postal_code?: string;
+  business_address?: string;
+  shop_address?: string;
   profile_photo?: string | null;
   cover_photo?: string | null;
   monday_open?: string;
@@ -614,6 +616,8 @@ const ShopProfile: React.FC = () => {
   const pageProps = usePage().props as any;
   const shopOwner: ShopOwner | null =
     pageProps.shop_owner || pageProps.auth?.shop_owner || null;
+  const resolvedAddress = shopOwner?.shop_address || shopOwner?.business_address || '';
+  const resolvedCityState = shopOwner?.city_state || resolvedAddress;
 
   const displayName =
     shopOwner?.business_name || shopOwner?.name || "Your shop";
@@ -1133,6 +1137,18 @@ const ShopProfile: React.FC = () => {
               <div className="p-6">
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <div className="min-w-0">
+                    <InfoField
+                      label="Address"
+                      value={resolvedAddress}
+                      icon={
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0">
                     <InfoField 
                       label="Country" 
                       value={shopOwner?.country}
@@ -1146,7 +1162,7 @@ const ShopProfile: React.FC = () => {
                   <div className="min-w-0">
                     <InfoField 
                       label="City/State" 
-                      value={shopOwner?.city_state}
+                      value={resolvedCityState}
                       icon={
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />

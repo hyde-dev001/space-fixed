@@ -69,3 +69,9 @@ Schedule::command('payments:expire-stale')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Premium subscriptions: process due auto-renewals and create renewal checkout links.
+Schedule::command('subscriptions:process-premium-renewals')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+

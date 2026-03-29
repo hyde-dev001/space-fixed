@@ -8,6 +8,8 @@ import type { StockRequestApproval, StockRequestMetrics } from "@/types/procurem
 
 type MetricColor = "success" | "warning" | "info";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
+const PH_TIME_ZONE = "Asia/Manila";
+const PH_LOCALE = "en-PH";
 
 const hasSizeSystemPrefix = (value: string): boolean => {
 	const normalized = value.trim().toUpperCase();
@@ -278,7 +280,8 @@ export default function StockRequest() {
 	const formatTableDate = (value: string) => {
 		const parsed = parseBackendDate(value);
 		if (!parsed) return value;
-		return new Intl.DateTimeFormat(undefined, {
+		return new Intl.DateTimeFormat(PH_LOCALE, {
+			timeZone: PH_TIME_ZONE,
 			month: "short",
 			day: "2-digit",
 			year: "numeric",
@@ -288,21 +291,25 @@ export default function StockRequest() {
 	const formatTableTime = (value: string) => {
 		const parsed = parseBackendDate(value);
 		if (!parsed) return "";
-		return new Intl.DateTimeFormat(undefined, {
+		return new Intl.DateTimeFormat(PH_LOCALE, {
+			timeZone: PH_TIME_ZONE,
 			hour: "numeric",
 			minute: "2-digit",
+			hour12: true,
 		}).format(parsed);
 	};
 
 	const formatDateTime = (value: string) => {
 		const parsed = parseBackendDate(value);
 		if (!parsed) return value;
-		return new Intl.DateTimeFormat(undefined, {
+		return new Intl.DateTimeFormat(PH_LOCALE, {
+			timeZone: PH_TIME_ZONE,
 			month: "short",
 			day: "2-digit",
 			year: "numeric",
 			hour: "numeric",
 			minute: "2-digit",
+			hour12: true,
 		}).format(parsed);
 	};
 
@@ -326,6 +333,11 @@ export default function StockRequest() {
 
 	const getRequesterRoleLabel = (request: StockRequestApproval) => {
 		return (request.request_source || "manual") === "repair" ? "Repairer" : "Staff";
+	};
+
+	const shouldShowVariantRequestDetails = (request: StockRequestApproval) => {
+		const category = String(request.inventory_item?.category || "").trim().toLowerCase();
+		return category !== "repair_materials";
 	};
 
 	const handleAccept = async (request: StockRequestApproval) => {
@@ -650,23 +662,25 @@ export default function StockRequest() {
 									</div>
 								</div>
 
-								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									<div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/20">
-										<p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">Requested Size</p>
-										<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+								{shouldShowVariantRequestDetails(viewingRequest) && (
+									<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+										<div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/20">
+											<p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">Requested Size</p>
+											<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+										</div>
+										{(viewingRequest as any).requested_color ? (
+											<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+												<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
+												<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{(viewingRequest as any).requested_color}</p>
+											</div>
+										) : (
+											<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+												<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
+												<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">Not specified</p>
+											</div>
+										)}
 									</div>
-									{(viewingRequest as any).requested_color ? (
-										<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
-											<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
-											<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{(viewingRequest as any).requested_color}</p>
-										</div>
-									) : (
-										<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
-											<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
-											<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">Not specified</p>
-										</div>
-									)}
-								</div>
+								)}
 
 								{isAllSizesRequest(viewingRequest.requested_size) && getAvailableSizeLabelsForRequest(viewingRequest).length > 0 && (
 									<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">

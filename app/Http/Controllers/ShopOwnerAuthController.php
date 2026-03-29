@@ -114,15 +114,15 @@ class ShopOwnerAuthController extends Controller
 
             // Upload and save documents
             $documents = [
-                'dti_registration' => 'DTI Registration',
-                'mayors_permit' => "Mayor's Permit",
-                'bir_certificate' => 'BIR Certificate',
-                'valid_id' => 'Valid ID',
+                'dti_registration',
+                'mayors_permit',
+                'bir_certificate',
+                'valid_id',
             ];
 
-            foreach ($documents as $fieldName => $documentType) {
-                if ($request->hasFile($fieldName)) {
-                    $file = $request->file($fieldName);
+            foreach ($documents as $documentType) {
+                if ($request->hasFile($documentType)) {
+                    $file = $request->file($documentType);
                     $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
                     $filePath = $file->storeAs('shop_documents', $fileName, 'public');
 

@@ -1081,6 +1081,16 @@ export default function TimeIn() {
     };
 
     const handleOvertimeClick = () => {
+        if (isOnApprovedLeaveToday) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Overtime Not Allowed',
+                text: 'You cannot request overtime while you are on approved leave today.',
+                confirmButtonColor: '#3b82f6',
+            });
+            return;
+        }
+
         setShowOvertimeModal(true);
     };
 
@@ -1144,6 +1154,16 @@ export default function TimeIn() {
 
     const handleOvertimeRequest = async () => {
         if (isLoading) return; // Prevent spam
+
+        if (isOnApprovedLeaveToday) {
+            await Swal.fire({
+                icon: 'warning',
+                title: 'Overtime Not Allowed',
+                text: 'You cannot request overtime while you are on approved leave today.',
+                confirmButtonColor: '#3b82f6',
+            });
+            return;
+        }
         
         if (!overtimeHours || !overtimeReason) {
             Swal.fire({
@@ -1233,9 +1253,15 @@ export default function TimeIn() {
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={handleOvertimeClick}
-                                disabled={todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
+                                disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
                                 className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 flex items-center gap-2"
-                                title={todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status)) ? 'You already have an active overtime request today' : 'Request overtime'}
+                                title={
+                                    isOnApprovedLeaveToday
+                                        ? 'Overtime requests are disabled while on approved leave'
+                                        : todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))
+                                        ? 'You already have an active overtime request today'
+                                        : 'Request overtime'
+                                }
                             >
                                 <OvertimeIcon />
                                 Over Time

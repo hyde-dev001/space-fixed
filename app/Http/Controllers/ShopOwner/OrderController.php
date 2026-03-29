@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
+use App\Enums\OrderStatus;
 use App\Services\OrderRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -274,6 +275,7 @@ class OrderController extends Controller
         
         // Store old status before save
         $oldStatus = $order->getOriginal('status');
+        $oldStatusValue = $oldStatus instanceof OrderStatus ? $oldStatus->value : (string) $oldStatus;
         
         $order->save();
 
@@ -284,7 +286,7 @@ class OrderController extends Controller
             ->withProperties([
                 'order_number' => $order->order_number,
                 'customer_name' => $order->customer_name ?? 'N/A',
-                'old_status' => $oldStatus,
+                'old_status' => $oldStatusValue,
                 'new_status' => $request->status,
                 'total_amount' => $order->total_amount,
                 'updated_by_name' => $shopOwner->shop_name,
@@ -292,14 +294,17 @@ class OrderController extends Controller
                 'tracking_number' => $request->tracking_number,
                 'carrier_company' => $request->carrier_company,
             ])
-            ->log("Order status updated from {$oldStatus} to {$request->status}");
+            ->log("Order status updated from {$oldStatusValue} to {$request->status}");
+
+        $finalStatus = $order->fresh()->status;
+        $finalStatusValue = $finalStatus instanceof OrderStatus ? $finalStatus->value : (string) $finalStatus;
 
         Log::info('Shop owner updated order status', [
             'order_id' => $id,
             'order_number' => $order->order_number,
-            'old_status' => $oldStatus,
+            'old_status' => $oldStatusValue,
             'new_status' => $request->status,
-            'final_status_in_db' => $order->fresh()->status,
+            'final_status_in_db' => $finalStatusValue,
             'shop_owner_id' => $shopOwner->id,
         ]);
 

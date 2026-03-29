@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ERP\HR;
 
 use App\Http\Controllers\Controller;
 use App\Models\HR\OvertimeRequest;
+use App\Models\HR\LeaveRequest;
 use App\Models\Employee;
 use App\Models\User;
 use App\Notifications\HR\OvertimeRequestApproved;
@@ -117,9 +118,28 @@ class OvertimeController extends Controller
             ? Carbon::parse($request->overtime_date, $shopTimezone)
             : Carbon::now($shopTimezone);
 
+        $overtimeDateString = $overtimeDate->toDateString();
+
+        // Restriction: employees on approved leave cannot request overtime for that leave date.
+        $approvedLeave = LeaveRequest::where('employee_id', $employee->id)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $overtimeDateString)
+            ->whereDate('end_date', '>=', $overtimeDateString)
+            ->first();
+
+        if ($approvedLeave) {
+            return response()->json([
+                'error' => 'You cannot request overtime while on approved leave.',
+                'leave_period' => [
+                    'start_date' => optional($approvedLeave->start_date)->toDateString(),
+                    'end_date' => optional($approvedLeave->end_date)->toDateString(),
+                ],
+            ], 422);
+        }
+
         // Check if employee already has overtime for this date
         $existingOvertime = OvertimeRequest::where('employee_id', $employee->id)
-            ->where('overtime_date', $overtimeDate->format('Y-m-d'))
+            ->where('overtime_date', $overtimeDateString)
             ->whereIn('status', ['pending', 'approved', 'assigned'])
             ->first();
 

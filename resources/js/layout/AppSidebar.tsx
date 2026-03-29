@@ -99,15 +99,6 @@ const AppSidebar: React.FC = () => {
         name: "Notification & Communication Tools",
         route: "superAdmin.notification-communication-tools",
       },
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7h-4v4h4v-4z"></path>
-          </svg>
-        ),
-        name: "Data & Report Access",
-        route: "superAdmin.data-report-access",
-      },
       
     ];
 

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import AppLayout from "../../layout/AppLayout";
-import Chart from "react-apexcharts";
-import { ApexOptions } from "apexcharts";
 
 // Icon Components
 const GroupIcon = ({ className = "" }) => (
@@ -35,11 +33,6 @@ const ArrowDownIcon = ({ className = "" }) => (
   </svg>
 );
 
-const MoreDotIcon = ({ className = "" }) => (
-  <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" clipRule="evenodd" d="M10.2441 6C10.2441 5.0335 11.0276 4.25 11.9941 4.25H12.0041C12.9706 4.25 13.7541 5.0335 13.7541 6C13.7541 6.9665 12.9706 7.75 12.0041 7.75H11.9941C11.0276 7.75 10.2441 6.9665 10.2441 6ZM10.2441 18C10.2441 17.0335 11.0276 16.25 11.9941 16.25H12.0041C12.9706 16.25 13.7541 17.0335 13.7541 18C13.7541 18.9665 12.9706 19.75 12.0041 19.75H11.9941C11.0276 19.75 10.2441 18.9665 10.2441 18ZM11.9941 10.25C11.0276 10.25 10.2441 11.0335 10.2441 12C10.2441 12.9665 11.0276 13.75 11.9941 13.75H12.0041C12.9706 13.75 13.7541 12.9665 13.7541 12C13.7541 11.0335 12.9706 10.25 12.0041 10.25H11.9941Z" fill="currentColor" />
-  </svg>
-);
 import {
   Table,
   TableBody,
@@ -58,6 +51,21 @@ interface MetricData {
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
+}
+
+interface DashboardPayload {
+  metrics?: {
+    total_users?: number;
+    total_admins?: number;
+    suspended_admins?: number;
+    total_users_change?: number;
+    total_admins_change?: number;
+    suspended_admins_change?: number;
+  };
+  system_health?: Array<{ metric: string; value: string; status: string }>;
+  recent_activity?: Array<{ activity: string; time: string; status: string }>;
+  performance_metrics?: Array<{ metric: string; value: string; status: string }>;
+  systems_operational?: boolean;
 }
 
 
@@ -140,143 +148,43 @@ const MetricCard: React.FC<MetricData> = ({
   );
 };
 
-// Professional Chart Components
-const BestPerformingShopsChart: React.FC = () => {
-  const options: ApexOptions = {
-    colors: ["#3170c4"],
-    chart: {
-      fontFamily: "Outfit, sans-serif",
-      type: "bar",
-      height: 350,
-      toolbar: {
-        show: false,
-      },
-    },
-    plotOptions: {
-      bar: {
-        horizontal: false,
-        columnWidth: "39%",
-        borderRadius: 5,
-        borderRadiusApplication: "end",
-      },
-    },
-    dataLabels: {
-      enabled: false,
-    },
-    stroke: {
-      show: true,
-      width: 4,
-      colors: ["transparent"],
-    },
-    xaxis: {
-      categories: [
-        "Elite Shoe Repair",
-        "Premium Footwear",
-        "Shoe Masters",
-        "Quick Fix Shoes",
-        "Urban Sole",
-        "Comfort Walk",
-        "Style & Repair",
-        "Footwear Experts",
-        "Shoe Haven",
-        "Sole Saviors",
-      ],
-      axisBorder: {
-        show: false,
-      },
-      axisTicks: {
-        show: false,
-      },
-    },
-    legend: {
-      show: true,
-      position: "top",
-      horizontalAlign: "left",
-      fontFamily: "Outfit",
-    },
-    yaxis: {
-      title: {
-        text: undefined,
-      },
-    },
-    grid: {
-      yaxis: {
-        lines: {
-          show: true,
-        },
-      },
-    },
-    fill: {
-      opacity: 1,
-    },
-    tooltip: {
-      x: {
-        show: false,
-      },
-      y: {
-        formatter: (val: number) => `${val} 5-star reviews`,
-      },
-    },
-  };
-
-  const series = [
-    {
-      name: "5-Star Reviews",
-      data: [512, 487, 456, 423, 398, 376, 354, 332, 298, 267],
-    },
-  ];
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-          Best Performing Shops This Month
-        </h3>
-        <div className="relative inline-block">
-          <button className="dropdown-toggle">
-            <MoreDotIcon className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 size-6" />
-          </button>
-        </div>
-      </div>
-
-      <div className="max-w-full overflow-x-auto custom-scrollbar">
-        <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2">
-          <Chart options={options} series={series} type="bar" height={350} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // Main Dashboard Component
 export default function SystemMonitoringDashboard() {
+  const { dashboard } = usePage<{ dashboard?: DashboardPayload }>().props;
+
+  const metrics = dashboard?.metrics || {};
+  const systemHealthRows = dashboard?.system_health || [];
+  const recentActivityRows = dashboard?.recent_activity || [];
+  const performanceRows = dashboard?.performance_metrics || [];
+  const systemsOperational = dashboard?.systems_operational !== false;
+
   const metricsData: MetricData[] = [
     {
       title: "Total Users",
-      value: 15420,
-      change: 12.5,
-      changeType: 'increase',
+      value: Number(metrics.total_users || 0),
+      change: Math.abs(Number(metrics.total_users_change || 0)),
+      changeType: Number(metrics.total_users_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: GroupIcon,
       color: 'success',
       description: "Active registered users"
     },
     {
-      title: "Active Shops",
-      value: 847,
-      change: 8.2,
-      changeType: 'increase',
+      title: "Total Admin Accounts",
+      value: Number(metrics.total_admins || 0),
+      change: Math.abs(Number(metrics.total_admins_change || 0)),
+      changeType: Number(metrics.total_admins_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: BoxIconLine,
       color: 'success',
-      description: "Currently operational shops"
+      description: "Accounts with admin access"
     },
     {
-      title: "Pending Registrations",
-      value: 23,
-      change: -15.3,
-      changeType: 'decrease',
+      title: "Suspended Admin Accounts",
+      value: Number(metrics.suspended_admins || 0),
+      change: Math.abs(Number(metrics.suspended_admins_change || 0)),
+      changeType: Number(metrics.suspended_admins_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: TaskIcon,
       color: 'warning',
-      description: "Awaiting approval"
+      description: "Currently restricted admin accounts"
     }
   ];
 
@@ -292,13 +200,15 @@ export default function SystemMonitoringDashboard() {
               System Monitoring Dashboard
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Real-time insights into system performance, user activity, and business metrics
+              Real-time insights into system performance, user activity, and platform health
             </p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-4 py-2 bg-green-100 rounded-lg dark:bg-green-900/30">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-green-700 dark:text-green-400">All Systems Operational</span>
+              <div className={`w-2 h-2 rounded-full ${systemsOperational ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+              <span className={`text-sm font-medium ${systemsOperational ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                {systemsOperational ? 'All Systems Operational' : 'System Attention Required'}
+              </span>
             </div>
           </div>
         </div>
@@ -308,11 +218,6 @@ export default function SystemMonitoringDashboard() {
           {metricsData.map((metric, index) => (
             <MetricCard key={index} {...metric} />
           ))}
-        </div>
-
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 gap-8">
-          <BestPerformingShopsChart />
         </div>
 
         {/* Additional Insights Section */}
@@ -338,27 +243,15 @@ export default function SystemMonitoringDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  <TableRow>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">Server Uptime</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">99.9%</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="success">Excellent</Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">Response Time</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">120ms</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="info">Good</Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">Error Rate</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">0.1%</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="success">Low</Badge>
-                    </TableCell>
-                  </TableRow>
+                  {systemHealthRows.map((row, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.metric}</TableCell>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.value}</TableCell>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
+                        <Badge size="sm" color={/critical|warning/i.test(row.status) ? 'warning' : /excellent|low|good/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -385,48 +278,22 @@ export default function SystemMonitoringDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  <TableRow>
-                    <TableCell className="py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center dark:bg-blue-900/30">
-                          <GroupIcon className="text-blue-600 size-4 dark:text-blue-400" />
+                  {recentActivityRows.map((row, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center dark:bg-blue-900/30">
+                            <GroupIcon className="text-blue-600 size-4 dark:text-blue-400" />
+                          </div>
+                          <span className="text-gray-800 text-theme-sm dark:text-white/90">{row.activity}</span>
                         </div>
-                        <span className="text-gray-800 text-theme-sm dark:text-white/90">New shop registered</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">2 minutes ago</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="info">New</Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center dark:bg-green-900/30">
-                          <TaskIcon className="text-green-600 size-4 dark:text-green-400" />
-                        </div>
-                        <span className="text-gray-800 text-theme-sm dark:text-white/90">Order #1234 completed</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">5 minutes ago</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="success">Completed</Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center dark:bg-orange-900/30">
-                          <TaskIcon className="text-orange-600 size-4 dark:text-orange-400" />
-                        </div>
-                        <span className="text-gray-800 text-theme-sm dark:text-white/90">Repair request submitted</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">8 minutes ago</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="warning">Pending</Badge>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.time}</TableCell>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
+                        <Badge size="sm" color={/warning/i.test(row.status) ? 'warning' : /success|completed|excellent|low/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -453,27 +320,15 @@ export default function SystemMonitoringDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  <TableRow>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">Avg. Order Value</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">$127.50</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="success">High</Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">Conversion Rate</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">3.2%</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="info">Average</Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">Customer Satisfaction</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">4.8/5</TableCell>
-                    <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                      <Badge size="sm" color="success">Excellent</Badge>
-                    </TableCell>
-                  </TableRow>
+                  {performanceRows.map((row, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.metric}</TableCell>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.value}</TableCell>
+                      <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
+                        <Badge size="sm" color={/warning/i.test(row.status) ? 'warning' : /excellent|high|live|low/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

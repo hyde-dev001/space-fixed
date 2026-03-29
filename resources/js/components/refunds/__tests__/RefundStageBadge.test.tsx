@@ -29,6 +29,18 @@ describe("RefundStageBadge", () => {
 		expect(stage.className).toContain("bg-indigo-100");
 	});
 
+	it("uses non-finance payout label for individual registration", () => {
+		const stage = resolveRefundStageBadge({
+			status: "Approved",
+			shopOwnerStatus: "approved",
+			financeStatus: "approved",
+			returnStatus: "received",
+			isIndividualRegistration: true,
+		});
+
+		expect(stage.label).toBe("Ready for Refund Payout");
+	});
+
 	it("renders refunded state when gateway marks refund as succeeded", () => {
 		render(
 			<RefundStageBadge

@@ -24,6 +24,7 @@ export default function UserLogin() {
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
   // Show flash success message (e.g. after accepting invitation)
@@ -116,6 +117,15 @@ export default function UserLogin() {
   return (
     <>
       <Head title="User Sign In" />
+      <style>{`
+        input[type="password"]::-webkit-reveal-password-button,
+        input[type="password"]::-webkit-credentials-auto-fill-button {
+          display: none;
+        }
+        input[type="password"]::-ms-reveal {
+          display: none;
+        }
+      `}</style>
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
         <Navigation />
 
@@ -135,15 +145,15 @@ export default function UserLogin() {
               <div className="relative">
                 <Label htmlFor="email" className="text-[12px] font-medium text-gray-700 mb-1.5">Email</Label>
                 <div className="relative">
-                  <MailIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
+                  <MailIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
                     type="email"
                     id="email"
                     name="email"
                     placeholder="Enter your email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className={`pl-10 ${authInputClasses} ${errors.email ? 'border-red-500' : ''}`}
+                    className={`w-full pl-10 ${authInputClasses} ${errors.email ? 'border-red-500' : ''}`}
                   />
                 </div>
                 {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
@@ -152,16 +162,37 @@ export default function UserLogin() {
               <div className="relative">
                 <Label htmlFor="password" className="text-[12px] font-medium text-gray-700 mb-1.5">Password</Label>
                 <div className="relative">
-                  <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    type="password"
+                  <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
                     id="password"
                     name="password"
                     placeholder="Enter your password"
                     value={formData.password}
                     onChange={handleInputChange}
-                    className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
+                    className={`w-full pl-10 pr-11 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
+                    autoComplete="current-password"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 p-1"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.94 10.94 0 0112 20C7 20 2.73 16.89 1 12c.92-2.6 2.68-4.8 5-6.32" />
+                        <path d="M10.58 10.58A3 3 0 0012 15a3 3 0 002.42-4.42" />
+                        <path d="M1 1l22 22" />
+                        <path d="M9.88 4.24A10.94 10.94 0 0112 4c5 0 9.27 3.11 11 8a10.94 10.94 0 01-4.19 5.19" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
                 {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
               </div>

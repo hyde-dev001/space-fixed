@@ -71,10 +71,26 @@ class BusinessAccessControlService
      */
     public function normalizeBusinessType(string $businessType): string
     {
-        if ($businessType === self::BUSINESS_TYPE_BOTH_ALT) {
+        $normalized = strtolower(trim($businessType));
+
+        if ($normalized === self::BUSINESS_TYPE_BOTH_ALT) {
             return self::BUSINESS_TYPE_BOTH;
         }
-        return strtolower($businessType);
+
+        // Handle label variants like "repair only", "retail and repair", etc.
+        if (str_contains($normalized, 'both') || (str_contains($normalized, 'repair') && str_contains($normalized, 'retail'))) {
+            return self::BUSINESS_TYPE_BOTH;
+        }
+
+        if (str_contains($normalized, 'repair')) {
+            return self::BUSINESS_TYPE_REPAIR;
+        }
+
+        if (str_contains($normalized, 'retail')) {
+            return self::BUSINESS_TYPE_RETAIL;
+        }
+
+        return $normalized;
     }
 
     /**

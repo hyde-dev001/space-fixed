@@ -11,6 +11,8 @@ type ChangeType = "new_hire_rate_setup" | "minor_adjustment" | "major_adjustment
 interface Employee {
   id: number;
   name: string;
+  first_name?: string;
+  last_name?: string;
   department?: string;
   position?: string;
   salary: number;
@@ -189,14 +191,50 @@ const getInitials = (name?: string | null) => {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 };
 
+const toDisplayName = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  return value.trim();
+};
+
+const buildEmployeeName = (employeeLike: any): string => {
+  const explicitName = toDisplayName(employeeLike?.name);
+  if (explicitName) return explicitName;
+
+  const firstName = toDisplayName(employeeLike?.first_name);
+  const lastName = toDisplayName(employeeLike?.last_name);
+  const fullName = `${firstName} ${lastName}`.trim();
+  return fullName;
+};
+
 const getCsrfToken = (): string =>
   (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? "";
 
 const normalizeSalaryChange = (raw: any): SalaryChange => ({
   ...raw,
+  employee: raw?.employee
+    ? {
+        ...raw.employee,
+        name: buildEmployeeName(raw.employee) || buildEmployeeName(raw),
+      }
+    : {
+        id: toNumber(raw?.employee_id),
+        name: buildEmployeeName(raw),
+        department: raw?.department,
+        position: raw?.position,
+      },
   previous_salary: toNumber(raw?.previous_salary),
   new_salary: toNumber(raw?.new_salary),
-  change_percent: toNumber(raw?.change_percent),
+  change_percent:
+    toNumber(raw?.previous_salary) > 0
+      ? ((toNumber(raw?.new_salary) - toNumber(raw?.previous_salary)) / toNumber(raw?.previous_salary)) * 100
+      : toNumber(raw?.change_percent),
+});
+
+const normalizeEmployee = (raw: any): Employee => ({
+  ...raw,
+  id: toNumber(raw?.id),
+  name: buildEmployeeName(raw),
+  salary: toNumber(raw?.salary),
 });
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -260,7 +298,8 @@ const SalaryChanges: React.FC = () => {
       });
       if (!res.ok) return;
       const data = await res.json();
-      setEmployees(data.data?.data ?? data.data ?? []);
+      const rawEmployees = data.data?.data ?? data.data ?? [];
+      setEmployees(Array.isArray(rawEmployees) ? rawEmployees.map(normalizeEmployee) : []);
     } catch {
       // non-critical
     }
@@ -953,7 +992,7 @@ const SalaryChanges: React.FC = () => {
                       <option value="">Select employee</option>
                       {employees.map((employee) => (
                         <option key={employee.id} value={employee.id}>
-                          {employee.name}{employee.department ? ` - ${employee.department}` : ""}
+                          {employee.name || `#${employee.id}`}{employee.department ? ` - ${employee.department}` : ""}
                         </option>
                       ))}
                     </select>

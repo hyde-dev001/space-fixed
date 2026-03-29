@@ -136,6 +136,21 @@ interface ApprovalTimelineProps {
 	compact?: boolean;
 }
 
+const PH_TIME_ZONE = 'Asia/Manila';
+const PH_LOCALE = 'en-PH';
+
+const formatTimelineDate = (value: string): string => {
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) return value;
+
+	return new Intl.DateTimeFormat(PH_LOCALE, {
+		timeZone: PH_TIME_ZONE,
+		month: 'short',
+		day: '2-digit',
+		year: 'numeric',
+	}).format(parsed);
+};
+
 export const ApprovalTimeline: React.FC<ApprovalTimelineProps> = ({ events, compact = false }) => {
 	const roleDisplayNames: Record<string, string> = {
 		'finance': 'Finance',
@@ -187,7 +202,7 @@ export const ApprovalTimeline: React.FC<ApprovalTimelineProps> = ({ events, comp
 						{event.by && (
 							<p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
 								By <span className="font-medium">{event.by}</span>
-								{event.at && ` on ${new Date(event.at).toLocaleDateString()}`}
+								{event.at && ` on ${formatTimelineDate(event.at)}`}
 							</p>
 						)}
 						{event.comments && (

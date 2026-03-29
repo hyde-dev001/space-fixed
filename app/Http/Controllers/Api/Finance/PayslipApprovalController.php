@@ -332,13 +332,6 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // Validate maker-checker
-        if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
-            return response()->json([
-                'error' => 'Maker-checker violation. The payroll generator cannot act as the Finance checker.',
-            ], 403);
-        }
-
         // If payslip has new 4-step approval workflow, use it
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->approvePayslip(
@@ -576,11 +569,6 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // Maker-checker validations
-        if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
-            return response()->json(['error' => 'Maker-checker violation. The payroll generator cannot be the final approver.'], 403);
-        }
-
         // If payslip has new 4-step approval workflow, use it
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->approvePayslip(
@@ -648,10 +636,6 @@ class PayslipApprovalController extends Controller
 
         if (! empty($payslip->final_approved_by) || $payslip->status === 'approved') {
             return response()->json(['error' => 'Payroll already has final approval'], 400);
-        }
-
-        if ((int) ($payslip->approved_by ?? 0) === (int) $actor['actor_user_id']) {
-            return response()->json(['error' => 'Maker-checker violation. The Finance checker cannot also be the final approver.'], 403);
         }
 
         try {
@@ -865,12 +849,6 @@ class PayslipApprovalController extends Controller
                     continue;
                 }
 
-                if ((int) ($payslip->generated_by ?? 0) === (int) $actor['actor_user_id']) {
-                    $errors[] = "Payslip #{$payslipId}: Maker-checker violation. The payroll generator cannot be the final approver.";
-                    $failedCount++;
-                    continue;
-                }
-
                 if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
                     $result = $this->payslipApprovalService->approvePayslip(
                         $payslip,
@@ -932,12 +910,6 @@ class PayslipApprovalController extends Controller
 
                 if (! empty($payslip->final_approved_by) || $payslip->status === 'approved') {
                     $errors[] = "Payslip #{$payslipId}: Payroll already has final approval";
-                    $failedCount++;
-                    continue;
-                }
-
-                if ((int) ($payslip->approved_by ?? 0) === (int) $actor['actor_user_id']) {
-                    $errors[] = "Payslip #{$payslipId}: Maker-checker violation. The Finance checker cannot also be the final approver.";
                     $failedCount++;
                     continue;
                 }

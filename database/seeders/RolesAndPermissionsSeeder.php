@@ -94,6 +94,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-salary-changes',
             'approve-salary-change',
             'override-salary-retroactive',
+            
+            // ===== RBAC & ADMIN MANAGEMENT =====
+            'manage-employee-permissions',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -161,9 +164,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-overtime-approvals',
             'access-payslip-generation',
             'access-view-payslip',
-            'access-audit-logs',
             // Salary Change Workflow
             'manage-salary-changes',
+            // RBAC & Permissions Management
+            'manage-employee-permissions',
             // Global Access
             'access-global-search',
             'access-notification-center',

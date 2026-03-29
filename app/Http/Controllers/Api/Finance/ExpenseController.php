@@ -295,12 +295,6 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        // Validate self-approval
-        $creatorId = (int) data_get($expense->meta, 'created_by', 0);
-        if ($creatorId !== 0 && $creatorId === (int) Auth::id()) {
-            return response()->json(['message' => 'Expense creator cannot approve their own expense'], 422);
-        }
-
         // If expense has new 4-step approval workflow, use it
         if ($expense->approval_id) {
             $result = $this->expenseApprovalService->approveExpense(
@@ -403,12 +397,6 @@ class ExpenseController extends Controller
         ]);
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
-
-        // Validate self-rejection
-        $creatorId = (int) data_get($expense->meta, 'created_by', 0);
-        if ($creatorId !== 0 && $creatorId === (int) Auth::id()) {
-            return response()->json(['message' => 'Expense creator cannot reject their own expense'], 422);
-        }
 
         // If expense has new 4-step approval workflow, use it
         if ($expense->approval_id) {

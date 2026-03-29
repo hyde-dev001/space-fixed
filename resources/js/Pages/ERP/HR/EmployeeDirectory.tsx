@@ -24,6 +24,13 @@ type Employee = {
   linkedUser?: string; // username or id of linked user account
 };
 
+type EmployeeSummaryStats = {
+  total: number;
+  active: number;
+  onLeave: number;
+  probation: number;
+};
+
 type MetricCardProps = {
   title: string;
   value: number;
@@ -348,8 +355,24 @@ export const EmployeeManagement: React.FC<{
   
   // Get shop owner data from auth for business type filtering
   const auth = pageProps.auth;
-  const shopOwner = auth?.shop_owner;
-  const businessType = shopOwner?.business_type?.toLowerCase(); // 'retail', 'repair', 'both'
+  const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || pageProps?.shop_owner;
+  const rawBusinessType = String(
+    shopOwner?.business_type
+    ?? auth?.business_type
+    ?? auth?.user?.business_type
+    ?? ''
+  ).toLowerCase().trim();
+  const normalizedBusinessType = rawBusinessType.includes('both')
+    ? 'both'
+    : rawBusinessType.includes('repair') && rawBusinessType.includes('retail')
+      ? 'both'
+      : rawBusinessType.includes('repair')
+        ? 'repair'
+        : rawBusinessType.includes('retail')
+          ? 'retail'
+          : rawBusinessType;
+  const isRepairCapableBusiness = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
+  const isRetailCapableBusiness = normalizedBusinessType === 'retail' || normalizedBusinessType === 'both';
   const currentUserId = Number(auth?.user?.id ?? 0);
   const currentUserEmail = String(auth?.user?.email ?? '').trim().toLowerCase();
   
@@ -372,6 +395,7 @@ export const EmployeeManagement: React.FC<{
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [summaryStats, setSummaryStats] = useState<EmployeeSummaryStats | null>(null);
 
   // rows are seeded from server page or client-provided array (or fallback to empty for now)
   const [rows, setRows] = useState<Employee[]>(() => {
@@ -384,6 +408,37 @@ export const EmployeeManagement: React.FC<{
   const [currentPage, setCurrentPage] = useState<number>(() => (isServerPaginated && serverMeta ? serverMeta.current_page : 1));
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => (isServerPaginated && serverMeta ? serverMeta.per_page : 7));
   const [paginationMeta, setPaginationMeta] = useState<any>(serverMeta);
+
+  const fetchEmployeeStats = async (): Promise<EmployeeSummaryStats | null> => {
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch('/api/hr/employees/statistics', {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+
+      return {
+        total: Number(data?.totalEmployees ?? 0),
+        active: Number(data?.activeEmployees ?? 0),
+        onLeave: Number(data?.onLeaveEmployees ?? 0),
+        probation: Number(data?.probationEmployees ?? 0),
+      };
+    } catch {
+      return null;
+    }
+  };
 
   // Fetch employees from API when component mounts or filters change
   useEffect(() => {
@@ -430,6 +485,11 @@ export const EmployeeManagement: React.FC<{
         } else {
           const transformedData = Array.isArray(data) ? data.map(transformEmployeeFromApi) : [];
           setRows(transformedData);
+        }
+
+        const stats = await fetchEmployeeStats();
+        if (stats) {
+          setSummaryStats(stats);
         }
       } catch (error) {
         console.error('Error fetching employees:', error);
@@ -816,6 +876,16 @@ export const EmployeeManagement: React.FC<{
 
   const stats = useMemo(() => {
     const meta = paginationMeta || serverMeta;
+
+    if (summaryStats) {
+      return {
+        total: summaryStats.total,
+        active: summaryStats.active,
+        onLeave: summaryStats.onLeave,
+        probation: summaryStats.probation,
+      };
+    }
+
     const total = (isServerPaginated || meta) ? (meta?.total ?? rows.length) : rows.length;
     const active = rows.filter((r) => r.status === "active").length;
     const onLeave = rows.filter((r) => r.status === "on_leave").length;
@@ -826,7 +896,7 @@ export const EmployeeManagement: React.FC<{
       onLeave,
       probation,
     };
-  }, [rows, serverMeta, paginationMeta, isServerPaginated]);
+  }, [rows, serverMeta, paginationMeta, isServerPaginated, summaryStats]);
 
   const filteredEmployees = useMemo(() => {
     if (isServerPaginated) return rows; // server already applied filters
@@ -889,8 +959,8 @@ export const EmployeeManagement: React.FC<{
               setApiError(null);
               
               const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-              const response = await fetch(`/api/hr/employees/${employeeId}`, {
-                method: 'PATCH',
+              const response = await fetch(`/api/hr/employees/${employeeId}/activate`, {
+                method: 'POST',
                 headers: {
                   'Accept': 'application/json',
                   'Content-Type': 'application/json',
@@ -898,7 +968,7 @@ export const EmployeeManagement: React.FC<{
                   ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
                 },
                 credentials: 'include',
-                body: JSON.stringify({ status: "active" }),
+                body: JSON.stringify({}),
               });
               
               if (!response.ok) {
@@ -1257,8 +1327,8 @@ export const EmployeeManagement: React.FC<{
       ...(availablePermissions.grouped.manager || []),
       ...(availablePermissions.grouped.inventory || []),
       ...(availablePermissions.grouped.procurement || []),
-      ...(businessType !== 'retail' ? (availablePermissions.grouped.repairer || []) : []),
-      ...(availablePermissions.grouped.staff || []),
+      ...(isRepairCapableBusiness ? (availablePermissions.grouped.repairer || []) : []),
+      ...(isRetailCapableBusiness ? (availablePermissions.grouped.staff || []) : []),
     ].filter((permission) => !rolePermissions.has(permission));
 
     setSelectedPermissions((prev) => Array.from(new Set([...prev, ...allPermissions])));
@@ -1442,24 +1512,25 @@ export const EmployeeManagement: React.FC<{
 
     try {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      
-      // Try API route first (accessible to managers)
-      let response = await fetch(`/api/hr/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrf || ''
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          permissions: selectedPermissions
-        })
-      });
+      // Guard against stale/invalid permission values so backend sync does not fail
+      // when historical permissions no longer exist in the permissions table.
+      const knownPermissions = new Set((availablePermissions?.all || []).filter((p): p is string => typeof p === 'string'));
+      const normalizePermissions = (values: string[]) =>
+        Array.from(
+          new Set(
+            values
+              .filter((value): value is string => typeof value === 'string')
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+              .filter((value) => knownPermissions.size === 0 || knownPermissions.has(value))
+          )
+        );
 
-      // Fallback to shop-owner route only when HR endpoint is unavailable
-      if (!response.ok && [404, 405].includes(response.status)) {
-        response = await fetch(`/shop-owner/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
+      let permissionsToSync = normalizePermissions(selectedPermissions);
+      
+      const postSyncPermissions = async (permissionsPayload: string[]) => {
+        // Try API route first (accessible to managers)
+        let response = await fetch(`/api/hr/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1468,13 +1539,74 @@ export const EmployeeManagement: React.FC<{
           },
           credentials: 'include',
           body: JSON.stringify({
-            permissions: selectedPermissions
+            permissions: permissionsPayload
           })
         });
+
+        // Fallback to shop-owner route only when HR endpoint is unavailable
+        if (!response.ok && [404, 405].includes(response.status)) {
+          response = await fetch(`/shop-owner/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRF-TOKEN': csrf || ''
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              permissions: permissionsPayload
+            })
+          });
+        }
+
+        return response;
+      };
+
+      let response = await postSyncPermissions(permissionsToSync);
+
+      // If backend reports invalid permission names, remove them and retry once.
+      if (!response.ok && response.status === 422) {
+        let invalidData: any = {};
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType?.includes('application/json')) {
+            invalidData = await response.json();
+          }
+        } catch {
+          // ignore parsing errors
+        }
+
+        const invalidPermissions = Array.isArray(invalidData?.invalid_permissions)
+          ? invalidData.invalid_permissions.filter((p: unknown): p is string => typeof p === 'string')
+          : [];
+
+        if (invalidPermissions.length > 0) {
+          const invalidSet = new Set(invalidPermissions);
+          permissionsToSync = permissionsToSync.filter((permission) => !invalidSet.has(permission));
+          setSelectedPermissions(permissionsToSync);
+          response = await postSyncPermissions(permissionsToSync);
+        }
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        let errorData: any = {};
+        
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType?.includes('application/json')) {
+            errorData = await response.json();
+          }
+        } catch (e) {
+          // If parsing fails, leave errorData empty
+        }
+        
+        // Handle Laravel validation errors (422)
+        if (response.status === 422 && errorData.errors) {
+          const validationErrors = Object.values(errorData.errors)
+            .flat()
+            .join(', ');
+          throw new Error(`Validation error: ${validationErrors}`);
+        }
         
         // Check if it's a finance permission restriction error for managers
         if (response.status === 403 && errorData.forbidden_permissions) {
@@ -1503,7 +1635,7 @@ export const EmployeeManagement: React.FC<{
           throw new Error(errorData.error || errorData.message || 'Your session has expired. Please log in again.');
         }
         
-        throw new Error(errorData.error || 'Failed to update permissions');
+        throw new Error(errorData.error || errorData.message || 'Failed to update permissions');
       }
 
       setIsPermissionModalOpen(false);
@@ -1518,10 +1650,23 @@ export const EmployeeManagement: React.FC<{
 
     } catch (error: any) {
       console.error('Failed to update permissions:', error);
+      
+      // Extract error message from various error types
+      let errorMessage = 'Failed to update permissions. Please try again.';
+      if (error instanceof Error && error.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: error?.message || 'Failed to update permissions. Please try again.',
+        text: errorMessage,
       });
     } finally {
       setIsSavingPermissions(false);
@@ -1532,6 +1677,26 @@ export const EmployeeManagement: React.FC<{
     // Check required fields based on role
     const isManager = addEmployeeForm.department === 'Manager';
     const positionRequired = !isManager;
+
+    if (!isRepairCapableBusiness && isRepairerRole(addEmployeeForm.department)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Role Not Allowed',
+        text: 'Repairer accounts are only available for repair-capable businesses.',
+        confirmButtonColor: '#f59e0b'
+      });
+      return;
+    }
+
+    if (!isRetailCapableBusiness && (addEmployeeForm.department || '').trim().toLowerCase() === 'staff') {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Role Not Allowed',
+        text: 'Staff accounts are only available for retail-capable businesses.',
+        confirmButtonColor: '#f59e0b'
+      });
+      return;
+    }
     
     if (!addEmployeeForm.firstName || !addEmployeeForm.lastName || !addEmployeeForm.email || !addEmployeeForm.department) {
       Swal.fire({
@@ -1746,7 +1911,7 @@ export const EmployeeManagement: React.FC<{
           <path d="M21 6.5a4.5 4.5 0 01-6.36 4.09l-6.8 6.8a2 2 0 11-2.83-2.83l6.8-6.8A4.5 4.5 0 1116.5 3a4.49 4.49 0 014.5 3.5z" />
         </svg>
       ),
-      show: businessType !== 'retail',
+      show: isRepairCapableBusiness,
     },
     {
       key: 'staff',
@@ -1756,7 +1921,7 @@ export const EmployeeManagement: React.FC<{
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
         </svg>
       ),
-      show: true,
+      show: isRetailCapableBusiness,
     },
   ] as const;
 
@@ -2409,7 +2574,10 @@ export const EmployeeManagement: React.FC<{
                             onChange={(e) =>
                               setAddEmployeeForm({
                                 ...addEmployeeForm,
-                                department: e.target.value,
+                                department: (!isRepairCapableBusiness && isRepairerRole(e.target.value))
+                                  || (!isRetailCapableBusiness && (e.target.value || '').trim().toLowerCase() === 'staff')
+                                  ? ''
+                                  : e.target.value,
                               })
                             }
                             title="Department or role"
@@ -2420,10 +2588,10 @@ export const EmployeeManagement: React.FC<{
                             <option value="Finance">Finance</option>
                             <option value="HR">Human Resources</option>
                             <option value="CRM">Customer Relationship Management</option>
-                            <option value="Repairer">Repairer</option>
+                            {isRepairCapableBusiness && <option value="Repairer">Repairer</option>}
                             <option value="Inventory">Inventory</option>
                             <option value="Procurement">Procurement</option>
-                            <option value="Staff">Staff</option>
+                            {isRetailCapableBusiness && <option value="Staff">Staff</option>}
                           </select>
                         </div>
 

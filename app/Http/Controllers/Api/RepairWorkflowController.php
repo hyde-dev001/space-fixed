@@ -22,6 +22,17 @@ use App\Services\ShopOwnerApprovalPolicyService;
 
 class RepairWorkflowController extends Controller
 {
+    private function userHasManagerReviewAccess($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        return $user->hasRole('Manager')
+            || $user->can('access-repair-reject-review')
+            || $user->can('access-manager-dashboard');
+    }
+
     protected $notificationService;
 
     public function __construct(
@@ -723,8 +734,7 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
             
-            // Check if user has Manager role
-            if (!$user->hasRole('Manager')) {
+            if (!$this->userHasManagerReviewAccess($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized. Manager role required.'
@@ -792,8 +802,7 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
             
-            // Check if user has Manager role
-            if (!$user->hasRole('Manager')) {
+            if (!$this->userHasManagerReviewAccess($user)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -868,7 +877,7 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
 
-            if (!$user->hasRole('Manager')) {
+            if (!$this->userHasManagerReviewAccess($user)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -964,8 +973,7 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
             
-            // Check if user has Manager role
-            if (!$user->hasRole('Manager')) {
+            if (!$this->userHasManagerReviewAccess($user)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1260,7 +1268,7 @@ class RepairWorkflowController extends Controller
         try {
             $user = Auth::guard('user')->user();
             
-            if (!$user || !$user->hasRole('Manager')) {
+            if (!$this->userHasManagerReviewAccess($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
@@ -2054,11 +2062,28 @@ class RepairWorkflowController extends Controller
                 }
 
                 if ($isWalkInReturn) {
-                    DB::rollBack();
+                    $repairRequest->update([
+                        'status' => 'picked_up',
+                        'picked_up_at' => now(),
+                    ]);
+
+                    try {
+                        $this->autoGenerateInvoiceForPickedUpRepair($repairRequest);
+                    } catch (\Throwable $invoiceError) {
+                        \Log::warning('Failed to auto-generate invoice for in-shop picked-up repair (shop owner flow)', [
+                            'repair_id' => $repairRequest->id,
+                            'request_id' => $repairRequest->request_id,
+                            'error' => $invoiceError->getMessage(),
+                        ]);
+                    }
+
+                    DB::commit();
+
                     return response()->json([
-                        'success' => false,
-                        'message' => 'For walk-in returns, only the assigned repairer can mark the repaired shoe as received in-shop.'
-                    ], 403);
+                        'success' => true,
+                        'message' => 'Repair marked as received in-shop and completed.',
+                        'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                    ]);
                 }
                 
                 // Enable pickup confirmation

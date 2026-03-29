@@ -661,9 +661,19 @@ const repairItems: NavItem[] = [
 const AppSidebar_ERP: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu, setOpenSubmenu } = useSidebar();
   const { url, props } = usePage();
+  const auth = (props as any)?.auth;
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
   const permissions = (props as any)?.auth?.permissions || [];
+  const rawBusinessType = String(
+    auth?.shop_owner?.business_type
+    ?? auth?.user?.shop_owner?.business_type
+    ?? ''
+  ).toLowerCase().trim();
+  const normalizedBusinessType = rawBusinessType.includes('both') ? 'both' : rawBusinessType;
+  const isRepairCapableBusiness = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
+  const isRetailOnlyBusiness = normalizedBusinessType === 'retail';
+  const isRepairOnlyBusiness = normalizedBusinessType === 'repair';
   const normalizedRole = String(role || '').toUpperCase();
   const normalizedRoles = Array.isArray(roles)
     ? roles.map((value: string) => String(value).toUpperCase())
@@ -672,6 +682,23 @@ const AppSidebar_ERP: React.FC = () => {
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
+  const renderedItemKeys = new Set<string>();
+
+  const getNavItemKey = (item: NavItem): string => {
+    return `${item.route || ""}|${JSON.stringify(item.params || {})}|${item.name}`;
+  };
+
+  // Helper function to deduplicate items based on route and track what's been rendered
+  const deduplicateItems = (items: NavItem[]): NavItem[] => {
+    return items.filter(item => {
+      const itemKey = getNavItemKey(item);
+      if (renderedItemKeys.has(itemKey)) {
+        return false; // Skip if already rendered
+      }
+      renderedItemKeys.add(itemKey);
+      return true;
+    });
+  };
 
   // Initialize with collapsed menus
   useEffect(() => {
@@ -917,7 +944,7 @@ const AppSidebar_ERP: React.FC = () => {
   const getAttendanceSection = (): AttendanceSectionKey => {
     if (hasStaffAccess()) return "staff";
     if (hasRepairerAccess()) return "repair";
-    if (normalizedRole === "MANAGER" || normalizedRoles.includes("MANAGER")) return "manager";
+    if (hasManagerAccess()) return "manager";
     if (hasInventoryAccess()) return "inventory";
     if (hasProcurementAccess()) return "procurement";
     if (hasHRAccess()) return "hr";
@@ -949,10 +976,11 @@ const AppSidebar_ERP: React.FC = () => {
       menuGroups.push({ menuType: "repair", items: withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem]) });
     }
 
-    if (normalizedRole === "MANAGER" || normalizedRoles.includes("MANAGER")) {
+    if (hasManagerAccess()) {
+      const filteredManagerItems = getFilteredManagerItems();
       menuGroups.push({
         menuType: "manager",
-        items: withAttendanceForSection("manager", [...managerItems, myPayslipsItem]),
+        items: withAttendanceForSection("manager", [...filteredManagerItems, myPayslipsItem]),
       });
     }
 
@@ -986,9 +1014,23 @@ const AppSidebar_ERP: React.FC = () => {
       menuGroups.push({ menuType: "crm", items: withAttendanceForSection("crm", [...crmItems, myPayslipsItem]) });
     }
 
+    // Deduplicate items across all menu groups based on route to prevent duplicates when users have multiple roles
+    const seenRoutes = new Set<string>();
+    const deduplicatedMenuGroups = menuGroups.map(group => ({
+      ...group,
+      items: group.items.filter(item => {
+        const itemKey = getNavItemKey(item);
+        if (seenRoutes.has(itemKey)) {
+          return false; // Skip duplicate
+        }
+        seenRoutes.add(itemKey);
+        return true;
+      })
+    }));
+
     let activeSubmenuKey: string | null = null;
 
-    menuGroups.some(({ menuType, items }) => {
+    deduplicatedMenuGroups.some(({ menuType, items }) => {
       return items.some((nav, index) => {
         if (!nav.subItems || nav.subItems.length === 0) return false;
 
@@ -1060,10 +1102,10 @@ const AppSidebar_ERP: React.FC = () => {
           // Filter submenu items based on specific permissions
           item.subItems = item.subItems.filter((subItem) => {
             if (subItem.name === "Repair Pricing Approval") {
-              return permissions.includes('access-repair-price-approval');
+              return !isRetailOnlyBusiness && permissions.includes('access-repair-price-approval');
             }
             if (subItem.name === "Shoe Pricing Approval") {
-              return permissions.includes('access-shoe-price-approval');
+              return !isRepairOnlyBusiness && permissions.includes('access-shoe-price-approval');
             }
             if (subItem.name === "Purchase Request Review") {
               return permissions.includes('access-shoe-price-approval') || permissions.includes('access-repair-price-approval');
@@ -1135,14 +1177,84 @@ const AppSidebar_ERP: React.FC = () => {
     return crmPermissions.some(perm => permissions.includes(perm));
   };
 
-  // Check if user has Staff role (don't check permissions - Finance has pricing permissions but shouldn't see Staff section)
-  const hasStaffAccess = () => {
-    return normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF';
+  // Check if user has manager role or manager-specific permissions
+  const hasManagerAccess = () => {
+    if (normalizedRoles.includes('MANAGER') || normalizedRole === 'MANAGER') return true;
+
+    const managerPermissions = [
+      'access-manager-dashboard',
+      'access-audit-logs',
+      'access-manager-reports',
+      'access-inventory-overview',
+      'access-repair-reject-review',
+      'access-suspend-account',
+    ];
+
+    return managerPermissions.some((perm) => permissions.includes(perm));
   };
 
-  // Check if user has Repairer role (don't check permissions - Finance has repair pricing permissions but shouldn't see Repairer section)
+  // Check if user has Staff role or staff-specific permissions
+  const hasStaffAccess = () => {
+    if (normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF') return true;
+
+    const staffPermissions = [
+      'access-staff-dashboard',
+      'access-staff-job-orders',
+      'access-product-management',
+      'access-product-upload-staff',
+      'access-shoe-pricing',
+      'access-staff-customers',
+    ];
+
+    return staffPermissions.some((perm) => permissions.includes(perm));
+  };
+
+  // Check if user has Repairer role or repairer-specific permissions
   const hasRepairerAccess = () => {
-    return normalizedRoles.includes('REPAIRER') || normalizedRole === "REPAIRER";
+    if (normalizedRoles.includes('REPAIRER') || normalizedRole === 'REPAIRER') return true;
+
+    const repairerPermissions = [
+      'access-repairer-dashboard',
+      'access-repair-job-orders',
+      'access-upload-service',
+      'access-pricing-services',
+      'access-repair-stocks',
+      'access-repairer-support',
+    ];
+
+    return repairerPermissions.some((perm) => permissions.includes(perm));
+  };
+
+  // Filter manager items based on user permissions
+  const getFilteredManagerItems = () => {
+    return managerItems.filter((item) => {
+      if (item.route === 'erp.manager.dashboard') {
+        return permissions.includes('access-manager-dashboard');
+      }
+
+      if (item.route === 'erp.manager.audit-logs') {
+        return permissions.includes('access-audit-logs');
+      }
+
+      if (item.route === 'erp.manager.suspend-approval') {
+        return permissions.includes('access-suspend-account');
+      }
+
+      if (item.route === 'erp.manager.repair-rejection-review') {
+        // Repair rejection review is only relevant for repair-capable shops.
+        return isRepairCapableBusiness && permissions.includes('access-repair-reject-review');
+      }
+
+      if (item.route === 'erp.manager.inventory-overview') {
+        return permissions.includes('access-inventory-overview');
+      }
+
+      if (item.route === 'erp.manager.dss-insights') {
+        return permissions.includes('access-manager-reports') || permissions.includes('access-manager-dashboard');
+      }
+
+      return false;
+    });
   };
 
   // Check if user has Inventory Manager role or explicit inventory gate permission
@@ -1177,6 +1289,16 @@ const AppSidebar_ERP: React.FC = () => {
       'access-supplier-order-monitoring',
     ];
     return procurementPagePermissions.some(p => permissions.includes(p));
+  };
+
+  const getFilteredInventoryItems = () => {
+    return managerInventoryItems.filter((item) => {
+      if (item.route === 'erp.inventory.request-material-approval') {
+        return isRepairCapableBusiness;
+      }
+
+      return true;
+    });
   };
 
   // Filter HR items based on user permissions
@@ -1525,7 +1647,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem]), "staff")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem])), "staff")}
               </div>
             </div>
           </nav>
@@ -1548,12 +1670,12 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem]), "repair")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem])), "repair")}
               </div>
             </div>
           </nav>
         )}
-        {role === "MANAGER" && (
+        {hasManagerAccess() && (
           <>
             <nav className="mb-6">
               <div className="flex flex-col gap-4">
@@ -1572,7 +1694,7 @@ const AppSidebar_ERP: React.FC = () => {
                     )}
                   </h2>
                   {renderMenuItems(
-                      withAttendanceForSection("manager", [...managerItems, myPayslipsItem]),
+                    deduplicateItems(withAttendanceForSection("manager", [...getFilteredManagerItems(), myPayslipsItem])),
                     "manager"
                   )}
                 </div>
@@ -1597,7 +1719,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(withAttendanceForSection("inventory", [...managerInventoryItems, myPayslipsItem]), "manager")}
+                  {renderMenuItems(deduplicateItems(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem])), "manager")}
                 </div>
               </div>
             </nav>
@@ -1619,7 +1741,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem]), "manager")}
+                  {renderMenuItems(deduplicateItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem])), "manager")}
                 </div>
               </div>
             </nav>
@@ -1642,7 +1764,7 @@ const AppSidebar_ERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem]),
+                  deduplicateItems(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem])),
                   "hr"
                 )}
               </div>
@@ -1666,7 +1788,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem]), "finance")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem])), "finance")}
               </div>
             </div>
           </nav>
@@ -1688,7 +1810,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem]), "crm")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem])), "crm")}
               </div>
             </div>
           </nav>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
+use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Models\PermissionAuditLog;
@@ -57,11 +58,121 @@ class UserAccessControlController extends Controller
         return in_array($permission, $financePermissions, true);
     }
 
+    protected function resolveShopOwnerContext(?ShopOwner $shopOwner = null, ?User $authenticatedUser = null): ?ShopOwner
+    {
+        if ($shopOwner) {
+            return $shopOwner;
+        }
+
+        if ($authenticatedUser && !empty($authenticatedUser->shop_owner_id)) {
+            return ShopOwner::find($authenticatedUser->shop_owner_id);
+        }
+
+        return null;
+    }
+
+    protected function isStaffPermission(string $permission): bool
+    {
+        return str_starts_with($permission, 'access-staff-')
+            || str_contains($permission, 'staff-job-orders')
+            || str_contains($permission, 'product-management')
+            || str_contains($permission, 'product-upload-staff')
+            || str_contains($permission, 'shoe-pricing')
+            || str_contains($permission, 'staff-time-in')
+            || str_contains($permission, 'staff-leave')
+            || str_contains($permission, 'color-variant-manager')
+            || str_contains($permission, 'staff-customers');
+    }
+
+    protected function isRepairerPermission(string $permission): bool
+    {
+        return str_starts_with($permission, 'access-repairer-')
+            || str_contains($permission, 'repair-job-orders')
+            || str_contains($permission, 'pricing-services')
+            || str_contains($permission, 'repairer-support')
+            || str_contains($permission, 'repair-stocks')
+            || str_contains($permission, 'upload-service');
+    }
+
+    protected function partitionPermissionsByBusinessType(array $permissions, ?ShopOwner $shopOwner): array
+    {
+        if (!$shopOwner) {
+            return [
+                'allowed' => $permissions,
+                'blocked' => [],
+            ];
+        }
+
+        $canAccessRetail = $this->accessControl->canAccessRetail($shopOwner);
+        $canAccessRepair = $this->accessControl->canAccessRepair($shopOwner);
+
+        $allowed = [];
+        $blocked = [];
+
+        foreach ($permissions as $permission) {
+            if (!$canAccessRetail && $this->isStaffPermission($permission)) {
+                $blocked[] = $permission;
+                continue;
+            }
+
+            if (!$canAccessRepair && $this->isRepairerPermission($permission)) {
+                $blocked[] = $permission;
+                continue;
+            }
+
+            $allowed[] = $permission;
+        }
+
+        return [
+            'allowed' => array_values(array_unique($allowed)),
+            'blocked' => array_values(array_unique($blocked)),
+        ];
+    }
+
+    /**
+     * Determine the primary role for a user from assigned roles or legacy role column.
+     */
+    protected function getPrimaryRoleName(User $user): ?string
+    {
+        $assignedRoles = $user->getRoleNames()->values()->all();
+        if (!empty($assignedRoles)) {
+            return $assignedRoles[0];
+        }
+
+        $legacyRole = is_string($user->role ?? null) ? trim((string) $user->role) : '';
+        if ($legacyRole === '') {
+            return null;
+        }
+
+        $matchedRole = Role::where('guard_name', 'user')
+            ->whereRaw('LOWER(name) = ?', [strtolower($legacyRole)])
+            ->first();
+
+        return $matchedRole?->name;
+    }
+
+    /**
+     * Return assigned roles except the primary role.
+     */
+    protected function getAdditionalRoleNames(User $user, ?string $primaryRole = null): array
+    {
+        $assignedRoles = $user->getRoleNames()->values()->all();
+        if (!$primaryRole) {
+            return $assignedRoles;
+        }
+
+        return array_values(array_filter(
+            $assignedRoles,
+            fn (string $role) => $role !== $primaryRole
+        ));
+    }
+
     /**
      * Display the user access control page.
      */
     public function index()
     {
+        /** @var ShopOwner|null $shopOwner */
         $shopOwner = Auth::guard('shop_owner')->user();
 
         // If the request is unauthenticated for a shop owner, redirect to the shop-owner login
@@ -83,7 +194,8 @@ class UserAccessControlController extends Controller
             ->get()
             ->map(function($employee) {
                 $user = $employee->user;
-                $roleName = $user?->getRoleNames()->first() ?? null;
+                $roleName = $user ? $this->getPrimaryRoleName($user) : null;
+                $additionalRoles = $user ? $this->getAdditionalRoleNames($user, $roleName) : [];
                 return [
                     'id' => $employee->id,
                     'name' => $employee->name,
@@ -105,7 +217,7 @@ class UserAccessControlController extends Controller
                     'directPermissions' => $user?->getDirectPermissions()->pluck('name')->toArray() ?? [],
                     // Include role information
                     'primaryRole' => $roleName ?? $employee->department ?? 'Staff',
-                    'additionalRoles' => $user?->additional_roles ?? [],
+                    'additionalRoles' => $additionalRoles,
                 ];
             });
         
@@ -120,6 +232,7 @@ class UserAccessControlController extends Controller
     public function storeEmployee(Request $request)
     {
         try {
+            /** @var ShopOwner|null $shopOwner */
             $shopOwner = Auth::guard('shop_owner')->user();
             
             if (!$shopOwner) {
@@ -357,6 +470,10 @@ class UserAccessControlController extends Controller
             ->pluck('name')
             ->toArray();
 
+        $contextShopOwner = $this->resolveShopOwnerContext($shopOwner, $user);
+        $permissionPartition = $this->partitionPermissionsByBusinessType($allPermissions, $contextShopOwner);
+        $allPermissions = $permissionPartition['allowed'];
+
         // Group permissions by module - SIMPLIFIED PAGE-BASED STRUCTURE
         $grouped = [
             'finance' => [],
@@ -500,11 +617,14 @@ class UserAccessControlController extends Controller
             return response()->json(['error' => 'Employee not found'], 404);
         }
 
+        $primaryRoleName = $this->getPrimaryRoleName($employee);
+
         return response()->json([
             'userId' => $employee->id,
             'name' => $employee->name,
             'email' => $employee->email,
-            'roleName' => $employee->getRoleNames()->first() ?? null,
+            'roleName' => $primaryRoleName,
+            'additionalRoles' => $this->getAdditionalRoleNames($employee, $primaryRoleName),
             'allPermissions' => $employee->getAllPermissions()->pluck('name')->toArray(),
             'rolePermissions' => $employee->getPermissionsViaRoles()->pluck('name')->toArray(),
             'directPermissions' => $employee->getDirectPermissions()->pluck('name')->toArray(),
@@ -544,6 +664,17 @@ class UserAccessControlController extends Controller
                 'action' => 'required|in:give,revoke',
                 'permission' => 'required|string|exists:permissions,name',
             ]);
+
+            $contextShopOwner = $this->resolveShopOwnerContext($shopOwner, $authenticatedUser);
+            if ($validated['action'] === 'give') {
+                $permissionPartition = $this->partitionPermissionsByBusinessType([$validated['permission']], $contextShopOwner);
+                if (!empty($permissionPartition['blocked'])) {
+                    return response()->json([
+                        'error' => 'This permission is not available for your shop business type.',
+                        'forbidden_permission' => $validated['permission']
+                    ], 403);
+                }
+            }
 
             if ($validated['action'] === 'give' && $user->hasRole('Manager') && $this->isFinancePermission($validated['permission'])) {
                 return response()->json([
@@ -642,13 +773,34 @@ class UserAccessControlController extends Controller
             }
 
             $validated = $request->validate([
-                'permissions' => 'required|array',
-                'permissions.*' => 'string|exists:permissions,name',
+                'permissions' => 'present|array',
+                'permissions.*' => 'nullable|string',
             ]);
+
+            $requestedPermissions = collect($validated['permissions'] ?? [])
+                ->filter(fn ($permission) => is_string($permission))
+                ->map(fn (string $permission): string => trim($permission))
+                ->filter(fn (string $permission): bool => $permission !== '')
+                ->unique()
+                ->values()
+                ->toArray();
+
+            $validPermissions = Permission::query()
+                ->where('guard_name', 'user')
+                ->whereIn('name', $requestedPermissions)
+                ->pluck('name')
+                ->toArray();
+
+            $contextShopOwner = $this->resolveShopOwnerContext($shopOwner, $authenticatedUser);
+            $permissionPartition = $this->partitionPermissionsByBusinessType($validPermissions, $contextShopOwner);
+            $validPermissions = $permissionPartition['allowed'];
+            $blockedPermissions = $permissionPartition['blocked'];
+
+            $invalidPermissions = array_values(array_diff($requestedPermissions, $validPermissions));
 
             if ($user->hasRole('Manager')) {
                 $requestedFinancePerms = array_values(array_filter(
-                    $validated['permissions'],
+                    $validPermissions,
                     fn (string $permission): bool => $this->isFinancePermission($permission)
                 ));
 
@@ -658,6 +810,13 @@ class UserAccessControlController extends Controller
                         'forbidden_permissions' => $requestedFinancePerms
                     ], 403);
                 }
+            }
+
+            if (!empty($blockedPermissions)) {
+                return response()->json([
+                    'error' => 'Some permissions are not available for your shop business type.',
+                    'forbidden_permissions' => $blockedPermissions,
+                ], 403);
             }
 
             // Get current direct permissions (before sync)
@@ -674,7 +833,7 @@ class UserAccessControlController extends Controller
             $user->permissions()->detach();
             
             // Then give the new permissions explicitly with 'user' guard
-            foreach ($validated['permissions'] as $permissionName) {
+            foreach ($validPermissions as $permissionName) {
                 $permission = Permission::where('name', $permissionName)
                     ->where('guard_name', 'user')
                     ->first();
@@ -738,8 +897,9 @@ class UserAccessControlController extends Controller
                     'target_type' => 'user',
                     'target_id' => $user->id,
                     'metadata' => [
-                        'permissions_count' => count($validated['permissions']),
-                        'permissions' => $validated['permissions'],
+                        'permissions_count' => count($validPermissions),
+                        'permissions' => $validPermissions,
+                        'invalid_permissions_ignored' => $invalidPermissions,
                         'user_name' => $user->name,
                         'user_email' => $user->email,
                         'actor_type' => $shopOwner ? 'shop_owner' : 'user',
@@ -755,10 +915,34 @@ class UserAccessControlController extends Controller
                 'allPermissions' => $user->getAllPermissions()->pluck('name')->toArray(),
                 'rolePermissions' => $user->getPermissionsViaRoles()->pluck('name')->toArray(),
                 'directPermissions' => $user->getDirectPermissions()->pluck('name')->toArray(),
+                'invalid_permissions' => $invalidPermissions,
             ]);
 
         } catch (ValidationException $e) {
-            return response()->json(['error' => $e->errors()], 422);
+            // Extract invalid permissions from validation errors
+            $invalidPermissions = [];
+            $requestedPermissions = $request->input('permissions', []);
+            
+            foreach ($e->errors() as $field => $messages) {
+                // Extract index from field like 'permissions.0'
+                if (preg_match('/permissions\.(\d+)/', $field, $matches)) {
+                    $index = (int)$matches[1];
+                    if (isset($requestedPermissions[$index])) {
+                        $invalidPermissions[] = $requestedPermissions[$index];
+                    }
+                }
+            }
+            
+            $errorMessage = 'Some permissions are invalid or do not exist.';
+            if (!empty($invalidPermissions)) {
+                $errorMessage .= ' Invalid: ' . implode(', ', array_unique($invalidPermissions));
+            }
+            
+            return response()->json([
+                'error' => $errorMessage,
+                'invalid_permissions' => array_unique($invalidPermissions),
+                'validation_errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to sync permissions: ' . $e->getMessage()], 500);
         }
@@ -778,9 +962,21 @@ class UserAccessControlController extends Controller
                 return response()->json(['error' => 'Not authenticated'], 401);
             }
 
-            // Get all available roles
+            $contextShopOwner = $this->resolveShopOwnerContext($shopOwner, $authenticatedUser);
+            $allowedRoles = $contextShopOwner
+                ? array_map('strtolower', $this->accessControl->getAllowedRoles($contextShopOwner))
+                : [];
+
+            // Get all available roles filtered by business-type allowed roles.
             $allRoles = Role::where('guard_name', 'user')
                 ->get()
+                ->filter(function ($role) use ($allowedRoles) {
+                    if (empty($allowedRoles)) {
+                        return true;
+                    }
+
+                    return in_array(strtolower($role->name), $allowedRoles, true);
+                })
                 ->map(fn($role) => [
                     'name' => $role->name,
                     'permissionCount' => $role->permissions()->count(),
@@ -823,19 +1019,56 @@ class UserAccessControlController extends Controller
             }
 
             $validated = $request->validate([
-                'additional_roles' => 'required|array',
-                'additional_roles.*' => 'string|exists:roles,name,guard_name,user',
+                // "present" allows an empty array so clearing all extra roles is valid.
+                'additional_roles' => 'present|array',
+                'additional_roles.*' => 'nullable|string',
             ]);
 
-            // Get old roles for audit
-            $oldRoles = $user->additional_roles ?? [];
-            $newRoles = $validated['additional_roles'];
+            $validRoleNames = Role::where('guard_name', 'user')->pluck('name')->toArray();
+            $validRoleLookup = array_fill_keys($validRoleNames, true);
+
+            $requestedRoles = collect($validated['additional_roles'] ?? [])
+                ->filter(fn ($role) => is_string($role))
+                ->map(fn (string $role) => trim($role))
+                ->filter(fn (string $role) => $role !== '')
+                ->unique()
+                ->values()
+                ->all();
+
+            $invalidRoles = array_values(array_filter(
+                $requestedRoles,
+                fn (string $role) => !isset($validRoleLookup[$role])
+            ));
+
+            $primaryRole = $this->getPrimaryRoleName($user);
+            $oldRoles = $this->getAdditionalRoleNames($user, $primaryRole);
+            $newRoles = array_values(array_filter(
+                $requestedRoles,
+                fn (string $role) => isset($validRoleLookup[$role])
+            ));
+
+            $contextShopOwner = $this->resolveShopOwnerContext($shopOwner, $authenticatedUser);
+            if ($contextShopOwner) {
+                foreach ($newRoles as $roleName) {
+                    $roleValidation = $this->accessControl->validateRoleCreation($roleName, $contextShopOwner);
+                    if (!$roleValidation['allowed']) {
+                        return response()->json([
+                            'error' => $roleValidation['reason'],
+                            'forbidden_role' => $roleName,
+                        ], 403);
+                    }
+                }
+            }
 
             // Disable automatic logging to use custom log
             activity()->disableLogging();
             
-            // Set the new additional roles
-            $user->setAdditionalRoles($newRoles);
+            // Keep primary role assigned while syncing additional roles.
+            $rolesToSync = $newRoles;
+            if ($primaryRole && !in_array($primaryRole, $rolesToSync, true)) {
+                array_unshift($rolesToSync, $primaryRole);
+            }
+            $user->syncRoles($rolesToSync);
             
             // Re-enable automatic logging
             activity()->enableLogging();
@@ -863,20 +1096,40 @@ class UserAccessControlController extends Controller
                 ])
                 ->log("Additional roles updated for {$user->name} by {$actorName}");
 
-            // Permission Audit Log
-            PermissionAuditLog::logRolesSynced(
-                $user,
-                $oldRoles,
-                $newRoles,
-                "Additional roles updated: " . implode(', ', $newRoles ?: ['none'])
-            );
+            // Permission Audit Log (non-blocking)
+            try {
+                foreach ($addedRoles as $addedRole) {
+                    PermissionAuditLog::logRoleAssigned(
+                        $user,
+                        (string) $addedRole,
+                        'Additional role assigned via User Access Control'
+                    );
+                }
+
+                foreach ($removedRoles as $removedRole) {
+                    PermissionAuditLog::logRoleRemoved(
+                        $user,
+                        (string) $removedRole,
+                        'Additional role removed via User Access Control'
+                    );
+                }
+            } catch (\Throwable $auditError) {
+                // Do not fail the role sync if audit logging encounters an issue.
+                logger()->warning('Permission role audit logging failed', [
+                    'user_id' => $user->id,
+                    'added_roles' => array_values($addedRoles),
+                    'removed_roles' => array_values($removedRoles),
+                    'error' => $auditError->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => "Roles updated for {$user->name}",
-                'primaryRole' => $user->role,
-                'additionalRoles' => $user->additional_roles ?? [],
-                'allRoles' => $user->getAllRoles(),
+                'primaryRole' => $primaryRole,
+                'additionalRoles' => $newRoles,
+                'invalid_roles' => $invalidRoles,
+                'allRoles' => $user->getRoleNames()->values()->all(),
                 'allPermissions' => $user->getAllPermissions()->pluck('name')->toArray(),
                 'rolePermissions' => $user->getPermissionsViaRoles()->pluck('name')->toArray(),
                 'directPermissions' => $user->getDirectPermissions()->pluck('name')->toArray(),
@@ -1213,6 +1466,7 @@ class UserAccessControlController extends Controller
     public function getAllowedRoles()
     {
         try {
+            /** @var ShopOwner|null $shopOwner */
             $shopOwner = Auth::guard('shop_owner')->user();
             
             if (!$shopOwner) {

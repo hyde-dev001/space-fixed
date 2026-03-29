@@ -159,6 +159,13 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     });
 
     // ============================================
+    // INVENTORY MANAGEMENT (Shop Owner)
+    // ============================================
+    Route::prefix('inventory')->middleware('check.business.type:retail,both')->group(function () {
+        Route::get('/overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index'])->name('shop_owner.inventory.overview');
+    });
+
+    // ============================================
     // ORDER MANAGEMENT (Shop Owner)
     // ============================================
     Route::prefix('orders')->middleware('check.business.type:retail,both')->group(function () {

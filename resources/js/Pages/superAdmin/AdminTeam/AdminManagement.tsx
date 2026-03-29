@@ -145,11 +145,17 @@ const AdminManagement = ({ admins = [], stats = {} }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
 
+  const formatRoleLabel = (role?: string) => {
+    if (role === 'super_admin') return 'Super Admin';
+    if (role === 'admin') return 'Admin';
+    return role ? role.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) : 'Admin';
+  };
+
   // Transform admins data to include name field for compatibility
   const transformedAdmins = admins.map(admin => ({
     ...admin,
     name: `${admin.firstName} ${admin.lastName}`,
-    role: 'Super Admin',
+    role: formatRoleLabel(admin.role),
     last_login_at: admin.lastLogin,
     created_at: admin.createdAt
   }));

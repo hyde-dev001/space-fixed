@@ -269,25 +269,41 @@ class PremiumCheckoutController extends Controller
 
         $subscription = ShopOwnerSubscription::with('premiumPlan')
             ->where('shop_owner_id', $shopOwner->id)
-            ->active()
+            ->showroomEntitled()
             ->latest('updated_at')
             ->first();
 
         if (!$subscription) {
             return response()->json([
                 'success' => false,
-                'message' => 'No active premium subscription found.',
+                'message' => 'No valid premium subscription found.',
             ], 404);
         }
 
         $enabled = (bool) $validated['enabled'];
 
-        $subscription->update([
+        $updatePayload = [
             'auto_renew' => $enabled,
             'auto_renew_status' => $enabled
                 ? ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED
                 : ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED,
-        ]);
+        ];
+
+        // If user re-enables auto-renew during remaining paid access,
+        // restore status to active so renewal processing can include this subscription.
+        if ($enabled && $subscription->status === 'cancelled') {
+            $updatePayload['status'] = 'active';
+
+            if (
+                Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
+                && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes')
+            ) {
+                $updatePayload['cancellation_reason'] = null;
+                $updatePayload['cancellation_notes'] = null;
+            }
+        }
+
+        $subscription->update($updatePayload);
 
         Log::info('Shop owner toggled premium auto-renew', [
             'shop_owner_id' => $shopOwner->id,
@@ -319,7 +335,13 @@ class PremiumCheckoutController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
-        $subscription = ShopOwnerSubscription::with('premiumPlan')
+        $entitledSubscription = ShopOwnerSubscription::with('premiumPlan')
+            ->where('shop_owner_id', $shopOwner->id)
+            ->showroomEntitled()
+            ->latest('updated_at')
+            ->first();
+
+        $subscription = $entitledSubscription ?: ShopOwnerSubscription::with('premiumPlan')
             ->where('shop_owner_id', $shopOwner->id)
             ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'cancelled' THEN 1 WHEN 'pending' THEN 2 WHEN 'expired' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END")
             ->latest('updated_at')

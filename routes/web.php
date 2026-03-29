@@ -495,7 +495,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
         Route::get('/inventory-overview', function () {
             return Inertia::render('ShopOwner/Products/product management/InventoryOverview');
-        })->name('inventory-overview');
+        })->middleware('check.registration.type:company')->name('inventory-overview');
     });
 
     // SERVICE MANAGEMENT - Repair or Both only
@@ -1022,8 +1022,8 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 });
 
 // Manager API Routes (Phase 5 - Rejection Review)
-// Only accessible by users with Manager role
-Route::middleware(['auth:user', 'role:Manager'])->prefix('api/manager/repairs')->group(function () {
+// Accessible by Manager role or explicit manager-level permissions
+Route::middleware(['auth:user', 'role_or_permission:Manager|access-manager-dashboard|access-repair-reject-review'])->prefix('api/manager/repairs')->group(function () {
     // Get repairs pending manager review
     Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews']);
 
@@ -1492,8 +1492,11 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
     Route::get('/customer-reviews', [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'indexPage'])->name('customer-reviews');
 });
 
-// MANAGER routes (Manager role required; some routes add business-type/permission middleware)
-Route::prefix('erp/manager')->name('erp.manager.')->middleware(['auth:user', 'role:Manager'])->group(function () {
+// MANAGER routes (Manager role OR manager permissions)
+Route::prefix('erp/manager')->name('erp.manager.')->middleware([
+    'auth:user',
+    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-inventory-overview|access-repair-reject-review|access-suspend-account'
+])->group(function () {
     Route::get('/dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1692,7 +1695,7 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/inventory/RequestApproval');
-    })->name('request-material-approval');
+    })->middleware('check.user.business.type:repair,both')->name('request-material-approval');
 
     Route::get('/supplier-order-monitoring', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -1710,7 +1713,16 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
         $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem', 'requester', 'approver'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where(function ($query) {
+                $query->where('request_source', 'manual')
+                    ->orWhere(function ($repairQuery) {
+                        $repairQuery->where('request_source', 'repair')
+                            ->whereNotNull('inventory_approved_date');
+                    });
+            })
+            ->orderBy('requested_date', 'desc')
+            ->paginate(100);
         return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
     })->name('stock-request-approval');
 
@@ -1803,7 +1815,9 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
 
 // STAFF routes (both MANAGER and STAFF can access)
 Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manager.staff:staff'])->group(function () {
-    Route::get('/dashboard', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])
+        ->middleware('permission:access-staff-dashboard')
+        ->name('dashboard');
     Route::get('/job-orders', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -2062,7 +2076,12 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
 });
 
 // Manager API Routes
-Route::prefix('api/manager')->name('api.manager.')->middleware(['web', 'auth:user', 'check.suspension', 'role:Manager'])->group(function () {
+Route::prefix('api/manager')->name('api.manager.')->middleware([
+    'web',
+    'auth:user',
+    'check.suspension',
+    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-inventory-overview|access-repair-reject-review|access-suspend-account'
+])->group(function () {
     Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])->name('dashboard.stats');
     Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
     Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])->name('staff-performance');

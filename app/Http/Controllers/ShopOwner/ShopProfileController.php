@@ -39,6 +39,8 @@ class ShopProfileController extends Controller
                 'country' => $shopOwner->country,
                 'city_state' => $shopOwner->city_state,
                 'postal_code' => $shopOwner->postal_code,
+                'business_address' => $shopOwner->business_address,
+                'shop_address' => $shopOwner->shop_address ?: $shopOwner->business_address,
                 'tax_id' => $shopOwner->tax_id,
                 'profile_photo' => $shopOwner->profile_photo,
                 'cover_photo' => $shopOwner->cover_photo,

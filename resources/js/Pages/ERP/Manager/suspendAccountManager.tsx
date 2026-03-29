@@ -257,12 +257,13 @@ const SuspendAccount: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           action: 'approve',
-          note: approvalNote.trim(),
+          note: approvalNote.trim() || null,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to approve suspension request');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Failed to approve suspension request');
       }
 
       const data = await response.json();
@@ -286,7 +287,7 @@ const SuspendAccount: React.FC = () => {
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: 'Failed to approve suspension request',
+        text: error instanceof Error ? error.message : 'Failed to approve suspension request',
         confirmButtonColor: '#ef4444',
       });
     }
