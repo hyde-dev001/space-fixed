@@ -742,6 +742,13 @@ class AttendanceController extends Controller
             ->where('date', $today)
             ->first();
 
+        // Check if employee is on approved leave today
+        $approvedLeave = LeaveRequest::where('employee_id', $employee->id)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $today)
+            ->whereDate('end_date', '>=', $today)
+            ->first();
+
         if (!$attendance || !$attendance->check_in_time) {
             return response()->json([
                 'error' => 'You have not checked in today'
@@ -872,6 +879,13 @@ class AttendanceController extends Controller
         $attendance = AttendanceRecord::where('employee_id', $employee->id)
             ->where('date', $today)
             ->first();
+
+        // Check if employee has an approved leave that covers today.
+        $approvedLeave = LeaveRequest::where('employee_id', $employee->id)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $today)
+            ->whereDate('end_date', '>=', $today)
+            ->first();
         
         // Check for approved overtime for today (seamless overtime integration)
         $approvedOvertime = OvertimeRequest::where('employee_id', $employee->id)
@@ -884,7 +898,7 @@ class AttendanceController extends Controller
             'checked_out' => $attendance && $attendance->check_out_time ? true : false,
             'check_in_time' => $attendance ? $attendance->check_in_time : null,
             'check_out_time' => $attendance ? $attendance->check_out_time : null,
-            'status' => $attendance ? $attendance->status : 'pending',
+            'status' => $approvedLeave ? 'on_leave' : ($attendance ? $attendance->status : 'pending'),
             'working_hours' => $attendance ? $attendance->working_hours : 0,
             'lunch_break_start' => $attendance ? $attendance->lunch_break_start : null,
             'lunch_break_end' => $attendance ? $attendance->lunch_break_end : null,
@@ -895,6 +909,10 @@ class AttendanceController extends Controller
             'expected_check_in' => $attendance ? $attendance->expected_check_in : null,
             'is_early_departure' => $attendance ? (bool) ($attendance->is_early_departure ?? false) : false,
             'minutes_early_departure' => $attendance ? (int) ($attendance->minutes_early_departure ?? 0) : 0,
+            'on_leave_today' => (bool) $approvedLeave,
+            'leave_type' => $approvedLeave?->leave_type,
+            'leave_start_date' => $approvedLeave?->start_date,
+            'leave_end_date' => $approvedLeave?->end_date,
         ];
         
         // SEAMLESS OVERTIME: Include extended schedule information

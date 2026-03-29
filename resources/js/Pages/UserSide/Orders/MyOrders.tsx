@@ -477,7 +477,7 @@ const MyOrders: React.FC = () => {
           <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" style="margin:0;" />
 
           <label style="font-size:13px;font-weight:600;">Rider Number</label>
-          <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" style="margin:0;" />
+          <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" inputmode="numeric" pattern="[0-9]*" maxlength="15" style="margin:0;" />
 
           <label style="font-size:13px;font-weight:600;">Tracking Number</label>
           <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" style="margin:0;" />
@@ -490,6 +490,14 @@ const MyOrders: React.FC = () => {
       confirmButtonText: 'Submit',
       confirmButtonColor: '#000000',
       focusConfirm: false,
+      didOpen: () => {
+        const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
+        if (!riderPhoneInput) return;
+
+        riderPhoneInput.addEventListener('input', () => {
+          riderPhoneInput.value = riderPhoneInput.value.replace(/\D/g, '');
+        });
+      },
       preConfirm: () => {
         const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
         const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
@@ -499,6 +507,11 @@ const MyOrders: React.FC = () => {
 
         if (!carrierCompany || !riderName || !riderPhone || !trackingNumber || !trackingLink) {
           Swal.showValidationMessage('Please complete all shipment details.');
+          return null;
+        }
+
+        if (!/^\d+$/.test(riderPhone)) {
+          Swal.showValidationMessage('Rider Number must contain numbers only.');
           return null;
         }
 

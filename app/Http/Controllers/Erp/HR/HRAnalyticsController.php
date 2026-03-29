@@ -483,6 +483,8 @@ class HRAnalyticsController extends Controller
      */
     private function getSummaryMetrics($shopOwnerId): array
     {
+        $totalEmployees = Employee::where('shop_owner_id', $shopOwnerId)->count();
+
         $activeEmployees = Employee::where('shop_owner_id', $shopOwnerId)
             ->where('status', 'active')
             ->count();
@@ -500,8 +502,23 @@ class HRAnalyticsController extends Controller
             ->whereYear('created_at', Carbon::now()->year)
             ->sum('net_salary');
 
+        // Current on-leave employees should come from approved leave date coverage,
+        // not employee status values.
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $today = Carbon::now($shopTimezone)->toDateString();
+        $currentlyOnLeave = LeaveRequest::where('status', 'approved')
+            ->whereDate('start_date', '<=', $today)
+            ->whereDate('end_date', '>=', $today)
+            ->whereHas('employee', function($q) use ($shopOwnerId) {
+                $q->where('shop_owner_id', $shopOwnerId);
+            })
+            ->distinct('employee_id')
+            ->count('employee_id');
+
         return [
+            'total_employees' => $totalEmployees,
             'active_employees' => $activeEmployees,
+            'current_on_leave' => $currentlyOnLeave,
             'total_departments' => $departments,
             'pending_leave_requests' => $pendingLeaveRequests,
             'this_month_payroll' => round($thisMonthPayroll, 2),

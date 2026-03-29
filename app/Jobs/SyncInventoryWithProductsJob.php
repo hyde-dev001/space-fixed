@@ -56,9 +56,9 @@ class SyncInventoryWithProductsJob implements ShouldQueue
                     }
 
                     // Sync stock quantity
-                    if ($product->stock != $item->available_quantity) {
-                        $oldStock = $product->stock;
-                        $product->stock = $item->available_quantity;
+                    if ((int) $product->stock_quantity !== (int) $item->available_quantity) {
+                        $oldStock = (int) $product->stock_quantity;
+                        $product->stock_quantity = (int) $item->available_quantity;
                         $product->save();
 
                         Log::info("Synced product stock: Product ID {$product->id}, {$oldStock} -> {$item->available_quantity}");

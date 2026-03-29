@@ -1077,6 +1077,9 @@ class ProductController extends Controller
     {
         try {
             $product = Product::findOrFail($productId);
+            $linkedInventory = InventoryItem::where('product_id', $productId)
+                ->with(['colorVariants.sizes'])
+                ->first();
 
             $colorVariants = $product->colorVariants()
                 ->with([
@@ -1086,12 +1089,54 @@ class ProductController extends Controller
                 ])
                 ->orderBy('sort_order')
                 ->get()
-                ->map(function ($variant) use ($productId) {
-                    // Manually load size variants for this color
-                    $sizeVariants = ProductVariant::where('product_id', $productId)
-                        ->where('color', $variant->color_name)
-                        ->select('id', 'product_id', 'color', 'size', 'quantity', 'sku')
-                        ->get();
+                ->map(function ($variant) use ($productId, $linkedInventory) {
+                    $sizeRows = [];
+
+                    if ($linkedInventory) {
+                        $matchedInventoryColor = $linkedInventory->colorVariants->first(function ($inventoryColor) use ($variant) {
+                            if ($variant->inventory_color_id) {
+                                return (int) $inventoryColor->id === (int) $variant->inventory_color_id;
+                            }
+
+                            return strcasecmp(
+                                trim((string) $inventoryColor->color_name),
+                                trim((string) $variant->color_name)
+                            ) === 0;
+                        });
+
+                        if ($matchedInventoryColor) {
+                            $sizeRows = collect($matchedInventoryColor->sizes ?? [])
+                                ->map(function ($size) {
+                                    return [
+                                        'id' => $size->id,
+                                        'size' => $size->size,
+                                        'size_system' => $size->size_system,
+                                        'quantity' => (int) $size->quantity,
+                                        'sku' => null,
+                                    ];
+                                })
+                                ->values()
+                                ->all();
+                        }
+                    }
+
+                    if (empty($sizeRows)) {
+                        // Fallback for non-linked products / legacy rows.
+                        $sizeRows = ProductVariant::where('product_id', $productId)
+                            ->where('color', $variant->color_name)
+                            ->select('id', 'product_id', 'color', 'size', 'quantity', 'sku')
+                            ->get()
+                            ->map(function ($size) {
+                                return [
+                                    'id' => $size->id,
+                                    'size' => $size->size,
+                                    'quantity' => (int) $size->quantity,
+                                    'sku' => $size->sku,
+                                ];
+                            })
+                            ->values()
+                            ->all();
+                    }
 
                     return [
                         'id' => $variant->id,
@@ -1101,14 +1146,7 @@ class ProductController extends Controller
                         'is_active' => $variant->is_active,
                         'sort_order' => $variant->sort_order,
                         'images' => $variant->images,
-                        'sizes' => $sizeVariants->map(function ($size) {
-                            return [
-                                'id' => $size->id,
-                                'size' => $size->size,
-                                'quantity' => $size->quantity,
-                                'sku' => $size->sku,
-                            ];
-                        }),
+                        'sizes' => $sizeRows,
                     ];
                 });
 

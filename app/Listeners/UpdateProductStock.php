@@ -46,12 +46,12 @@ class UpdateProductStock implements ShouldQueue
             }
 
             // Update product stock quantity
-            $product->stock = $inventoryItem->available_quantity;
+            $product->stock_quantity = $inventoryItem->available_quantity;
             $product->save();
 
             DB::commit();
 
-            Log::info("Product stock updated for product ID: {$product->id}, new stock: {$product->stock}");
+            Log::info("Product stock updated for product ID: {$product->id}, new stock: {$product->stock_quantity}");
 
         } catch (\Exception $e) {
             DB::rollBack();

@@ -3,9 +3,15 @@
 namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryColorVariant;
+use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\StockMovement;
 use App\Enums\OrderStatus;
 use App\Services\NotificationService;
 use App\Services\OrderRefundService;
@@ -594,6 +600,173 @@ class OrderController extends Controller
             'refund' => $result['refund'],
         ]);
     }
+
+    private function normalizeSizeSystem(?string $rawSystem): string
+    {
+        $normalized = strtoupper(trim((string) $rawSystem));
+        return in_array($normalized, ['US', 'UK', 'EU', 'AU', 'CN'], true) ? $normalized : 'US';
+    }
+
+    private function parseSizeComponents(?string $rawSize): array
+    {
+        $normalizedRaw = trim((string) $rawSize);
+        if ($normalizedRaw === '') {
+            return ['system' => 'US', 'value' => '', 'explicit_system' => false];
+        }
+
+        if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $normalizedRaw, $matches)) {
+            return [
+                'system' => $this->normalizeSizeSystem($matches[1] ?? null),
+                'value' => trim((string) ($matches[2] ?? '')),
+                'explicit_system' => true,
+            ];
+        }
+
+        return ['system' => 'US', 'value' => $normalizedRaw, 'explicit_system' => false];
+    }
+
+    private function resolveInventorySizeRowForRestock(int $inventoryItemId, ?int $inventoryColorVariantId, ?string $rawSize): ?InventorySize
+    {
+        $parsed = $this->parseSizeComponents($rawSize);
+        $sizeValue = trim((string) ($parsed['value'] ?? ''));
+        $sizeSystem = (string) ($parsed['system'] ?? 'US');
+        $hasExplicitSystem = (bool) ($parsed['explicit_system'] ?? false);
+
+        if ($sizeValue === '') {
+            return null;
+        }
+
+        $query = InventorySize::where('inventory_item_id', $inventoryItemId)
+            ->where('size', $sizeValue);
+
+        if ($inventoryColorVariantId) {
+            $query->where('inventory_color_variant_id', $inventoryColorVariantId);
+        } else {
+            $query->whereNull('inventory_color_variant_id');
+        }
+
+        if ($hasExplicitSystem) {
+            $preferred = (clone $query)
+                ->where('size_system', $sizeSystem)
+                ->lockForUpdate()
+                ->first();
+
+            if ($preferred) {
+                return $preferred;
+            }
+        }
+
+        return $query->orderByRaw("CASE WHEN size_system = 'US' THEN 0 ELSE 1 END")
+            ->lockForUpdate()
+            ->first();
+    }
+
+    private function restoreInventoryForCancelledItem(object $item, int $orderId): void
+    {
+        if (empty($item->product_id) || empty($item->quantity)) {
+            return;
+        }
+
+        $qty = (int) $item->quantity;
+        if ($qty <= 0) {
+            return;
+        }
+
+        $product = Product::query()->lockForUpdate()->find((int) $item->product_id);
+        if (!$product) {
+            return;
+        }
+
+        $inventoryItem = InventoryItem::where('product_id', $product->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$inventoryItem) {
+            $product->increment('stock_quantity', $qty);
+
+            if (!empty($item->size) && !empty($item->color)) {
+                $variant = ProductVariant::where('product_id', $product->id)
+                    ->where('size', $item->size)
+                    ->whereRaw('LOWER(color) = ?', [strtolower((string) $item->color)])
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($variant) {
+                    $variant->increment('quantity', $qty);
+                }
+            }
+
+            return;
+        }
+
+        $quantityBefore = (int) $inventoryItem->available_quantity;
+        $didSpecificRestock = false;
+
+        if (!empty($item->size) && !empty($item->color)) {
+            $normalizedColor = strtolower(trim((string) $item->color));
+
+            $inventoryColorVariant = InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+                ->whereRaw('LOWER(color_name) = ?', [$normalizedColor])
+                ->lockForUpdate()
+                ->first();
+
+            $sizeRow = $this->resolveInventorySizeRowForRestock(
+                (int) $inventoryItem->id,
+                $inventoryColorVariant?->id,
+                (string) $item->size
+            );
+
+            if ($sizeRow) {
+                $sizeRow->increment('quantity', $qty);
+                $didSpecificRestock = true;
+            }
+
+            if ($inventoryColorVariant) {
+                if ($sizeRow) {
+                    $recomputedColorQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
+                        ->where('inventory_color_variant_id', $inventoryColorVariant->id)
+                        ->sum('quantity');
+
+                    $inventoryColorVariant->quantity = $recomputedColorQty;
+                    $inventoryColorVariant->save();
+                } else {
+                    $inventoryColorVariant->increment('quantity', $qty);
+                }
+                $didSpecificRestock = true;
+            }
+        }
+
+        $newTotalQty = (int) InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+            ->sum('quantity');
+
+        if ($newTotalQty === 0) {
+            $newTotalQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
+                ->whereNull('inventory_color_variant_id')
+                ->sum('quantity');
+        }
+
+        if (!$didSpecificRestock) {
+            $newTotalQty = $quantityBefore + $qty;
+        }
+
+        $inventoryItem->available_quantity = $newTotalQty;
+        $inventoryItem->save();
+
+        StockMovement::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'movement_type' => 'stock_in',
+            'quantity_change' => $qty,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $newTotalQty,
+            'reference_type' => 'order',
+            'reference_id' => $orderId,
+            'notes' => 'Order cancellation stock restoration',
+            'performed_at' => now(),
+        ]);
+
+        $product->stock_quantity = $newTotalQty;
+        $product->save();
+    }
     
     /**
      * Cancel order
@@ -675,21 +848,7 @@ class OrderController extends Controller
                     ], 404);
                 }
 
-                $product = \App\Models\Product::find($item->product_id);
-                if ($product) {
-                    $product->increment('stock_quantity', $item->quantity);
-
-                    if ($item->size && $item->color) {
-                        $variant = \App\Models\ProductVariant::where('product_id', $product->id)
-                            ->where('size', $item->size)
-                            ->where('color', $item->color)
-                            ->first();
-
-                        if ($variant) {
-                            $variant->increment('quantity', $item->quantity);
-                        }
-                    }
-                }
+                $this->restoreInventoryForCancelledItem($item, (int) $order->id);
 
                 $item->delete();
 
@@ -715,23 +874,7 @@ class OrderController extends Controller
 
             // Restore inventory for each item
             foreach ($order->items as $item) {
-                $product = \App\Models\Product::find($item->product_id);
-                if ($product) {
-                    // Restore product stock
-                    $product->increment('stock_quantity', $item->quantity);
-                    
-                    // Restore variant stock if applicable
-                    if ($item->size && $item->color) {
-                        $variant = \App\Models\ProductVariant::where('product_id', $product->id)
-                            ->where('size', $item->size)
-                            ->where('color', $item->color)
-                            ->first();
-                        
-                        if ($variant) {
-                            $variant->increment('quantity', $item->quantity);
-                        }
-                    }
-                }
+                $this->restoreInventoryForCancelledItem($item, (int) $order->id);
             }
 
             if ($isPaidOnlineOrder) {

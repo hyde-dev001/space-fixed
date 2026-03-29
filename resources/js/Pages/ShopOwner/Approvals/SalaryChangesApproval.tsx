@@ -134,15 +134,34 @@ const MetricCard: React.FC<MetricCardProps> = ({ title, value, icon: Icon, color
 	);
 };
 
-const fmtCurrency = (val: number) =>
-	new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(val);
+const toNumber = (val: unknown): number => {
+	if (typeof val === "number") return Number.isFinite(val) ? val : 0;
+	if (typeof val === "string") {
+		const n = Number(val);
+		return Number.isFinite(n) ? n : 0;
+	}
+	return 0;
+};
+
+const fmtCurrency = (val: unknown) =>
+	new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(toNumber(val));
 
 const fmtDate = (str?: string | null) => {
 	if (!str) return "-";
 	return new Date(str).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 };
 
-const fmtPct = (val: number) => `${val >= 0 ? "+" : ""}${val.toFixed(2)}%`;
+const fmtPct = (val: unknown) => {
+	const n = toNumber(val);
+	return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+};
+
+const normalizeAdjustment = (item: SalaryAdjustment): SalaryAdjustment => ({
+	...item,
+	previous_salary: toNumber(item.previous_salary),
+	new_salary: toNumber(item.new_salary),
+	change_percent: toNumber(item.change_percent),
+});
 
 const getInitials = (name?: string | null) => {
 	if (!name) return "--";
@@ -172,14 +191,15 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 			const params = new URLSearchParams();
 			if (statusFilter !== "All") params.set("status", statusFilter);
 
-			const res = await fetch(`/api/hr/salary-changes?${params.toString()}`, {
+			const res = await fetch(`/api/shop-owner/salary-changes?${params.toString()}`, {
 				headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
 				credentials: "include",
 			});
 
 			if (!res.ok) throw new Error(await res.text());
 			const data = await res.json();
-			setAdjustments(data.data?.data ?? data.data ?? []);
+			const rows: SalaryAdjustment[] = data.data?.data ?? data.data ?? [];
+			setAdjustments(rows.map(normalizeAdjustment));
 			setSummary(data.summary ?? { pending: 0, approved: 0, applied: 0, rejected: 0, cancelled: 0 });
 		} catch (err) {
 			console.error("Error fetching salary adjustments:", err);
@@ -220,7 +240,7 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 		if (!result.isConfirmed) return;
 
 		try {
-			const res = await fetch(`/api/hr/salary-changes/${adjustment.id}/approve`, {
+			const res = await fetch(`/api/shop-owner/salary-changes/${adjustment.id}/approve`, {
 				method: "POST",
 				headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
 				credentials: "include",
@@ -265,7 +285,7 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 		if (!result.isConfirmed) return;
 
 		try {
-			const res = await fetch(`/api/hr/salary-changes/${adjustment.id}/reject`, {
+			const res = await fetch(`/api/shop-owner/salary-changes/${adjustment.id}/reject`, {
 				method: "POST",
 				headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
 				credentials: "include",
@@ -279,37 +299,6 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 			}
 
 			Swal.fire("Rejected", "Salary adjustment has been rejected.", "success");
-			setViewAdjustment(null);
-			fetchAdjustments();
-		} catch {
-			Swal.fire("Error", "A network error occurred.", "error");
-		}
-	};
-
-	const handleApply = async (adjustment: SalaryAdjustment) => {
-		const confirm = await Swal.fire({
-			title: "Apply Salary Adjustment?",
-			text: `This will update ${adjustment.employee?.name ?? "employee"}'s salary to ${fmtCurrency(adjustment.new_salary)}.`,
-			icon: "question",
-			showCancelButton: true,
-			confirmButtonText: "Apply Now",
-			confirmButtonColor: "#3b82f6",
-		});
-		if (!confirm.isConfirmed) return;
-
-		try {
-			const res = await fetch(`/api/hr/salary-changes/${adjustment.id}/apply`, {
-				method: "POST",
-				headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
-				credentials: "include",
-			});
-			const data = await res.json();
-			if (!res.ok) {
-				Swal.fire("Error", data.message ?? "Apply failed.", "error");
-				return;
-			}
-
-			Swal.fire("Applied", "Salary adjustment has been applied to the employee record.", "success");
 			setViewAdjustment(null);
 			fetchAdjustments();
 		} catch {
@@ -410,12 +399,9 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 							)}
 
 							{canApprove && adjustment.status === "approved" && !adjustment.applied_at && (
-								<button
-									onClick={() => handleApply(adjustment)}
-									className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-								>
-									Apply Now
-								</button>
+								<p className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+									Awaiting HR finalization
+								</p>
 							)}
 
 							<button
@@ -438,14 +424,14 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 			<div className="space-y-6">
 				<div>
 					<h1 className="text-3xl font-bold text-gray-900 dark:text-white">Salary Adjustment Approval</h1>
-					<p className="mt-2 text-gray-600 dark:text-gray-400">Review, approve, and apply employee salary adjustments.</p>
+					<p className="mt-2 text-gray-600 dark:text-gray-400">Review and approve employee salary adjustments. HR finalizes approved requests.</p>
 				</div>
 
 				<div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-5">
 					<MetricCard title="Total Requests" value={stats.total} icon={SparklesIcon} color="info" description="All salary adjustment records" />
 					<MetricCard title="Pending" value={stats.pending} icon={ClockIcon} color="warning" description="Awaiting approval" />
-					<MetricCard title="Approved" value={stats.approved} icon={CheckCircleIcon} color="info" description="Ready to apply" />
-					<MetricCard title="Applied" value={stats.applied} icon={CheckCircleIcon} color="success" description="Updated on employee records" />
+					<MetricCard title="Approved" value={stats.approved} icon={CheckCircleIcon} color="info" description="Approved by owner; pending HR finalization" />
+					<MetricCard title="Applied" value={stats.applied} icon={CheckCircleIcon} color="success" description="Finalized by HR" />
 					<MetricCard title="Rejected / Cancelled" value={stats.rejected + stats.cancelled} icon={XCircleIcon} color="error" description="Closed without apply" />
 				</div>
 
@@ -561,13 +547,9 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 													)}
 
 													{canApprove && adjustment.status === "approved" && !adjustment.applied_at && (
-														<button
-															onClick={() => handleApply(adjustment)}
-															className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
-															title="Apply now"
-														>
-															<SparklesIcon className="size-5 text-blue-600 dark:text-blue-400" />
-														</button>
+														<span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+															HR Finalization
+														</span>
 													)}
 												</div>
 											</td>

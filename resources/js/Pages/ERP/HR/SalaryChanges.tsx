@@ -162,17 +162,23 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmtCurrency = (val: number) =>
-  new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(val);
+const toNumber = (value: unknown, fallback = 0): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const fmtCurrency = (val: number | string | null | undefined) =>
+  new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(toNumber(val));
 
 const fmtDate = (str?: string | null) => {
   if (!str) return "—";
   return new Date(str).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 };
 
-const fmtPct = (val: number) => {
-  const sign = val >= 0 ? "+" : "";
-  return `${sign}${val.toFixed(2)}%`;
+const fmtPct = (val: number | string | null | undefined) => {
+  const numeric = toNumber(val);
+  const sign = numeric >= 0 ? "+" : "";
+  return `${sign}${numeric.toFixed(2)}%`;
 };
 
 const getInitials = (name?: string | null) => {
@@ -185,6 +191,13 @@ const getInitials = (name?: string | null) => {
 
 const getCsrfToken = (): string =>
   (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? "";
+
+const normalizeSalaryChange = (raw: any): SalaryChange => ({
+  ...raw,
+  previous_salary: toNumber(raw?.previous_salary),
+  new_salary: toNumber(raw?.new_salary),
+  change_percent: toNumber(raw?.change_percent),
+});
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -229,7 +242,8 @@ const SalaryChanges: React.FC = () => {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setChanges(data.data?.data ?? data.data ?? []);
+      const rawChanges = data.data?.data ?? data.data ?? [];
+      setChanges(Array.isArray(rawChanges) ? rawChanges.map(normalizeSalaryChange) : []);
       setSummary(data.summary ?? { pending: 0, approved: 0, applied: 0, rejected: 0, cancelled: 0 });
     } catch (err: any) {
       console.error("Error fetching salary changes:", err);
@@ -457,6 +471,7 @@ const SalaryChanges: React.FC = () => {
       Swal.fire("Applied", "Salary change has been applied to the employee record.", "success");
       setViewChange(null);
       fetchChanges();
+      fetchEmployees();
     } catch {
       Swal.fire("Error", "A network error occurred.", "error");
     } finally {
@@ -671,7 +686,7 @@ const SalaryChanges: React.FC = () => {
                   </button>
                 </>
               )}
-              {canApprove && change.status === "approved" && !change.applied_at && (
+              {canManage && change.status === "approved" && !change.applied_at && (
                 <button
                   onClick={() => handleApply(change)}
                   disabled={isActionProcessing}
@@ -902,7 +917,7 @@ const SalaryChanges: React.FC = () => {
                             <CheckCircleIcon className="size-5 text-green-600 dark:text-green-400" />
                           </button>
                         )}
-                        {canApprove && change.status === "approved" && !change.applied_at && (
+                        {canManage && change.status === "approved" && !change.applied_at && (
                           <button
                             onClick={() => handleApply(change)}
                             className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"

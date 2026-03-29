@@ -390,9 +390,10 @@ class LandingPageController extends Controller
             return max(0, (int) $variant->quantity);
         });
 
-        $displayStockQuantity = $variantCount > 0
-            ? $variantStockQuantity
-            : (int) $product->stock_quantity;
+        // Inventory is authoritative for products linked from Upload Inventory.
+        $displayStockQuantity = $linkedInventory
+            ? (int) $linkedInventory->available_quantity
+            : ($variantCount > 0 ? $variantStockQuantity : (int) $product->stock_quantity);
 
         $computedSalesCount = (int) OrderItem::query()
             ->where('product_id', $product->id)
@@ -434,8 +435,38 @@ class LandingPageController extends Controller
                     ];
                 })->toArray() : [],
                 'sales_count' => $displaySalesCount,
-                'colorVariants' => $product->colorVariants ? $product->colorVariants->map(function ($variant) use ($linkedInventory, $product, $parseVariantSize, $variantCount) {
+                'colorVariants' => $product->colorVariants ? $product->colorVariants->map(function ($variant) use ($linkedInventory, $product, $parseVariantSize) {
                     $variantSizes = [];
+                    $variantQuantity = null;
+
+                    if ($linkedInventory) {
+                        $matchedInventoryColor = $linkedInventory->colorVariants->first(function ($inventoryColor) use ($variant) {
+                            if ($variant->inventory_color_id) {
+                                return (int) $inventoryColor->id === (int) $variant->inventory_color_id;
+                            }
+
+                            return strcasecmp(
+                                trim((string) $inventoryColor->color_name),
+                                trim((string) $variant->color_name)
+                            ) === 0;
+                        });
+
+                        if ($matchedInventoryColor) {
+                            $variantQuantity = (int) $matchedInventoryColor->quantity;
+
+                            $variantSizes = collect($matchedInventoryColor->sizes ?? [])
+                                ->map(function ($size) {
+                                    return [
+                                        'id' => $size->id,
+                                        'size' => $size->size,
+                                        'size_system' => $size->size_system,
+                                        'quantity' => (int) $size->quantity,
+                                    ];
+                                })
+                                ->values()
+                                ->all();
+                        }
+                    }
 
                     $variantSizesFromProductVariants = collect($product->variants ?? [])
                         ->filter(function ($productVariant) use ($variant) {
@@ -473,41 +504,15 @@ class LandingPageController extends Controller
                         ->values()
                         ->all();
 
-                    if (!empty($variantSizesFromProductVariants)) {
+                    if (empty($variantSizes) && !empty($variantSizesFromProductVariants)) {
                         $variantSizes = $variantSizesFromProductVariants;
-                    }
-
-                    if (empty($variantSizes) && $linkedInventory && $variantCount === 0) {
-                        $matchedInventoryColor = $linkedInventory->colorVariants->first(function ($inventoryColor) use ($variant) {
-                            if ($variant->inventory_color_id) {
-                                return (int) $inventoryColor->id === (int) $variant->inventory_color_id;
-                            }
-
-                            return strcasecmp(
-                                trim((string) $inventoryColor->color_name),
-                                trim((string) $variant->color_name)
-                            ) === 0;
-                        });
-
-                        if ($matchedInventoryColor) {
-                            $variantSizes = collect($matchedInventoryColor->sizes ?? [])
-                                ->map(function ($size) {
-                                    return [
-                                        'id' => $size->id,
-                                        'size' => $size->size,
-                                        'size_system' => $size->size_system,
-                                        'quantity' => (int) $size->quantity,
-                                    ];
-                                })
-                                ->values()
-                                ->all();
-                        }
                     }
 
                     return [
                         'id' => $variant->id,
                         'color_name' => $variant->color_name,
                         'color_code' => $variant->color_code,
+                        'quantity' => $variantQuantity,
                         'sku_prefix' => $variant->sku_prefix,
                         'sort_order' => $variant->sort_order,
                         'is_active' => $variant->is_active,

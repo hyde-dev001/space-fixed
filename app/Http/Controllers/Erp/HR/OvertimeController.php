@@ -23,6 +23,50 @@ class OvertimeController extends Controller
     {
         $this->notificationService = $notificationService;
     }
+
+    /**
+     * Parse shop time values (HH:MM or HH:MM:SS) into Carbon time.
+     */
+    private function parseClockTime(string $time, string $fallback = '17:00:00'): Carbon
+    {
+        $value = trim($time);
+        if ($value === '') {
+            return Carbon::createFromFormat('H:i:s', $fallback);
+        }
+
+        if (preg_match('/^\d{2}:\d{2}$/', $value)) {
+            $value .= ':00';
+        }
+
+        try {
+            return Carbon::createFromFormat('H:i:s', $value);
+        } catch (\Throwable $e) {
+            return Carbon::createFromFormat('H:i:s', $fallback);
+        }
+    }
+
+    /**
+     * Build overtime window using shop's regular closing time as OT start.
+     */
+    private function buildOvertimeWindow(int $shopOwnerId, Carbon $overtimeDate, float $hours): array
+    {
+        $startTime = Carbon::createFromFormat('H:i:s', '17:00:00');
+
+        $shopOwner = \App\Models\ShopOwner::find($shopOwnerId);
+        if ($shopOwner) {
+            $dayKey = strtolower($overtimeDate->format('l')) . '_close';
+            $closeRaw = (string) ($shopOwner->{$dayKey} ?? '');
+            $startTime = $this->parseClockTime($closeRaw, '17:00:00');
+        }
+
+        $durationMinutes = (int) round($hours * 60);
+        $endTime = $startTime->copy()->addMinutes($durationMinutes);
+
+        return [
+            'start' => $startTime,
+            'end' => $endTime,
+        ];
+    }
     /**
      * Staff submits overtime request
      */
@@ -66,10 +110,12 @@ class OvertimeController extends Controller
             ]);
         }
 
-        // Use provided date or default to today
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+
+        // Use provided date or default to today in shop timezone
         $overtimeDate = $request->filled('overtime_date') 
-            ? Carbon::parse($request->overtime_date) 
-            : Carbon::today();
+            ? Carbon::parse($request->overtime_date, $shopTimezone)
+            : Carbon::now($shopTimezone);
 
         // Check if employee already has overtime for this date
         $existingOvertime = OvertimeRequest::where('employee_id', $employee->id)
@@ -88,10 +134,10 @@ class OvertimeController extends Controller
             ], 422);
         }
 
-        // Calculate approximate start and end times (can be adjusted by admin later)
         $hours = (float) $request->hours;
-        $startTime = Carbon::parse('17:00:00'); // Default assumption: overtime starts at 5 PM
-        $endTime = $startTime->copy()->addHours($hours);
+        $window = $this->buildOvertimeWindow((int) $user->shop_owner_id, $overtimeDate, $hours);
+        $startTime = $window['start'];
+        $endTime = $window['end'];
 
         // Determine overtime type based on date
         $dayOfWeek = $overtimeDate->dayOfWeek;
@@ -250,6 +296,18 @@ class OvertimeController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        // Recompute overtime window at approval time so schedule always follows shop hours.
+        $approvalDate = Carbon::parse($overtimeRequest->overtime_date);
+        $approvalHours = (float) ($overtimeRequest->hours ?? 0);
+        if ($approvalHours > 0) {
+            $window = $this->buildOvertimeWindow((int) $user->shop_owner_id, $approvalDate, $approvalHours);
+            $overtimeRequest->update([
+                'start_time' => $window['start']->format('H:i:s'),
+                'end_time' => $window['end']->format('H:i:s'),
+            ]);
+            $overtimeRequest->refresh();
+        }
+
         $overtimeRequest->approve($user->id, $request->notes);
 
         // Send notification to the employee
@@ -292,17 +350,23 @@ class OvertimeController extends Controller
      */
     private function autoExtendShiftSchedule($overtimeRequest)
     {
-        // Get or create attendance record for the overtime date
-        $attendanceRecord = \App\Models\HR\AttendanceRecord::firstOrCreate(
-            [
+        // Only extend an existing attendance record.
+        // Creating one here can produce invalid status values and inaccurate attendance data.
+        $attendanceRecord = \App\Models\HR\AttendanceRecord::where('employee_id', $overtimeRequest->employee_id)
+            ->whereDate('date', Carbon::parse($overtimeRequest->overtime_date)->toDateString())
+            ->first();
+
+        if (!$attendanceRecord) {
+            \Log::info('No attendance record yet; deferring overtime shift extension', [
                 'employee_id' => $overtimeRequest->employee_id,
-                'date' => $overtimeRequest->overtime_date,
-            ],
-            [
-                'shop_owner_id' => $overtimeRequest->shop_owner_id,
-                'status' => 'pending',
-            ]
-        );
+                'date' => Carbon::parse($overtimeRequest->overtime_date)->toDateString(),
+                'overtime_request_id' => $overtimeRequest->id,
+                'overtime_end_time' => $overtimeRequest->end_time,
+            ]);
+            return;
+        }
+
+        $originalExpectedCheckout = $attendanceRecord->expected_check_out;
         
         // Update expected checkout time to include overtime
         // This makes the system recognize extended hours as valid work time
@@ -315,7 +379,7 @@ class OvertimeController extends Controller
         \Log::info('Shift automatically extended for overtime', [
             'employee_id' => $overtimeRequest->employee_id,
             'date' => $overtimeRequest->overtime_date,
-            'original_end' => $attendanceRecord->expected_check_out,
+            'original_end' => $originalExpectedCheckout,
             'extended_to' => $overtimeRequest->end_time,
             'overtime_hours' => $overtimeRequest->hours,
         ]);

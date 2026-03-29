@@ -5,8 +5,12 @@ namespace App\Http\Controllers\UserSide;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\InventoryColorVariant;
+use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
@@ -141,6 +145,183 @@ class CheckoutController extends Controller
         );
     }
 
+    private function resolveInventorySizeRowForCheckout(int $inventoryItemId, ?int $inventoryColorVariantId, ?string $rawSize, bool $forUpdate = true): ?InventorySize
+    {
+        $parsed = $this->parseSizeComponents($rawSize);
+        $sizeValue = trim((string) ($parsed['value'] ?? ''));
+        $sizeSystem = (string) ($parsed['system'] ?? 'US');
+        $hasExplicitSystem = (bool) ($parsed['explicit_system'] ?? false);
+
+        if ($sizeValue === '') {
+            return null;
+        }
+
+        $query = InventorySize::where('inventory_item_id', $inventoryItemId)
+            ->where('size', $sizeValue);
+
+        if ($inventoryColorVariantId) {
+            $query->where('inventory_color_variant_id', $inventoryColorVariantId);
+        } else {
+            $query->whereNull('inventory_color_variant_id');
+        }
+
+        if ($hasExplicitSystem) {
+            $preferred = (clone $query)
+                ->where('size_system', $sizeSystem)
+                ->when($forUpdate, fn ($q) => $q->lockForUpdate())
+                ->first();
+
+            if ($preferred) {
+                return $preferred;
+            }
+        }
+
+        return $query->orderByRaw("CASE WHEN size_system = 'US' THEN 0 ELSE 1 END")
+            ->when($forUpdate, fn ($q) => $q->lockForUpdate())
+            ->first();
+    }
+
+    private function getLinkedInventoryAvailableForCheckout(InventoryItem $inventoryItem, ?string $itemSize, ?string $itemColor): int
+    {
+        if (!$itemSize || !$itemColor) {
+            return (int) $inventoryItem->available_quantity;
+        }
+
+        $normalizedColor = strtolower(trim((string) $itemColor));
+
+        $inventoryColorVariant = InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+            ->whereRaw('LOWER(color_name) = ?', [$normalizedColor])
+            ->first();
+
+        if (!$inventoryColorVariant) {
+            return 0;
+        }
+
+        $sizeRow = $this->resolveInventorySizeRowForCheckout(
+            (int) $inventoryItem->id,
+            (int) $inventoryColorVariant->id,
+            (string) $itemSize,
+            false
+        );
+
+        if ($sizeRow) {
+            return (int) $sizeRow->quantity;
+        }
+
+        return (int) $inventoryColorVariant->quantity;
+    }
+
+    private function applyInventoryDeductionForCheckout(Product $product, array $item, ?ProductVariant $resolvedVariant, int $performedBy): bool
+    {
+        $inventoryItem = InventoryItem::where('product_id', $product->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$inventoryItem) {
+            return false;
+        }
+
+        $qty = (int) ($item['qty'] ?? 0);
+        if ($qty <= 0) {
+            return true;
+        }
+
+        $options = isset($item['options'])
+            ? (is_string($item['options']) ? json_decode($item['options'], true) : $item['options'])
+            : [];
+        $itemSize = $item['size'] ?? null;
+        $itemColor = $item['color'] ?? ($options['color'] ?? null);
+
+        $quantityBefore = (int) $inventoryItem->available_quantity;
+        $didSpecificDeduction = false;
+
+        if ($itemSize && $itemColor) {
+            $normalizedColor = strtolower(trim((string) $itemColor));
+
+            $inventoryColorVariant = InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+                ->whereRaw('LOWER(color_name) = ?', [$normalizedColor])
+                ->lockForUpdate()
+                ->first();
+
+            $sizeRow = $this->resolveInventorySizeRowForCheckout(
+                (int) $inventoryItem->id,
+                $inventoryColorVariant?->id,
+                (string) $itemSize
+            );
+
+            if ($sizeRow) {
+                if ((int) $sizeRow->quantity < $qty) {
+                    throw new \RuntimeException("Insufficient linked inventory size stock for {$product->name}.");
+                }
+                $sizeRow->decrement('quantity', $qty);
+                $didSpecificDeduction = true;
+            }
+
+            if ($inventoryColorVariant) {
+                if ($sizeRow) {
+                    // Keep color quantity derived from the sum of its size rows.
+                    $recomputedColorQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
+                        ->where('inventory_color_variant_id', $inventoryColorVariant->id)
+                        ->sum('quantity');
+
+                    $inventoryColorVariant->quantity = $recomputedColorQty;
+                    $inventoryColorVariant->save();
+                } else {
+                    if ((int) $inventoryColorVariant->quantity < $qty) {
+                        throw new \RuntimeException("Insufficient linked inventory color stock for {$product->name}.");
+                    }
+                    $inventoryColorVariant->decrement('quantity', $qty);
+                }
+                $didSpecificDeduction = true;
+            }
+        }
+
+        $newTotalQty = (int) InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+            ->sum('quantity');
+
+        if ($newTotalQty === 0) {
+            $newTotalQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
+                ->whereNull('inventory_color_variant_id')
+                ->sum('quantity');
+        }
+
+        if (!$didSpecificDeduction) {
+            if ((int) $inventoryItem->available_quantity < $qty) {
+                throw new \RuntimeException("Insufficient linked inventory stock for {$product->name}.");
+            }
+            $newTotalQty = (int) $inventoryItem->available_quantity - $qty;
+        }
+
+        if ($newTotalQty < 0) {
+            throw new \RuntimeException("Insufficient linked inventory stock for {$product->name}.");
+        }
+
+        $inventoryItem->available_quantity = $newTotalQty;
+        $inventoryItem->save();
+
+        StockMovement::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'movement_type' => 'stock_out',
+            'quantity_change' => -$qty,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $newTotalQty,
+            'reference_type' => 'order',
+            'notes' => 'Checkout deduction for order item',
+            'performed_by' => $performedBy,
+            'performed_at' => now(),
+        ]);
+
+        // Keep product stock derived from linked inventory immediately.
+        $product->stock_quantity = $newTotalQty;
+        $product->save();
+
+        if ($resolvedVariant) {
+            $resolvedVariant->refresh();
+        }
+
+        return true;
+    }
+
     /**
      * Create order from cart items
      */
@@ -231,7 +412,28 @@ class CheckoutController extends Controller
                 ]);
 
                 // Check variant-specific stock availability
-                if ($itemSize && $itemColor) {
+                $linkedInventory = InventoryItem::where('product_id', $product->id)
+                    ->with(['colorVariants.sizes'])
+                    ->first();
+
+                if ($linkedInventory) {
+                    $availableLinkedQty = $this->getLinkedInventoryAvailableForCheckout(
+                        $linkedInventory,
+                        $itemSize,
+                        $itemColor
+                    );
+
+                    if ($availableLinkedQty < (int) $item['qty']) {
+                        $variantLabel = ($itemSize && $itemColor)
+                            ? " (Size {$itemSize}, Color {$itemColor})"
+                            : '';
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Insufficient stock for {$product->name}{$variantLabel}. Available: {$availableLinkedQty}",
+                        ], 400);
+                    }
+                } elseif ($itemSize && $itemColor) {
                     $variant = $this->resolveVariant($product, (string) $itemSize, (string) $itemColor);
 
                     if (!$variant) {
@@ -264,6 +466,7 @@ class CheckoutController extends Controller
                 $itemsByShop[$shopOwnerId][] = [
                     'item' => $item,
                     'product' => $product,
+                    'linked_inventory_item_id' => $linkedInventory?->id,
                 ];
             }
 
@@ -386,9 +589,10 @@ class CheckoutController extends Controller
                         $itemSize = $item['size'] ?? null;
                         // Try to get color from direct field first, then from options
                         $itemColor = $item['color'] ?? $options['color'] ?? null;
+                        $isLinkedInventoryProduct = !empty($shopItem['linked_inventory_item_id']);
                         $resolvedVariant = null;
 
-                        if ($itemSize && $itemColor) {
+                        if (!$isLinkedInventoryProduct && $itemSize && $itemColor) {
                             $resolvedVariant = $this->resolveVariant($product, (string) $itemSize, (string) $itemColor);
                         }
 
@@ -428,7 +632,7 @@ class CheckoutController extends Controller
                         ]);
 
                         // Reduce variant-specific stock quantity
-                        if ($itemSize && $itemColor) {
+                        if (!$isLinkedInventoryProduct && $itemSize && $itemColor) {
                             Log::info('Checkout - Looking for variant to decrement', [
                                 'product_id' => $product->id,
                                 'size' => $itemSize,
@@ -464,7 +668,7 @@ class CheckoutController extends Controller
                                     'searched_product_id' => $product->id,
                                 ]);
                             }
-                        } else {
+                        } elseif (!$isLinkedInventoryProduct) {
                             Log::warning('Missing size or color for variant stock deduction', [
                                 'product_id' => $product->id,
                                 'product_name' => $product->name,
@@ -475,8 +679,17 @@ class CheckoutController extends Controller
                             ]);
                         }
 
-                        // Also reduce total product stock quantity
-                        $product->decrement('stock_quantity', $item['qty']);
+                        // Keep inventory as source-of-truth for linked products; fallback to product-level decrement otherwise.
+                        $appliedInventoryDeduction = $this->applyInventoryDeductionForCheckout(
+                            $product,
+                            $item,
+                            $resolvedVariant,
+                            (int) $customerId
+                        );
+
+                        if (!$appliedInventoryDeduction) {
+                            $product->decrement('stock_quantity', $item['qty']);
+                        }
                     }
 
                     // Update order totals. Keep legacy `total` in sync as grand total fallback.
@@ -684,6 +897,11 @@ class CheckoutController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
             ], 422);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
         } catch (\Exception $e) {
             Log::error('Order creation failed', [
                 'error' => $e->getMessage(),

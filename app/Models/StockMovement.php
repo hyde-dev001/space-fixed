@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Events\StockMovementRecorded;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class StockMovement extends Model
 {
@@ -28,6 +30,15 @@ class StockMovement extends Model
         'quantity_after' => 'integer',
         'performed_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::created(function (StockMovement $movement): void {
+            DB::afterCommit(function () use ($movement): void {
+                event(new StockMovementRecorded($movement));
+            });
+        });
+    }
 
     /**
      * Get the inventory item

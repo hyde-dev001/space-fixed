@@ -454,6 +454,17 @@ export default function TimeIn() {
         return `${hour}:${minute} ${ampm}`;
     };
 
+    // Convert HH:mm[:ss] into minutes since midnight for reliable comparisons.
+    const timeStringToMinutes = (timeStr?: string | null): number | null => {
+        if (!timeStr) return null;
+        const parts = timeStr.split(':');
+        if (parts.length < 2) return null;
+        const hour = parseInt(parts[0], 10);
+        const minute = parseInt(parts[1], 10);
+        if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+        return hour * 60 + minute;
+    };
+
     useEffect(() => {
         const updateTime = () => setCurrentTime(getPHTime());
         updateTime();
@@ -949,12 +960,28 @@ export default function TimeIn() {
                     }),
                 });
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || errorData.message || 'Failed to submit leave request');
-                }
+                const responseData = await response.json().catch(() => ({}));
 
-                await response.json();
+                if (!response.ok) {
+                    if (
+                        responseData.error === 'Insufficient leave balance' ||
+                        (responseData.available_balance !== undefined && responseData.requested_days !== undefined)
+                    ) {
+                        await Swal.fire({
+                            icon: 'error',
+                            title: 'Insufficient Leave Balance',
+                            html: `<div class="text-left">
+                                <p class="mb-2">You do not have enough leave credits for this request.</p>
+                                <p class="text-sm text-gray-600">Available: <strong>${responseData.available_balance ?? '0'} day(s)</strong></p>
+                                <p class="text-sm text-gray-600">Requested: <strong>${responseData.requested_days ?? dayCount} day(s)</strong></p>
+                            </div>`,
+                            confirmButtonColor: '#2563eb'
+                        });
+                        return;
+                    }
+
+                    throw new Error(responseData.error || responseData.message || 'Failed to submit leave request');
+                }
                 
                 const defaultDate = getPHDateInputValue();
                 setLeaveStartDate(defaultDate);
@@ -1015,6 +1042,14 @@ export default function TimeIn() {
         ...Array.from({ length: leaveCalendarTotalDays }, (_, index) => index + 1),
     ];
     const leaveToday = getPHDateInputValue();
+
+    const regularCloseMinutes = timeStringToMinutes(shopHours?.close ?? null);
+    const adjustedCheckoutMinutes = timeStringToMinutes(todayAttendance?.adjusted_checkout_time ?? null);
+    const isShiftActuallyExtended =
+        regularCloseMinutes !== null &&
+        adjustedCheckoutMinutes !== null &&
+        adjustedCheckoutMinutes > regularCloseMinutes;
+    const isOnApprovedLeaveToday = Boolean(todayAttendance?.on_leave_today);
 
     const handleOvertimeRequest = async () => {
         if (isLoading) return; // Prevent spam
@@ -1169,21 +1204,29 @@ export default function TimeIn() {
                                             year: 'numeric'
                                         })}
                                     </p>
+                                    {isOnApprovedLeaveToday && (
+                                        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                                            <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                                            <span className="text-sm font-semibold uppercase tracking-wide">On Approved Leave Today</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="mb-8 flex justify-center">
                                     <div className={`flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 ${
                                         isOnLunch
                                             ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+                                            : isOnApprovedLeaveToday
+                                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
                                             : isClockedIn 
                                             ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-700' 
                                             : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-700'
                                     }`}>
                                         <div className={`w-3 h-3 rounded-full animate-pulse ${
-                                            isOnLunch ? 'bg-orange-500' : isClockedIn ? 'bg-green-500' : 'bg-red-500'
+                                            isOnLunch ? 'bg-orange-500' : isOnApprovedLeaveToday ? 'bg-amber-500' : isClockedIn ? 'bg-green-500' : 'bg-red-500'
                                         }`} />
                                         <span className="font-semibold text-sm uppercase tracking-wide">
-                                            {isOnLunch ? 'On Lunch Break' : isClockedIn ? 'Clocked In' : 'Clocked Out'}
+                                            {isOnLunch ? 'On Lunch Break' : isOnApprovedLeaveToday ? 'On Leave Today' : isClockedIn ? 'Clocked In' : 'Clocked Out'}
                                         </span>
                                     </div>
                                 </div>
@@ -1191,9 +1234,9 @@ export default function TimeIn() {
                                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                                     <button
                                         onClick={handleClockIn}
-                                        disabled={isClockedIn || isLoading}
+                                        disabled={isClockedIn || isLoading || isOnApprovedLeaveToday}
                                         className={`px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg ${
-                                            isClockedIn || isLoading
+                                            isClockedIn || isLoading || isOnApprovedLeaveToday
                                                 ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
                                                 : 'bg-green-500 text-white hover:bg-green-600 hover:shadow-xl'
                                         }`}
@@ -1366,10 +1409,12 @@ export default function TimeIn() {
                                     </div>
                                     <div>
                                         <h3 className="text-lg font-bold text-blue-900 dark:text-blue-100">
-                                            🎯 Overtime Approved & Active
+                                            {isShiftActuallyExtended ? '🎯 Overtime Approved & Active' : '🎯 Overtime Approved'}
                                         </h3>
                                         <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                                            Your shift has been automatically extended
+                                            {isShiftActuallyExtended
+                                                ? 'Your shift has been automatically extended'
+                                                : 'Your overtime request is approved for your scheduled shift window'}
                                         </p>
                                     </div>
                                 </div>
@@ -1390,7 +1435,9 @@ export default function TimeIn() {
                                     </p>
                                 </div>
                                 <div className="bg-white dark:bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Extended Until</p>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                                        {isShiftActuallyExtended ? 'Extended Until' : 'Approved Until'}
+                                    </p>
                                     <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
                                         {formatTimeFromString(todayAttendance.adjusted_checkout_time)}
                                     </p>

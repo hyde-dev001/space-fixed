@@ -216,17 +216,39 @@ class AuditLog extends Model
     public static function createLog(array $data): self
     {
         $request = request();
-        
-        // Safely get auth data - avoid calling during bootstrap
-        $user = auth()->check() ? auth()->user() : null;
+
+        // Resolve actor context across both guards.
+        $user = auth('user')->check() ? auth('user')->user() : null;
+        $shopOwner = auth('shop_owner')->check() ? auth('shop_owner')->user() : null;
+
+        $resolvedShopOwnerId = $data['shop_owner_id']
+            ?? $user?->shop_owner_id
+            ?? $shopOwner?->id
+            ?? null;
+
+        $resolvedUserId = $data['user_id']
+            ?? $user?->id
+            ?? null;
+
+        $ipAddress = null;
+        $userAgent = null;
+        $requestMethod = null;
+        $requestUrl = null;
+
+        if ($request instanceof \Illuminate\Http\Request) {
+            $ipAddress = $request->ip();
+            $userAgent = $request->userAgent();
+            $requestMethod = $request->method();
+            $requestUrl = $request->fullUrl();
+        }
 
         return self::create(array_merge([
-            'shop_owner_id' => $user?->shop_owner_id ?? null,
-            'user_id' => $user?->id ?? null,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'request_method' => $request->method(),
-            'request_url' => $request->fullUrl(),
+            'shop_owner_id' => $resolvedShopOwnerId,
+            'user_id' => $resolvedUserId,
+            'ip_address' => $ipAddress,
+            'user_agent' => $userAgent,
+            'request_method' => $requestMethod,
+            'request_url' => $requestUrl,
         ], $data));
     }
 

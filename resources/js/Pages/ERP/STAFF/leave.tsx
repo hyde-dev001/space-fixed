@@ -144,6 +144,23 @@ const LeaveManagement: React.FC = () => {
       const data = await response.json();
       
       if (!response.ok) {
+        if (
+          data?.error === 'Insufficient leave balance' ||
+          (data?.available_balance !== undefined && data?.requested_days !== undefined)
+        ) {
+          await Swal.fire({
+            title: 'Insufficient Leave Balance',
+            icon: 'error',
+            html: `<div class="text-left">
+              <p class="mb-2">You do not have enough leave credits for this request.</p>
+              <p class="text-sm text-gray-600">Available: <strong>${data.available_balance ?? 0} day(s)</strong></p>
+              <p class="text-sm text-gray-600">Requested: <strong>${data.requested_days ?? 0} day(s)</strong></p>
+            </div>`,
+            confirmButtonColor: '#3b82f6',
+          });
+          return;
+        }
+
         throw new Error(data.error || 'Failed to submit leave request');
       }
       

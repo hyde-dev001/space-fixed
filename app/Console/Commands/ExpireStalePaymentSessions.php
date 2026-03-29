@@ -3,9 +3,13 @@
 namespace App\Console\Commands;
 
 use App\Models\Order;
+use App\Models\InventoryColorVariant;
+use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\RepairRequest;
+use App\Models\StockMovement;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +25,182 @@ class ExpireStalePaymentSessions extends Command
     protected $description = 'Expire unpaid payment sessions older than the configured window and release reservations';
 
     private const EXPIRY_WINDOW_HOURS = 1;
+
+    private function normalizeSizeSystem(?string $rawSystem): string
+    {
+        $normalized = strtoupper(trim((string) $rawSystem));
+        return in_array($normalized, ['US', 'UK', 'EU', 'AU', 'CN'], true) ? $normalized : 'US';
+    }
+
+    private function parseSizeComponents(?string $rawSize): array
+    {
+        $normalizedRaw = trim((string) $rawSize);
+        if ($normalizedRaw === '') {
+            return ['system' => 'US', 'value' => '', 'explicit_system' => false];
+        }
+
+        if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $normalizedRaw, $matches)) {
+            return [
+                'system' => $this->normalizeSizeSystem($matches[1] ?? null),
+                'value' => trim((string) ($matches[2] ?? '')),
+                'explicit_system' => true,
+            ];
+        }
+
+        return ['system' => 'US', 'value' => $normalizedRaw, 'explicit_system' => false];
+    }
+
+    private function resolveInventorySizeRowForRestock(int $inventoryItemId, ?int $inventoryColorVariantId, ?string $rawSize): ?InventorySize
+    {
+        $parsed = $this->parseSizeComponents($rawSize);
+        $sizeValue = trim((string) ($parsed['value'] ?? ''));
+        $sizeSystem = (string) ($parsed['system'] ?? 'US');
+        $hasExplicitSystem = (bool) ($parsed['explicit_system'] ?? false);
+
+        if ($sizeValue === '') {
+            return null;
+        }
+
+        $query = InventorySize::where('inventory_item_id', $inventoryItemId)
+            ->where('size', $sizeValue);
+
+        if ($inventoryColorVariantId) {
+            $query->where('inventory_color_variant_id', $inventoryColorVariantId);
+        } else {
+            $query->whereNull('inventory_color_variant_id');
+        }
+
+        if ($hasExplicitSystem) {
+            $preferred = (clone $query)
+                ->where('size_system', $sizeSystem)
+                ->lockForUpdate()
+                ->first();
+
+            if ($preferred) {
+                return $preferred;
+            }
+        }
+
+        return $query->orderByRaw("CASE WHEN size_system = 'US' THEN 0 ELSE 1 END")
+            ->lockForUpdate()
+            ->first();
+    }
+
+    private function restoreReservationForExpiredItem(object $item, int $orderId, ?string $orderNumber): void
+    {
+        if (empty($item->product_id) || empty($item->quantity)) {
+            return;
+        }
+
+        $qty = (int) $item->quantity;
+        if ($qty <= 0) {
+            return;
+        }
+
+        $product = Product::query()->lockForUpdate()->find((int) $item->product_id);
+        if (!$product) {
+            return;
+        }
+
+        $inventoryItem = InventoryItem::where('product_id', $product->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$inventoryItem) {
+            $product->increment('stock_quantity', $qty);
+
+            if (!empty($item->size) && !empty($item->color)) {
+                $variant = ProductVariant::query()
+                    ->where('product_id', $item->product_id)
+                    ->whereRaw('LOWER(color) = ?', [strtolower((string) $item->color)])
+                    ->where('size', $item->size)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($variant) {
+                    $variant->increment('quantity', $qty);
+                } else {
+                    Log::warning('Variant not found while releasing expired order reservation', [
+                        'order_id' => $orderId,
+                        'order_number' => $orderNumber,
+                        'product_id' => $item->product_id,
+                        'size' => $item->size,
+                        'color' => $item->color,
+                    ]);
+                }
+            }
+
+            return;
+        }
+
+        $quantityBefore = (int) $inventoryItem->available_quantity;
+        $didSpecificRestock = false;
+
+        if (!empty($item->size) && !empty($item->color)) {
+            $normalizedColor = strtolower(trim((string) $item->color));
+
+            $inventoryColorVariant = InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+                ->whereRaw('LOWER(color_name) = ?', [$normalizedColor])
+                ->lockForUpdate()
+                ->first();
+
+            $sizeRow = $this->resolveInventorySizeRowForRestock(
+                (int) $inventoryItem->id,
+                $inventoryColorVariant?->id,
+                (string) $item->size
+            );
+
+            if ($sizeRow) {
+                $sizeRow->increment('quantity', $qty);
+                $didSpecificRestock = true;
+            }
+
+            if ($inventoryColorVariant) {
+                if ($sizeRow) {
+                    $recomputedColorQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
+                        ->where('inventory_color_variant_id', $inventoryColorVariant->id)
+                        ->sum('quantity');
+
+                    $inventoryColorVariant->quantity = $recomputedColorQty;
+                    $inventoryColorVariant->save();
+                } else {
+                    $inventoryColorVariant->increment('quantity', $qty);
+                }
+                $didSpecificRestock = true;
+            }
+        }
+
+        $newTotalQty = (int) InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
+            ->sum('quantity');
+
+        if ($newTotalQty === 0) {
+            $newTotalQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
+                ->whereNull('inventory_color_variant_id')
+                ->sum('quantity');
+        }
+
+        if (!$didSpecificRestock) {
+            $newTotalQty = $quantityBefore + $qty;
+        }
+
+        $inventoryItem->available_quantity = $newTotalQty;
+        $inventoryItem->save();
+
+        StockMovement::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'movement_type' => 'stock_in',
+            'quantity_change' => $qty,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $newTotalQty,
+            'reference_type' => 'order',
+            'reference_id' => $orderId,
+            'notes' => 'Expired payment reservation release',
+            'performed_at' => now(),
+        ]);
+
+        $product->stock_quantity = $newTotalQty;
+        $product->save();
+    }
 
     public function handle(): int
     {
@@ -271,37 +451,11 @@ class ExpireStalePaymentSessions extends Command
                 }
 
                 foreach ($freshOrder->items as $item) {
-                    if (!$item->product_id || !$item->quantity) {
-                        continue;
-                    }
-
-                    $product = Product::query()->lockForUpdate()->find($item->product_id);
-                    if (!$product) {
-                        continue;
-                    }
-
-                    $product->increment('stock_quantity', (int) $item->quantity);
-
-                    if (!empty($item->size) && !empty($item->color)) {
-                        $variant = ProductVariant::query()
-                            ->lockForUpdate()
-                            ->where('product_id', $item->product_id)
-                            ->whereRaw('LOWER(color) = ?', [strtolower((string) $item->color)])
-                            ->where('size', $item->size)
-                            ->first();
-
-                        if ($variant) {
-                            $variant->increment('quantity', (int) $item->quantity);
-                        } else {
-                            Log::warning('Variant not found while releasing expired order reservation', [
-                                'order_id' => $freshOrder->id,
-                                'order_number' => $freshOrder->order_number,
-                                'product_id' => $item->product_id,
-                                'size' => $item->size,
-                                'color' => $item->color,
-                            ]);
-                        }
-                    }
+                    $this->restoreReservationForExpiredItem(
+                        $item,
+                        (int) $freshOrder->id,
+                        (string) $freshOrder->order_number
+                    );
                 }
 
                 $existingNotes = trim((string) $freshOrder->notes);

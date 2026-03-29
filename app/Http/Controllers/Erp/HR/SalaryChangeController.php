@@ -8,6 +8,7 @@ use App\Models\HR\AuditLog;
 use App\Models\HR\SalaryChange;
 use App\Models\HR\Payroll;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Traits\HR\LogsHRActivity;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -22,15 +23,54 @@ class SalaryChangeController extends Controller
 
     // ─── Auth helpers ─────────────────────────────────────────
 
-    private function authorizeHR(User $user): bool
+    private function authorizeHR(?User $user): bool
     {
-        return $user->can('manage-salary-changes');
+        return $user?->can('manage-salary-changes') ?? false;
     }
 
-    private function authorizeApprover(User $user): bool
+    private function authorizeApprover(?User $user): bool
     {
-        return $user->hasRole('Shop Owner')
-            || $user->can('approve-salary-change');
+        return ($user?->hasRole('Shop Owner') ?? false)
+            || ($user?->can('approve-salary-change') ?? false);
+    }
+
+    /**
+     * Resolve actor and shop context for either auth:user or auth:shop_owner requests.
+     *
+     * @return array{actor: ?User, shop_owner_id: ?int, via_shop_owner_guard: bool}
+     */
+    private function resolveAuthContext(): array
+    {
+        $user = Auth::guard('user')->user();
+        if ($user instanceof User) {
+            return [
+                'actor' => $user,
+                'shop_owner_id' => (int) $user->shop_owner_id,
+                'via_shop_owner_guard' => false,
+            ];
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            $ownerUser = User::where('shop_owner_id', $shopOwner->id)
+                ->where('email', $shopOwner->email)
+                ->first()
+                ?? User::where('shop_owner_id', $shopOwner->id)
+                    ->orderBy('id')
+                    ->first();
+
+            return [
+                'actor' => $ownerUser,
+                'shop_owner_id' => (int) $shopOwner->id,
+                'via_shop_owner_guard' => true,
+            ];
+        }
+
+        return [
+            'actor' => null,
+            'shop_owner_id' => null,
+            'via_shop_owner_guard' => false,
+        ];
     }
 
     // ─── Index ────────────────────────────────────────────────
@@ -41,13 +81,20 @@ class SalaryChangeController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
+        $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
-        if (!$this->authorizeHR($user) && !$this->authorizeApprover($user)) {
+        if (!$shopOwnerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $query = SalaryChange::forShopOwner($user->shop_owner_id)
+        if (!$viaShopOwnerGuard && !$this->authorizeHR($user) && !$this->authorizeApprover($user)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $query = SalaryChange::forShopOwner($shopOwnerId)
             ->with(['employee:id,first_name,last_name,department,position',
                     'proposer:id,name',
                     'approver:id,name',
@@ -78,7 +125,7 @@ class SalaryChangeController extends Controller
         $results = $query->paginate($perPage);
 
         // Summary counts
-        $baseCount = SalaryChange::forShopOwner($user->shop_owner_id);
+        $baseCount = SalaryChange::forShopOwner($shopOwnerId);
         $summary = [
             'pending'   => (clone $baseCount)->where('status', 'pending')->count(),
             'approved'  => (clone $baseCount)->where('status', 'approved')->count(),
@@ -107,9 +154,11 @@ class SalaryChangeController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
 
-        if (!$this->authorizeHR($user)) {
+        if (!$user || !$shopOwnerId || !$this->authorizeHR($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -127,7 +176,7 @@ class SalaryChangeController extends Controller
         }
 
         // Shop isolation — employee must belong to the same shop
-        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+        $employee = Employee::where('shop_owner_id', $shopOwnerId)
             ->findOrFail((int) $request->employee_id);
 
         $previousSalary = (float) ($employee->salary ?? 0);
@@ -163,7 +212,7 @@ class SalaryChangeController extends Controller
         try {
             $change = SalaryChange::create([
                 'employee_id'   => $employee->id,
-                'shop_owner_id' => $user->shop_owner_id,
+                'shop_owner_id' => $shopOwnerId,
                 'proposed_by'   => $user->id,
                 'previous_salary' => $previousSalary,
                 'new_salary'      => $newSalary,
@@ -202,6 +251,21 @@ class SalaryChangeController extends Controller
 
             DB::commit();
 
+            app(NotificationService::class)->notifySalaryChangeSubmittedToShopOwner(
+                $shopOwnerId,
+                [
+                    'salary_change_id' => $change->id,
+                    'employee_id' => $employee->id,
+                    'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')),
+                    'previous_salary' => $previousSalary,
+                    'new_salary' => $newSalary,
+                    'effective_date' => $effectiveDate->toDateString(),
+                    'proposed_by' => $user->id,
+                    'proposed_by_name' => $user->name,
+                    'reason' => $request->reason,
+                ]
+            );
+
             return response()->json([
                 'message' => 'Daily-rate change proposal submitted and awaiting approval.',
                 'data'    => $change->load(['employee:id,first_name,last_name', 'proposer:id,name']),
@@ -220,13 +284,20 @@ class SalaryChangeController extends Controller
      */
     public function show(Request $request, int $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
+        $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
-        if (!$this->authorizeHR($user) && !$this->authorizeApprover($user)) {
+        if (!$shopOwnerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $change = SalaryChange::forShopOwner($user->shop_owner_id)
+        if (!$viaShopOwnerGuard && !$this->authorizeHR($user) && !$this->authorizeApprover($user)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $change = SalaryChange::forShopOwner($shopOwnerId)
             ->with(['employee:id,first_name,last_name,department,position,salary',
                     'proposer:id,name',
                     'approver:id,name',
@@ -245,9 +316,16 @@ class SalaryChangeController extends Controller
      */
     public function approve(Request $request, int $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
+        $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
-        if (!$this->authorizeApprover($user)) {
+        if (!$shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (!$viaShopOwnerGuard && !$this->authorizeApprover($user)) {
             return response()->json(['error' => 'Only authorized approvers can approve salary changes.'], 403);
         }
 
@@ -258,27 +336,22 @@ class SalaryChangeController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $change = SalaryChange::forShopOwner($user->shop_owner_id)
+        $change = SalaryChange::forShopOwner($shopOwnerId)
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
         // Approver must not be the same person who proposed (unless they have override)
-        if ($change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
+        if ($user && $change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
             return response()->json(['error' => 'You cannot approve a salary change you proposed.'], 403);
         }
 
         DB::beginTransaction();
         try {
             $change->status      = SalaryChange::STATUS_APPROVED;
-            $change->approved_by = $user->id;
+            $change->approved_by = $user?->id;
             $change->approved_at = now();
             $change->notes       = $request->notes;
             $change->save();
-
-            // If effective date is today or past, immediately apply
-            if ($change->effective_date->lte(now()->startOfDay())) {
-                $change->applyToEmployee();
-            }
 
             $employee = $change->employee;
             $this->auditCustom(
@@ -293,7 +366,7 @@ class SalaryChangeController extends Controller
                         'salary_change_id' => $change->id,
                         'new_salary'       => $change->new_salary,
                         'effective_date'   => $change->effective_date->toDateString(),
-                        'applied_now'      => $change->status === SalaryChange::STATUS_APPLIED,
+                        'applied_now'      => false,
                     ],
                     'severity'    => AuditLog::SEVERITY_WARNING,
                     'tags'        => ['salary_change', 'approved', 'phase_7'],
@@ -302,10 +375,24 @@ class SalaryChangeController extends Controller
 
             DB::commit();
 
+            if ($change->proposed_by) {
+                app(NotificationService::class)->notifySalaryChangeApprovedToHr(
+                    (int) $change->proposed_by,
+                    (int) $shopOwnerId,
+                    [
+                        'salary_change_id' => $change->id,
+                        'employee_id' => $employee->id,
+                        'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')),
+                        'new_salary' => (float) $change->new_salary,
+                        'effective_date' => $change->effective_date->toDateString(),
+                        'approved_by' => $user?->id,
+                        'approved_by_name' => $user?->name,
+                    ]
+                );
+            }
+
             return response()->json([
-                'message' => $change->status === SalaryChange::STATUS_APPLIED
-                    ? 'Salary change approved and applied immediately.'
-                    : 'Salary change approved. It will be applied on the effective date during the next payroll run.',
+                'message' => 'Salary change approved. HR must finalize and apply this request.',
                 'data'    => $change->fresh(['employee:id,first_name,last_name', 'approver:id,name']),
             ]);
 
@@ -322,9 +409,16 @@ class SalaryChangeController extends Controller
      */
     public function reject(Request $request, int $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
+        $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
-        if (!$this->authorizeApprover($user)) {
+        if (!$shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (!$viaShopOwnerGuard && !$this->authorizeApprover($user)) {
             return response()->json(['error' => 'Only authorized approvers can reject salary changes.'], 403);
         }
 
@@ -335,12 +429,12 @@ class SalaryChangeController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $change = SalaryChange::forShopOwner($user->shop_owner_id)
+        $change = SalaryChange::forShopOwner($shopOwnerId)
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
         $change->status      = SalaryChange::STATUS_REJECTED;
-        $change->rejected_by = $user->id;
+        $change->rejected_by = $user?->id;
         $change->rejected_at = now();
         $change->notes       = $request->notes;
         $change->save();
@@ -377,13 +471,19 @@ class SalaryChangeController extends Controller
      */
     public function apply(Request $request, int $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
 
-        if (!$this->authorizeHR($user)) {
+        if (!$shopOwnerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $change = SalaryChange::forShopOwner($user->shop_owner_id)
+        if (!$user || !$this->authorizeHR($user)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $change = SalaryChange::forShopOwner($shopOwnerId)
             ->where('status', SalaryChange::STATUS_APPROVED)
             ->findOrFail($id);
 
@@ -430,9 +530,15 @@ class SalaryChangeController extends Controller
      */
     public function cancel(Request $request, int $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        $context = $this->resolveAuthContext();
+        $user = $context['actor'];
+        $shopOwnerId = $context['shop_owner_id'];
 
-        $change = SalaryChange::forShopOwner($user->shop_owner_id)
+        if (!$user || !$shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $change = SalaryChange::forShopOwner($shopOwnerId)
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 

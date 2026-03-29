@@ -14,6 +14,7 @@ use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\LeaveRequestSubmitted;
 use App\Notifications\HR\LeaveRequestApproved;
 use App\Notifications\HR\LeaveRequestRejected;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -31,6 +32,23 @@ class LeaveController extends Controller
     public function __construct(NotificationService $notificationService)
     {
         $this->notificationService = $notificationService;
+    }
+
+    /**
+     * Resolve linked ERP user account for an employee.
+     * Uses email + shop scope to avoid cross-shop collisions.
+     */
+    private function resolveEmployeeUser(Employee $employee): ?User
+    {
+        $email = trim((string) $employee->email);
+        if ($email === '') {
+            return null;
+        }
+
+        return User::query()
+            ->where('email', $email)
+            ->where('shop_owner_id', $employee->shop_owner_id)
+            ->first();
     }
     /**
      * Display a listing of leave requests.
@@ -487,16 +505,25 @@ class LeaveController extends Controller
         try {
             $employee = $leaveRequest->employee;
             if ($employee) {
-                if ($employee->user_id) {
-                    $this->notificationService->notifyLeaveApproved($employee->user_id, $user->shop_owner_id, [
+                $employeeUser = $this->resolveEmployeeUser($employee);
+
+                if ($employeeUser) {
+                    $this->notificationService->notifyLeaveApproved($employeeUser->id, $user->shop_owner_id, [
                         'leave_request_id' => $leaveRequest->id,
                         'leave_type'       => $leaveRequest->leave_type,
                         'start_date'       => $leaveRequest->start_date?->toDateString(),
                         'end_date'         => $leaveRequest->end_date?->toDateString(),
                     ]);
-                }
-                if ($employee->user) {
-                    $employee->user->notify(new LeaveRequestApproved($leaveRequest, $user));
+
+                    // Keep queued Laravel notification for secondary channels (mail, etc.).
+                    $employeeUser->notify(new LeaveRequestApproved($leaveRequest, $user));
+                } else {
+                    \Log::warning('Leave approved but no linked ERP user found for requester notification', [
+                        'employee_id' => $employee->id,
+                        'employee_email' => $employee->email,
+                        'shop_owner_id' => $employee->shop_owner_id,
+                        'leave_request_id' => $leaveRequest->id,
+                    ]);
                 }
             }
         } catch (\Exception $e) {
@@ -631,17 +658,26 @@ class LeaveController extends Controller
         try {
             $employee = $leaveRequest->employee;
             if ($employee) {
-                if ($employee->user_id) {
-                    $this->notificationService->notifyLeaveRejected($employee->user_id, $user->shop_owner_id, [
+                $employeeUser = $this->resolveEmployeeUser($employee);
+
+                if ($employeeUser) {
+                    $this->notificationService->notifyLeaveRejected($employeeUser->id, $user->shop_owner_id, [
                         'leave_request_id' => $leaveRequest->id,
                         'leave_type'       => $leaveRequest->leave_type,
                         'start_date'       => $leaveRequest->start_date?->toDateString(),
                         'end_date'         => $leaveRequest->end_date?->toDateString(),
                         'reason'           => $request->reason,
                     ]);
-                }
-                if ($employee->user) {
-                    $employee->user->notify(new LeaveRequestRejected($leaveRequest, $user));
+
+                    // Keep queued Laravel notification for secondary channels (mail, etc.).
+                    $employeeUser->notify(new LeaveRequestRejected($leaveRequest, $user));
+                } else {
+                    \Log::warning('Leave rejected but no linked ERP user found for requester notification', [
+                        'employee_id' => $employee->id,
+                        'employee_email' => $employee->email,
+                        'shop_owner_id' => $employee->shop_owner_id,
+                        'leave_request_id' => $leaveRequest->id,
+                    ]);
                 }
             }
         } catch (\Exception $e) {
@@ -829,10 +865,17 @@ class LeaveController extends Controller
     public function selfRequestLeave(Request $request): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        // Check if user is staff or manager
-        if (!in_array($user->role, ['STAFF', 'MANAGER', 'shop_owner'])) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // Self-service leave is available to authenticated ERP users tied to a shop.
+        if (empty($user->shop_owner_id)) {
+            return response()->json([
+                'error' => 'Unauthorized',
+                'message' => 'No shop association found for this account.'
+            ], 403);
         }
 
         $validator = Validator::make($request->all(), [
@@ -920,6 +963,25 @@ class LeaveController extends Controller
             'status' => 'pending',
             'approval_level' => 1,
         ]);
+
+        // Notify HR/approvers about the new self-service leave request.
+        try {
+            $this->notificationService->notifyLeaveSubmitted((int) $user->shop_owner_id, [
+                'leave_request_id' => $leaveRequest->id,
+                'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: ($employee->name ?? $user->name ?? 'Employee'),
+                'leave_type' => $leaveRequest->leave_type,
+                'no_of_days' => $leaveRequest->no_of_days,
+                'start_date' => $leaveRequest->start_date,
+                'end_date' => $leaveRequest->end_date,
+                'reason' => $leaveRequest->reason,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send leave submitted notification from self-request flow', [
+                'leave_request_id' => $leaveRequest->id,
+                'employee_id' => $employee->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'message' => 'Leave request submitted successfully',

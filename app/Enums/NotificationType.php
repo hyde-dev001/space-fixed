@@ -69,6 +69,8 @@ enum NotificationType: string
     // ==================== HR NOTIFICATIONS ====================
     case LEAVE_SUBMITTED = 'leave_submitted';
     case OVERTIME_SUBMITTED = 'overtime_submitted';
+    case SALARY_CHANGE_SUBMITTED = 'salary_change_submitted';
+    case SALARY_CHANGE_APPROVED = 'salary_change_approved';
 
     // ==================== FINANCE NOTIFICATIONS ====================
     case INVOICE_CREATED_FINANCE = 'invoice_created_finance';
@@ -157,6 +159,8 @@ enum NotificationType: string
             // HR notifications
             self::LEAVE_SUBMITTED => 'New Leave Request',
             self::OVERTIME_SUBMITTED => 'New Overtime Request',
+            self::SALARY_CHANGE_SUBMITTED => 'New Salary Change Request',
+            self::SALARY_CHANGE_APPROVED => 'Salary Change Approved',
 
             // Finance notifications
             self::INVOICE_CREATED_FINANCE => 'New Invoice Created',
@@ -204,6 +208,7 @@ enum NotificationType: string
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
             self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
             self::OVERTIME_SUBMITTED, self::OVERTIME_REQUEST_PENDING,
+            self::SALARY_CHANGE_SUBMITTED, self::SALARY_CHANGE_APPROVED,
             self::OVERTIME_REQUEST_APPROVED, self::OVERTIME_REQUEST_REJECTED,
             self::ATTENDANCE_REMINDER, self::DOCUMENT_EXPIRING,
             self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED => 'hr',
@@ -259,6 +264,7 @@ enum NotificationType: string
             self::REFUND_REQUEST,
             self::LOW_STOCK_ALERT,
             self::EMPLOYEE_SUSPENSION_REQUEST,
+            self::SALARY_CHANGE_SUBMITTED,
             self::CUSTOMER_MESSAGE,
         ]);
     }
@@ -280,6 +286,7 @@ enum NotificationType: string
             self::LEAVE_REQUEST_PENDING,
             self::EXPENSE_REQUEST_PENDING,
             self::SUSPENSION_REQUEST_PENDING,
+            self::SALARY_CHANGE_SUBMITTED,
             self::SHOP_REGISTRATION_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,

@@ -57,6 +57,16 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     });
 
     // ============================================
+    // SALARY CHANGE APPROVALS (Shop Owner Final Approval)
+    // ============================================
+    Route::prefix('salary-changes')->middleware('check.registration.type:company')->group(function () {
+        Route::get('/', [\App\Http\Controllers\ERP\HR\SalaryChangeController::class, 'index'])->name('shop_owner.salary-changes.index');
+        Route::get('/{id}', [\App\Http\Controllers\ERP\HR\SalaryChangeController::class, 'show'])->name('shop_owner.salary-changes.show');
+        Route::post('/{id}/approve', [\App\Http\Controllers\ERP\HR\SalaryChangeController::class, 'approve'])->name('shop_owner.salary-changes.approve');
+        Route::post('/{id}/reject', [\App\Http\Controllers\ERP\HR\SalaryChangeController::class, 'reject'])->name('shop_owner.salary-changes.reject');
+    });
+
+    // ============================================
     // REFUND APPROVALS (Shop Owner)
     // ============================================
     Route::prefix('refunds')->group(function () {

@@ -266,6 +266,8 @@ export default function UploadInventory() {
   const [stocks, setStocks] = useState<StockItem[]>(
     () => mapAndFilterVisibleStocks(initialData?.data ?? [])
   );
+  const [categoryFilter, setCategoryFilter] = useState<'all' | StockCategory>('all');
+  const [tablePage, setTablePage] = useState(1);
   const [loadingStocks, setLoadingStocks] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -521,6 +523,17 @@ export default function UploadInventory() {
   const totalUnits = useMemo(() => stocks.reduce((sum, item) => sum + item.quantity, 0), [stocks]);
   const inStock = useMemo(() => stocks.filter((item) => getStatusByQuantity(item.quantity) === 'In Stock').length, [stocks]);
   const outOfStock = useMemo(() => stocks.filter((item) => getStatusByQuantity(item.quantity) === 'Out of Stock').length, [stocks]);
+
+  const filteredStocks = useMemo(() => {
+    if (categoryFilter === 'all') return stocks;
+    return stocks.filter((stock) => stock.category === categoryFilter);
+  }, [stocks, categoryFilter]);
+
+  const itemsPerPage = 8;
+  const totalPages = Math.max(1, Math.ceil(filteredStocks.length / itemsPerPage));
+  const safePage = Math.min(tablePage, totalPages);
+  const startIndex = (safePage - 1) * itemsPerPage;
+  const paginatedStocks = filteredStocks.slice(startIndex, startIndex + itemsPerPage);
 
   // Auto-calculate total quantity for shoes from all size variants
   const shoesAutoQuantity = useMemo(() =>
@@ -813,6 +826,25 @@ export default function UploadInventory() {
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-sm text-gray-600 dark:text-gray-400">Filter by category</p>
+              <div className="sm:w-56">
+                <select
+                  title="Filter stock category"
+                  aria-label="Filter stock category"
+                  value={categoryFilter}
+                  onChange={(event) => {
+                    setCategoryFilter(event.target.value as 'all' | StockCategory);
+                    setTablePage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                >
+                  <option value="all">All Categories</option>
+                  {canUploadRepair && <option value="repair_materials">Repair Materials</option>}
+                  {canUploadShoes && <option value="shoes">Shoes</option>}
+                </select>
+              </div>
+            </div>
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-900">
                 <tr>
@@ -827,14 +859,14 @@ export default function UploadInventory() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {loadingStocks ? (
                   <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">Loading stock entries...</td></tr>
-                ) : stocks.length === 0 ? (
+                ) : filteredStocks.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      No stock entries yet. Create your first stock upload!
+                      No stock entries found for this category.
                     </td>
                   </tr>
                 ) : (
-                  stocks.map((stock) => {
+                  paginatedStocks.map((stock) => {
                     const status = getStatusByQuantity(stock.quantity);
 
                     return (
@@ -910,6 +942,36 @@ export default function UploadInventory() {
                 )}
               </tbody>
             </table>
+
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Showing {filteredStocks.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredStocks.length)} of {filteredStocks.length} items
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTablePage((prev) => Math.max(prev - 1, 1))}
+                  disabled={safePage === 1}
+                  className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Previous page"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTablePage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={safePage === totalPages}
+                  className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Next page"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </AppLayoutERP>

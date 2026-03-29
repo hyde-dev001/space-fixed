@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect } from "react";
+import React, { Suspense, useState, useEffect } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import Tooltip from "../../../components/common/Tooltip";
@@ -14,12 +14,6 @@ const UsersIcon = ({ className }: { className?: string }) => (
 const CheckCircleIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const StoreIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
   </svg>
 );
 
@@ -100,6 +94,7 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     </div>
   );
 };
+
 // Bar Chart Component for Employee Distribution
 const EmployeeDistributionChart: React.FC<{ departments: string[], counts: number[] }> = ({ departments, counts }) => {
   const options: ApexOptions = {
@@ -223,7 +218,9 @@ interface DashboardData {
   payroll: any;
   performance: any;
   summary: {
+    total_employees: number;
     active_employees: number;
+    current_on_leave: number;
     total_departments: number;
     pending_leave_requests: number;
     this_month_payroll: number;
@@ -274,12 +271,11 @@ export function HRDashboard() {
     return statusData ? statusData.count : 0;
   };
 
-  const totalEmployees = dashboardData?.headcount.current_headcount || 0;
+  const totalEmployees = dashboardData?.summary.total_employees || dashboardData?.headcount.current_headcount || 0;
   const activeEmployees = getStatusCount('active');
-  const onLeaveCount = getStatusCount('on_leave');
+  const onLeaveCount = dashboardData?.summary.current_on_leave || 0;
   const inactiveCount = getStatusCount('inactive');
   const suspendedCount = getStatusCount('suspended');
-  const totalDepartments = dashboardData?.summary.total_departments || 0;
 
   // Calculate percentages
   const employmentRate = totalEmployees > 0 ? ((activeEmployees / totalEmployees) * 100).toFixed(1) : '0.0';
@@ -289,9 +285,6 @@ export function HRDashboard() {
   const inactivePercentage = totalEmployees > 0 ? ((inactiveCount / totalEmployees) * 100).toFixed(1) : '0.0';
   const suspendedPercentage = totalEmployees > 0 ? ((suspendedCount / totalEmployees) * 100).toFixed(1) : '0.0';
   const availabilityRate = totalEmployees > 0 ? (((activeEmployees + onLeaveCount) / totalEmployees) * 100).toFixed(1) : '0.0';
-  
-  // Calculate average employees per department
-  const avgPerDepartment = totalDepartments > 0 ? Math.round(totalEmployees / totalDepartments) : 0;
 
   if (loading) {
     return (
@@ -321,7 +314,7 @@ export function HRDashboard() {
   return (
     <div className="space-y-6">
       {/* Top Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Tooltip content="Total employees in the system" position="bottom">
           <MetricCard
             title="Total Employees"
@@ -340,15 +333,6 @@ export function HRDashboard() {
             description="Currently working"
           />
         </Tooltip>
-        <Tooltip content="Number of departments" position="bottom">
-          <MetricCard
-            title="Departments"
-            value={totalDepartments}
-            icon={StoreIcon}
-            color="warning"
-            description="Active departments"
-          />
-        </Tooltip>
         <Tooltip content="Employees currently on leave" position="bottom">
           <MetricCard
             title="On Leave"
@@ -361,7 +345,7 @@ export function HRDashboard() {
       </div>
 
       {/* Employee Distribution Chart */}
-      {dashboardData && <EmployeeDistributionChart 
+      {dashboardData && <EmployeeDistributionChart
         departments={dashboardData.headcount.by_department.map(d => d.department)}
         counts={dashboardData.headcount.by_department.map(d => d.count)}
       />}
@@ -407,19 +391,6 @@ export function HRDashboard() {
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Currently away from duty</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                 <div className="h-full bg-purple-500 rounded-full" style={{ width: `${leaveRate}%` }}></div>
-              </div>
-            </div>
-
-            {/* Avg per Department */}
-            <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Avg per Department</p>
-              <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-teal-600 dark:text-teal-400">{avgPerDepartment}</span>
-                <span className="px-2 py-0.5 bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400 text-xs font-semibold rounded">Employees</span>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Per department average</p>
-              <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-teal-500 rounded-full" style={{ width: '65%' }}></div>
               </div>
             </div>
 

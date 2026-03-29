@@ -224,6 +224,8 @@ export function OvertimeRequests() {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<OvertimeRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [processingAction, setProcessingAction] = useState<"approve" | "reject" | null>(null);
+  const [processingRequestId, setProcessingRequestId] = useState<number | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [assignData, setAssignData] = useState({
@@ -333,6 +335,8 @@ export function OvertimeRequests() {
   };
 
   const handleApprove = async (request: OvertimeRequest) => {
+    if (processingAction) return;
+
     const result = await Swal.fire({
       title: "Approve Overtime Request?",
       text: `Approve ${request.totalHours}-hour overtime for ${request.employeeName}?`,
@@ -347,6 +351,9 @@ export function OvertimeRequests() {
     if (!result.isConfirmed) return;
 
     try {
+      setProcessingAction("approve");
+      setProcessingRequestId(request.id);
+
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const response = await fetch(`/api/hr/overtime-requests/${request.id}/approve`, {
@@ -378,13 +385,15 @@ export function OvertimeRequests() {
         )
       );
 
-      Swal.fire({
+      await Swal.fire({
         icon: "success",
         title: "Approved!",
         text: data.message || "Overtime request has been approved.",
         timer: 2000,
         showConfirmButton: false,
       });
+
+      window.location.reload();
     } catch (error: any) {
       console.error('Error approving overtime:', error);
       Swal.fire({
@@ -392,6 +401,9 @@ export function OvertimeRequests() {
         title: "Error",
         text: error.message || "Failed to approve overtime request. Please try again.",
       });
+    } finally {
+      setProcessingAction(null);
+      setProcessingRequestId(null);
     }
   };
 
@@ -402,6 +414,8 @@ export function OvertimeRequests() {
   };
 
   const handleConfirmReject = async () => {
+    if (processingAction) return;
+
     if (!requestToReject || !rejectionReason.trim()) {
       Swal.fire({
         icon: "warning",
@@ -412,6 +426,9 @@ export function OvertimeRequests() {
     }
 
     try {
+      setProcessingAction("reject");
+      setProcessingRequestId(requestToReject.id);
+
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const response = await fetch(`/api/hr/overtime-requests/${requestToReject.id}/reject`, {
@@ -440,13 +457,15 @@ export function OvertimeRequests() {
 
       await fetchOvertimeRequests();
       
-      Swal.fire({
+      await Swal.fire({
         icon: "success",
         title: "Rejected!",
         text: data.message || "Overtime request has been rejected.",
         timer: 2000,
         showConfirmButton: false,
       });
+
+      window.location.reload();
     } catch (error: any) {
       console.error('Error rejecting overtime:', error);
       Swal.fire({
@@ -454,6 +473,9 @@ export function OvertimeRequests() {
         title: "Error",
         text: error.message || "Failed to reject overtime request. Please try again.",
       });
+    } finally {
+      setProcessingAction(null);
+      setProcessingRequestId(null);
     }
   };
 
@@ -993,9 +1015,10 @@ export function OvertimeRequests() {
                         <>
                           <button
                             onClick={() => handleApprove(selectedRequest)}
-                            className="px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                            disabled={processingAction !== null}
+                            className="px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Approve
+                            {processingAction === "approve" && processingRequestId === selectedRequest.id ? "Approving..." : "Approve"}
                           </button>
                           <button
                             onClick={() => {
@@ -1003,9 +1026,10 @@ export function OvertimeRequests() {
                               setRejectionReason("");
                               setIsRejectModalOpen(true);
                             }}
-                            className="px-4 py-2.5 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
+                            disabled={processingAction !== null}
+                            className="px-4 py-2.5 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Reject
+                            {processingAction === "reject" && processingRequestId === selectedRequest.id ? "Rejecting..." : "Reject"}
                           </button>
                         </>
                       )}
@@ -1095,19 +1119,22 @@ export function OvertimeRequests() {
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => {
+                      if (processingAction) return;
                       setIsRejectModalOpen(false);
                       setRequestToReject(null);
                       setRejectionReason("");
                     }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    disabled={processingAction !== null}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleConfirmReject}
-                    className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
+                    disabled={!rejectionReason.trim() || processingAction !== null}
+                    className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Reject Request
+                    {processingAction === "reject" && requestToReject && processingRequestId === requestToReject.id ? "Rejecting..." : "Reject Request"}
                   </button>
                 </div>
               </div>

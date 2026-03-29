@@ -115,6 +115,8 @@ export default function StockRequest() {
 	const [loading, setLoading] = useState(false);
 	const [metrics, setMetrics] = useState<StockRequestMetrics>({ total: 0, pending: 0, accepted: 0, rejected: 0 });
 	const [searchQuery, setSearchQuery] = useState("");
+	const [statusFilter, setStatusFilter] = useState<"All" | StockRequestApproval["status"]>("All");
+	const [priorityFilter, setPriorityFilter] = useState<"All" | StockRequestApproval["priority"]>("All");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
@@ -152,10 +154,19 @@ export default function StockRequest() {
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
+		let filtered = requests;
 
-		if (!query) return requests;
+		if (statusFilter !== "All") {
+			filtered = filtered.filter((request) => request.status === statusFilter);
+		}
 
-		return requests.filter((request) =>
+		if (priorityFilter !== "All") {
+			filtered = filtered.filter((request) => request.priority === priorityFilter);
+		}
+
+		if (!query) return filtered;
+
+		return filtered.filter((request) =>
 			request.request_number.toLowerCase().includes(query) ||
 			request.product_name.toLowerCase().includes(query) ||
 			request.sku_code.toLowerCase().includes(query) ||
@@ -164,7 +175,7 @@ export default function StockRequest() {
 			String(request.repair_request_id || "").toLowerCase().includes(query) ||
 			request.status.toLowerCase().includes(query)
 		);
-	}, [searchQuery, requests]);
+	}, [searchQuery, statusFilter, priorityFilter, requests]);
 
 	const itemsPerPage = 8;
 	const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -240,7 +251,7 @@ export default function StockRequest() {
 			cancelButtonText: "Cancel",
 			confirmButtonColor: "#dc2626",
 			cancelButtonColor: "#6b7280",
-			inputValidator: (value) => {
+			inputValidator: (value: string) => {
 				if (!value || !value.trim()) return "Please provide a rejection reason.";
 				return undefined;
 			},
@@ -307,6 +318,41 @@ export default function StockRequest() {
 								}}
 								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 							/>
+						</div>
+						<div className="sm:w-52">
+							<select
+								title="Filter by status"
+								aria-label="Filter by status"
+								value={statusFilter}
+								onChange={(event) => {
+									setStatusFilter(event.target.value as "All" | StockRequestApproval["status"]);
+									setCurrentPage(1);
+								}}
+								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+							>
+								<option value="All">All Status</option>
+								<option value="pending">Pending</option>
+								<option value="accepted">Approved</option>
+								<option value="rejected">Rejected</option>
+								<option value="needs_details">Needs Details</option>
+							</select>
+						</div>
+						<div className="sm:w-44">
+							<select
+								title="Filter by priority"
+								aria-label="Filter by priority"
+								value={priorityFilter}
+								onChange={(event) => {
+									setPriorityFilter(event.target.value as "All" | StockRequestApproval["priority"]);
+									setCurrentPage(1);
+								}}
+								className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+							>
+								<option value="All">All Priority</option>
+								<option value="high">High</option>
+								<option value="medium">Medium</option>
+								<option value="low">Low</option>
+							</select>
 						</div>
 					</div>
 

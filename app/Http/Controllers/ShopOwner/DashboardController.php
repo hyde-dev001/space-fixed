@@ -29,48 +29,6 @@ class DashboardController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        // Company registration type should access revenue via ERP
-        // Individual registration type gets revenue on shop owner dashboard
-        if ($shopOwner->isCompany()) {
-            return response()->json([
-                'message' => 'Business shop owners should access revenue data through ERP',
-                'registration_type' => 'company',
-                'redirect_to_erp' => true,
-                'revenue' => [
-                    'total' => 0,
-                    'this_month' => 0,
-                    'last_month' => 0,
-                    'growth' => 0,
-                    'average_order' => 0,
-                ],
-                'orders' => [
-                    'total' => 0,
-                    'this_month' => 0,
-                    'last_month' => 0,
-                    'growth' => 0,
-                    'pending' => 0,
-                    'processing' => 0,
-                    'shipped' => 0,
-                    'completed' => 0,
-                ],
-                'products' => [
-                    'total' => 0,
-                    'active' => 0,
-                    'low_stock' => 0,
-                    'out_of_stock' => 0,
-                ],
-                'customers' => [
-                    'total' => 0,
-                    'unique' => 0,
-                    'guests' => 0,
-                    'repeat' => 0,
-                ],
-                'top_products' => [],
-                'recent_orders' => [],
-                'revenue_trend' => [],
-            ]);
-        }
-
         $shopOwnerId = $shopOwner->id;
 
         // Get date ranges

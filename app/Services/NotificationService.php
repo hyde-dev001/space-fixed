@@ -571,11 +571,30 @@ class NotificationService
     public function notifyLeaveSubmitted(int $shopId, array $leaveData): void
     {
         $employeeName = $leaveData['employee_name'] ?? 'An employee';
-        $this->sendToErpRole('HR', $shopId, NotificationType::LEAVE_SUBMITTED,
-            'New Leave Request',
-            "{$employeeName} submitted a {$leaveData['leave_type']} leave request for {$leaveData['no_of_days']} day(s).",
-            $leaveData, '/erp/hr?section=leaves', 'medium'
-        );
+        $title = 'New Leave Request';
+        $message = "{$employeeName} submitted a {$leaveData['leave_type']} leave request for {$leaveData['no_of_days']} day(s).";
+
+        // Use permission/role targeting so notifications still work even when role labels vary.
+        $recipients = User::query()
+            ->where('shop_owner_id', $shopId)
+            ->where(function ($query) {
+                $query->whereHas('permissions', function ($permissionQuery) {
+                    $permissionQuery->whereIn('name', ['access-leave-approvals', 'access-hr-dashboard']);
+                })->orWhereHas('roles', function ($roleQuery) {
+                    $roleQuery->whereIn('name', ['HR', 'Manager', 'Shop Owner', 'Finance Manager']);
+                });
+            })
+            ->get();
+
+        if ($recipients->isEmpty()) {
+            // Backward-compatible fallback.
+            $this->sendToErpRole('HR', $shopId, NotificationType::LEAVE_SUBMITTED, $title, $message, $leaveData, '/erp/hr?section=leaves', 'medium');
+            return;
+        }
+
+        foreach ($recipients as $recipient) {
+            $this->sendToUser($recipient->id, NotificationType::LEAVE_SUBMITTED, $title, $message, $leaveData, '/erp/hr?section=leaves', $shopId, 'medium');
+        }
     }
 
     /** Notify employee their leave was approved */
@@ -609,6 +628,49 @@ class NotificationService
             'New Overtime Request',
             "{$employeeName} requested {$otData['hours']} hour(s) of overtime on {$otData['overtime_date']}.",
             $otData, '/erp/hr?section=overtime', 'medium'
+        );
+    }
+
+    /** Notify Shop Owner when HR submits a salary change request */
+    public function notifySalaryChangeSubmittedToShopOwner(int $shopId, array $salaryData): void
+    {
+        $employeeName = $salaryData['employee_name'] ?? 'An employee';
+        $proposedBy = $salaryData['proposed_by_name'] ?? 'HR';
+        $newSalary = $salaryData['new_salary'] ?? 0;
+        $effectiveDate = $salaryData['effective_date'] ?? null;
+
+        $dateText = $effectiveDate ? " Effective: {$effectiveDate}." : '';
+
+        $this->sendToShopOwner(
+            shopOwnerId: $shopId,
+            type: NotificationType::SALARY_CHANGE_SUBMITTED,
+            title: 'New Salary Change Request',
+            message: "{$proposedBy} submitted a salary change for {$employeeName} to ₱{$newSalary}.{$dateText}",
+            data: $salaryData,
+            actionUrl: '/shop-owner/salary-adjustment-approvals',
+            priority: 'high',
+            groupKey: 'salary-change-request',
+            requiresAction: true
+        );
+    }
+
+    /** Notify HR proposer when Shop Owner approves salary change */
+    public function notifySalaryChangeApprovedToHr(int $userId, int $shopId, array $salaryData): void
+    {
+        $employeeName = $salaryData['employee_name'] ?? 'Employee';
+        $newSalary = $salaryData['new_salary'] ?? 0;
+
+        $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::SALARY_CHANGE_APPROVED,
+            title: 'Salary Change Approved by Shop Owner',
+            message: "Your salary change request for {$employeeName} (₱{$newSalary}) was approved. Please finalize it in HR.",
+            data: $salaryData,
+            actionUrl: '/erp/hr?section=salary-changes',
+            shopId: $shopId,
+            priority: 'high',
+            groupKey: 'salary-change-approved',
+            requiresAction: true
         );
     }
 
@@ -1436,6 +1498,7 @@ class NotificationService
             'new_order' => 'browser_new_orders',
             'new_repair_request' => 'browser_new_orders',
             'price_change_request' => 'browser_approvals',
+            'salary_change_submitted' => 'browser_approvals',
             'repair_service_request' => 'browser_new_orders',
             'high_value_approval' => 'browser_approvals',
             'refund_request' => 'browser_approvals',
@@ -1453,6 +1516,7 @@ class NotificationService
             'attendance_reminder' => 'browser_hr_updates',
             'document_expiring' => 'browser_hr_updates',
             'payroll_generated' => 'browser_hr_updates',
+            'salary_change_approved' => 'browser_hr_updates',
         ];
 
         $prefKey = $preferenceMap[$type->value] ?? null;
@@ -1488,6 +1552,7 @@ class NotificationService
             'new_order' => 'email_new_orders',
             'new_repair_request' => 'email_new_orders',
             'price_change_request' => 'email_approvals',
+            'salary_change_submitted' => 'email_approvals',
             'repair_service_request' => 'email_new_orders',
             'high_value_approval' => 'email_approvals',
             'refund_request' => 'email_approvals',
@@ -1505,6 +1570,7 @@ class NotificationService
             'attendance_reminder' => 'email_hr_updates',
             'document_expiring' => 'email_hr_updates',
             'payroll_generated' => 'email_hr_updates',
+            'salary_change_approved' => 'email_hr_updates',
         ];
 
         $prefKey = $preferenceMap[$type->value] ?? null;

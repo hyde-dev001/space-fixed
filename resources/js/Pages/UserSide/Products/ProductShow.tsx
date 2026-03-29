@@ -20,6 +20,7 @@ type ColorVariant = {
   id: number;
   color_name: string;
   color_code: string;
+  quantity?: number | null;
   images: ColorVariantImage[];
   sizes?: Array<{
     id?: number;
@@ -250,8 +251,10 @@ const ProductShow: React.FC = () => {
         const matchedSize = scopedSizes.find((entry) =>
           isSameSize(`${(entry.size_system || 'US').toUpperCase()} ${String(entry.size).trim()}`, size),
         );
+        const sizeQty = matchedSize ? Number(matchedSize.quantity || 0) : 0;
+        const colorQty = Number(colorVariant?.quantity ?? Number.POSITIVE_INFINITY);
 
-        return matchedSize ? Number(matchedSize.quantity || 0) : 0;
+        return Math.max(0, Math.min(sizeQty, colorQty));
       }
     }
 
