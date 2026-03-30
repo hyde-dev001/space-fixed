@@ -20,6 +20,7 @@ interface DashboardStats {
     shipped: number;
     completed: number;
     cancelled: number;
+    refunded: number;
     growth_percentage: number;
   };
   products: {
@@ -80,6 +81,7 @@ export default function StatisticsChart({ stats }: StatisticsChartProps) {
     { label: 'Shipped', value: stats.orders.shipped, color: '#9CB9FF' },
     { label: 'Completed', value: stats.orders.completed, color: '#039855' },
     { label: 'Cancelled', value: stats.orders.cancelled, color: '#D92D20' },
+    { label: 'Refunded', value: stats.orders.refunded, color: '#DC2626' },
   ] : [];
 
   const categories = ordersData.map(item => item.label);

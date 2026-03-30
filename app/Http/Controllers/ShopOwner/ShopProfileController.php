@@ -311,6 +311,84 @@ class ShopProfileController extends Controller
     }
 
     /**
+     * Remove profile photo
+     */
+    public function removeProfilePhoto()
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+
+            if (!$shopOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
+            if ($shopOwner->profile_photo && Storage::disk('public')->exists($shopOwner->profile_photo)) {
+                Storage::disk('public')->delete($shopOwner->profile_photo);
+            }
+
+            $shopOwner->profile_photo = null;
+            $shopOwner->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profile photo removed successfully',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error removing profile photo', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove profile photo: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove cover photo
+     */
+    public function removeCoverPhoto()
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+
+            if (!$shopOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
+            }
+
+            if ($shopOwner->cover_photo && Storage::disk('public')->exists($shopOwner->cover_photo)) {
+                Storage::disk('public')->delete($shopOwner->cover_photo);
+            }
+
+            $shopOwner->cover_photo = null;
+            $shopOwner->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cover photo removed successfully',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error removing cover photo', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove cover photo: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Ensure legacy databases have the cover_photo column.
      */
     private function ensureCoverPhotoColumnExists(): void

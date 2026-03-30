@@ -88,6 +88,17 @@ const Checkout: React.FC = () => {
     return rawOptions;
   };
 
+  const getItemShopKey = (item: CartItem): string => {
+    const rawShopKey = item.shop_id || item.shop_owner_id || item.shop_name || 'general';
+    const key = String(rawShopKey || '').trim();
+    return key || 'general';
+  };
+
+  const getItemShopName = (item: CartItem): string => {
+    const shopKey = getItemShopKey(item);
+    return item.shop_name || (shopKey !== 'general' ? `Shop ${shopKey}` : 'Unknown Shop');
+  };
+
   const subtotal = items.filter(item => selectedItems.has(item.id)).reduce((s, it) => s + it.price * it.qty, 0);
 
   const shopGroups = useMemo<ShopGroup[]>(() => {
@@ -109,7 +120,17 @@ const Checkout: React.FC = () => {
   }, [items]);
 
   const selectedCount = selectedItems.size;
-  const allSelected = items.length > 0 && selectedCount === items.length;
+  const selectedShopInfo = useMemo(() => {
+    const firstSelected = items.find((item) => selectedItems.has(item.id));
+    if (!firstSelected) return null;
+
+    return {
+      key: getItemShopKey(firstSelected),
+      name: getItemShopName(firstSelected),
+    };
+  }, [items, selectedItems]);
+
+  const selectedShopKey = selectedShopInfo?.key || null;
 
   // Load cart function (moved outside useEffect so it can be reused)
   const loadCart = async () => {
@@ -1032,6 +1053,21 @@ const Checkout: React.FC = () => {
   };
 
   const toggleSelectItem = (id: string) => {
+    const targetItem = items.find((item) => item.id === id);
+    if (!targetItem) return;
+
+    const targetShopKey = getItemShopKey(targetItem);
+    const isCurrentlySelected = selectedItems.has(id);
+
+    if (!isCurrentlySelected && selectedShopKey && selectedShopKey !== targetShopKey) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Single Shop Selection',
+        text: `You can only select items from ${selectedShopInfo?.name || 'one shop'} at a time. Deselect current items first to choose another shop.`,
+      });
+      return;
+    }
+
     setSelectedItems(prev => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
@@ -1043,43 +1079,27 @@ const Checkout: React.FC = () => {
     });
   };
 
-  const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelectedItems(new Set());
-    } else {
-      setSelectedItems(new Set(items.map(i => i.id)));
-    }
-  };
-
-  const getShopSelectionState = (groupItems: CartItem[]) => {
-    const selectedInShop = groupItems.filter((item) => selectedItems.has(item.id)).length;
-    return {
-      all: groupItems.length > 0 && selectedInShop === groupItems.length,
-      some: selectedInShop > 0 && selectedInShop < groupItems.length,
-      selectedInShop,
-    };
-  };
-
-  const toggleSelectShop = (groupItems: CartItem[]) => {
-    const { all } = getShopSelectionState(groupItems);
-
-    setSelectedItems((prev) => {
-      const next = new Set(prev);
-      if (all) {
-        groupItems.forEach((item) => next.delete(item.id));
-      } else {
-        groupItems.forEach((item) => next.add(item.id));
-      }
-      return next;
-    });
-  };
-
   const handleCheckout = async () => {
     // Get selected cart items
     const selectedCartItems = items.filter(item => selectedItems.has(item.id));
     
     if (selectedCartItems.length === 0) {
       Swal.fire('No Items Selected', 'Please select at least one item to checkout', 'warning');
+      return;
+    }
+
+    const selectedShopIds = Array.from(new Set(
+      selectedCartItems
+        .map((item) => String(item.shop_owner_id || item.shop_id || '').trim())
+        .filter((shopId) => shopId !== '' && shopId !== 'general')
+    ));
+
+    if (selectedShopIds.length > 1) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Single Shop Checkout Only',
+        text: 'You can only place an order for products from one shop at a time. Please select items from a single shop.',
+      });
       return;
     }
     
@@ -1215,40 +1235,18 @@ const Checkout: React.FC = () => {
             <>
               <div className="pb-32 xl:pb-0 pt-0">
                 {shopGroups.map((shopGroup) => {
-                  const shopSelection = getShopSelectionState(shopGroup.items);
-
                   return (
                     <div key={shopGroup.shopKey} className="border-b border-gray-100 py-4">
-                      <button
-                        type="button"
-                        onClick={() => toggleSelectShop(shopGroup.items)}
-                        className="w-full mb-3 flex items-center gap-3 px-4 py-2 hover:bg-gray-50 rounded transition-colors"
-                      >
-                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-all ${
-                          shopSelection.all || shopSelection.some
-                            ? 'bg-[#16233b] text-white shadow-md'
-                            : 'border-2 border-gray-300 bg-white text-transparent'
-                        }`}
-                        aria-label={`Select shop ${shopGroup.shopName}`}
-                        title={`Select shop ${shopGroup.shopName}`}
-                        >
-                          {shopSelection.some && !shopSelection.all ? (
-                            <span className="block h-1 w-2.5 rounded bg-white" />
-                          ) : (
-                            <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                              <path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.414l-8.1 8.1a1 1 0 01-1.414 0L3.296 10.91a1 1 0 111.414-1.414l3.188 3.188 7.393-7.393a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          )}
-                        </span>
-
-                        <div className="flex-1 min-w-0 text-left">
-                          <p className="truncate text-sm font-bold text-black">{shopGroup.shopName}</p>
-                        </div>
-
-                      </button>
+                      <div className="w-full mb-3 px-4 py-2">
+                        <p className="truncate text-sm font-bold text-black">{shopGroup.shopName}</p>
+                      </div>
 
                       <div>
                         {shopGroup.items.map((item) => (
+                          (() => {
+                            const isDisabledByShop = !!selectedShopKey && selectedShopKey !== getItemShopKey(item) && !selectedItems.has(item.id);
+
+                            return (
                           <div
                             key={item.id}
                             className="border-b border-gray-100 py-3 px-4 flex flex-col"
@@ -1259,10 +1257,13 @@ const Checkout: React.FC = () => {
                                 aria-label={`Select item ${item.name}`}
                                 title={`Select item ${item.name}`}
                                 onClick={() => toggleSelectItem(item.id)}
+                                disabled={isDisabledByShop}
                                 className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-all ${
                                   selectedItems.has(item.id)
                                     ? 'bg-[#16233b] text-white shadow-md'
-                                    : 'border-2 border-gray-300 bg-white text-transparent'
+                                    : isDisabledByShop
+                                      ? 'border-2 border-gray-200 bg-gray-100 text-transparent cursor-not-allowed opacity-60'
+                                      : 'border-2 border-gray-300 bg-white text-transparent'
                                 }`}
                               >
                                 <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -1322,6 +1323,8 @@ const Checkout: React.FC = () => {
                               </div>
                             </div>
                           </div>
+                            );
+                          })()
                         ))}
                       </div>
                     </div>
@@ -1337,27 +1340,6 @@ const Checkout: React.FC = () => {
         {items.length > 0 && (
           <div className="xl:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white px-4 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
             <div className="flex items-center gap-3">
-              <button 
-                type="button" 
-                onClick={toggleSelectAll} 
-                className="flex items-center justify-center gap-2 shrink-0"
-              >
-                <span className={`flex h-6 w-6 items-center justify-center rounded-full transition-all ${
-                  allSelected || selectedCount > 0 ? 'bg-[#16233b] text-white shadow-md' : 'border-2 border-gray-300 bg-white text-transparent'
-                }`}>
-                  {selectedCount > 0 && !allSelected ? (
-                    <span className="block h-1 w-2.5 rounded bg-white" />
-                  ) : (
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                      <path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.414l-8.1 8.1a1 1 0 01-1.414 0L3.296 10.91a1 1 0 111.414-1.414l3.188 3.188 7.393-7.393a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </span>
-                <span className={`text-[11px] font-medium transition-colors ${
-                  allSelected || selectedCount > 0 ? 'text-[#16233b]' : 'text-gray-600'
-                }`}>All</span>
-              </button>
-
               <button
                 type="button"
                 onClick={handleCheckout}
@@ -1378,16 +1360,7 @@ const Checkout: React.FC = () => {
             <div className={items.length === 0 ? 'rounded bg-white' : 'rounded-2xl border border-gray-200 bg-white shadow-sm'}>
               {items.length > 0 && (
                 <div className="hidden md:grid grid-cols-12 gap-4 p-4 border-b text-sm font-medium text-black">
-                  <div className="col-span-1 flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedItems.size === items.length && items.length > 0}
-                      onChange={toggleSelectAll}
-                      aria-label="Select all items"
-                      title="Select all items"
-                      className="w-4 h-4 rounded border-gray-300 text-black focus:ring-black cursor-pointer"
-                    />
-                  </div>
+                  <div className="col-span-1" />
                   <div className="col-span-5">Product</div>
                   <div className="col-span-3 text-center">Quantity</div>
                   <div className="col-span-3 text-right">Total</div>
@@ -1411,51 +1384,70 @@ const Checkout: React.FC = () => {
                     <Link href="/products" className="mt-6 inline-flex items-center justify-center rounded-lg bg-[#16233b] px-6 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-[#1b2c48]">Continue shopping</Link>
                   </div>
                 ) : (
-                  items.map(item => (
-                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-6 border-b last:border-b-0">
-                      <div className="md:col-span-1 flex items-center justify-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.has(item.id)}
-                          onChange={() => toggleSelectItem(item.id)}
-                          aria-label={`Select item ${item.name}`}
-                          title={`Select item ${item.name}`}
-                          className="w-4 h-4 rounded border-gray-300 text-black focus:ring-black cursor-pointer"
-                        />
-                      </div>
-                      <div className="md:col-span-5 flex items-center space-x-6">
-                        <div className="w-24 h-24 bg-gray-50 rounded overflow-hidden flex items-center justify-center border">
-                          {item.image ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : null}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-sm text-black">{item.name}</div>
-                          <div className="text-sm text-black/70 mt-1">₱{item.price.toLocaleString()}</div>
-                          <div className="flex gap-2 mt-1">
-                            {item.size && <div className="text-sm text-black/70">Size: {item.size}</div>}
-                            {item.color && <div className="text-sm text-black/70">Color: {item.color}</div>}
+                  shopGroups.map((shopGroup) => {
+                    return (
+                      <div key={shopGroup.shopKey} className="border-b last:border-b-0">
+                        <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 bg-gray-50/80 border-b border-gray-200">
+                          <div className="col-span-12">
+                            <p className="text-sm font-semibold text-black">{shopGroup.shopName}</p>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="md:col-span-3 flex flex-col items-center">
-                        <div className="inline-flex items-center border rounded-md overflow-hidden">
-                          <button onClick={() => decrement(item.id)} className="px-3 py-2 text-sm text-black">-</button>
-                          <div className="px-5 py-2 text-sm text-black">{item.qty}</div>
-                          <button 
-                            onClick={() => increment(item.id)} 
-                            disabled={qtyUpdating[item.id] || (item.stock_quantity !== undefined && item.qty >= item.stock_quantity)}
-                            className={`px-3 py-2 text-sm ${(qtyUpdating[item.id] || (item.stock_quantity !== undefined && item.qty >= item.stock_quantity)) ? 'text-gray-400 cursor-not-allowed' : 'text-black'}`}
-                          >+</button>
-                        </div>
-                        {item.stock_quantity !== undefined && item.qty >= item.stock_quantity && (
-                          <div className="text-xs text-orange-600 mt-1">Max stock reached</div>
-                        )}
-                        <button onClick={() => removeItemPersist(item.id)} className="mt-2 text-xs text-black underline">Remove</button>
-                      </div>
+                        {shopGroup.items.map((item) => (
+                          (() => {
+                            const isDisabledByShop = !!selectedShopKey && selectedShopKey !== getItemShopKey(item) && !selectedItems.has(item.id);
 
-                      <div className="md:col-span-3 text-right font-semibold">₱{(item.price * item.qty).toLocaleString()}</div>
-                    </div>
-                  ))
+                            return (
+                          <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-6 border-b last:border-b-0">
+                            <div className="md:col-span-1 flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedItems.has(item.id)}
+                                onChange={() => toggleSelectItem(item.id)}
+                                disabled={isDisabledByShop}
+                                aria-label={`Select item ${item.name}`}
+                                title={`Select item ${item.name}`}
+                                className={`w-4 h-4 rounded border-gray-300 text-black focus:ring-black ${isDisabledByShop ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                              />
+                            </div>
+                            <div className="md:col-span-5 flex items-center space-x-6">
+                              <div className="w-24 h-24 bg-gray-50 rounded overflow-hidden flex items-center justify-center border">
+                                {item.image ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : null}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-sm text-black">{item.name}</div>
+                                <div className="text-sm text-black/70 mt-1">₱{item.price.toLocaleString()}</div>
+                                <div className="flex gap-2 mt-1">
+                                  {item.size && <div className="text-sm text-black/70">Size: {item.size}</div>}
+                                  {item.color && <div className="text-sm text-black/70">Color: {item.color}</div>}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="md:col-span-3 flex flex-col items-center">
+                              <div className="inline-flex items-center border rounded-md overflow-hidden">
+                                <button onClick={() => decrement(item.id)} className="px-3 py-2 text-sm text-black">-</button>
+                                <div className="px-5 py-2 text-sm text-black">{item.qty}</div>
+                                <button
+                                  onClick={() => increment(item.id)}
+                                  disabled={qtyUpdating[item.id] || (item.stock_quantity !== undefined && item.qty >= item.stock_quantity)}
+                                  className={`px-3 py-2 text-sm ${(qtyUpdating[item.id] || (item.stock_quantity !== undefined && item.qty >= item.stock_quantity)) ? 'text-gray-400 cursor-not-allowed' : 'text-black'}`}
+                                >+</button>
+                              </div>
+                              {item.stock_quantity !== undefined && item.qty >= item.stock_quantity && (
+                                <div className="text-xs text-orange-600 mt-1">Max stock reached</div>
+                              )}
+                              <button onClick={() => removeItemPersist(item.id)} className="mt-2 text-xs text-black underline">Remove</button>
+                            </div>
+
+                            <div className="md:col-span-3 text-right font-semibold">₱{(item.price * item.qty).toLocaleString()}</div>
+                          </div>
+                            );
+                          })()
+                        ))}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>

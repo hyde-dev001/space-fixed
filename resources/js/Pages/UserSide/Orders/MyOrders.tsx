@@ -625,6 +625,21 @@ const MyOrders: React.FC = () => {
     return `₱${parseAmount(value).toLocaleString()}`;
   };
 
+  const resolveOrderItemColor = (order: Order, item: OrderItem): string => {
+    const explicitColor = String(item.color || '').trim();
+    if (explicitColor) {
+      return explicitColor;
+    }
+
+    const sameProductColors = (order.items || [])
+      .filter((line) => String(line.product_name || '').trim().toLowerCase() === String(item.product_name || '').trim().toLowerCase())
+      .map((line) => String(line.color || '').trim())
+      .filter(Boolean);
+
+    const uniqueColors = Array.from(new Set(sameProductColors));
+    return uniqueColors.length === 1 ? uniqueColors[0] : '';
+  };
+
   const filteredOrders = selectedTab === 'all' 
     ? orders 
     : orders.filter(order => {
@@ -996,8 +1011,9 @@ const MyOrders: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-8">
-              {filteredOrders.flatMap((order) =>
-                (order.items || []).map((item, idx) => {
+              {filteredOrders.map((order) => {
+                  const orderItems = order.items || [];
+                  const primaryItem = orderItems[0];
                   const displayStatus = getDisplayStatus(order);
                   const refundStageText = getRefundStageText(order);
                   const shouldShowRefundDetails = displayStatus === 'refund_rejected'
@@ -1006,7 +1022,7 @@ const MyOrders: React.FC = () => {
 
                   return (
                   <div
-                    key={`${order.id}-${item.id ?? idx}`}
+                    key={order.id}
                     data-order-id={order.id}
                     className={`border overflow-hidden hover:shadow-lg transition-shadow duration-300 ${
                       highlightOrderId === order.id ? 'border-black bg-gray-50/30' : 'border-gray-200'
@@ -1046,37 +1062,52 @@ const MyOrders: React.FC = () => {
 
                     {/* Order Item */}
                     <div className="p-8">
-                      <div className="flex items-center gap-6">
-                        <div className="w-24 h-24 bg-white border border-gray-200 overflow-hidden shrink-0">
-                          {item.product_image ? (
-                            <img
-                              src={item.product_image}
-                              alt={item.product_name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-300">
-                              <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          )}
+                      {orderItems.length === 0 ? (
+                        <p className="text-sm text-gray-500">No items found for this order.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {orderItems.map((item, idx) => {
+                            const itemImage = item.product_image || primaryItem?.product_image || '';
+
+                            return (
+                              <div
+                                key={item.id ?? idx}
+                                className={`flex items-start gap-4 ${idx > 0 ? 'pt-3 border-t border-gray-200' : ''}`}
+                              >
+                                <div className="w-20 h-20 bg-white border border-gray-200 overflow-hidden shrink-0">
+                                  {itemImage ? (
+                                    <img
+                                      src={itemImage}
+                                      alt={item.product_name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="grow">
+                                  <h3 className="font-semibold text-black text-base mb-1">
+                                    {item.product_slug ? (
+                                      <Link href={`/products/${item.product_slug}`} className="hover:underline">
+                                        {item.product_name}
+                                      </Link>
+                                    ) : (
+                                      item.product_name
+                                    )}
+                                  </h3>
+                                  {item.size && <p className="text-sm text-gray-500">Size: {item.size}</p>}
+                                  <p className="text-sm text-gray-500 mt-1">Color: {resolveOrderItemColor(order, item) || '-'}</p>
+                                  <p className="text-sm text-gray-500 mt-1">Qty: {item.quantity}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="grow">
-                          <h3 className="font-semibold text-black text-base mb-1">
-                            {item.product_slug ? (
-                              <Link href={`/products/${item.product_slug}`} className="hover:underline">
-                                {item.product_name}
-                              </Link>
-                            ) : (
-                              item.product_name
-                            )}
-                          </h3>
-                          {item.size && <p className="text-sm text-gray-500">Size: {item.size}</p>}
-                          {item.color && <p className="text-sm text-gray-500 mt-1">Color: {item.color}</p>}
-                          <p className="text-sm text-gray-500 mt-1">Qty: {item.quantity}</p>
-                        </div>
-                      </div>
+                      )}
 
                       {/* Order Total */}
                       <div className="mt-8 pt-6 border-t border-gray-200">
@@ -1153,9 +1184,8 @@ const MyOrders: React.FC = () => {
                           <>
                             <button
                               onClick={() => {
-                                const shouldCancelWholeOrder = (order.items?.length || 0) === 1;
                                 setCancelTargetOrderId(order.id);
-                                setCancelTargetOrderItemId(shouldCancelWholeOrder ? null : item.id);
+                                setCancelTargetOrderItemId(null);
                                 setSelectedReason('');
                                 setCancelNote('');
                                 setShowCancelModal(true);
@@ -1213,8 +1243,8 @@ const MyOrders: React.FC = () => {
                             )}
                             <button
                               onClick={() => {
-                                if (item.product_slug) {
-                                  router.visit(`/products/${item.product_slug}#reviews`);
+                                if (primaryItem?.product_slug) {
+                                  router.visit(`/products/${primaryItem.product_slug}#reviews`);
                                 }
                               }}
                               className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
@@ -1235,8 +1265,7 @@ const MyOrders: React.FC = () => {
                     </div>
                   </div>
                 );
-                })
-              )}
+                })}
             </div>
           )}
         </div>

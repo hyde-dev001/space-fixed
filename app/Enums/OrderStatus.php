@@ -10,6 +10,7 @@ enum OrderStatus: string
     case COMPLETED = 'completed';
     case DELIVERED = 'delivered';
     case CANCELLED = 'cancelled';
+    case REFUND = 'refund';
 
     /**
      * Check if order is pending
@@ -32,7 +33,7 @@ enum OrderStatus: string
      */
     public function isFinal(): bool
     {
-        return in_array($this, [self::COMPLETED, self::CANCELLED, self::DELIVERED]);
+        return in_array($this, [self::COMPLETED, self::CANCELLED, self::DELIVERED, self::REFUND]);
     }
 
     /**
@@ -46,6 +47,7 @@ enum OrderStatus: string
             self::COMPLETED => '✅ Completed',
             self::CANCELLED => '🚫 Cancelled',
             self::DELIVERED => '📦 Delivered',
+            self::REFUND => '↩️ Refund',
         };
     }
 
@@ -60,6 +62,7 @@ enum OrderStatus: string
             self::COMPLETED => 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
             self::CANCELLED => 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
             self::DELIVERED => 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+            self::REFUND => 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
         };
     }
 }

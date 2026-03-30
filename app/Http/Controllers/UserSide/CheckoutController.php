@@ -369,6 +369,28 @@ class CheckoutController extends Controller
             $customerId = $user->id;
             $requestedShippingFee = max(0.0, round((float) ($validated['shipping_fee'] ?? 0), 2));
 
+            // Enforce single-shop checkout to avoid cross-shop shipping/payment conflicts.
+            $selectedShopOwnerIds = collect($validated['items'])
+                ->map(function ($item) {
+                    $productId = (int) ($item['pid'] ?? 0);
+                    if ($productId <= 0) {
+                        return null;
+                    }
+
+                    return Product::where('id', $productId)->value('shop_owner_id');
+                })
+                ->filter(fn ($shopOwnerId) => !is_null($shopOwnerId))
+                ->unique()
+                ->values();
+
+            if ($selectedShopOwnerIds->count() > 1) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'mixed_shop_checkout_not_allowed',
+                    'message' => 'You can only place an order for products from one shop at a time. Please select items from a single shop.',
+                ], 422);
+            }
+
             // Group items by shop owner (products from same shop go to same order)
             $itemsByShop = [];
             foreach ($validated['items'] as $item) {

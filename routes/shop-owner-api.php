@@ -36,6 +36,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'index'])->name('shop_owner.customers.index');
         Route::get('/{id}/orders', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'orders'])->name('shop_owner.customers.orders');
         Route::get('/{id}/repairs', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'repairs'])->name('shop_owner.customers.repairs');
+        Route::get('/{id}/payments', [\App\Http\Controllers\ShopOwner\CustomerController::class, 'payments'])->name('shop_owner.customers.payments');
     });
 
     // ============================================

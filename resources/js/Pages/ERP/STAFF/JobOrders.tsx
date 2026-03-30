@@ -394,9 +394,9 @@ export default function JobOrdersPage() {
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
     const refund = orders.filter(o => o.status === "refund" || String(o.paymentStatus || '').toLowerCase() === 'refunded').length;
-    // Only include non-cancelled orders in revenue calculation
+    // Exclude cancelled and refunded orders from recognized revenue.
     const totalRevenue = orders
-      .filter(o => o.status !== "cancelled")
+      .filter(o => o.status !== "cancelled" && o.status !== "refund" && String(o.paymentStatus || '').toLowerCase() !== 'refunded')
       .reduce((sum, o) => sum + o.grand_total, 0);
     return { total, pending, processing, shipped, delivered, refund, totalRevenue };
   }, [orders]);
@@ -506,6 +506,34 @@ export default function JobOrdersPage() {
     const raw = String(total || '').trim();
     const parsed = Number.parseFloat(raw.replace(/[^0-9.-]/g, ''));
     return Number.isFinite(parsed) ? `₱${parsed.toLocaleString()}` : raw;
+  };
+
+  const resolveOrderItemColor = (order: Pick<Order, 'items'>, item: Pick<OrderItem, 'product_name' | 'color'>) => {
+    const explicitColor = String(item.color || '').trim();
+    if (explicitColor) return explicitColor;
+
+    const sameProductColors = (order.items || [])
+      .filter((line) => String(line.product_name || '').trim().toLowerCase() === String(item.product_name || '').trim().toLowerCase())
+      .map((line) => String(line.color || '').trim())
+      .filter(Boolean);
+
+    const uniqueColors = Array.from(new Set(sameProductColors));
+    return uniqueColors.length === 1 ? uniqueColors[0] : '';
+  };
+
+  const formatItemSizeColor = (order: Pick<Order, 'items'>, item: Pick<OrderItem, 'size' | 'color' | 'product_name'>) => {
+    const size = String(item.size || '').trim();
+    const color = resolveOrderItemColor(order, item);
+
+    if (size && color) return `${size} / ${color}`;
+    if (size) return size;
+    if (color) return `Color: ${color}`;
+    return '-';
+  };
+
+  const formatOrderSizeColor = (order: Pick<Order, 'items'>) => {
+    if (!order.items || order.items.length === 0) return '-';
+    return order.items.map((item) => formatItemSizeColor(order, item)).join(', ');
   };
 
   const getPaymentMethodLabel = (paymentMethod?: string) => {
@@ -1310,7 +1338,7 @@ export default function JobOrdersPage() {
                     Product
                   </th>
                   <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                    Size
+                    Size / Color
                   </th>
                   <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Quantity
@@ -1360,9 +1388,7 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="box-border px-4 py-4 text-center align-top">
                         <span className="text-sm text-gray-700 dark:text-gray-300">
-                          {order.items && order.items.length > 0
-                            ? order.items.map((item: OrderItem) => item.size || '-').join(', ')
-                            : '-'}
+                          {formatOrderSizeColor(order)}
                         </span>
                       </td>
                       <td className="box-border px-4 py-4 text-center align-top">
@@ -1798,9 +1824,7 @@ export default function JobOrdersPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Size</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {viewOrder.items && viewOrder.items.length > 0
-                          ? viewOrder.items.map((item: OrderItem) => item.size || '-').join(', ')
-                          : '-'}
+                        {formatOrderSizeColor(viewOrder)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">

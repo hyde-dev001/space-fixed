@@ -1163,7 +1163,7 @@ export default function JobOrdersRepair() {
       (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null) ||
       orders.find((order) => String(order.database_id) === orderId) ||
       null;
-    const isWalkInOrder = targetOrder?.serviceType !== 'pickup';
+    const isShopPickupReturn = targetOrder ? isWalkInReturn(targetOrder) : false;
 
     if (targetOrder && !isFullyPaidForRelease(targetOrder)) {
       await Swal.fire({
@@ -1176,13 +1176,13 @@ export default function JobOrdersRepair() {
     }
 
     const result = await Swal.fire({
-      title: isWalkInOrder ? 'Confirm Shop Pickup?' : 'Activate Pickup Confirmation?',
-      text: isWalkInOrder
-        ? 'Please confirm that the customer has already picked up the shoes from the shop.'
+      title: isShopPickupReturn ? 'Mark as Received?' : 'Activate Pickup Confirmation?',
+      text: isShopPickupReturn
+        ? 'Confirm that the customer already picked up the shoes at the shop.'
         : 'This will allow the customer to confirm they have received their item.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: isWalkInOrder ? 'Confirm Pickup' : 'Activate',
+      confirmButtonText: isShopPickupReturn ? 'Yes, Mark Received' : 'Activate',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
@@ -1211,8 +1211,10 @@ export default function JobOrdersRepair() {
         setViewOrder(null);
 
         await Swal.fire({
-          title: isWalkInOrder ? 'Receive Activated!' : 'Pickup Activated!',
-          text: 'Customer can now confirm they received their item.',
+          title: isShopPickupReturn ? 'Marked as Received!' : 'Pickup Activated!',
+          text: isShopPickupReturn
+            ? 'The shoes were marked as picked up by the customer.'
+            : 'Customer can now confirm they received their item.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
@@ -1221,7 +1223,7 @@ export default function JobOrdersRepair() {
     } catch (error: any) {
       await Swal.fire({
         title: 'Error',
-        text: error.response?.data?.message || (isWalkInOrder ? 'Failed to activate receive' : 'Failed to activate pickup'),
+        text: error.response?.data?.message || (isShopPickupReturn ? 'Failed to mark as received' : 'Failed to activate pickup'),
         icon: 'error',
       });
     }

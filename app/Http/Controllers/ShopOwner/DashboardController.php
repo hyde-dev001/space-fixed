@@ -40,6 +40,10 @@ class DashboardController extends Controller
         // Total Revenue (all time) - Include both retail orders and repair services
         $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
+            ->where(function ($query) {
+                $query->whereNull('payment_status')
+                    ->orWhere('payment_status', '!=', 'refunded');
+            })
             ->sum('total_amount');
         
         $repairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
@@ -52,6 +56,10 @@ class DashboardController extends Controller
         // This Month Revenue - Include both retail and repair
         $thisMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
+            ->where(function ($query) {
+                $query->whereNull('payment_status')
+                    ->orWhere('payment_status', '!=', 'refunded');
+            })
             ->whereMonth('created_at', Carbon::now()->month)
             ->whereYear('created_at', Carbon::now()->year)
             ->sum('total_amount');
@@ -68,6 +76,10 @@ class DashboardController extends Controller
         // Last Month Revenue - Include both retail and repair
         $lastMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
+            ->where(function ($query) {
+                $query->whereNull('payment_status')
+                    ->orWhere('payment_status', '!=', 'refunded');
+            })
             ->whereMonth('created_at', Carbon::now()->subMonth()->month)
             ->whereYear('created_at', Carbon::now()->subMonth()->year)
             ->sum('total_amount');
@@ -161,6 +173,19 @@ class DashboardController extends Controller
             ->where('status', OrderStatus::COMPLETED)
             ->count();
 
+        // Cancelled Orders
+        $cancelledOrders = Order::where('shop_owner_id', $shopOwnerId)
+            ->where('status', OrderStatus::CANCELLED)
+            ->count();
+
+        // Refunded Orders (can be flagged either by order status or payment status)
+        $refundedOrders = Order::where('shop_owner_id', $shopOwnerId)
+            ->where(function ($query) {
+                $query->where('status', 'refund')
+                    ->orWhere('payment_status', 'refunded');
+            })
+            ->count();
+
         // Top Selling Products (last 30 days)
         $topProducts = OrderItem::select('product_id', 'product_name', 'product_slug', 'product_image')
             ->selectRaw('SUM(quantity) as total_quantity')
@@ -168,6 +193,10 @@ class DashboardController extends Controller
             ->whereHas('order', function($query) use ($shopOwnerId) {
                 $query->where('shop_owner_id', $shopOwnerId)
                     ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
+                    ->where(function ($innerQuery) {
+                        $innerQuery->whereNull('payment_status')
+                            ->orWhere('payment_status', '!=', 'refunded');
+                    })
                     ->where('created_at', '>=', Carbon::now()->subDays(30));
             })
             ->groupBy('product_id', 'product_name', 'product_slug', 'product_image')
@@ -188,7 +217,9 @@ class DashboardController extends Controller
                     'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
                     'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                     'total_amount' => $order->total_amount,
-                    'status' => $order->status,
+                    'status' => (string) $order->payment_status === 'refunded' || (string) $order->status === 'refund'
+                        ? 'refunded'
+                        : $order->status,
                     'items_count' => $order->items->count(),
                     'order_items' => $order->items->map(function($item) {
                         return [
@@ -214,6 +245,10 @@ class DashboardController extends Controller
             
             $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
                 ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
+                ->where(function ($query) {
+                    $query->whereNull('payment_status')
+                        ->orWhere('payment_status', '!=', 'refunded');
+                })
                 ->whereDate('created_at', $date)
                 ->sum('total_amount');
             
@@ -261,6 +296,7 @@ class DashboardController extends Controller
                 'this_month' => floatval($thisMonthRevenue),
                 'last_month' => floatval($lastMonthRevenue),
                 'growth' => round($revenueGrowth, 2),
+                'growth_percentage' => round($revenueGrowth, 2),
                 'average_order' => round($avgOrderValue, 2),
             ],
             'orders' => [
@@ -268,10 +304,13 @@ class DashboardController extends Controller
                 'this_month' => $thisMonthOrders,
                 'last_month' => $lastMonthOrders,
                 'growth' => round($ordersGrowth, 2),
+                'growth_percentage' => round($ordersGrowth, 2),
                 'pending' => $pendingOrders,
                 'processing' => $processingOrders,
                 'shipped' => $shippedOrders,
                 'completed' => $completedOrders,
+                'cancelled' => $cancelledOrders,
+                'refunded' => $refundedOrders,
             ],
             'products' => [
                 'total' => $totalProducts,
@@ -284,6 +323,9 @@ class DashboardController extends Controller
                 'unique' => $uniqueCustomers,
                 'guests' => $guestOrders,
                 'repeat' => $repeatCustomers,
+                'unique_customers' => $uniqueCustomers,
+                'guest_orders' => $guestOrders,
+                'repeat_customers' => $repeatCustomers,
             ],
             'top_products' => $topProducts->map(function($item) {
                 return [

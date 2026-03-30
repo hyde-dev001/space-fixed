@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import Swal from "sweetalert2";
@@ -12,7 +12,7 @@ interface PurchaseRecord {
   itemSummary: string;
   date: string;
   amount: number;
-  status: "completed" | "processing" | "cancelled";
+  status: "completed" | "processing" | "cancelled" | "refunded";
 }
 
 interface RepairRecord {
@@ -30,7 +30,8 @@ interface PaymentRecord {
   method: string;
   date: string;
   amount: number;
-  status: "paid" | "pending" | "failed";
+  status: "paid" | "pending" | "failed" | "refunded";
+  source?: "order" | "repair";
 }
 
 interface StaffNote {
@@ -109,6 +110,21 @@ const dateText = (value: string) => new Date(value).toLocaleDateString();
 const metricCardClasses = "group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700";
 
 export default function Customers() {
+  const pageProps = usePage().props as any;
+  const auth = pageProps?.auth;
+  const rawBusinessType =
+    auth?.shop_owner?.business_type
+    || auth?.user?.shop_owner?.business_type
+    || pageProps?.shop_owner?.business_type
+    || auth?.business_type
+    || auth?.user?.business_type
+    || "";
+  const normalizedBusinessType = String(rawBusinessType).trim().toLowerCase() === "both (retail & repair)"
+    ? "both"
+    : String(rawBusinessType).trim().toLowerCase();
+  const isRetailCapable = normalizedBusinessType === "retail" || normalizedBusinessType === "both";
+  const isRepairCapable = normalizedBusinessType === "repair" || normalizedBusinessType === "both";
+
   // ── Core data state ───────────────────────────────────────────────────────
   const [customers, setCustomers]     = useState<Customer[]>([]);
   const [stats, setStats]             = useState<Stats>({ totalCustomers: 0, activeCustomers: 0, totalOrders: 0, totalRepairs: 0 });
@@ -130,8 +146,15 @@ export default function Customers() {
   // ── Lazy-loaded detail data ───────────────────────────────────────────────
   const [purchases, setPurchases]         = useState<PurchaseRecord[]>([]);
   const [repairs, setRepairs]             = useState<RepairRecord[]>([]);
+  const [payments, setPayments]           = useState<PaymentRecord[]>([]);
   const [staffNotes, setStaffNotes]       = useState<StaffNote[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError]     = useState<string | null>(null);
+
+  const tableColSpan = 6 + (isRetailCapable ? 1 : 0) + (isRepairCapable ? 1 : 0);
+  const summaryColsClass = isRetailCapable && isRepairCapable
+    ? "md:grid-cols-4"
+    : "md:grid-cols-3";
 
   const [formData, setFormData] = useState({
     name: "", email: "", phone: "", address: "", city: "",
@@ -169,23 +192,66 @@ export default function Customers() {
   useEffect(() => {
     if (!showDetailsModal || !selectedCustomer) return;
 
-    if (activeTab === "purchase" && purchases.length === 0) {
+    if (isRetailCapable && activeTab === "purchase" && purchases.length === 0) {
       setLoadingDetail(true);
+      setDetailError(null);
       fetch(`/api/shop-owner/customers/${selectedCustomer.id}/orders`, { credentials: "include" })
-        .then((r) => r.json())
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            throw new Error(data?.message || "Failed to load purchase history.");
+          }
+          return data;
+        })
         .then((d) => setPurchases(d.orders ?? []))
+        .catch((e: any) => setDetailError(e?.message || "Failed to load purchase history."))
         .finally(() => setLoadingDetail(false));
     }
 
-    if (activeTab === "repair" && repairs.length === 0) {
+    if (isRepairCapable && activeTab === "repair" && repairs.length === 0) {
       setLoadingDetail(true);
+      setDetailError(null);
       fetch(`/api/shop-owner/customers/${selectedCustomer.id}/repairs`, { credentials: "include" })
-        .then((r) => r.json())
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            throw new Error(data?.message || "Failed to load repair history.");
+          }
+          return data;
+        })
         .then((d) => setRepairs(d.repairs ?? []))
+        .catch((e: any) => setDetailError(e?.message || "Failed to load repair history."))
+        .finally(() => setLoadingDetail(false));
+    }
+
+    if (activeTab === "payment" && payments.length === 0) {
+      setLoadingDetail(true);
+      setDetailError(null);
+      fetch(`/api/shop-owner/customers/${selectedCustomer.id}/payments`, { credentials: "include" })
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            throw new Error(data?.message || "Failed to load payment history.");
+          }
+          return data;
+        })
+        .then((d) => setPayments(d.payments ?? []))
+        .catch((e: any) => setDetailError(e?.message || "Failed to load payment history."))
         .finally(() => setLoadingDetail(false));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, showDetailsModal, selectedCustomer]);
+  }, [activeTab, showDetailsModal, selectedCustomer, isRetailCapable, isRepairCapable, payments.length]);
+
+  useEffect(() => {
+    if (!showDetailsModal) return;
+    if (!isRetailCapable && activeTab === "purchase") {
+      setActiveTab("personal");
+      return;
+    }
+    if (!isRepairCapable && activeTab === "repair") {
+      setActiveTab("personal");
+    }
+  }, [activeTab, showDetailsModal, isRetailCapable, isRepairCapable]);
 
   const isFormDirty = useMemo(() => {
     if (!selectedCustomer) return false;
@@ -212,6 +278,8 @@ export default function Customers() {
     setEditing(false);
     setPurchases([]);
     setRepairs([]);
+    setPayments([]);
+    setDetailError(null);
     setStaffNotes([]);
     setNoteDraft("");
     setFormData({
@@ -287,7 +355,13 @@ export default function Customers() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Customers</h1>
-            <p className="text-gray-600 dark:text-gray-400">View, edit, and track customer orders, service requests, payments, and staff notes.</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              {isRetailCapable && isRepairCapable
+                ? "View, edit, and track customer orders, service requests, payments, and staff notes."
+                : isRetailCapable
+                ? "View, edit, and track customer orders, payments, and staff notes."
+                : "View, edit, and track customer service requests, payments, and staff notes."}
+            </p>
           </div>
           <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
             Shop Owner Workspace
@@ -317,27 +391,31 @@ export default function Customers() {
             <h3 className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{activeCustomers}</h3>
           </div>
 
-          <div className={metricCardClasses}>
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-yellow-500 to-orange-600 text-white">
-                <BagIcon className="size-6" />
+          {isRetailCapable && (
+            <div className={metricCardClasses}>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-yellow-500 to-orange-600 text-white">
+                  <BagIcon className="size-6" />
+                </div>
+                <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Orders</span>
               </div>
-              <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Orders</span>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Purchase Records</p>
+              <h3 className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{totalOrders}</h3>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Purchase Records</p>
-            <h3 className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{totalOrders}</h3>
-          </div>
+          )}
 
-          <div className={metricCardClasses}>
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-purple-500 to-fuchsia-600 text-white">
-                <WrenchIcon className="size-6" />
+          {isRepairCapable && (
+            <div className={metricCardClasses}>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-purple-500 to-fuchsia-600 text-white">
+                  <WrenchIcon className="size-6" />
+                </div>
+                <span className="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Repairs</span>
               </div>
-              <span className="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Repairs</span>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Service Requests</p>
+              <h3 className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{totalRepairs}</h3>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Service Requests</p>
-            <h3 className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{totalRepairs}</h3>
-          </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/3">
@@ -376,8 +454,8 @@ export default function Customers() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Customer</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Contact</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Orders</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Repairs</th>
+                  {isRetailCapable && <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Orders</th>}
+                  {isRepairCapable && <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Repairs</th>}
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Spent</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Last Activity</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">View</th>
@@ -386,13 +464,13 @@ export default function Customers() {
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center">
+                    <td colSpan={tableColSpan} className="px-4 py-12 text-center">
                       <div className="inline-block h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
                     </td>
                   </tr>
                 ) : paginatedCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={tableColSpan} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                       No customers found.
                     </td>
                   </tr>
@@ -424,8 +502,8 @@ export default function Customers() {
                         {customer.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{customer.totalOrders}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{customer.totalRepairs}</td>
+                    {isRetailCapable && <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{customer.totalOrders}</td>}
+                    {isRepairCapable && <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{customer.totalRepairs}</td>}
                     <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{money(customer.totalSpent)}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{dateText(customer.lastActivity)}</td>
                     <td className="px-4 py-3 text-center">
@@ -528,8 +606,8 @@ export default function Customers() {
                 <div className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-4 dark:border-gray-800">
                   {[
                     { key: "personal", label: "Personal details" },
-                    { key: "purchase", label: "Purchase history" },
-                    { key: "repair", label: "Repair history" },
+                    ...(isRetailCapable ? [{ key: "purchase", label: "Purchase history" }] : []),
+                    ...(isRepairCapable ? [{ key: "repair", label: "Repair history" }] : []),
                     { key: "payment", label: "Payment history" },
                     { key: "notes", label: "Notes" },
                   ].map((tab) => (
@@ -548,6 +626,12 @@ export default function Customers() {
                 </div>
 
                 <div className="mt-5">
+                  {detailError && (
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-900/20 dark:text-red-300">
+                      {detailError}
+                    </div>
+                  )}
+
                   {activeTab === "personal" && (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
@@ -644,7 +728,7 @@ export default function Customers() {
                     </div>
                   )}
 
-                  {activeTab === "purchase" && (
+                  {activeTab === "purchase" && isRetailCapable && (
                     loadingDetail ? (
                       <div className="flex justify-center py-10">
                         <div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
@@ -656,7 +740,6 @@ export default function Customers() {
                       <table className="w-full min-w-170">
                         <thead className="bg-gray-50 dark:bg-gray-800">
                           <tr>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Order</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Items</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</th>
@@ -666,7 +749,6 @@ export default function Customers() {
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                           {purchases.map((entry) => (
                             <tr key={entry.id} className="bg-white dark:bg-transparent">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{entry.orderNumber}</td>
                               <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{entry.itemSummary}</td>
                               <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{dateText(entry.date)}</td>
                               <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{money(entry.amount)}</td>
@@ -675,6 +757,8 @@ export default function Customers() {
                                   className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                                     entry.status === "completed"
                                       ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                      : entry.status === "refunded"
+                                      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                       : entry.status === "processing"
                                       ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
                                       : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
@@ -691,7 +775,7 @@ export default function Customers() {
                     )
                   )}
 
-                  {activeTab === "repair" && (
+                  {activeTab === "repair" && isRepairCapable && (
                     loadingDetail ? (
                       <div className="flex justify-center py-10">
                         <div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
@@ -729,7 +813,54 @@ export default function Customers() {
                   )}
 
                   {activeTab === "payment" && (
-                    <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">Payment history is not available yet.</p>
+                    loadingDetail ? (
+                      <div className="flex justify-center py-10">
+                        <div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                      </div>
+                    ) : payments.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">No payment records found.</p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                        <table className="w-full min-w-170">
+                          <thead className="bg-gray-50 dark:bg-gray-800">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Reference</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Source</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Method</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {payments.map((entry) => (
+                              <tr key={`${entry.source || 'payment'}-${entry.id}`} className="bg-white dark:bg-transparent">
+                                <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{entry.reference}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{(entry.source || 'order').replace('_', ' ')}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{entry.method}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{dateText(entry.date)}</td>
+                                <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{money(entry.amount)}</td>
+                                <td className="px-4 py-3 text-sm">
+                                  <span
+                                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                      entry.status === "paid"
+                                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                        : entry.status === "refunded"
+                                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                        : entry.status === "pending"
+                                        ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                        : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                                    }`}
+                                  >
+                                    {entry.status.replace("_", " ")}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
                   )}
 
                   {activeTab === "notes" && (
@@ -768,7 +899,7 @@ export default function Customers() {
                   )}
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 md:grid-cols-3">
+                <div className={`mt-5 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 ${summaryColsClass}`}>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-gray-500">Lifetime Spend</p>
                     <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{money(selectedCustomer.totalSpent)}</p>
@@ -777,10 +908,18 @@ export default function Customers() {
                     <p className="text-xs uppercase tracking-wide text-gray-500">Last Activity</p>
                     <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{dateText(selectedCustomer.lastActivity)}</p>
                   </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Service Requests</p>
-                    <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedCustomer.totalRepairs}</p>
-                  </div>
+                  {isRetailCapable && (
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Purchase Records</p>
+                      <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedCustomer.totalOrders}</p>
+                    </div>
+                  )}
+                  {isRepairCapable && (
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Service Requests</p>
+                      <p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{selectedCustomer.totalRepairs}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

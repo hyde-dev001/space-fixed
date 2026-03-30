@@ -772,6 +772,130 @@ const ShopProfile: React.FC = () => {
     }
   };
 
+  const handleRemoveProfilePhoto = async () => {
+    if (!profilePhoto || isUploadingPhoto) return;
+
+    const result = await Swal.fire({
+      title: 'Remove profile photo?',
+      text: 'This will remove your current profile picture.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Remove',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+      const response = await fetch('/api/shop-owner/profile-photo', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'X-CSRF-TOKEN': csrfToken || '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        let backendMessage = '';
+        try {
+          const parsed = JSON.parse(text);
+          backendMessage = parsed?.message || '';
+        } catch {
+          backendMessage = '';
+        }
+        throw new Error(backendMessage || `Remove failed: ${response.status} ${response.statusText}`);
+      }
+
+      setProfilePhoto(null);
+
+      Swal.fire({
+        title: 'Removed!',
+        text: 'Profile photo removed successfully.',
+        icon: 'success',
+        confirmButtonColor: '#2563eb',
+      });
+    } catch (error: any) {
+      console.error('Error removing profile photo:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: error.message || 'Failed to remove profile photo.',
+        icon: 'error',
+        confirmButtonColor: '#dc2626',
+      });
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const handleRemoveCoverPhoto = async () => {
+    if (!coverPhoto || isUploadingCoverPhoto) return;
+
+    const result = await Swal.fire({
+      title: 'Remove cover photo?',
+      text: 'This will remove your current cover picture.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Remove',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsUploadingCoverPhoto(true);
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+      const response = await fetch('/api/shop-owner/cover-photo', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'X-CSRF-TOKEN': csrfToken || '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        let backendMessage = '';
+        try {
+          const parsed = JSON.parse(text);
+          backendMessage = parsed?.message || '';
+        } catch {
+          backendMessage = '';
+        }
+        throw new Error(backendMessage || `Remove failed: ${response.status} ${response.statusText}`);
+      }
+
+      setCoverPhoto(null);
+
+      Swal.fire({
+        title: 'Removed!',
+        text: 'Cover photo removed successfully.',
+        icon: 'success',
+        confirmButtonColor: '#2563eb',
+      });
+    } catch (error: any) {
+      console.error('Error removing cover photo:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: error.message || 'Failed to remove cover photo.',
+        icon: 'error',
+        confirmButtonColor: '#dc2626',
+      });
+    } finally {
+      setIsUploadingCoverPhoto(false);
+    }
+  };
+
   return (
     <AppLayoutShopOwner hideHeader={isEditModalOpen}>
       <Head title="Shop Profile - Shop Owner" />
@@ -972,26 +1096,40 @@ const ShopProfile: React.FC = () => {
                   />
                 )}
                 <div className="absolute inset-0 bg-linear-to-t from-black/45 via-black/20 to-black/10" />
-                <button
-                  type="button"
-                  onClick={() => coverPhotoInputRef.current?.click()}
-                  disabled={isUploadingCoverPhoto}
-                  aria-label="Upload cover photo"
-                  title={isUploadingCoverPhoto ? 'Uploading cover...' : 'Upload cover photo'}
-                  className="absolute right-5 top-5 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-black/35 text-white backdrop-blur-sm transition-all hover:bg-black/50 disabled:opacity-50"
-                >
-                  {isUploadingCoverPhoto ? (
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
-                      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  ) : (
+                <div className="absolute right-5 top-5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoverPhoto}
+                    disabled={isUploadingCoverPhoto || !coverPhoto}
+                    aria-label="Remove cover photo"
+                    title="Remove cover photo"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-300/70 bg-red-500/80 text-white backdrop-blur-sm transition-all hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
                     </svg>
-                  )}
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => coverPhotoInputRef.current?.click()}
+                    disabled={isUploadingCoverPhoto}
+                    aria-label="Upload cover photo"
+                    title={isUploadingCoverPhoto ? 'Uploading cover...' : 'Upload cover photo'}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-black/35 text-white backdrop-blur-sm transition-all hover:bg-black/50 disabled:opacity-50"
+                  >
+                    {isUploadingCoverPhoto ? (
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
+                        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="relative px-8 pb-8 pt-0">
@@ -1012,6 +1150,19 @@ const ShopProfile: React.FC = () => {
                         )}
                       </div>
                       <button
+                        type="button"
+                        onClick={handleRemoveProfilePhoto}
+                        disabled={isUploadingPhoto || !profilePhoto}
+                        className="absolute -bottom-2 -left-2 rounded-lg border-2 border-red-200 bg-red-50 p-2 shadow-lg transition-all hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Remove photo"
+                        aria-label="Remove profile photo"
+                      >
+                        <svg className="h-4 w-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => profilePhotoInputRef.current?.click()}
                         disabled={isUploadingPhoto}
                         className="absolute -bottom-2 -right-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"

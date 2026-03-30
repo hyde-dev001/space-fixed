@@ -675,195 +675,195 @@ class DssController extends Controller
         // ── re-compute key metrics ──
         $now = Carbon::now();
 
-        $activeCount = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::ACTIVE_STATUSES)
-            ->count();
+        if ($hasRepair) {
+            $activeCount = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::ACTIVE_STATUSES)
+                ->count();
 
-        $utilization = $workloadLimit > 0
-            ? ($activeCount / $workloadLimit) * 100
-            : 0;
+            $utilization = $workloadLimit > 0
+                ? ($activeCount / $workloadLimit) * 100
+                : 0;
 
-        $avgHours = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::COMPLETED_STATUSES)
-            ->whereNotNull('started_at')
-            ->whereNotNull('completed_at')
-            ->where('completed_at', '>=', $now->copy()->subDays(90))
-            ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, started_at, completed_at)) as avg_hours')
-            ->value('avg_hours');
+            $avgHours = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::COMPLETED_STATUSES)
+                ->whereNotNull('started_at')
+                ->whereNotNull('completed_at')
+                ->where('completed_at', '>=', $now->copy()->subDays(90))
+                ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, started_at, completed_at)) as avg_hours')
+                ->value('avg_hours');
 
-        $avgDays = $avgHours ? ($avgHours / 24) : null;
+            $avgDays = $avgHours ? ($avgHours / 24) : null;
 
-        $intakeTotal = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '>=', $now->copy()->subDays($period))
-            ->count();
+            $intakeTotal = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->where('created_at', '>=', $now->copy()->subDays($period))
+                ->count();
 
-        $completedTotal = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::COMPLETED_STATUSES)
-            ->where('completed_at', '>=', $now->copy()->subDays($period))
-            ->count();
+            $completedTotal = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::COMPLETED_STATUSES)
+                ->where('completed_at', '>=', $now->copy()->subDays($period))
+                ->count();
 
-        $intakeRate  = $period > 0 ? $intakeTotal / $period : 0;
-        $throughput  = $period > 0 ? $completedTotal / $period : 0;
+            $intakeRate  = $period > 0 ? $intakeTotal / $period : 0;
+            $throughput  = $period > 0 ? $completedTotal / $period : 0;
 
-        $overdueCount = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', array_diff(self::ACTIVE_STATUSES, self::COMPLETED_STATUSES))
-            ->where('created_at', '<=', $now->copy()->subDays(14))
-            ->count();
+            $overdueCount = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', array_diff(self::ACTIVE_STATUSES, self::COMPLETED_STATUSES))
+                ->where('created_at', '<=', $now->copy()->subDays(14))
+                ->count();
 
-        // Count high-utilization days in last 14 days (>= 90 %)
-        $highUtilDays = 0;
-        if ($workloadLimit > 0) {
-            for ($i = 1; $i <= 14; $i++) {
-                $dayEnd = $now->copy()->subDays($i)->endOfDay();
-                $c = RepairRequest::where('shop_owner_id', $shopOwnerId)
-                    ->where('created_at', '<=', $dayEnd)
-                    ->where(function ($q) use ($dayEnd) {
-                        $q->whereIn('status', array_diff(self::ACTIVE_STATUSES, self::COMPLETED_STATUSES))
-                          ->orWhere(function ($q2) use ($dayEnd) {
-                              $q2->whereIn('status', self::COMPLETED_STATUSES)
-                                 ->where('completed_at', '>', $dayEnd);
-                          });
-                    })
-                    ->count();
-                if ($c >= $workloadLimit * 0.9) {
-                    $highUtilDays++;
+            // Count high-utilization days in last 14 days (>= 90 %)
+            $highUtilDays = 0;
+            if ($workloadLimit > 0) {
+                for ($i = 1; $i <= 14; $i++) {
+                    $dayEnd = $now->copy()->subDays($i)->endOfDay();
+                    $c = RepairRequest::where('shop_owner_id', $shopOwnerId)
+                        ->where('created_at', '<=', $dayEnd)
+                        ->where(function ($q) use ($dayEnd) {
+                            $q->whereIn('status', array_diff(self::ACTIVE_STATUSES, self::COMPLETED_STATUSES))
+                              ->orWhere(function ($q2) use ($dayEnd) {
+                                  $q2->whereIn('status', self::COMPLETED_STATUSES)
+                                     ->where('completed_at', '>', $dayEnd);
+                              });
+                        })
+                        ->count();
+                    if ($c >= $workloadLimit * 0.9) {
+                        $highUtilDays++;
+                    }
                 }
             }
-        }
 
-        // ─── rule set ───────────────────────────────────────────────────────────
+            // ─── rule set ───────────────────────────────────────────────────────
 
-        // R1: Consistently at capacity → raise limit or hire
-        if ($utilization >= 90 && $highUtilDays >= 5) {
-            $suggestedLimit = (int) ceil($workloadLimit * 1.3);
-            $recs[] = [
-                'id'       => 'R1',
-                'severity' => 'critical',
-                'title'    => 'Shop Running at Full Capacity',
-                'message'  => "You have been at or above 90% capacity for {$highUtilDays} of the last 14 days. "
-                             . "Consider raising your workload limit to {$suggestedLimit} or assigning an additional repairer "
-                             . "to avoid customer wait-time complaints.",
-                'action'   => 'Increase workload limit in Shop Settings → Repair Settings.',
-            ];
-        }
+            // R1: Consistently at capacity → raise limit or hire
+            if ($utilization >= 90 && $highUtilDays >= 5) {
+                $suggestedLimit = (int) ceil($workloadLimit * 1.3);
+                $recs[] = [
+                    'id'       => 'R1',
+                    'severity' => 'critical',
+                    'title'    => 'Shop Running at Full Capacity',
+                    'message'  => "You have been at or above 90% capacity for {$highUtilDays} of the last 14 days. "
+                                 . "Consider raising your workload limit to {$suggestedLimit} or assigning an additional repairer "
+                                 . "to avoid customer wait-time complaints.",
+                    'action'   => 'Increase workload limit in Shop Settings → Repair Settings.',
+                ];
+            }
 
-        // R2: High utilization AND slow completion → lower limit
-        if ($utilization >= 75 && $avgDays !== null && $avgDays > 5) {
-            $days = round($avgDays, 1);
-            $suggestedLimit = max(5, (int) floor($workloadLimit * 0.8));
-            $recs[] = [
-                'id'       => 'R2',
-                'severity' => 'warning',
-                'title'    => 'Repairs Are Taking Too Long',
-                'message'  => "Average completion time is {$days} days while the shop is at {$utilization}% capacity. "
-                             . "Reducing the limit to {$suggestedLimit} would keep queues manageable "
-                             . "and protect service quality.",
-                'action'   => 'Reduce workload limit or reassign complex jobs.',
-            ];
-        }
+            // R2: High utilization AND slow completion → lower limit
+            if ($utilization >= 75 && $avgDays !== null && $avgDays > 5) {
+                $days = round($avgDays, 1);
+                $suggestedLimit = max(5, (int) floor($workloadLimit * 0.8));
+                $recs[] = [
+                    'id'       => 'R2',
+                    'severity' => 'warning',
+                    'title'    => 'Repairs Are Taking Too Long',
+                    'message'  => "Average completion time is {$days} days while the shop is at {$utilization}% capacity. "
+                                 . "Reducing the limit to {$suggestedLimit} would keep queues manageable "
+                                 . "and protect service quality.",
+                    'action'   => 'Reduce workload limit or reassign complex jobs.',
+                ];
+            }
 
-        // R3: Low utilization → limit may be set too high
-        if ($utilization < 40 && $workloadLimit > 5 && $intakeTotal > 0) {
-            $recs[] = [
-                'id'       => 'R3',
-                'severity' => 'info',
-                'title'    => 'Workload Limit Higher Than Needed',
-                'message'  => "Current utilization is only " . round($utilization, 1) . "% of the {$workloadLimit} repair limit. "
-                             . "Your limit may be set too high, giving customers an inaccurate picture of wait times.",
-                'action'   => 'Review and lower the workload limit in Shop Settings.',
-            ];
-        }
+            // R3: Low utilization → limit may be set too high
+            if ($utilization < 40 && $workloadLimit > 5 && $intakeTotal > 0) {
+                $recs[] = [
+                    'id'       => 'R3',
+                    'severity' => 'info',
+                    'title'    => 'Workload Limit Higher Than Needed',
+                    'message'  => "Current utilization is only " . round($utilization, 1) . "% of the {$workloadLimit} repair limit. "
+                                 . "Your limit may be set too high, giving customers an inaccurate picture of wait times.",
+                    'action'   => 'Review and lower the workload limit in Shop Settings.',
+                ];
+            }
 
-        // R4: Intake consistently exceeds throughput → backlog growing
-        if ($intakeRate > 0 && $throughput > 0 && $intakeRate > $throughput * 1.2) {
-            $surplus = round($intakeRate - $throughput, 2);
-            $recs[] = [
-                'id'       => 'R4',
-                'severity' => 'warning',
-                'title'    => 'Backlog Is Growing',
-                'message'  => "Over the last {$period} days, you take in " . round($intakeRate, 2) . " repairs/day "
-                             . "but only complete " . round($throughput, 2) . " — a surplus of {$surplus}/day. "
-                             . "At this rate, wait times will continue to increase.",
-                'action'   => 'Speed up completions or temporarily slow intake by reducing the workload limit.',
-            ];
-        }
+            // R4: Intake consistently exceeds throughput → backlog growing
+            if ($intakeRate > 0 && $throughput > 0 && $intakeRate > $throughput * 1.2) {
+                $surplus = round($intakeRate - $throughput, 2);
+                $recs[] = [
+                    'id'       => 'R4',
+                    'severity' => 'warning',
+                    'title'    => 'Backlog Is Growing',
+                    'message'  => "Over the last {$period} days, you take in " . round($intakeRate, 2) . " repairs/day "
+                                 . "but only complete " . round($throughput, 2) . " — a surplus of {$surplus}/day. "
+                                 . "At this rate, wait times will continue to increase.",
+                    'action'   => 'Speed up completions or temporarily slow intake by reducing the workload limit.',
+                ];
+            }
 
-        // R5: Overdue repairs piling up
-        if ($overdueCount >= 3) {
-            $recs[] = [
-                'id'       => 'R5',
-                'severity' => 'critical',
-                'title'    => "{$overdueCount} Overdue Repairs",
-                'message'  => "There are {$overdueCount} repairs that have been active for more than 14 days. "
-                             . "These are at risk of customer escalation.",
-                'action'   => 'Review Job Orders → Repair and prioritise long-standing tickets.',
-            ];
-        }
+            // R5: Overdue repairs piling up
+            if ($overdueCount >= 3) {
+                $recs[] = [
+                    'id'       => 'R5',
+                    'severity' => 'critical',
+                    'title'    => "{$overdueCount} Overdue Repairs",
+                    'message'  => "There are {$overdueCount} repairs that have been active for more than 14 days. "
+                                 . "These are at risk of customer escalation.",
+                    'action'   => 'Review Job Orders → Repair and prioritise long-standing tickets.',
+                ];
+            }
 
-        // R6: No data / new shop
-        if ($intakeTotal === 0) {
-            $recs[] = [
-                'id'       => 'R6',
-                'severity' => 'info',
-                'title'    => 'No Repair Data Yet',
-                'message'  => "No repair requests found in the last {$period} days. "
-                             . "DSS recommendations will appear once you start receiving repair jobs.",
-                'action'   => null,
-            ];
-        }
+            // R6: No data / new shop
+            if ($intakeTotal === 0) {
+                $recs[] = [
+                    'id'       => 'R6',
+                    'severity' => 'info',
+                    'title'    => 'No Repair Data Yet',
+                    'message'  => "No repair requests found in the last {$period} days. "
+                                 . "DSS recommendations will appear once you start receiving repair jobs.",
+                    'action'   => null,
+                ];
+            }
 
-        // ─── service pricing rules ───────────────────────────────────────────────
+            // ─── service pricing rules ─────────────────────────────────────────
 
-        $serviceRows = DB::table('repair_request_service as rrs')
-            ->join('repair_services as rs', 'rrs.repair_service_id', '=', 'rs.id')
-            ->join('repair_requests as rr', 'rrs.repair_request_id', '=', 'rr.id')
-            ->where('rr.shop_owner_id', $shopOwnerId)
-            ->whereIn('rr.status', self::COMPLETED_STATUSES)
-            ->where('rr.payment_status', 'completed')
-            ->where('rr.completed_at', '>=', $now->copy()->subDays(90))
-            ->select(
-                'rs.id',
-                'rs.name',
-                DB::raw('COALESCE(rs.price, 0) as list_price'),
-                DB::raw('COUNT(DISTINCT rr.id) as cnt'),
-                DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as rev')
-            )
-            ->groupBy('rs.id', 'rs.name', 'rs.price')
-            ->having('cnt', '>=', 3) // Only flag services with enough data
-            ->get();
+            $serviceRows = DB::table('repair_request_service as rrs')
+                ->join('repair_services as rs', 'rrs.repair_service_id', '=', 'rs.id')
+                ->join('repair_requests as rr', 'rrs.repair_request_id', '=', 'rr.id')
+                ->where('rr.shop_owner_id', $shopOwnerId)
+                ->whereIn('rr.status', self::COMPLETED_STATUSES)
+                ->where('rr.payment_status', 'completed')
+                ->where('rr.completed_at', '>=', $now->copy()->subDays(90))
+                ->select(
+                    'rs.id',
+                    'rs.name',
+                    DB::raw('COALESCE(rs.price, 0) as list_price'),
+                    DB::raw('COUNT(DISTINCT rr.id) as cnt'),
+                    DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as rev')
+                )
+                ->groupBy('rs.id', 'rs.name', 'rs.price')
+                ->having('cnt', '>=', 3)
+                ->get();
 
-        if ($serviceRows->count() >= 4) {
-            $maxCnt = $serviceRows->max('cnt');
-            $p75Threshold = $serviceRows->sortByDesc('cnt')->values()->get((int) floor($serviceRows->count() * 0.25))?->cnt ?? 0;
+            if ($serviceRows->count() >= 4) {
+                $maxCnt = $serviceRows->max('cnt');
+                $p75Threshold = $serviceRows->sortByDesc('cnt')->values()->get((int) floor($serviceRows->count() * 0.25))?->cnt ?? 0;
 
-            foreach ($serviceRows as $svc) {
-                $avgRev = $svc->cnt > 0 ? $svc->rev / $svc->cnt : 0;
-                $listPrice = (float) $svc->list_price;
+                foreach ($serviceRows as $svc) {
+                    $avgRev = $svc->cnt > 0 ? $svc->rev / $svc->cnt : 0;
+                    $listPrice = (float) $svc->list_price;
 
-                // Underpriced: high demand (top 25% by count) AND avg revenue < list price
-                if ($svc->cnt >= $p75Threshold && $listPrice > 0 && $avgRev < $listPrice * 0.95) {
-                    $gap = round((($listPrice - $avgRev) / $listPrice) * 100, 1);
-                    $recs[] = [
-                        'id'       => 'P-' . $svc->id,
-                        'severity' => 'info',
-                        'title'    => "Consider Reviewing Pricing: {$svc->name}",
-                        'message'  => "\"{$svc->name}\" is your #{$svc->cnt}-request service in 90 days "
-                                     . "but earns ₱" . number_format($avgRev, 0) . " avg per job "
-                                     . "vs. a listed price of ₱" . number_format($listPrice, 0) . " ({$gap}% gap).",
-                        'action'   => 'Review pricing in Services Uploader.',
-                    ];
-                }
+                    if ($svc->cnt >= $p75Threshold && $listPrice > 0 && $avgRev < $listPrice * 0.95) {
+                        $gap = round((($listPrice - $avgRev) / $listPrice) * 100, 1);
+                        $recs[] = [
+                            'id'       => 'P-' . $svc->id,
+                            'severity' => 'info',
+                            'title'    => "Consider Reviewing Pricing: {$svc->name}",
+                            'message'  => "\"{$svc->name}\" is your #{$svc->cnt}-request service in 90 days "
+                                         . "but earns ₱" . number_format($avgRev, 0) . " avg per job "
+                                         . "vs. a listed price of ₱" . number_format($listPrice, 0) . " ({$gap}% gap).",
+                            'action'   => 'Review pricing in Services Uploader.',
+                        ];
+                    }
 
-                // High-value but low demand → needs marketing
-                if ($listPrice >= 500 && $svc->cnt <= 2 && $maxCnt > 10) {
-                    $recs[] = [
-                        'id'       => 'M-' . $svc->id,
-                        'severity' => 'info',
-                        'title'    => "Low Visibility: {$svc->name}",
-                        'message'  => "\"{$svc->name}\" (₱" . number_format($listPrice, 0) . ") has only {$svc->cnt} completed "
-                                     . "requests in 90 days. Consider promoting this service.",
-                        'action'   => 'Feature this service in your shop profile or offer introductory pricing.',
-                    ];
+                    if ($listPrice >= 500 && $svc->cnt <= 2 && $maxCnt > 10) {
+                        $recs[] = [
+                            'id'       => 'M-' . $svc->id,
+                            'severity' => 'info',
+                            'title'    => "Low Visibility: {$svc->name}",
+                            'message'  => "\"{$svc->name}\" (₱" . number_format($listPrice, 0) . ") has only {$svc->cnt} completed "
+                                         . "requests in 90 days. Consider promoting this service.",
+                            'action'   => 'Feature this service in your shop profile or offer introductory pricing.',
+                        ];
+                    }
                 }
             }
         }

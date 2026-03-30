@@ -165,21 +165,58 @@ class CustomerController extends Controller
     public function orders(int $id): JsonResponse
     {
         $shopId = $this->shopOwner()->id;
+        $customer = User::find($id);
+        $customerEmail = strtolower(trim((string) ($customer?->email ?? '')));
 
-        $orders = Order::where('shop_owner_id', $shopId)
-            ->where('customer_id', $id)
-            ->with('items.product')
+        $orderRows = DB::table('orders')
+            ->where('shop_owner_id', $shopId)
+            ->where(function ($query) use ($id, $customerEmail) {
+                $query->where('customer_id', $id);
+
+                if ($customerEmail !== '') {
+                    $query->orWhere(function ($emailQuery) use ($customerEmail) {
+                        $emailQuery->whereNull('customer_id')
+                            ->whereRaw('LOWER(COALESCE(customer_email, "")) = ?', [$customerEmail]);
+                    });
+                }
+            })
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn ($o) => [
-                'id'          => $o->id,
-                'orderNumber' => $o->order_number,
-                'itemSummary' => $o->items->map(fn ($i) => "{$i->product_name} x{$i->quantity}")->implode(', ') ?: '—',
-                'date'        => $o->created_at->toDateString(),
-                'amount'      => (float) $o->total_amount,
-                'status'      => in_array($o->status, ['delivered']) ? 'completed'
-                    : (in_array($o->status, ['cancelled']) ? 'cancelled' : 'processing'),
-            ]);
+            ->values();
+
+        $orderIds = $orderRows->pluck('id')->all();
+        $itemsByOrder = DB::table('order_items')
+            ->whereIn('order_id', $orderIds)
+            ->select('order_id', 'product_name', 'quantity')
+            ->get()
+            ->groupBy('order_id');
+
+        $orders = $orderRows->map(function ($o) use ($itemsByOrder) {
+                $orderStatus = strtolower(trim((string) ($o->status ?? '')));
+                $paymentStatus = strtolower(trim((string) ($o->payment_status ?? '')));
+
+                $normalizedStatus = 'processing';
+                if ($orderStatus === 'refund' || $paymentStatus === 'refunded') {
+                    $normalizedStatus = 'refunded';
+                } elseif (in_array($orderStatus, ['delivered', 'completed'], true)) {
+                    $normalizedStatus = 'completed';
+                } elseif (in_array($orderStatus, ['cancelled', 'canceled'], true)) {
+                    $normalizedStatus = 'cancelled';
+                }
+
+                $itemSummary = collect($itemsByOrder->get($o->id, collect()))
+                    ->map(fn ($i) => "{$i->product_name} x{$i->quantity}")
+                    ->implode(', ');
+
+                return [
+                    'id'          => $o->id,
+                    'orderNumber' => $o->order_number,
+                    'itemSummary' => $itemSummary !== '' ? $itemSummary : '—',
+                    'date'        => Carbon::parse($o->created_at)->toDateString(),
+                    'amount'      => (float) $o->total_amount,
+                    'status'      => $normalizedStatus,
+                ];
+            });
 
         return response()->json(['orders' => $orders]);
     }
@@ -207,5 +244,79 @@ class CustomerController extends Controller
             ]);
 
         return response()->json(['repairs' => $repairs]);
+    }
+
+    /**
+     * GET /api/shop-owner/customers/{id}/payments
+     * Combined retail + repair payment history for this customer in this shop.
+     */
+    public function payments(int $id): JsonResponse
+    {
+        $shopId = $this->shopOwner()->id;
+        $customer = User::find($id);
+        $customerEmail = strtolower(trim((string) ($customer?->email ?? '')));
+
+        $orderPayments = DB::table('orders')
+            ->where('shop_owner_id', $shopId)
+            ->where(function ($query) use ($id, $customerEmail) {
+                $query->where('customer_id', $id);
+
+                if ($customerEmail !== '') {
+                    $query->orWhere(function ($emailQuery) use ($customerEmail) {
+                        $emailQuery->whereNull('customer_id')
+                            ->whereRaw('LOWER(COALESCE(customer_email, "")) = ?', [$customerEmail]);
+                    });
+                }
+            })
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($order) {
+                $paymentStatus = strtolower(trim((string) ($order->payment_status ?? 'pending')));
+                $orderStatus = strtolower(trim((string) ($order->status ?? '')));
+
+                $normalizedStatus = in_array($paymentStatus, ['paid', 'completed'], true)
+                    ? 'paid'
+                    : ($paymentStatus === 'refunded'
+                        ? 'refunded'
+                        : ($orderStatus === 'cancelled' ? 'failed' : 'pending'));
+
+                return [
+                    'id' => (int) $order->id,
+                    'reference' => (string) ($order->order_number ?? ('ORDER-' . $order->id)),
+                    'method' => (string) ($order->payment_method ?: 'Online Payment'),
+                    'date' => Carbon::parse($order->created_at)->toDateString(),
+                    'amount' => (float) ($order->total_amount ?? 0),
+                    'status' => $normalizedStatus,
+                    'source' => 'order',
+                ];
+            });
+
+        $repairPayments = RepairRequest::where('shop_owner_id', $shopId)
+            ->where('user_id', $id)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($repair) {
+                $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+                $normalizedStatus = in_array($paymentStatus, ['paid', 'completed'], true)
+                    ? 'paid'
+                    : ($paymentStatus === 'refunded' ? 'refunded' : 'pending');
+
+                return [
+                    'id' => (int) $repair->id,
+                    'reference' => (string) ($repair->request_id ?? ('REPAIR-' . $repair->id)),
+                    'method' => (string) ($repair->payment_method ?: 'In-Shop Payment'),
+                    'date' => $repair->created_at?->toDateString(),
+                    'amount' => (float) ($repair->total ?? 0),
+                    'status' => $normalizedStatus,
+                    'source' => 'repair',
+                ];
+            });
+
+        $payments = $orderPayments
+            ->merge($repairPayments)
+            ->sortByDesc('date')
+            ->values();
+
+        return response()->json(['payments' => $payments]);
     }
 }

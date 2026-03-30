@@ -739,6 +739,8 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
     // Profile
     Route::post('upload-profile-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'uploadPhoto']);
     Route::post('upload-cover-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'uploadCoverPhoto']);
+    Route::delete('profile-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'removeProfilePhoto']);
+    Route::delete('cover-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'removeCoverPhoto']);
 
     // Price Change Approvals
     Route::get('price-changes/pending', [\App\Http\Controllers\Api\PriceChangeRequestController::class, 'ownerPending'])->middleware('check.business.type:retail,both');

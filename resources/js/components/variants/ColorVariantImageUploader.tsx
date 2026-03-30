@@ -25,14 +25,36 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
 }) => {
   const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
 
+  const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+  const isAllowedImageFile = (file: File) => {
+    const mimeType = (file.type || '').toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    return ALLOWED_IMAGE_EXTENSIONS.includes(extension);
+  };
+
   const handleAddImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (images.length + files.length > maxImages) {
-      alert(`Maximum ${maxImages} images allowed per color`);
+    const validFiles = files.filter(isAllowedImageFile);
+
+    if (validFiles.length !== files.length) {
+      alert('Only image files are allowed (JPG, JPEG, PNG, GIF, WEBP).');
+    }
+
+    if (validFiles.length === 0) {
+      e.target.value = '';
       return;
     }
 
-    const newImages = files.map((file, index) => {
+    if (images.length + validFiles.length > maxImages) {
+      alert(`Maximum ${maxImages} images allowed per color`);
+      e.target.value = '';
+      return;
+    }
+
+    const newImages = validFiles.map((file, index) => {
       const id = `${Date.now()}-${index}`;
       const preview = URL.createObjectURL(file);
       return {

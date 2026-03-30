@@ -72,14 +72,19 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
       case 'cancelled':
       case 'canceled':
         return 'error';
+      case 'refund':
+      case 'refunded':
+        return 'error';
       default:
         return 'default';
     }
   };
 
   // Capitalize first letter
-  const capitalize = (str: string) => {
-    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  const formatStatusLabel = (status: string) => {
+    const normalized = status.toLowerCase();
+    if (normalized === 'refund' || normalized === 'refunded') return 'Refunded';
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 
   // Get first product image
@@ -282,7 +287,7 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
                       size="sm"
                       color={getStatusColor(order.status)}
                     >
-                      {capitalize(order.status)}
+                      {formatStatusLabel(order.status)}
                     </Badge>
                   </TableCell>
                 </TableRow>

@@ -180,6 +180,15 @@ export default function ProductManagement() {
   const MAX_SHOWROOM_360_FILES = 120;
   const IMAGE_UPLOAD_CONCURRENCY = 4;
   const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 3;
+  const allowedProductImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+  const isAllowedProductImageFile = (file: File) => {
+    const mimeType = (file.type || '').toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    return allowedProductImageExtensions.includes(extension);
+  };
 
   const runWithConcurrency = async <T, R>(
     items: T[],
@@ -629,6 +638,17 @@ export default function ProductManagement() {
   const handleVariantImageChange = (variantIndex: number, imageId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!isAllowedProductImageFile(file)) {
+        void Swal.fire({
+          title: 'Invalid File Type',
+          text: 'Only image files are allowed (JPG, JPEG, PNG, GIF, WEBP).',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        e.target.value = '';
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setVariants(prev => prev.map((v, i) => {
@@ -641,6 +661,8 @@ export default function ProductManagement() {
       };
       reader.readAsDataURL(file);
     }
+
+    e.target.value = '';
   };
 
   const addVariantImage = (variantIndex: number) => {
@@ -772,6 +794,10 @@ export default function ProductManagement() {
           queuedUploads,
           IMAGE_UPLOAD_CONCURRENCY,
           async ({ image, imageIndex }: { image: any; imageIndex: number }) => {
+            if (!isAllowedProductImageFile(image.file as File)) {
+              throw new Error(`Only image files are allowed for product uploads. Invalid file: ${(image.file as File).name}`);
+            }
+
             const uploadData = new FormData();
             uploadData.append('image', image.file as File);
 
