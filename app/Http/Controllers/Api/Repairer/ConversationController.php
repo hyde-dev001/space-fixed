@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API\Repairer;
+namespace App\Http\Controllers\Api\Repairer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
@@ -157,11 +157,11 @@ class ConversationController extends Controller
                 'priority' => $conversation->priority,
                 'last_message_at' => $conversation->last_message_at,
                 'customer' => [
-                    'id' => $conversation->customer->id,
-                    'name' => $conversation->customer->name,
-                    'email' => $conversation->customer->email,
-                    'profile_photo' => $conversation->customer->profile_photo,
-                    'profile_photo_url' => $conversation->customer->profile_photo
+                    'id' => $conversation->customer?->id,
+                    'name' => $conversation->customer?->name,
+                    'email' => $conversation->customer?->email,
+                    'profile_photo' => $conversation->customer?->profile_photo,
+                    'profile_photo_url' => $conversation->customer?->profile_photo
                         ? (str_starts_with($conversation->customer->profile_photo, '/')
                             ? $conversation->customer->profile_photo
                             : '/storage/' . ltrim($conversation->customer->profile_photo, '/'))

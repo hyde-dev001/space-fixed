@@ -370,48 +370,48 @@ Route::middleware(['web', 'auth:user'])->prefix('media')->group(function () {
  * NOTE: Customer conversation routes have been moved to routes/web.php for proper session handling
  */
 Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\CRM\ConversationController::class, 'index']);
-    Route::get('/{conversation}', [\App\Http\Controllers\API\CRM\ConversationController::class, 'show']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\CRM\ConversationController::class, 'sendMessage']);
-    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\CRM\ConversationController::class, 'transfer']);
-    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updateStatus']);
-    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\CRM\ConversationController::class, 'updatePriority']);
+    Route::get('/', [\App\Http\Controllers\Api\CRM\ConversationController::class, 'index']);
+    Route::get('/{conversation}', [\App\Http\Controllers\Api\CRM\ConversationController::class, 'show']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\Api\CRM\ConversationController::class, 'sendMessage']);
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\Api\CRM\ConversationController::class, 'transfer']);
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\Api\CRM\ConversationController::class, 'updateStatus']);
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\Api\CRM\ConversationController::class, 'updatePriority']);
 });
 
 /**
  * CRM Customer Routes - Manage customer profiles, history and staff notes
  */
 Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/',                  [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'index']);
-    Route::get('/{id}',              [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'show']);
-    Route::put('/{id}',              [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'update']);
-    Route::post('/{id}/notes',       [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'storeNote']);
+    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'index']);
+    Route::get('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'show']);
+    Route::put('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'update']);
+    Route::post('/{id}/notes',       [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'storeNote']);
 });
 
 /**
  * CRM Review Routes - Manage customer reviews and staff responses
  */
 Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/',                  [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'index']);
+    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'index']);
 });
 
 /**
  * CRM Dashboard Stats - Aggregate data for the CRM overview page
  */
-Route::get('crm/dashboard-stats', [\App\Http\Controllers\API\CRM\CRMDashboardController::class, 'index'])
+Route::get('crm/dashboard-stats', [\App\Http\Controllers\Api\CRM\CRMDashboardController::class, 'index'])
     ->middleware(['web', 'auth:user', 'permission:access-customer-support']);
 
 /**
  * Repairer Conversation Routes - Repair technicians handling technical support
  */
 Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permission:access-repairer-support'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'index']);
-    Route::get('/{conversation}', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'show']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'sendMessage']);
-    Route::post('/{conversation}/transfer', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'transfer']);
-    Route::patch('/{conversation}/status', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updateStatus']);
-    Route::patch('/{conversation}/priority', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'updatePriority']);
-    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\API\Repairer\ConversationController::class, 'activatePayment']);
+    Route::get('/', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'index']);
+    Route::get('/{conversation}', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'show']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'sendMessage']);
+    Route::post('/{conversation}/transfer', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'transfer']);
+    Route::patch('/{conversation}/status', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'updateStatus']);
+    Route::patch('/{conversation}/priority', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'updatePriority']);
+    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'activatePayment']);
 });
 
 /**

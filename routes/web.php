@@ -1437,7 +1437,7 @@ Route::get('/erp/hr/audit-logs', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/HR/AuditLogs');
-})->middleware(['auth:user', 'permission:access-audit-logs'])->name('erp.hr.audit-logs');
+})->middleware(['auth:user', 'role:Manager'])->name('erp.hr.audit-logs');
 
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/erp/profile', [UserProfileController::class, 'show'])->name('erp.profile');
@@ -1539,7 +1539,7 @@ Route::get('/create-invoice', function () {
 
 // CRM routes
 Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-crm-dashboard|access-crm-customers|access-customer-support|access-customer-reviews|access-crm-messages'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\CRM\CRMDashboardController::class, 'indexPage'])->name('dashboard');
+    Route::get('/', [\App\Http\Controllers\Api\CRM\CRMDashboardController::class, 'indexPage'])->name('dashboard');
     Route::get('/opportunities', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1552,7 +1552,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
         }
         return Inertia::render('ERP/CRM/Leads');
     })->name('leads');
-    Route::get('/customers', [\App\Http\Controllers\API\CRM\CRMCustomerController::class, 'indexPage'])->name('customers');
+    Route::get('/customers', [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'indexPage'])->name('customers');
     Route::get('/customer-support', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -1560,7 +1560,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
         return Inertia::render('ERP/CRM/customerSupport');
     })->middleware('permission:access-customer-support')->name('customer-support');
 
-    Route::get('/customer-reviews', [\App\Http\Controllers\API\CRM\CRMReviewController::class, 'indexPage'])->name('customer-reviews');
+    Route::get('/customer-reviews', [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'indexPage'])->name('customer-reviews');
 });
 
 // MANAGER routes (Manager role OR manager permissions)
@@ -1687,7 +1687,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/Manager/AuditLogs');
-    })->name('audit-logs');
+    })->middleware('role:Manager')->name('audit-logs');
     // Repair rejection review: manager route limited to repair-capable businesses
     Route::get('/repair-rejection-review', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

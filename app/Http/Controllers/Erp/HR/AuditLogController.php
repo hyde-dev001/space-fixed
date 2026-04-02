@@ -15,6 +15,11 @@ class AuditLogController extends Controller
             return false;
         }
 
+        // HR users must not access audit logs even if legacy permissions are still assigned.
+        if ($user->hasRole('HR')) {
+            return false;
+        }
+
         return $user->hasRole('Manager')
             || $user->can('access-audit-logs')
             || $user->can('view-finance-audit-logs')
