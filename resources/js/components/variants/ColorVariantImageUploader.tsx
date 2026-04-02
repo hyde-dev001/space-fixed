@@ -15,6 +15,7 @@ type ColorVariantImageUploaderProps = {
   images: ColorVariantImage[];
   onImagesChange: (images: ColorVariantImage[]) => void;
   maxImages?: number;
+  readOnly?: boolean;
 };
 
 export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps> = ({
@@ -22,6 +23,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   images,
   onImagesChange,
   maxImages = 10,
+  readOnly = false,
 }) => {
   const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
 
@@ -36,6 +38,11 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   };
 
   const handleAddImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) {
+      e.target.value = '';
+      return;
+    }
+
     const files = Array.from(e.target.files || []);
     const validFiles = files.filter(isAllowedImageFile);
 
@@ -71,6 +78,8 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   };
 
   const handleRemoveImage = (id: string) => {
+    if (readOnly) return;
+
     const updatedImages = images.filter(img => img.id !== id);
     
     // If we removed the thumbnail, make the first image the new thumbnail
@@ -88,6 +97,8 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   };
 
   const handleSetThumbnail = (id: string) => {
+    if (readOnly) return;
+
     const updatedImages = images.map(img => ({
       ...img,
       is_thumbnail: img.id === id,
@@ -96,6 +107,8 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
+    if (readOnly) return;
+
     setDraggingImageId(id);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -106,6 +119,8 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   };
 
   const handleDrop = (e: React.DragEvent, targetId: string) => {
+    if (readOnly) return;
+
     e.preventDefault();
     if (!draggingImageId || draggingImageId === targetId) return;
 
@@ -137,7 +152,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
             • First image is thumbnail
           </span>
         </div>
-        {images.length < maxImages && (
+        {!readOnly && images.length < maxImages && (
           <label className="cursor-pointer px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors inline-flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -157,7 +172,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
       {images.length === 0 ? (
         <div className="inline-block">
           <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center w-64">
-            <label className="cursor-pointer">
+            <label className={readOnly ? '' : 'cursor-pointer'}>
               <div className="flex flex-col items-center gap-2">
                 <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -165,17 +180,21 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
                 <div>
                   <p className="text-gray-900 dark:text-white font-medium text-sm">Upload images for {colorName}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    Click to select up to {maxImages} images • First image will be thumbnail
+                    {readOnly
+                      ? 'No images available for this color variant.'
+                      : `Click to select up to ${maxImages} images • First image will be thumbnail`}
                   </p>
                 </div>
               </div>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleAddImage}
-                className="hidden"
-              />
+              {!readOnly && (
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleAddImage}
+                  className="hidden"
+                />
+              )}
             </label>
           </div>
         </div>
@@ -184,7 +203,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
           {images.map((image, index) => (
             <div
               key={image.id}
-              draggable
+              draggable={!readOnly}
               onDragStart={(e) => handleDragStart(e, image.id)}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, image.id)}
@@ -211,36 +230,38 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
               </div>
 
               {/* Hover actions */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all rounded-lg flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                {!image.is_thumbnail && (
+              {!readOnly && (
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all rounded-lg flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                  {!image.is_thumbnail && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetThumbnail(image.id)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 transition-colors"
+                      title="Set as thumbnail"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => handleSetThumbnail(image.id)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 transition-colors"
-                    title="Set as thumbnail"
+                    onClick={() => handleRemoveImage(image.id)}
+                    className="bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-colors"
+                    title="Remove image"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveImage(image.id)}
-                  className="bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-colors"
-                  title="Remove image"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {images.length > 0 && (
+      {images.length > 0 && !readOnly && (
         <p className="text-xs text-gray-500 dark:text-gray-400 italic">
           💡 Drag images to reorder • Click thumbnail badge to change
         </p>

@@ -764,6 +764,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                     images={colorVariant.images}
                     onImagesChange={(images) => updateColorVariant(colorVariant.id, { images })}
                     maxImages={10}
+                    readOnly={lockStockEditing}
                   />
                 </div>
 

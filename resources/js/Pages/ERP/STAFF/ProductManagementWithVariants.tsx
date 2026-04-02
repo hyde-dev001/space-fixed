@@ -1,6 +1,6 @@
  import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
 import { ColorVariantManager, ColorVariant } from '@/components/variants/ColorVariantManager';
@@ -183,6 +183,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function ProductManagement() {
+  const page = usePage<{ staff_shop_registration_type?: string }>();
+  const isCompanyStaff = String(page.props?.staff_shop_registration_type || '').toLowerCase() === 'company';
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -318,6 +320,7 @@ export default function ProductManagement() {
   const [removedShowroomFrameKeys, setRemovedShowroomFrameKeys] = useState<string[]>([]);
   const hasExistingShowroomFrames = existingShowroomFrames.length > 0;
   const canToggle360Viewer = canUse360Uploader || hasExistingShowroomFrames;
+  const isStaffDetailOnlyEdit = !!editingProduct;
   
   const [uploading, setUploading] = useState(false);
   const allowedSizeSystems = new Set<SizeSystem>(['US', 'UK', 'EU', 'AU', 'CN']);
@@ -1266,61 +1269,63 @@ export default function ProductManagement() {
       return;
     }
 
-    // Validate color variants
-    if (colorVariants.length === 0) {
-      Swal.fire({
-        title: 'Missing Color Variants',
-        text: 'Please add at least one color variant',
-        icon: 'warning',
-        confirmButtonColor: '#000000',
-      });
-      return;
-    }
+    if (!isStaffDetailOnlyEdit) {
+      // Validate color variants
+      if (colorVariants.length === 0) {
+        Swal.fire({
+          title: 'Missing Color Variants',
+          text: 'Please add at least one color variant',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
 
-    const hasImagesIssue = colorVariants.some(cv => cv.images.length === 0);
-    if (hasImagesIssue) {
-      Swal.fire({
-        title: 'Missing Images',
-        text: 'Each color must have at least one image',
-        icon: 'warning',
-        confirmButtonColor: '#000000',
-      });
-      return;
-    }
+      const hasImagesIssue = colorVariants.some(cv => cv.images.length === 0);
+      if (hasImagesIssue) {
+        Swal.fire({
+          title: 'Missing Images',
+          text: 'Each color must have at least one image',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
 
-    const hasSizeIssue = colorVariants.some(cv => cv.sizes.length === 0);
-    if (hasSizeIssue) {
-      Swal.fire({
-        title: 'Missing Sizes',
-        text: 'Each color must have at least one size with quantity',
-        icon: 'warning',
-        confirmButtonColor: '#000000',
-      });
-      return;
-    }
+      const hasSizeIssue = colorVariants.some(cv => cv.sizes.length === 0);
+      if (hasSizeIssue) {
+        Swal.fire({
+          title: 'Missing Sizes',
+          text: 'Each color must have at least one size with quantity',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
 
-    const totalStock = colorVariants.reduce((sum, cv) => 
-      sum + cv.sizes.reduce((s, size) => s + size.quantity, 0), 0
-    );
+      const totalStock = colorVariants.reduce((sum, cv) => 
+        sum + cv.sizes.reduce((s, size) => s + size.quantity, 0), 0
+      );
 
-    if (totalStock === 0) {
-      Swal.fire({
-        title: 'No Stock',
-        text: 'Please set quantity for at least one size variant',
-        icon: 'warning',
-        confirmButtonColor: '#000000',
-      });
-      return;
-    }
+      if (totalStock === 0) {
+        Swal.fire({
+          title: 'No Stock',
+          text: 'Please set quantity for at least one size variant',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
 
-    if (show3DShoeModels && product3DFiles.length > 0 && !canUse360Uploader) {
-      Swal.fire({
-        title: 'Premium Required',
-        text: 'Shoe Spin Viewer uploads are currently unavailable.',
-        icon: 'warning',
-        confirmButtonColor: '#000000',
-      });
-      return;
+      if (show3DShoeModels && product3DFiles.length > 0 && !canUse360Uploader) {
+        Swal.fire({
+          title: 'Premium Required',
+          text: 'Shoe Spin Viewer uploads are currently unavailable.',
+          icon: 'warning',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
     }
 
     try {
@@ -1329,51 +1334,61 @@ export default function ProductManagement() {
       let productData;
       let createdProductId: number | null = null;
 
-      // Color-first approach (only mode now)
-      const totalStock = colorVariants.reduce((sum, cv) => 
-        sum + cv.sizes.reduce((s, size) => s + size.quantity, 0), 0
-      );
+      if (isStaffDetailOnlyEdit) {
+        // Staff edit modal is details-only; variants and images are intentionally hidden.
+        productData = {
+          name: formData.name,
+          description: formData.description || null,
+          brand: formData.brand || null,
+          category: formData.category,
+        };
+      } else {
+        // Color-first approach (only mode now)
+        const totalStock = colorVariants.reduce((sum, cv) => 
+          sum + cv.sizes.reduce((s, size) => s + size.quantity, 0), 0
+        );
 
-      const uniqueSizes = [
-        ...new Set(
-          colorVariants.flatMap((cv) =>
-            cv.sizes.map((s) => formatVariantSizeForStorage(s.size, s.size_system))
+        const uniqueSizes = [
+          ...new Set(
+            colorVariants.flatMap((cv) =>
+              cv.sizes.map((s) => formatVariantSizeForStorage(s.size, s.size_system))
+            )
           )
-        )
-      ];
-      const uniqueColors = colorVariants.map(cv => cv.color_name);
+        ];
+        const uniqueColors = colorVariants.map(cv => cv.color_name);
 
-      // Prepare variant data for backward compatibility
-      const variantData = colorVariants.flatMap(cv => 
-        cv.sizes.map(size => ({
-          size: formatVariantSizeForStorage(size.size, size.size_system),
-          color: cv.color_name,
-          quantity: size.quantity,
-          image: '', // Will be set after color variant creation
-          sku: size.sku || null,
-        }))
-      );
+        // Prepare variant data for backward compatibility
+        const variantData = colorVariants.flatMap(cv => 
+          cv.sizes.map(size => ({
+            size: formatVariantSizeForStorage(size.size, size.size_system),
+            color: cv.color_name,
+            quantity: size.quantity,
+            image: '', // Will be set after color variant creation
+            sku: size.sku || null,
+          }))
+        );
 
-      const baseProductData = {
-        name: formData.name,
-        description: formData.description || null,
-        brand: formData.brand || null,
-        category: formData.category,
-        stock_quantity: totalStock,
-        inventory_item_id: !editingProduct && selectedInventoryItem ? selectedInventoryItem.id : undefined,
-        sizes_available: uniqueSizes,
-        colors_available: uniqueColors,
-        main_image: null, // Will be set from color variants
-        additional_images: null,
-        variants: variantData,
-      };
+        const baseProductData = {
+          name: formData.name,
+          description: formData.description || null,
+          brand: formData.brand || null,
+          category: formData.category,
+          stock_quantity: totalStock,
+          inventory_item_id: !editingProduct && selectedInventoryItem ? selectedInventoryItem.id : undefined,
+          sizes_available: uniqueSizes,
+          colors_available: uniqueColors,
+          main_image: null, // Will be set from color variants
+          additional_images: null,
+          variants: variantData,
+        };
 
-      productData = editingProduct
-        ? baseProductData
-        : {
-            ...baseProductData,
-            price: parseFloat(formData.price),
-          };
+        productData = editingProduct
+          ? baseProductData
+          : {
+              ...baseProductData,
+              price: parseFloat(formData.price),
+            };
+      }
 
       const url = editingProduct
         ? `/api/products/${editingProduct.id}`
@@ -1416,11 +1431,11 @@ export default function ProductManagement() {
 
       // Upload color variants with images
       let colorVariantUploadResult: ColorVariantUploadResult | null = null;
-      if (createdProductId) {
+      if (createdProductId && !isStaffDetailOnlyEdit) {
         colorVariantUploadResult = await uploadColorVariantImages(createdProductId);
       }
 
-      if (createdProductId && editingProduct && removedShowroomFrameKeys.length > 0) {
+      if (createdProductId && editingProduct && !isStaffDetailOnlyEdit && removedShowroomFrameKeys.length > 0) {
         const framesToDelete = existingShowroomFrames.filter((frame) =>
           removedShowroomFrameKeys.includes(getShowroomFrameKey(frame))
         );
@@ -1451,7 +1466,7 @@ export default function ProductManagement() {
         }
       }
 
-      if (createdProductId && show3DShoeModels && product3DFiles.length > 0) {
+      if (createdProductId && !isStaffDetailOnlyEdit && show3DShoeModels && product3DFiles.length > 0) {
         if (!canUse360Uploader) {
           throw new Error('Shoe Spin Viewer uploads are currently unavailable.');
         }
@@ -1792,7 +1807,9 @@ export default function ProductManagement() {
                     {editingProduct ? 'Edit Product' : 'Add New Product'}
                   </h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Configure product details and manage inventory by size and color variants
+                    {editingProduct && isCompanyStaff
+                      ? 'Update product details. Variant stock and images are view-only for staff edits.'
+                      : 'Configure product details and manage inventory by size and color variants'}
                   </p>
                 </div>
 
@@ -1838,10 +1855,11 @@ export default function ProductManagement() {
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-1 overflow-y-auto flex flex-col gap-6 p-6 pr-2">
               
-              {/* Color Variants — read-only when sourced from inventory stock, editable when editing an existing product */}
-              <div className="order-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
-                {selectedInventoryItem && !editingProduct ? (
-                  <div>
+              {/* Hide variant/image management in staff edit mode (details-only edit). */}
+              {!isStaffDetailOnlyEdit && (
+                <div className="order-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
+                  {selectedInventoryItem && !editingProduct ? (
+                    <div>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-base font-semibold text-gray-900 dark:text-white">Color Variants &amp; Sizes</h3>
                     </div>
@@ -1882,18 +1900,19 @@ export default function ProductManagement() {
                         ))}
                       </div>
                     )}
-                  </div>
-                ) : (
-                  <ColorVariantManager
-                    colorVariants={colorVariants}
-                    onColorVariantsChange={setColorVariants}
-                    isEditing={!!editingProduct}
-                    lockStockEditing={!!editingProduct}
-                  />
-                )}
-              </div>
+                    </div>
+                  ) : (
+                    <ColorVariantManager
+                      colorVariants={colorVariants}
+                      onColorVariantsChange={setColorVariants}
+                      isEditing={!!editingProduct}
+                      lockStockEditing={!!editingProduct && isCompanyStaff}
+                    />
+                  )}
+                </div>
+              )}
 
-              {show3DShoeModels && (canUse360Uploader || hasExistingShowroomFrames) && (
+              {!isStaffDetailOnlyEdit && show3DShoeModels && (canUse360Uploader || hasExistingShowroomFrames) && (
                 <div className="order-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
                   <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-4">
                     <div className="flex items-center justify-between gap-3 mb-2">

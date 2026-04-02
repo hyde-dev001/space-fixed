@@ -2050,7 +2050,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        return Inertia::render('ERP/STAFF/ProductManagementWithVariants');
+
+        $user = Auth::guard('user')->user();
+        $staffShopRegistrationType = strtolower((string) ($user?->shopOwner?->registration_type ?? ''));
+
+        return Inertia::render('ERP/STAFF/ProductManagementWithVariants', [
+            'staff_shop_registration_type' => $staffShopRegistrationType,
+        ]);
     })->middleware(['permission:access-product-upload-staff', 'check.user.business.type:retail,both'])->name('products');
     Route::get('/payments', function () {
         return redirect()->route('erp.staff.products');
