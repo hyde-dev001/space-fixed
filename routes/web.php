@@ -1437,7 +1437,7 @@ Route::get('/erp/hr/audit-logs', function () {
         return redirect()->route('erp.profile');
     }
     return Inertia::render('ERP/HR/AuditLogs');
-})->middleware(['auth:user', 'role:Manager'])->name('erp.hr.audit-logs');
+})->middleware(['auth:user', 'permission:access-audit-logs'])->name('erp.hr.audit-logs');
 
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/erp/profile', [UserProfileController::class, 'show'])->name('erp.profile');
@@ -1687,7 +1687,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
             return redirect()->route('erp.profile');
         }
         return Inertia::render('ERP/Manager/AuditLogs');
-    })->middleware('role:Manager')->name('audit-logs');
+    })->name('audit-logs');
     // Repair rejection review: manager route limited to repair-capable businesses
     Route::get('/repair-rejection-review', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2174,9 +2174,9 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
 
     // Suspension Approval Routes
     Route::prefix('suspension-requests')->group(function () {
-        Route::get('/', [\App\Http\Controllers\ERP\Manager\SuspensionApprovalController::class, 'index'])->name('suspension_requests.index');
-        Route::get('/{id}', [\App\Http\Controllers\ERP\Manager\SuspensionApprovalController::class, 'show'])->name('suspension_requests.show');
-        Route::post('/{id}/review', [\App\Http\Controllers\ERP\Manager\SuspensionApprovalController::class, 'review'])->name('suspension_requests.review');
+        Route::get('/', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'index'])->name('suspension_requests.index');
+        Route::get('/{id}', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'show'])->name('suspension_requests.show');
+        Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'review'])->name('suspension_requests.review');
     });
 });
 

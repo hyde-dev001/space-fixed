@@ -58,6 +58,22 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
 });
 
 /**
+ * HR Audit Log Routes
+ * Access is permission-based and independent from the general HR module permissions.
+ */
+Route::prefix('api/hr/audit-logs')->middleware(['auth:user', 'permission:access-audit-logs', 'shop.isolation'])->group(function () {
+    Route::get('/', [HRAuditLogController::class, 'index'])->name('hr.audit.index');
+    Route::get('/statistics', [HRAuditLogController::class, 'statistics'])->name('hr.audit.statistics');
+    Route::get('/entity/history', [HRAuditLogController::class, 'entityHistory'])->name('hr.audit.entity_history');
+    Route::get('/critical', [HRAuditLogController::class, 'criticalLogs'])->name('hr.audit.critical');
+    Route::get('/export', [HRAuditLogController::class, 'export'])->name('hr.audit.export');
+    Route::get('/filters/options', [HRAuditLogController::class, 'filterOptions'])->name('hr.audit.filter_options');
+    Route::get('/user/{userId}/activity', [HRAuditLogController::class, 'userActivity'])->name('hr.audit.user_activity');
+    Route::get('/employee/{employeeId}/activity', [HRAuditLogController::class, 'employeeActivity'])->name('hr.audit.employee_activity');
+    Route::get('/{id}', [HRAuditLogController::class, 'show'])->name('hr.audit.show');
+});
+
+/**
  * HR Module Routes
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
@@ -264,21 +280,6 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/{id}/download', [DocumentController::class, 'download'])->name('hr.documents.download');
         Route::post('/{id}/verify', [DocumentController::class, 'verify'])->name('hr.documents.verify');
         Route::post('/{id}/reject', [DocumentController::class, 'reject'])->name('hr.documents.reject');
-    });
-
-    // ============================================
-    // AUDIT LOGS (HR Module)
-    // ============================================
-    Route::prefix('audit-logs')->group(function () {
-        Route::get('/', [HRAuditLogController::class, 'index'])->name('hr.audit.index');
-        Route::get('/statistics', [HRAuditLogController::class, 'statistics'])->name('hr.audit.statistics');
-        Route::get('/entity/history', [HRAuditLogController::class, 'entityHistory'])->name('hr.audit.entity_history');
-        Route::get('/critical', [HRAuditLogController::class, 'criticalLogs'])->name('hr.audit.critical');
-        Route::get('/export', [HRAuditLogController::class, 'export'])->name('hr.audit.export');
-        Route::get('/filters/options', [HRAuditLogController::class, 'filterOptions'])->name('hr.audit.filter_options');
-        Route::get('/user/{userId}/activity', [HRAuditLogController::class, 'userActivity'])->name('hr.audit.user_activity');
-        Route::get('/employee/{employeeId}/activity', [HRAuditLogController::class, 'employeeActivity'])->name('hr.audit.employee_activity');
-        Route::get('/{id}', [HRAuditLogController::class, 'show'])->name('hr.audit.show');
     });
 
     // ============================================

@@ -1195,6 +1195,7 @@ const AppSidebar_ERP: React.FC = () => {
 
     const managerPermissions = [
       'access-manager-dashboard',
+      'access-audit-logs',
       'access-manager-reports',
       'access-inventory-overview',
       'access-repair-reject-review',
@@ -1244,7 +1245,7 @@ const AppSidebar_ERP: React.FC = () => {
       }
 
       if (item.route === 'erp.manager.audit-logs') {
-        return (normalizedRoles.includes('MANAGER') || normalizedRole === 'MANAGER') && permissions.includes('access-audit-logs');
+        return permissions.includes('access-audit-logs');
       }
 
       if (item.route === 'erp.manager.suspend-approval') {
