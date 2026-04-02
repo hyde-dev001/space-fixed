@@ -12,6 +12,7 @@ use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -85,6 +86,51 @@ class ProductController extends Controller
         }
 
         return '';
+    }
+
+    private function canonicalizeColorName(string $colorName): string
+    {
+        $parts = preg_split('/\+/', $colorName) ?: [];
+        $normalized = [];
+
+        foreach ($parts as $part) {
+            $cleaned = trim((string) preg_replace('/\s+/', ' ', (string) $part));
+            if ($cleaned === '') {
+                continue;
+            }
+
+            $display = ucwords(strtolower($cleaned));
+            $normalized[strtolower($display)] = $display;
+        }
+
+        if (empty($normalized)) {
+            return trim((string) preg_replace('/\s+/', ' ', $colorName));
+        }
+
+        ksort($normalized, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return implode(' + ', array_values($normalized));
+    }
+
+    private function isDuplicateColorConstraintError(\Throwable $exception): bool
+    {
+        if (!$exception instanceof QueryException) {
+            return false;
+        }
+
+        $sqlState = (string) ($exception->errorInfo[0] ?? '');
+        $message = strtolower((string) $exception->getMessage());
+
+        if ($sqlState !== '23000') {
+            return false;
+        }
+
+        return str_contains($message, 'duplicate')
+            && (
+                str_contains($message, 'product_color_variants')
+                || str_contains($message, 'color_name')
+                || str_contains($message, 'product_id')
+            );
     }
 
     /**
@@ -1244,6 +1290,8 @@ class ProductController extends Controller
                 'images.*.image_type' => 'nullable|string',
             ]);
 
+            $validated['color_name'] = $this->canonicalizeColorName($validated['color_name']);
+
             $hasShowroomImage = collect($validated['images'] ?? [])->contains(function ($imageData) {
                 return $this->isShowroomImageType($imageData['image_type'] ?? null);
             });
@@ -1335,6 +1383,16 @@ class ProductController extends Controller
                 throw $e;
             }
         } catch (\Exception $e) {
+            if ($this->isDuplicateColorConstraintError($e)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Combined color already exists for this product. Try a different color combination.',
+                    'errors' => [
+                        'color_name' => ['Duplicate combined color is not allowed.'],
+                    ],
+                ], 422);
+            }
+
             Log::error('Error creating color variant', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -1378,6 +1436,10 @@ class ProductController extends Controller
                 'sort_order' => 'sometimes|integer',
             ]);
 
+            if (array_key_exists('color_name', $validated)) {
+                $validated['color_name'] = $this->canonicalizeColorName((string) $validated['color_name']);
+            }
+
             $colorVariant->update($validated);
 
             return response()->json([
@@ -1386,6 +1448,16 @@ class ProductController extends Controller
                 'color_variant' => $colorVariant->load('images'),
             ]);
         } catch (\Exception $e) {
+            if ($this->isDuplicateColorConstraintError($e)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Combined color already exists for this product. Try a different color combination.',
+                    'errors' => [
+                        'color_name' => ['Duplicate combined color is not allowed.'],
+                    ],
+                ], 422);
+            }
+
             Log::error('Error updating color variant', [
                 'error' => $e->getMessage(),
             ]);

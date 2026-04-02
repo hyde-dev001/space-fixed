@@ -792,6 +792,29 @@ const UserAccessControl: React.FC = () => {
     return Array.from(roleOptions.values());
   }, [employees, normalizedBusinessType, isRetailCapable, isRepairCapable]);
 
+  const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(email)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify email right now. Please try again.',
+      };
+    }
+  };
+
   const handleAddEmployee = async () => {
     // Check required fields
     if (!employeeForm.firstName || !employeeForm.lastName || !employeeForm.email || !employeeForm.department) {
@@ -801,6 +824,42 @@ const UserAccessControl: React.FC = () => {
         text: 'Please fill in all required fields (First name, Last name, Email, Role)',
         timer: 3000,
         showConfirmButton: false
+      });
+      return;
+    }
+
+    const trimmedEmail = employeeForm.email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Please enter a valid email address.',
+        timer: 3000,
+        showConfirmButton: false
+      });
+      return;
+    }
+
+    const normalizedPhone = employeeForm.phone.replace(/\D/g, '').slice(0, 11);
+    if (normalizedPhone && !/^\d{11}$/.test(normalizedPhone)) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Phone number must be exactly 11 digits.',
+        timer: 3000,
+        showConfirmButton: false
+      });
+      return;
+    }
+
+    const emailAvailability = await checkEmailAvailability(trimmedEmail);
+    if (!emailAvailability.available) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Email not available',
+        text: emailAvailability.message || 'This email is already registered.',
+        showConfirmButton: true,
       });
       return;
     }
@@ -827,8 +886,8 @@ const UserAccessControl: React.FC = () => {
           first_name: employeeForm.firstName,
           last_name: employeeForm.lastName,
           name: `${employeeForm.firstName} ${employeeForm.lastName}`,
-          email: employeeForm.email,
-          phone: employeeForm.phone,
+          email: trimmedEmail,
+          phone: normalizedPhone,
           address: employeeForm.address,
           department: employeeForm.department || 'General',
           position: employeeForm.position || '',
@@ -1894,7 +1953,7 @@ const UserAccessControl: React.FC = () => {
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
-                          <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value })} placeholder="Phone number" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
+                          <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} inputMode="numeric" pattern="[0-9]*" maxLength={11} placeholder="09XXXXXXXXX" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>

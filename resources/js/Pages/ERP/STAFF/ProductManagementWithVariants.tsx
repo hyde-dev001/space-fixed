@@ -231,6 +231,35 @@ export default function ProductManagement() {
     return results;
   };
 
+  const getRetryAfterSeconds = (response: Response) => {
+    const retryAfter = Number.parseInt(response.headers.get('Retry-After') || '', 10);
+    return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 10;
+  };
+
+  const readApiErrorMessage = async (response: Response, fallback: string) => {
+    if (response.status === 429) {
+      const waitSeconds = getRetryAfterSeconds(response);
+      return `Too many attempts. Please wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'} and try again.`;
+    }
+
+    try {
+      const data = await response.clone().json();
+      if (data?.message) return String(data.message);
+      if (data?.error) return String(data.error);
+    } catch {
+      // Fall through to text parsing.
+    }
+
+    try {
+      const text = (await response.text()).trim();
+      if (text) return text;
+    } catch {
+      // Ignore text parsing failures.
+    }
+
+    return fallback;
+  };
+
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
     { label: 'Women', value: 'women' },
@@ -244,8 +273,8 @@ export default function ProductManagement() {
     { label: 'Slides', value: 'slides' },
     { label: 'Tennis', value: 'tennis' },
     { label: 'Loafers', value: 'loafers' },
-    { label: 'Lifestyle', value: 'lifestyle' },
     { label: 'Sports', value: 'sports' },
+    { label: 'Others', value: 'others' },
   ];
   const categoryLabelByValue = categoryOptions.reduce<Record<string, string>>((acc, option) => {
     acc[option.value] = option.label;
@@ -260,6 +289,8 @@ export default function ProductManagement() {
   });
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['shoes']);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
+  const sanitizeCustomCategoryInput = (value: string) => value.replace(/\d+/g, '');
   
   // Variant Management (manual add)
   const [variants, setVariants] = useState<Variant[]>([
@@ -366,11 +397,18 @@ export default function ProductManagement() {
   }, [canUse360Uploader, show3DShoeModels, hasExistingShowroomFrames]);
 
   useEffect(() => {
+    let categoryString = selectedCategories.join(',');
+    
+    // Append custom category text if 'others' is selected and input is not empty
+    if (selectedCategories.includes('others') && customCategoryInput.trim()) {
+      categoryString = categoryString + ',' + customCategoryInput.trim();
+    }
+    
     setFormData((prev) => ({
       ...prev,
-      category: selectedCategories.join(','),
+      category: categoryString,
     }));
-  }, [selectedCategories]);
+  }, [selectedCategories, customCategoryInput]);
 
   const fetchProducts = async () => {
     try {
@@ -380,7 +418,10 @@ export default function ProductManagement() {
         headers: { 'Accept': 'application/json' }
       });
 
-      if (!productsResponse.ok) throw new Error('Failed to fetch products');
+      if (!productsResponse.ok) {
+        const message = await readApiErrorMessage(productsResponse, 'Failed to fetch products');
+        throw new Error(message);
+      }
 
       const productsData = await productsResponse.json();
       setProducts(productsData.products || []);
@@ -388,7 +429,7 @@ export default function ProductManagement() {
       console.error('Error fetching products:', error);
       Swal.fire({
         title: 'Error',
-        text: 'Failed to load products',
+        text: error instanceof Error ? error.message : 'Failed to load products',
         icon: 'error',
         confirmButtonColor: '#000000',
       });
@@ -447,14 +488,31 @@ export default function ProductManagement() {
     setExistingShowroomFrameCount(0);
     setExistingShowroomFrames([]);
     setRemovedShowroomFrameKeys([]);
+    setCustomCategoryInput(''); // Reset custom input
     await fetchShowroomEntitlement(product?.id);
 
     if (product) {
       setEditingProduct(product);
-      const parsedCategories = (product.category || '')
+      const categoryTokens = (product.category || '')
         .split(',')
-        .map((value) => value.trim().toLowerCase())
+        .map((value) => value.trim())
         .filter(Boolean);
+      
+      // Parse categories: separate known category options from custom Others text
+      const knownCategoryValues = categoryOptions.map(opt => opt.value);
+      const parsedCategories = categoryTokens
+        .filter(token => knownCategoryValues.includes(token.toLowerCase()))
+        .map(token => token.toLowerCase());
+      
+      // Extract custom text if Others is present
+      let customText = '';
+      if (categoryTokens.includes('others') || parsedCategories.includes('others')) {
+        const othersIndex = categoryTokens.findIndex(token => token.toLowerCase() === 'others');
+        if (othersIndex !== -1 && othersIndex + 1 < categoryTokens.length) {
+          customText = categoryTokens[othersIndex + 1];
+        }
+      }
+      
       setFormData({
         name: product.name,
         description: product.description || '',
@@ -463,6 +521,7 @@ export default function ProductManagement() {
         category: product.category,
       });
       setSelectedCategories(parsedCategories.length > 0 ? parsedCategories : ['shoes']);
+      setCustomCategoryInput(customText);
       
       // Load color variants for this product
       try {
@@ -838,10 +897,13 @@ export default function ProductManagement() {
               body: uploadData,
             });
 
-            const data = await response.json();
-            if (response.ok) {
-              groupPaths.push(data.path);
+            if (!response.ok) {
+              const message = await readApiErrorMessage(response, 'Failed to upload image');
+              throw new Error(message);
             }
+
+            const data = await response.json();
+            groupPaths.push(data.path);
           } catch (error) {
             console.error(`Error uploading image for variant ${index}:`, error);
           }
@@ -933,12 +995,13 @@ export default function ProductManagement() {
               body: uploadData,
             });
 
-            const data = await response.json();
-
             if (!response.ok) {
-              console.error(`Failed to upload image: ${data.message || 'Unknown error'}`);
+              const message = await readApiErrorMessage(response, 'Failed to upload image');
+              console.error(`Failed to upload image: ${message}`);
               return null;
             }
+
+            const data = await response.json();
 
             return {
               imageIndex,
@@ -1172,6 +1235,27 @@ export default function ProductManagement() {
       Swal.fire({
         title: 'Missing Information',
         text: editingProduct ? 'Please fill in product name' : 'Please fill in product name and price',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    // Validate custom category if Others is selected
+    if (selectedCategories.includes('others') && !customCategoryInput.trim()) {
+      Swal.fire({
+        title: 'Missing Information',
+        text: 'Please specify a custom category when "Others" is selected',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (selectedCategories.includes('others') && /\d/.test(customCategoryInput)) {
+      Swal.fire({
+        title: 'Invalid Category',
+        text: 'Custom category should contain text only. Numbers are not allowed.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1418,7 +1502,10 @@ export default function ProductManagement() {
         },
       });
 
-      if (!response.ok) throw new Error('Failed to delete product');
+      if (!response.ok) {
+        const message = await readApiErrorMessage(response, 'Failed to delete product');
+        throw new Error(message);
+      }
 
       await Swal.fire({
         title: 'Deleted!',
@@ -1431,7 +1518,7 @@ export default function ProductManagement() {
     } catch (error) {
       Swal.fire({
         title: 'Error',
-        text: 'Failed to delete product',
+        text: error instanceof Error ? error.message : 'Failed to delete product',
         icon: 'error',
         confirmButtonColor: '#000000',
       });
@@ -2055,6 +2142,23 @@ export default function ProductManagement() {
                       </label>
                     ))}
                   </div>
+                  
+                  {selectedCategories.includes('others') && (
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Please specify category
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={45}
+                        value={customCategoryInput}
+                        onChange={(e) => setCustomCategoryInput(sanitizeCustomCategoryInput(e.target.value))}
+                        placeholder="Enter custom category"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                  
                   <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                     <button
                       type="button"

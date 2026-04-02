@@ -21,6 +21,13 @@ class ShopOwnerRegistrationViewController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($shopOwner) {
+                $documents = $shopOwner->documents->map(function ($doc) {
+                    return [
+                        'url' => '/storage/' . $doc->file_path,
+                        'type' => $doc->document_type,
+                    ];
+                })->values();
+
                 return [
                     'id' => $shopOwner->id,
                     'firstName' => $shopOwner->first_name,
@@ -33,9 +40,8 @@ class ShopOwnerRegistrationViewController extends Controller
                     'registrationType' => $shopOwner->registration_type,
                     'serviceType' => $shopOwner->business_type,
                     'operatingHours' => is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [],
-                    'documentUrls' => $shopOwner->documents->map(function ($doc) {
-                        return '/storage/' . $doc->file_path;
-                    })->toArray(),
+                    'documents' => $documents->toArray(),
+                    'documentUrls' => $documents->pluck('url')->toArray(),
                     'status' => $shopOwner->status,
                     'createdAt' => $shopOwner->created_at->format('Y-m-d H:i:s'),
                 ];

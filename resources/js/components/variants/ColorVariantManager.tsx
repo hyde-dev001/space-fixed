@@ -52,6 +52,61 @@ const SIZE_OPTIONS = Array.from({ length: 25 }, (_, i) => {
   return Number.isInteger(size) ? size.toFixed(0) : size.toFixed(1);
 });
 
+const normalizeColorToken = (value: string) =>
+  value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const splitColorTokens = (value: string): string[] =>
+  value
+    .split('+')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+
+const normalizeColorIdentity = (value: string): string => {
+  const tokens = splitColorTokens(value).map(normalizeColorToken);
+  const uniqueSorted = Array.from(new Set(tokens)).sort((a, b) => a.localeCompare(b));
+  return uniqueSorted.join('+');
+};
+
+const buildCombinedColorName = (tokens: string[]): string => {
+  const byNormalized = new Map<string, string>();
+
+  tokens.forEach((token) => {
+    const normalized = normalizeColorToken(token);
+    if (!normalized || byNormalized.has(normalized)) return;
+
+    const cleaned = token.trim().replace(/\s+/g, ' ');
+    byNormalized.set(normalized, cleaned);
+  });
+
+  return Array.from(byNormalized.values()).join(' + ');
+};
+
+const getPresetColorCode = (colorName: string): string | undefined => {
+  const normalized = normalizeColorToken(colorName);
+  return PREDEFINED_COLORS.find((entry) => normalizeColorToken(entry.name) === normalized)?.code;
+};
+
+const getSwatchGradient = (colorVariant: ColorVariant): React.CSSProperties => {
+  const tokens = splitColorTokens(colorVariant.color_name);
+  if (tokens.length <= 1) {
+    return { backgroundColor: colorVariant.color_code };
+  }
+
+  const swatches = tokens
+    .slice(0, 3)
+    .map((token) => getPresetColorCode(token) ?? colorVariant.color_code ?? '#9CA3AF');
+
+  if (swatches.length === 2) {
+    return {
+      background: `linear-gradient(90deg, ${swatches[0]} 0%, ${swatches[0]} 50%, ${swatches[1]} 50%, ${swatches[1]} 100%)`,
+    };
+  }
+
+  return {
+    background: `linear-gradient(90deg, ${swatches[0]} 0%, ${swatches[0]} 33.33%, ${swatches[1]} 33.33%, ${swatches[1]} 66.66%, ${swatches[2]} 66.66%, ${swatches[2]} 100%)`,
+  };
+};
+
 export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   colorVariants,
   onColorVariantsChange,
@@ -63,8 +118,10 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   const [showSizePickerForColorId, setShowSizePickerForColorId] = useState<string | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [sizeSystem, setSizeSystem] = useState<SizeSystem>('US');
+  const [customSizeInput, setCustomSizeInput] = useState('');
   const [customColorName, setCustomColorName] = useState('');
   const [customColorCode, setCustomColorCode] = useState('#000000');
+  const [combinedQuickColors, setCombinedQuickColors] = useState<string[]>([]);
 
   const formatSizeBySystem = (sizeValue: string) => {
     const parsed = Number(sizeValue);
@@ -104,24 +161,31 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
   };
 
   const addColorVariant = (colorName: string, colorCode: string) => {
-    const normalizedColor = colorName.trim().toLowerCase();
-    const isDuplicateInCurrent = colorVariants.some((cv) => cv.color_name.toLowerCase() === normalizedColor);
-    const isDuplicateInBlocked = blockedColorNames.some((name) => name.trim().toLowerCase() === normalizedColor);
+    const combinedName = buildCombinedColorName(splitColorTokens(colorName));
+    const safeColorName = combinedName || colorName.trim();
+    const normalizedColorIdentity = normalizeColorIdentity(safeColorName);
+    const resolvedColorCode = getPresetColorCode(safeColorName) ?? colorCode;
+    const isDuplicateInCurrent = colorVariants.some(
+      (cv) => normalizeColorIdentity(cv.color_name) === normalizedColorIdentity,
+    );
+    const isDuplicateInBlocked = blockedColorNames.some(
+      (name) => normalizeColorIdentity(name) === normalizedColorIdentity,
+    );
 
     // Check if color already exists
     if (isDuplicateInCurrent || isDuplicateInBlocked) {
       void Swal.fire({
         icon: 'warning',
-        title: 'Color already exists',
-        text: `${colorName} color already exists!`,
+        title: 'Duplicate combined color',
+        text: `${safeColorName} already exists. Use a different color combination.`,
       });
       return;
     }
 
     const newVariant: ColorVariant = {
       id: Date.now().toString(),
-      color_name: colorName,
-      color_code: colorCode,
+      color_name: safeColorName,
+      color_code: resolvedColorCode,
       images: [],
       sizes: [],
       isExpanded: true,
@@ -130,6 +194,26 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     onColorVariantsChange([...colorVariants, newVariant]);
     setShowColorPicker(false);
     setCustomColorName('');
+    setCombinedQuickColors([]);
+  };
+
+  const toggleCombinedQuickColor = (colorName: string) => {
+    setCombinedQuickColors((prev) =>
+      prev.includes(colorName)
+        ? prev.filter((name) => name !== colorName)
+        : [...prev, colorName],
+    );
+  };
+
+  const addCombinedQuickVariant = () => {
+    if (combinedQuickColors.length < 2) {
+      alert('Select at least two quick colors to create a combined color.');
+      return;
+    }
+
+    const combinedName = buildCombinedColorName(combinedQuickColors);
+    const firstColorCode = getPresetColorCode(combinedQuickColors[0]) ?? customColorCode;
+    addColorVariant(combinedName, firstColorCode);
   };
 
   const removeColorVariant = async (id: string) => {
@@ -199,6 +283,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     if (!colorVariant) return;
 
     setSelectedSizes([]);
+    setCustomSizeInput('');
     setShowSizePickerForColorId(colorId);
   };
 
@@ -208,16 +293,31 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     );
   };
 
+  const addCustomSizeToSelection = () => {
+    const normalizedInput = customSizeInput.trim().replace(/\s+/g, ' ');
+    if (!normalizedInput) return;
+
+    if (selectedSizes.includes(normalizedInput)) {
+      alert('This size is already selected.');
+      return;
+    }
+
+    setSelectedSizes((prev) => [...prev, normalizedInput]);
+    setCustomSizeInput('');
+  };
+
   const applySelectedSizes = () => {
     if (!showSizePickerForColorId || selectedSizes.length === 0) {
       setShowSizePickerForColorId(null);
       setSelectedSizes([]);
+      setCustomSizeInput('');
       return;
     }
 
     addSizesToColor(showSizePickerForColorId, selectedSizes);
     setShowSizePickerForColorId(null);
     setSelectedSizes([]);
+    setCustomSizeInput('');
   };
 
   const updateSizeQuantityByStep = (colorId: string, sizeId: string, delta: number) => {
@@ -337,6 +437,39 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   </button>
                 ))}
               </div>
+
+              <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                  Combine Quick Colors (additive): choose multiple then add as one variant.
+                </p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {PREDEFINED_COLORS.map((color) => {
+                    const isSelected = combinedQuickColors.includes(color.name);
+                    return (
+                      <button
+                        key={`combined-${color.name}`}
+                        type="button"
+                        onClick={() => toggleCombinedQuickColor(color.name)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs transition-colors ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-500'
+                            : 'border-gray-300 text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:text-gray-300 dark:hover:border-blue-500'
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color.code }} />
+                        {color.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={addCombinedQuickVariant}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Add Combined ({combinedQuickColors.length})
+                </button>
+              </div>
             </div>
 
             {/* Custom Color */}
@@ -394,6 +527,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                 onClick={() => {
                   setShowSizePickerForColorId(null);
                   setSelectedSizes([]);
+                  setCustomSizeInput('');
                 }}
                 className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 title="Close size picker"
@@ -503,6 +637,34 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   );
                 })}
               </div>
+
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                  Other size (not in list)
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={customSizeInput}
+                    onChange={(e) => setCustomSizeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addCustomSizeToSelection();
+                      }
+                    }}
+                    placeholder="e.g., 2.5, 16, Kids 4"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomSizeToSelection}
+                    className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800"
+                  >
+                    Add Other
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 flex items-center justify-end gap-3">
@@ -511,6 +673,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                 onClick={() => {
                   setShowSizePickerForColorId(null);
                   setSelectedSizes([]);
+                  setCustomSizeInput('');
                 }}
                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
               >
@@ -542,7 +705,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
               <div className="flex items-center gap-3">
                 <div
                   className="w-10 h-10 rounded-full border-2 border-gray-300 dark:border-gray-600 shadow-sm"
-                  style={{ backgroundColor: colorVariant.color_code }}
+                  style={getSwatchGradient(colorVariant)}
                 />
                 <div>
                   <h4 className="font-semibold text-gray-900 dark:text-white">

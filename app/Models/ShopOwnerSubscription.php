@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ShopOwnerSubscription extends Model
 {
@@ -17,6 +18,7 @@ class ShopOwnerSubscription extends Model
     protected $fillable = [
         'shop_owner_id',
         'premium_plan_id',
+        'pending_premium_plan_id',
         'plan_code',
         'showroom_slot_limit',
         'status',
@@ -26,6 +28,8 @@ class ShopOwnerSubscription extends Model
         'paymongo_payment_id',
         'paid_amount',
         'renewal_of_subscription_id',
+        'replaces_subscription_id',
+        'pending_plan_effective_at',
         'renewal_due_at',
         'renewal_retry_count',
         'renewal_last_attempt_at',
@@ -44,6 +48,8 @@ class ShopOwnerSubscription extends Model
         'auto_renew' => 'boolean',
         'paid_amount' => 'decimal:2',
         'renewal_of_subscription_id' => 'integer',
+        'replaces_subscription_id' => 'integer',
+        'pending_plan_effective_at' => 'datetime',
         'renewal_due_at' => 'datetime',
         'renewal_retry_count' => 'integer',
         'renewal_last_attempt_at' => 'datetime',
@@ -61,6 +67,26 @@ class ShopOwnerSubscription extends Model
     public function premiumPlan(): BelongsTo
     {
         return $this->belongsTo(PremiumPlan::class, 'premium_plan_id');
+    }
+
+    public function pendingPremiumPlan(): BelongsTo
+    {
+        return $this->belongsTo(PremiumPlan::class, 'pending_premium_plan_id');
+    }
+
+    public function replacedSubscription(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaces_subscription_id');
+    }
+
+    public function replacementSubscriptions(): HasMany
+    {
+        return $this->hasMany(self::class, 'replaces_subscription_id');
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(ShopOwnerSubscriptionPayment::class, 'subscription_id');
     }
 
     public function scopeActive($query)

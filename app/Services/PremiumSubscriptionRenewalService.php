@@ -8,6 +8,7 @@ use App\Models\ShopOwnerSubscription;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class PremiumSubscriptionRenewalService
 {
@@ -16,7 +17,7 @@ class PremiumSubscriptionRenewalService
      */
     public function createRenewalCheckout(ShopOwnerSubscription $sourceSubscription): array
     {
-        $sourceSubscription->loadMissing('premiumPlan', 'shopOwner');
+        $sourceSubscription->loadMissing('premiumPlan', 'shopOwner', 'pendingPremiumPlan');
 
         if (!$sourceSubscription->shopOwner) {
             return [
@@ -54,6 +55,17 @@ class PremiumSubscriptionRenewalService
                 ->where('plan_code', $sourceSubscription->plan_code)
                 ->where('status', 'active')
                 ->first();
+        }
+
+        // If a downgrade was scheduled for this cycle end, renew using the pending plan.
+        if (
+            Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')
+            && Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')
+            && $sourceSubscription->pendingPremiumPlan
+            && $sourceSubscription->pending_plan_effective_at
+            && $sourceSubscription->pending_plan_effective_at->lessThanOrEqualTo(now())
+        ) {
+            $plan = $sourceSubscription->pendingPremiumPlan;
         }
 
         if (!$plan) {
@@ -95,6 +107,8 @@ class PremiumSubscriptionRenewalService
 
         $apiKey = (string) config('services.paymongo.secret_key');
 
+        $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
+
         $response = Http::withHeaders([
             'Content-Type' => 'application/json',
             'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
@@ -114,7 +128,7 @@ class PremiumSubscriptionRenewalService
                         'description' => $description,
                         'quantity' => 1,
                     ]],
-                    'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
+                    'payment_method_types' => $paymentMethodTypes,
                     'metadata' => [
                         'type' => 'premium_subscription_renewal',
                         'subscription_id' => (string) $renewalSubscription->id,
@@ -171,7 +185,7 @@ class PremiumSubscriptionRenewalService
             'paymongo_session_id' => $sessionId,
         ]);
 
-        $sourceSubscription->update([
+        $sourceUpdatePayload = [
             'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ACTION_REQUIRED,
             'renewal_retry_count' => 0,
             'renewal_last_attempt_at' => now(),
@@ -179,7 +193,17 @@ class PremiumSubscriptionRenewalService
             'renewal_checkout_session_id' => $sessionId,
             'renewal_checkout_url' => $checkoutUrl,
             'renewal_checkout_url_expires_at' => now()->addDay(),
-        ]);
+        ];
+
+        if (Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')) {
+            $sourceUpdatePayload['pending_premium_plan_id'] = null;
+        }
+
+        if (Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')) {
+            $sourceUpdatePayload['pending_plan_effective_at'] = null;
+        }
+
+        $sourceSubscription->update($sourceUpdatePayload);
 
         try {
             app(NotificationService::class)->sendToShopOwner(

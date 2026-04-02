@@ -473,9 +473,177 @@ body {
   box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
 }
 
+.swal2-popup.user-swal2-popup.user-terms-modal-popup {
+  width: min(46rem, calc(100vw - 1.75rem)) !important;
+  border-radius: 1rem !important;
+  padding: 1.6rem 1.5rem 1.2rem !important;
+  background: linear-gradient(180deg, #f9fbff 0%, #f2f4f8 100%) !important;
+  border: 1px solid #dce2ec !important;
+}
+
+.swal2-title.user-swal2-title.user-terms-modal-title {
+  margin-top: 0.1rem !important;
+  font-size: clamp(2rem, 2.2vw, 2.35rem) !important;
+  letter-spacing: -0.02em !important;
+  text-transform: uppercase;
+  color: #17233d !important;
+}
+
+.swal2-html-container.user-swal2-text.user-terms-modal-content {
+  margin-top: 0.5rem !important;
+  font-size: 1rem !important;
+}
+
+.terms-modal {
+  color: #2b3551;
+}
+
+.terms-modal__icon {
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 0.8rem;
+  display: grid;
+  place-items: center;
+  color: #26355f;
+  background: #e6ebf7;
+}
+
+.terms-modal__icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.terms-modal__intro {
+  margin: 0 0 0.85rem;
+  text-align: center;
+  font-size: 1rem;
+  color: #4a5778;
+}
+
+.terms-modal__scroll {
+  max-height: min(48vh, 27rem);
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #d4dbe8;
+  border-radius: 0.75rem;
+  padding: 1rem 1.05rem;
+  text-align: left;
+  line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.terms-modal__scroll h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1f2a47;
+}
+
+.terms-modal__scroll p {
+  margin: 0 0 0.9rem;
+  font-size: 0.93rem;
+  color: #33415f;
+}
+
+.terms-modal__scroll p:last-child {
+  margin-bottom: 0;
+}
+
+.terms-modal__scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.terms-modal__scroll::-webkit-scrollbar-track {
+  background: #eef2f8;
+  border-radius: 999px;
+}
+
+.terms-modal__scroll::-webkit-scrollbar-thumb {
+  background: #b7c0d4;
+  border-radius: 999px;
+  border: 2px solid #eef2f8;
+}
+
+.terms-modal__scroll::-webkit-scrollbar-thumb:hover {
+  background: #9ea9c2;
+}
+
+.terms-modal__hint {
+  margin: 0.6rem 0 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #6b758f;
+  font-weight: 600;
+}
+
+.swal2-actions.user-swal2-actions.user-terms-modal-actions {
+  margin-top: 1rem !important;
+}
+
+.swal2-confirm.user-swal2-confirm.user-terms-modal-accept,
+.swal2-cancel.user-swal2-cancel.user-terms-modal-decline {
+  border-radius: 0.75rem !important;
+  min-height: 2.9rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.16em !important;
+  text-transform: uppercase;
+}
+
+.swal2-confirm.user-swal2-confirm.user-terms-modal-accept {
+  background: #101828 !important;
+  border-color: #101828 !important;
+  color: #ffffff !important;
+}
+
+.swal2-confirm.user-swal2-confirm.user-terms-modal-accept:hover {
+  background: #1d2939 !important;
+  border-color: #1d2939 !important;
+}
+
+.swal2-confirm.user-swal2-confirm.user-terms-modal-accept:disabled,
+.swal2-confirm.user-swal2-confirm.user-terms-modal-accept.swal2-styled:disabled {
+  background: #c1c7d6 !important;
+  border-color: #c1c7d6 !important;
+  color: #edf1f8 !important;
+  cursor: not-allowed !important;
+  opacity: 1 !important;
+}
+
+.swal2-cancel.user-swal2-cancel.user-terms-modal-decline {
+  background: #f4f6fb !important;
+  color: #344054 !important;
+  border: 1px solid #d0d5dd !important;
+}
+
+.swal2-cancel.user-swal2-cancel.user-terms-modal-decline:hover {
+  background: #e9edf6 !important;
+}
+
 @media (max-width: 640px) {
   .swal2-popup.user-swal2-popup {
     padding: 1.6rem 1rem 1rem !important;
+  }
+
+  .swal2-popup.user-swal2-popup.user-terms-modal-popup {
+    width: min(95vw, 38rem) !important;
+    padding: 1.1rem 0.85rem 0.8rem !important;
+  }
+
+  .swal2-title.user-swal2-title.user-terms-modal-title {
+    font-size: 1.7rem !important;
+  }
+
+  .terms-modal__scroll {
+    max-height: 50vh;
+    padding: 0.84rem 0.78rem;
+  }
+
+  .swal2-confirm.user-swal2-confirm.user-terms-modal-accept,
+  .swal2-cancel.user-swal2-cancel.user-terms-modal-decline {
+    min-height: 2.7rem !important;
+    font-size: 0.72rem !important;
   }
 
   .swal2-title.user-swal2-title {

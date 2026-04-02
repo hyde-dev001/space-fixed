@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Head } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
 import { useFilteredPagination } from "../../../hooks/useFilteredPagination";
+import { useActivityLogFormatters } from "../../../hooks/useActivityLogFormatters";
 
 interface ActivityLog {
   id: number;
@@ -61,12 +62,6 @@ const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
 const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
   </svg>
 );
 
@@ -144,13 +139,13 @@ const MetricCard: React.FC<MetricData> = ({
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       {/* Animated background gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+      <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
+          <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
 
@@ -184,6 +179,7 @@ export default function ManagerAuditLogs() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [pagination, setPagination] = useState<PaginationData | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const { escapeHtml, formatSubjectType, formatValue, humanizeValue, parseUserAgent, getModalSubjectReference, formatDetailedDescription, getModalTitle } = useActivityLogFormatters();
 
   // Unified filter + pagination state with URL persistence
   const { page, perPage, filters, setFilter, setPersistentPage, resetFilters, loading, error, setLoading, setError } = useFilteredPagination({
@@ -231,161 +227,6 @@ export default function ManagerAuditLogs() {
     }
   };
 
-  // Format value for display
-  const formatValue = (value: any): string => {
-    if (value === null || value === undefined) return 'N/A';
-    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-    if (typeof value === 'object') return JSON.stringify(value);
-    if (typeof value === 'number' && value > 100 && value < 999999) {
-      // Likely a price
-      return `₱${parseFloat(value.toString()).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    return value.toString();
-  };
-
-  // Convert database enum values to human-readable labels
-  const humanizeValue = (value: any, fieldName: string = ''): string => {
-    if (value === null || value === undefined) return 'N/A';
-    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-    if (typeof value === 'object') return JSON.stringify(value);
-    if (typeof value === 'number') return formatValue(value);
-    
-    const str = value.toString();
-    
-    // Convert database enum Convention: assigned_to_repairer → Assigned to Repairer
-    return str
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
-
-  // Parse user agent to readable format
-  const parseUserAgent = (ua: string): string => {
-    if (!ua || ua === 'N/A') return 'Unknown Device';
-    
-    let browser = 'Unknown Browser';
-    let os = 'Unknown OS';
-    
-    if (ua.includes('Chrome')) browser = 'Chrome';
-    else if (ua.includes('Firefox')) browser = 'Firefox';
-    else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
-    else if (ua.includes('Edge')) browser = 'Edge';
-    
-    if (ua.includes('Windows')) os = 'Windows';
-    else if (ua.includes('Mac')) os = 'macOS';
-    else if (ua.includes('Linux')) os = 'Linux';
-    else if (ua.includes('Android')) os = 'Android';
-    else if (ua.includes('iOS')) os = 'iOS';
-    
-    return `${browser} on ${os}`;
-  };
-
-  // Format detailed description with context
-  const formatDetailedDescription = (log: ActivityLog): string => {
-    const causerName = log.causer?.name || 'Unknown User';
-    const subjectRef = getModalSubjectReference(log);
-    
-    const changes = log.changes || {};
-    const changedFields = Object.keys(changes);
-    
-    switch (log.event) {
-      case 'created':
-        return `${causerName} created ${subjectRef}`;
-      
-      case 'updated':
-        if (changedFields.length === 1) {
-          const change = changes[changedFields[0]];
-          const field = humanizeValue(change?.label || changedFields[0]);
-          const oldVal = humanizeValue(change?.old, changedFields[0]);
-          const newVal = humanizeValue(change?.new, changedFields[0]);
-          return `${causerName} updated the ${field} of ${subjectRef} from ${oldVal} to ${newVal}`;
-        } else if (changedFields.length > 1) {
-          return `${causerName} updated ${changedFields.length} fields in ${subjectRef}`;
-        }
-        return `${causerName} updated ${subjectRef}`;
-      
-      case 'deleted':
-        return `${causerName} deleted ${subjectRef}`;
-      
-      default:
-        return `${causerName} performed ${humanizeValue(log.event)} on ${subjectRef}`;
-    }
-  };
-
-  const isCodeLikeSubjectLabel = (label: string): boolean => {
-    const trimmed = label.trim();
-    return /^[A-Z]{2,8}-\d{4,}$/i.test(trimmed) || /^[A-Z]{2,8}\d{6,}$/i.test(trimmed);
-  };
-
-  const getModalSubjectReference = (log: ActivityLog): string => {
-    const subjectType = formatSubjectType(log.subject_type);
-
-    if (!log.subject_label) {
-      return subjectType;
-    }
-
-    const label = String(log.subject_label).trim();
-    if (!label || isCodeLikeSubjectLabel(label)) {
-      return subjectType;
-    }
-
-    return `${subjectType} ${label}`;
-  };
-
-  // Get concise modal title (focuses on what changed, not who changed it)
-  const getModalTitle = (log: ActivityLog): string => {
-    const subjectRef = getModalSubjectReference(log);
-    
-    const changes = log.changes || {};
-    const changedFields = Object.keys(changes);
-    
-    switch (log.event) {
-      case 'created':
-        return `${subjectRef} created`;
-      
-      case 'updated':
-        if (changedFields.length === 1) {
-          const change = changes[changedFields[0]];
-          const field = (change?.label || changedFields[0]).replace(/_/g, ' ');
-          const oldVal = humanizeValue(change?.old, changedFields[0]);
-          const newVal = humanizeValue(change?.new, changedFields[0]);
-          return `${field} changed for ${subjectRef} from ${oldVal} to ${newVal}`;
-        } else if (changedFields.length > 1) {
-          return `${changedFields.length} fields changed in ${subjectRef}`;
-        }
-        return `Updated ${subjectRef}`;
-      
-      case 'deleted':
-        return `${subjectRef} deleted`;
-      
-      default:
-        return `${subjectRef} - ${log.event}`;
-    }
-  };
-
-  // Get subject URL for linking
-  const getSubjectUrl = (log: ActivityLog): string | null => {
-    if (!log.subject_type || !log.subject_id) return null;
-    
-    const type = log.subject_type.split('\\').pop()?.toLowerCase();
-    
-    switch (type) {
-      case 'product':
-        return `/shop-owner/products?id=${log.subject_id}`;
-      case 'expense':
-        return `/finance/expenses?id=${log.subject_id}`;
-      case 'user':
-      case 'employee':
-        return `/shop-owner/user-access-control?id=${log.subject_id}`;
-      case 'order':
-        return `/shop-owner/orders?id=${log.subject_id}`;
-      case 'customer':
-        return `/erp/crm/customers?id=${log.subject_id}`;
-      default:
-        return null;
-    }
-  };
-
   const viewLogDetails = (log: ActivityLog) => {
     const properties = log.properties;
     const changes = log.changes || {};
@@ -417,14 +258,14 @@ export default function ManagerAuditLogs() {
     if (Object.keys(changes).length > 0) {
       diffHtml = `<div style="margin-top: 1rem;"><h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Changes Made:</h3><div style="display: flex; flex-direction: column; gap: 0.75rem;">`;
       for (const [field, change] of Object.entries(changes)) {
-        const fieldName = change.label || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const fieldName = escapeHtml(change.label || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()));
         diffHtml += `
           <div style="background-color: ${colors.grayBg}; padding: 0.75rem; border-radius: 0.5rem;">
             <p style="font-weight: 600; color: ${colors.grayDarkText}; margin-bottom: 0.5rem;">${fieldName}:</p>
             <div style="display: flex; gap: 1rem;">
               <div style="flex: 1;">
                 <p style="font-size: 0.75rem; color: ${colors.grayText}; margin-bottom: 0.25rem;">Old Value</p>
-                <p style="color: ${colors.redText}; text-decoration: line-through; background-color: ${colors.redBg}; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${formatValue(change.old)}</p>
+                <p style="color: ${colors.redText}; text-decoration: line-through; background-color: ${colors.redBg}; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${escapeHtml(formatValue(change.old))}</p>
               </div>
               <div style="display: flex; align-items: center;">
                 <svg style="width: 1.25rem; height: 1.25rem; color: ${colors.grayText};" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -433,7 +274,7 @@ export default function ManagerAuditLogs() {
               </div>
               <div style="flex: 1;">
                 <p style="font-size: 0.75rem; color: ${colors.grayText}; margin-bottom: 0.25rem;">New Value</p>
-                <p style="color: ${colors.greenText}; background-color: ${colors.greenBg}; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-weight: 600;">${formatValue(change.new)}</p>
+                <p style="color: ${colors.greenText}; background-color: ${colors.greenBg}; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-weight: 600;">${escapeHtml(formatValue(change.new))}</p>
               </div>
             </div>
           </div>
@@ -445,7 +286,7 @@ export default function ManagerAuditLogs() {
       if (Object.keys(attributes).length > 0) {
         diffHtml = `<div style="margin-top: 1rem;"><h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Created With:</h3><div style="background-color: ${colors.greenBg}; padding: 0.75rem; border-radius: 0.5rem;"><div style="display: flex; flex-direction: column; gap: 0.25rem;">`;
         for (const [key, value] of Object.entries(attributes)) {
-          diffHtml += `<div style="font-size: 0.875rem;"><span style="color: ${colors.greenText}; font-weight: 600;">${key.replace(/_/g, ' ')}:</span> ${formatValue(value)}</div>`;
+          diffHtml += `<div style="font-size: 0.875rem;"><span style="color: ${colors.greenText}; font-weight: 600;">${escapeHtml(key.replace(/_/g, ' '))}:</span> ${escapeHtml(formatValue(value))}</div>`;
         }
         diffHtml += '</div></div></div>';
       }
@@ -456,17 +297,17 @@ export default function ManagerAuditLogs() {
       <div style="margin-top: 1rem; border-top: 1px solid ${colors.borderColor}; padding-top: 1rem;">
         <h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Security Information:</h3>
         <div style="background-color: ${colors.blueBg}; padding: 0.75rem; border-radius: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
-          <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">IP Address:</span> <span style="color: ${colors.blueText}; font-family: monospace;">${log.metadata.ip_address}</span></p>
-          <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Device/Browser:</span> <span style="color: ${colors.grayText};">${parseUserAgent(log.metadata.user_agent)}</span></p>
+          <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">IP Address:</span> <span style="color: ${colors.blueText}; font-family: monospace;">${escapeHtml(log.metadata.ip_address)}</span></p>
+          <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Device/Browser:</span> <span style="color: ${colors.grayText};">${escapeHtml(parseUserAgent(log.metadata.user_agent))}</span></p>
         </div>
       </div>
     ` : '';
 
     const causerHtml = log.causer ? `
       <div style="background-color: ${colors.indigoBg}; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem;">
-        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Performed by:</span> <span style="color: ${colors.indigoText}; font-weight: 600;">${log.causer.name}</span></p>
-        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Role:</span> <span style="color: ${colors.indigoText};">${log.causer.role}</span></p>
-        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Email:</span> <span style="color: ${colors.grayText};">${log.causer.email}</span></p>
+        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Performed by:</span> <span style="color: ${colors.indigoText}; font-weight: 600;">${escapeHtml(log.causer.name)}</span></p>
+        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Role:</span> <span style="color: ${colors.indigoText};">${escapeHtml(log.causer.role)}</span></p>
+        <p style="font-size: 0.875rem;"><span style="font-weight: 600; color: ${colors.grayDarkText};">Email:</span> <span style="color: ${colors.grayText};">${escapeHtml(log.causer.email)}</span></p>
       </div>
     ` : '';
 
@@ -475,8 +316,8 @@ export default function ManagerAuditLogs() {
       html: `
         <div style="text-align: left; color: ${colors.grayDarkText};">
           ${causerHtml}
-          <p style="margin-bottom: 0.5rem; font-size: 0.875rem;"><strong>Date:</strong> ${new Date(log.created_at).toLocaleString()}</p>
-          <p style="margin-bottom: 1rem; font-size: 0.875rem;"><strong>Subject Type:</strong> ${formatSubjectType(log.subject_type)}</p>
+          <p style="margin-bottom: 0.5rem; font-size: 0.875rem;"><strong>Date:</strong> ${escapeHtml(new Date(log.created_at).toLocaleString())}</p>
+          <p style="margin-bottom: 1rem; font-size: 0.875rem;"><strong>Subject Type:</strong> ${escapeHtml(formatSubjectType(log.subject_type))}</p>
           ${diffHtml}
           ${metadataHtml}
         </div>
@@ -501,32 +342,6 @@ export default function ManagerAuditLogs() {
       case 'deleted': return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400';
       default: return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200';
     }
-  };
-
-  const formatSubjectType = (type: string | null) => {
-    if (!type) return 'N/A';
-    const parts = type.split('\\');
-    const typeName = parts[parts.length - 1];
-    
-    // Convert to user-friendly names
-    const friendlyNames: Record<string, string> = {
-      'Product': 'Product',
-      'Expense': 'Expense',
-      'Invoice': 'Invoice',
-      'User': 'Employee',
-      'Employee': 'Employee',
-      'Order': 'Order',
-      'Customer': 'Customer',
-      'RepairService': 'Repair Service',
-      'RepairRequest': 'Repair Request',
-      'LeaveRequest': 'Leave Request',
-      'AttendanceRecord': 'Attendance Record',
-      'Attendance': 'Attendance',
-      'Payroll': 'Payroll',
-      'PriceChangeRequest': 'Price Change Request',
-    };
-    
-    return friendlyNames[typeName] || typeName;
   };
 
   return (
@@ -597,7 +412,6 @@ export default function ManagerAuditLogs() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-semibold mb-4 hover:text-blue-600 dark:hover:text-blue-400 transition"
-            aria-expanded={showFilters}
             aria-label={showFilters ? "Hide audit log filters" : "Show audit log filters"}
           >
             <FunnelIcon className="w-5 h-5" />
@@ -736,7 +550,6 @@ export default function ManagerAuditLogs() {
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                     {logs.map((log) => {
-                      const subjectUrl = getSubjectUrl(log);
                       const formattedDesc = formatDetailedDescription(log);
                       
                       return (

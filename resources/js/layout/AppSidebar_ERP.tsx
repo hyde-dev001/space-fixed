@@ -577,6 +577,17 @@ const staffItems: NavItem[] = [
 const repairItems: NavItem[] = [
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 6h15l-1.4 7H8L6 4H3"></path>
+        <circle cx="9" cy="19" r="1.5"></circle>
+        <circle cx="18" cy="19" r="1.5"></circle>
+      </svg>
+    ),
+    name: "Point of Sale",
+    route: "erp.repairer.point-of-sale",
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
         <path d="M3 3v18h18"></path>
         <path d="M7 15v-4"></path>
@@ -817,6 +828,7 @@ const AppSidebar_ERP: React.FC = () => {
     // User section routes
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
+    "erp.repairer.point-of-sale": "/erp/repairer/point-of-sale",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
     "erp.staff.job-orders": "/erp/staff/job-orders",
@@ -1411,6 +1423,11 @@ const AppSidebar_ERP: React.FC = () => {
   // Filter repair items based on user permissions
   const getFilteredRepairItems = () => {
     return repairItems.filter((item) => {
+      // Point of Sale - use existing repairer permissions for frontend-first rollout
+      if (item.route === "erp.repairer.point-of-sale") {
+        return permissions.includes('access-repair-job-orders') || permissions.includes('access-repairer-dashboard');
+      }
+
       // Repair Dashboard - check simplified permission
       if (item.route === "erp.staff.repair-dashboard") {
         return permissions.includes('access-repairer-dashboard');

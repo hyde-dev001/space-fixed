@@ -37,6 +37,7 @@ export default function Register() {
       if (!formData.email.trim()) newErrors.email = 'Enter your email address.';
       else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) newErrors.email = 'Enter a valid email address.';
       if (!formData.phone.trim()) newErrors.phone = 'Enter your phone number.';
+      else if (!/^\d{11}$/.test(formData.phone.trim())) newErrors.phone = 'Phone number must be 11 digits.';
     } else if (step === 2) {
       if (!formData.age.trim()) newErrors.age = 'Enter your age.';
       else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18.';
@@ -65,6 +66,7 @@ export default function Register() {
     if (!formData.email.trim()) newErrors.email = 'Enter your email address.';
     else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) newErrors.email = 'Enter a valid email address.';
     if (!formData.phone.trim()) newErrors.phone = 'Enter your phone number.';
+    else if (!/^\d{11}$/.test(formData.phone.trim())) newErrors.phone = 'Phone number must be 11 digits.';
     if (!formData.age.trim()) newErrors.age = 'Enter your age.';
     else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18.';
     if (!formData.address.trim()) newErrors.address = 'Enter your address.';
@@ -82,10 +84,50 @@ export default function Register() {
     return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
   };
 
-  const handleNext = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep(currentStep + 1);
+  const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(email)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify email right now. Please try again.',
+      };
     }
+  };
+
+  const handleNext = async () => {
+    if (!validateStep(currentStep)) {
+      return;
+    }
+
+    if (currentStep === 1) {
+      const trimmedEmail = formData.email.trim();
+      const result = await checkEmailAvailability(trimmedEmail);
+
+      if (!result.available) {
+        const message = result.message || 'This email is already registered';
+        setErrors(prev => ({ ...prev, email: message }));
+        Swal.fire({
+          icon: 'error',
+          title: 'Email not available',
+          text: message,
+        });
+        return;
+      }
+    }
+
+    setCurrentStep(currentStep + 1);
   };
 
   const handlePrev = () => {
@@ -94,6 +136,20 @@ export default function Register() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+
+    if (name === 'phone') {
+      const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
+      setFormData(prev => ({
+        ...prev,
+        phone: digitsOnly
+      }));
+
+      if (errors.phone) {
+        setErrors(prev => ({ ...prev, phone: undefined }));
+      }
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -128,14 +184,114 @@ export default function Register() {
     }
   };
 
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCheckboxChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, checked } = e.target;
+    if (name === 'termsAccepted' && checked) {
+      const result = await Swal.fire({
+        title: 'TERMS OF SERVICE',
+        html: `
+          <div class="terms-modal">
+            <div class="terms-modal__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="8" y="3" width="8" height="4" rx="1"></rect>
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+                <path d="M9 12h6"></path>
+                <path d="M9 16h6"></path>
+              </svg>
+            </div>
+            <p class="terms-modal__intro">
+              Please read these terms before creating your account.
+            </p>
+
+            <div class="terms-modal__scroll">
+              <h3>1. Acceptance of Terms</h3>
+              <p>
+                By continuing registration, you confirm that you have read, understood, and agreed to these Terms of Service and our account verification requirements.
+              </p>
+
+              <h3>2. Information We Request</h3>
+              <p>
+                We ask for your basic personal details and a valid government-issued ID to verify identity, protect legitimate users, and maintain a secure marketplace.
+              </p>
+
+              <h3>3. Security and Anti-Fraud Policy</h3>
+              <p>
+                Verification helps us detect and prevent scam accounts, impersonation, and unauthorized activity. Accounts with suspicious or false documents may be restricted or removed.
+              </p>
+
+              <h3>4. Accuracy of Information</h3>
+              <p>
+                You agree to provide true, complete, and updated information. Submitting misleading details or invalid IDs is a violation of platform policy.
+              </p>
+
+              <h3>5. Data Protection</h3>
+              <p>
+                Your data is processed for security, compliance, and account verification purposes. We apply reasonable safeguards to protect submitted information.
+              </p>
+
+              <h3>6. User Responsibility</h3>
+              <p>
+                You are responsible for keeping your account credentials confidential and for all activities under your account.
+              </p>
+
+              <h3>7. Agreement</h3>
+              <p>
+                Choosing <strong>Accept</strong> means you agree to these terms and consent to identity verification as part of account security.
+              </p>
+            </div>
+            <p class="terms-modal__hint">Scroll to the bottom to enable the Accept button.</p>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Accept',
+        cancelButtonText: 'Decline',
+        allowOutsideClick: false,
+        allowEscapeKey: true,
+        didOpen: () => {
+          const confirmButton = Swal.getConfirmButton();
+          const scrollBox = document.querySelector('.terms-modal__scroll') as HTMLElement | null;
+
+          if (!confirmButton || !scrollBox) return;
+
+          confirmButton.disabled = true;
+
+          const unlockWhenAtBottom = () => {
+            const threshold = 8;
+            const reachedBottom = scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - threshold;
+            confirmButton.disabled = !reachedBottom;
+          };
+
+          scrollBox.addEventListener('scroll', unlockWhenAtBottom, { passive: true });
+          unlockWhenAtBottom();
+        },
+        customClass: {
+          popup: 'user-terms-modal-popup',
+          title: 'user-terms-modal-title',
+          htmlContainer: 'user-terms-modal-content',
+          actions: 'user-terms-modal-actions',
+          confirmButton: 'user-terms-modal-accept',
+          cancelButton: 'user-terms-modal-decline',
+        },
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        [name]: result.isConfirmed,
+      }));
+
+      if (result.isConfirmed && errors[name]) {
+        setErrors(prev => ({ ...prev, [name]: undefined }));
+      }
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
       [name]: checked
     }));
+
     // Clear error when checkbox is checked
-    if (errors[name]) {
+    if (checked && errors[name]) {
       setErrors(prev => ({ ...prev, [name]: undefined }));
     }
   };
@@ -338,6 +494,9 @@ export default function Register() {
                         placeholder="Enter your phone number"
                         value={formData.phone}
                         onChange={handleInputChange}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={11}
                         className={`pl-10 ${authInputClasses} ${errors.phone ? 'border-red-500' : ''}`}
                       />
                     </div>
@@ -427,6 +586,12 @@ export default function Register() {
                       isUploaded={!!formData.validId}
                       fileName={formData.validId?.name}
                     />
+                    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
+                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                        We use one government-issued ID to confirm that each account belongs to a real person and to help prevent scam or fake accounts.
+                      </p>
+                    </div>
                     {formData.validId && (
                       <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                         <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">

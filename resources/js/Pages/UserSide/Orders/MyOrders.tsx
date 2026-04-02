@@ -28,9 +28,19 @@ type Order = {
   refund_status_note?: string | null;
   total_amount: number;
   shipping_fee?: number;
+  vat_amount?: number;
+  vat_rate?: number;
   grand_total?: number;
   total_paid?: number;
   created_at: string;
+  cancellation_refund_deadline_at?: string | null;
+  cancellation_refund_deadline_passed?: boolean;
+  cancellation_refund_window_minutes?: number;
+  can_cancel?: boolean;
+  can_request_refund?: boolean;
+  cancellation_reason?: string | null;
+  cancellation_note?: string | null;
+  cancellation_other_reason_note?: string | null;
   shop_id?: number | null;
   shop_name: string;
   shop_address?: string | null;
@@ -46,15 +56,26 @@ type Order = {
   refund_stage?: {
     id: number;
     status: string;
+    reason_code?: string | null;
+    reason_note?: string | null;
+    other_reason_note?: string | null;
     shop_owner_status: string;
     finance_status: string;
     return_status: string;
+    return_source?: string;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
     customer_return_rider_phone?: string | null;
     customer_return_tracking_link?: string | null;
     customer_return_shipped_at?: string | null;
+    staff_return_tracking_number?: string | null;
+    staff_return_carrier?: string | null;
+    staff_return_rider_name?: string | null;
+    staff_return_rider_phone?: string | null;
+    staff_return_tracking_link?: string | null;
+    staff_return_shipped_at?: string | null;
+    return_arranged_by_staff_at?: string | null;
     return_confirmed_at?: string | null;
     refund_executed_at?: string | null;
     rejection_reason?: string | null;
@@ -81,6 +102,7 @@ const MyOrders: React.FC = () => {
   const [cancelTargetOrderItemId, setCancelTargetOrderItemId] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [cancelNote, setCancelNote] = useState<string>('');
+  const [cancelOtherReasonNote, setCancelOtherReasonNote] = useState<string>('');
   
   // Refund modal states
   const [showRefundModal, setShowRefundModal] = useState(false);
@@ -90,8 +112,41 @@ const MyOrders: React.FC = () => {
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
+  const [refundOtherReasonNote, setRefundOtherReasonNote] = useState<string>('');
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [showReasonDetailsModal, setShowReasonDetailsModal] = useState(false);
+  const [reasonDetailsOrder, setReasonDetailsOrder] = useState<Order | null>(null);
+
+  const isOtherReason = (value?: string | null): boolean => String(value || '').trim().toLowerCase() === 'other';
+
+  const hasReasonDetails = (order: Order): boolean => {
+    const hasCancellationDetails = Boolean(
+      String(order.cancellation_reason || '').trim()
+      || String(order.cancellation_other_reason_note || '').trim()
+      || String(order.cancellation_note || '').trim()
+    );
+
+    const stage = order.refund_stage;
+    const hasRefundDetails = Boolean(
+      String(stage?.reason_code || '').trim()
+      || String(stage?.other_reason_note || '').trim()
+      || String(stage?.reason_note || '').trim()
+    );
+
+    return hasCancellationDetails || hasRefundDetails;
+  };
+
+  const humanizeReasonCode = (value?: string | null): string => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '-';
+
+    return normalized
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
 
   const isReturnRefundOrder = (order: Order): boolean => {
     const refundStatus = String(order.refund_status || '').toLowerCase();
@@ -251,11 +306,17 @@ const MyOrders: React.FC = () => {
 
       // Update local state
       setOrders(prev => 
-        prev.map(order => 
-          order.id === orderId 
-            ? { ...order, status: 'delivered' } 
-            : order
-        )
+        prev.map(order => {
+          if (order.id !== orderId) return order;
+
+          const nowPassed = isDeadlinePassed(order);
+          return {
+            ...order,
+            status: 'delivered',
+            // Recompute locally so REFUND activates immediately without a full page refresh.
+            can_request_refund: !nowPassed,
+          };
+        })
       );
 
       Swal.fire({
@@ -275,7 +336,13 @@ const MyOrders: React.FC = () => {
     }
   };
 
-  const cancelOrder = async (orderId: number, reason?: string, note?: string, orderItemId?: number | null) => {
+  const cancelOrder = async (
+    orderId: number,
+    reason?: string,
+    note?: string,
+    otherReasonNote?: string,
+    orderItemId?: number | null,
+  ) => {
     if (!reason) {
       Swal.fire({
         icon: 'warning',
@@ -299,6 +366,7 @@ const MyOrders: React.FC = () => {
           order_item_id: orderItemId || null,
           reason: reason || null,
           note: note || null,
+          other_reason_note: otherReasonNote || null,
         }),
       });
 
@@ -331,6 +399,9 @@ const MyOrders: React.FC = () => {
               status: 'cancelled',
               refund_status: derivedRefundStatus,
               refund_status_note: derivedRefundNote,
+              cancellation_reason: reason || null,
+              cancellation_note: note || null,
+              cancellation_other_reason_note: otherReasonNote || null,
             };
           }
 
@@ -441,10 +512,13 @@ const MyOrders: React.FC = () => {
     const shopOwnerStatus = String(stage.shop_owner_status || '').toLowerCase();
     const financeStatus = String(stage.finance_status || '').toLowerCase();
     const returnStatus = String(stage.return_status || '').toLowerCase();
+    const returnSource = String(stage.return_source || 'customer').toLowerCase();
 
     if (order.payment_status === 'refunded' || stage.is_refunded || status === 'succeeded') return 'Refunded';
     if (status === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') return 'Refund Rejected';
+    if (returnStatus === 'pending_staff_pickup') return 'Staff Pickup Scheduled';
     if (returnStatus === 'pending_customer_shipment') return 'Ship Defective Product';
+    if (returnStatus === 'in_transit' && returnSource === 'staff') return 'Picked Up by Staff Rider';
     if (['in_transit', 'received'].includes(returnStatus) && shopOwnerStatus === 'approved' && financeStatus === 'approved') {
       return 'Awaiting Finance Refund Release';
     }
@@ -484,145 +558,99 @@ const MyOrders: React.FC = () => {
     return order.status;
   };
 
-  const handleMarkRefundReturnShipped = async (order: Order) => {
-    const stage = order.refund_stage;
-    if (!stage?.id) return;
-
-    const shipmentInput = await Swal.fire({
-      title: 'Return Shipment Details',
-      html: `
-        <div style="display:grid;gap:10px;text-align:left;">
-          <label style="font-size:13px;font-weight:600;">Carrier Company</label>
-          <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" style="margin:0;" />
-
-          <label style="font-size:13px;font-weight:600;">Rider Name</label>
-          <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" style="margin:0;" />
-
-          <label style="font-size:13px;font-weight:600;">Rider Number</label>
-          <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" inputmode="numeric" pattern="[0-9]*" maxlength="15" style="margin:0;" />
-
-          <label style="font-size:13px;font-weight:600;">Tracking Number</label>
-          <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" style="margin:0;" />
-
-          <label style="font-size:13px;font-weight:600;">Tracking Link</label>
-          <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." style="margin:0;" />
-        </div>
-      `,
-      showCancelButton: true,
-      confirmButtonText: 'Submit',
-      confirmButtonColor: '#000000',
-      focusConfirm: false,
-      didOpen: () => {
-        const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
-        if (!riderPhoneInput) return;
-
-        riderPhoneInput.addEventListener('input', () => {
-          riderPhoneInput.value = riderPhoneInput.value.replace(/\D/g, '');
-        });
-      },
-      preConfirm: () => {
-        const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
-        const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
-        const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
-        const trackingNumber = (document.getElementById('swal-tracking-number') as HTMLInputElement | null)?.value?.trim() || '';
-        const trackingLink = (document.getElementById('swal-tracking-link') as HTMLInputElement | null)?.value?.trim() || '';
-
-        if (!carrierCompany || !riderName || !riderPhone || !trackingNumber || !trackingLink) {
-          Swal.showValidationMessage('Please complete all shipment details.');
-          return null;
-        }
-
-        if (!/^\d+$/.test(riderPhone)) {
-          Swal.showValidationMessage('Rider Number must contain numbers only.');
-          return null;
-        }
-
-        try {
-          new URL(trackingLink);
-        } catch {
-          Swal.showValidationMessage('Tracking link must be a valid URL.');
-          return null;
-        }
-
-        return {
-          carrierCompany,
-          riderName,
-          riderPhone,
-          trackingNumber,
-          trackingLink,
-        };
-      },
-    });
-
-    if (!shipmentInput.isConfirmed || !shipmentInput.value) return;
-
-    try {
-      const response = await fetch(`/orders/refunds/${stage.id}/mark-shipped-return`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-        },
-        body: JSON.stringify({
-          tracking_number: shipmentInput.value.trackingNumber,
-          carrier_company: shipmentInput.value.carrierCompany,
-          rider_name: shipmentInput.value.riderName,
-          rider_phone: shipmentInput.value.riderPhone,
-          tracking_link: shipmentInput.value.trackingLink,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.message || 'Unable to submit return shipment details.');
-      }
-
-      setOrders((prev) =>
-        prev.map((item) =>
-          item.id === order.id
-            ? {
-                ...item,
-                refund_stage: {
-                  ...(item.refund_stage || stage),
-                  return_status: String(data?.refund?.return_status || 'in_transit'),
-                  customer_return_tracking_number: data?.refund?.customer_return_tracking_number || shipmentInput.value.trackingNumber,
-                  customer_return_carrier: data?.refund?.customer_return_carrier || shipmentInput.value.carrierCompany,
-                  customer_return_rider_name: data?.refund?.customer_return_rider_name || shipmentInput.value.riderName,
-                  customer_return_rider_phone: data?.refund?.customer_return_rider_phone || shipmentInput.value.riderPhone,
-                  customer_return_tracking_link: data?.refund?.customer_return_tracking_link || shipmentInput.value.trackingLink,
-                },
-                refund_status: 'processing',
-                refund_status_note: data?.message || 'Return shipment submitted. Waiting for staff confirmation.',
-              }
-            : item
-        )
-      );
-
-      Swal.fire({
-        icon: 'success',
-        title: 'Return Shipment Submitted',
-        text: data?.message || 'Your return shipment details were submitted successfully.',
-        confirmButtonColor: '#000000',
-      });
-    } catch (error) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Failed',
-        text: error instanceof Error ? error.message : 'Unable to submit return shipment details.',
-        confirmButtonColor: '#000000',
-      });
-    }
-  };
-
   const parseAmount = (value: unknown): number => {
     const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ''));
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
+  const resolveOrderVatAmount = (order: Order): number | null => {
+    const rawVatAmount = order.vat_amount as unknown;
+    const numericVatAmount = Number(rawVatAmount);
+    const hasExplicitVatAmount = rawVatAmount !== undefined && rawVatAmount !== null && Number.isFinite(numericVatAmount);
+
+    if (hasExplicitVatAmount && numericVatAmount >= 0) {
+      return numericVatAmount;
+    }
+
+    return null;
+  };
+
+  const resolveOrderVatRate = (order: Order): number | null => {
+    const rawVatRate = Number(order.vat_rate);
+    if (Number.isFinite(rawVatRate) && rawVatRate >= 0) {
+      return rawVatRate;
+    }
+
+    return null;
+  };
+
+  const resolveOrderGrandTotal = (order: Order): number => {
+    const parsedGrandTotal = parseAmount(order.grand_total);
+    if (parsedGrandTotal > 0) {
+      return parsedGrandTotal;
+    }
+
+    const subtotal = parseAmount(order.total_amount);
+    const shipping = parseAmount(order.shipping_fee);
+    const vat = resolveOrderVatAmount(order) ?? 0;
+
+    return subtotal + shipping + vat;
+  };
+
   const formatPeso = (value: unknown): string => {
     return `₱${parseAmount(value).toLocaleString()}`;
+  };
+
+  const isDeadlinePassed = (order: Order): boolean => {
+    if (typeof order.cancellation_refund_deadline_passed === 'boolean') {
+      return order.cancellation_refund_deadline_passed;
+    }
+
+    if (!order.cancellation_refund_deadline_at) {
+      return false;
+    }
+
+    const deadlineTime = new Date(order.cancellation_refund_deadline_at).getTime();
+    if (!Number.isFinite(deadlineTime)) {
+      return false;
+    }
+
+    return Date.now() > deadlineTime;
+  };
+
+  const canCancelOrder = (order: Order): boolean => {
+    if (typeof order.can_cancel === 'boolean') {
+      return order.can_cancel;
+    }
+
+    return order.status === 'pending' && !isDeadlinePassed(order);
+  };
+
+  const canRequestRefund = (order: Order): boolean => {
+    const isDeliveredOrCompleted = ['delivered', 'completed'].includes(order.status);
+    if (!isDeliveredOrCompleted) {
+      return false;
+    }
+
+    // Always honor local status+deadline so the button enables immediately after delivery confirmation.
+    return !isDeadlinePassed(order);
+  };
+
+  const formatDeadline = (deadlineIso?: string | null): string => {
+    if (!deadlineIso) return 'Not set';
+
+    const deadline = new Date(deadlineIso);
+    if (!Number.isFinite(deadline.getTime())) return 'Not set';
+
+    return deadline.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    });
   };
 
   const resolveOrderItemColor = (order: Order, item: OrderItem): string => {
@@ -656,16 +684,27 @@ const MyOrders: React.FC = () => {
       Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
       return;
     }
+    if (isOtherReason(selectedReason) && !cancelOtherReasonNote.trim()) {
+      Swal.fire({ icon: 'warning', title: 'Other Reason Note is required', confirmButtonColor: '#000000' });
+      return;
+    }
 
     setIsSubmittingCancel(true);
     try {
       // perform cancel with reason and optional note
-      await cancelOrder(cancelTargetOrderId, selectedReason, cancelNote, cancelTargetOrderItemId);
+      await cancelOrder(
+        cancelTargetOrderId,
+        selectedReason,
+        cancelNote,
+        cancelOtherReasonNote,
+        cancelTargetOrderItemId,
+      );
       setShowCancelModal(false);
       setCancelTargetOrderId(null);
       setCancelTargetOrderItemId(null);
       setSelectedReason('');
       setCancelNote('');
+      setCancelOtherReasonNote('');
     } finally {
       setIsSubmittingCancel(false);
     }
@@ -676,6 +715,10 @@ const MyOrders: React.FC = () => {
     
     if (!refundReason) {
       Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
+      return;
+    }
+    if (isOtherReason(refundReason) && !refundOtherReasonNote.trim()) {
+      Swal.fire({ icon: 'warning', title: 'Other Reason Note is required', confirmButtonColor: '#000000' });
       return;
     }
     
@@ -705,6 +748,7 @@ const MyOrders: React.FC = () => {
       formData.append('order_id', refundOrderId.toString());
       formData.append('reason', refundReason);
       formData.append('note', refundNote);
+      formData.append('other_reason_note', refundOtherReasonNote);
       
       // Append all media files
       refundMedia.forEach((file, index) => {
@@ -748,6 +792,7 @@ const MyOrders: React.FC = () => {
       setRefundReason('');
       setRefundMedia([]);
       setRefundNote('');
+      setRefundOtherReasonNote('');
 
       setOrders((prev) =>
         prev.map((order) =>
@@ -760,6 +805,9 @@ const MyOrders: React.FC = () => {
                   ? {
                       id: Number(data.refund.id || 0),
                       status: String(data.refund.status || 'pending_approval'),
+                      reason_code: String(data.refund.reason_code || refundReason),
+                      reason_note: data.refund.reason_note ?? [refundReason, refundOtherReasonNote, refundNote].filter(Boolean).join('\n\n'),
+                      other_reason_note: data.refund.other_reason_note ?? (refundOtherReasonNote || null),
                       shop_owner_status: String(data.refund.shop_owner_status || 'pending'),
                       finance_status: String(data.refund.finance_status || 'pending'),
                       return_status: String(data.refund.return_status || 'awaiting_approval'),
@@ -881,6 +929,7 @@ const MyOrders: React.FC = () => {
   const actionButtonDangerClass =
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
+  const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -1014,8 +1063,17 @@ const MyOrders: React.FC = () => {
               {filteredOrders.map((order) => {
                   const orderItems = order.items || [];
                   const primaryItem = orderItems[0];
+                  const orderSubtotal = parseAmount(order.total_amount);
+                  const orderShipping = parseAmount(order.shipping_fee);
+                  const orderVatAmount = resolveOrderVatAmount(order);
+                  const orderVatRate = resolveOrderVatRate(order);
+                  const orderGrandTotal = resolveOrderGrandTotal(order);
+                  const orderTotalPaid = parseAmount(order.total_paid) > 0 ? parseAmount(order.total_paid) : orderGrandTotal;
                   const displayStatus = getDisplayStatus(order);
                   const refundStageText = getRefundStageText(order);
+                  const deadlinePassed = isDeadlinePassed(order);
+                  const canCancel = canCancelOrder(order);
+                  const canRefund = canRequestRefund(order);
                   const shouldShowRefundDetails = displayStatus === 'refund_rejected'
                     && isOnlinePaymentOrder(order)
                     && Boolean(order.refund_stage?.rejection_reason || order.refund_status_note);
@@ -1042,6 +1100,14 @@ const MyOrders: React.FC = () => {
                               })}
                             </p>
                           </div>
+                          {['delivered', 'completed'].includes(order.status) && (
+                            <div>
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Refund Deadline</p>
+                              <p className={`text-sm ${deadlinePassed ? 'text-red-600 font-medium' : 'text-black'}`}>
+                                {formatDeadline(order.cancellation_refund_deadline_at)}
+                              </p>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <span
@@ -1129,10 +1195,24 @@ const MyOrders: React.FC = () => {
                             )}
                           </div>
                           <div className="text-right">
+                            <div className="space-y-1 mb-2 text-xs text-gray-500">
+                              <div className="flex items-center justify-end gap-3">
+                                <span>Subtotal</span>
+                                <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
+                              </div>
+                              <div className="flex items-center justify-end gap-3">
+                                <span>Shipping</span>
+                                <span className="text-gray-700">{formatPeso(orderShipping)}</span>
+                              </div>
+                              <div className="flex items-center justify-end gap-3">
+                                <span>{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
+                                <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
+                              </div>
+                            </div>
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-2">Total Paid</p>
                             <div className="flex items-center justify-end text-black">
                               <span className="font-semibold text-lg">
-                                {formatPeso(order.total_paid ?? order.grand_total ?? (parseAmount(order.total_amount) + parseAmount(order.shipping_fee)))}
+                                {formatPeso(orderTotalPaid)}
                               </span>
                             </div>
                           </div>
@@ -1178,23 +1258,98 @@ const MyOrders: React.FC = () => {
                         </div>
                       )}
 
+                      {(() => {
+                        const stage = order.refund_stage;
+                        if (!stage) return null;
+
+                        const returnStatus = String(stage.return_status || '').toLowerCase();
+                        const returnSource = String(stage.return_source || 'customer').toLowerCase();
+                        const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
+
+                        if (!hasStaffPickupDetails) return null;
+
+                        return (
+                          <div className="mt-6 pt-6 border-t border-gray-200">
+                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
+                                <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Company</p>
+                                <p className="text-sm text-black font-medium">{stage.staff_return_carrier || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Name</p>
+                                <p className="text-sm text-black font-medium">{stage.staff_return_rider_name || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Phone</p>
+                                <p className="text-sm text-black font-medium">{stage.staff_return_rider_phone || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number</p>
+                                <p className="text-sm text-black font-medium">{stage.staff_return_tracking_number || '-'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Arranged At</p>
+                                <p className="text-sm text-black font-medium">{stage.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
+                              </div>
+                              <div className="md:col-span-2">
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
+                                {stage.staff_return_tracking_link ? (
+                                  <a
+                                    href={stage.staff_return_tracking_link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm text-black underline break-all"
+                                  >
+                                    {stage.staff_return_tracking_link}
+                                  </a>
+                                ) : (
+                                  <p className="text-sm text-black font-medium">-</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Order Actions */}
                       <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
                         {order.status === 'pending' && (
                           <>
                             <button
+                              disabled={!canCancel}
                               onClick={() => {
+                                if (!canCancel) {
+                                  return;
+                                }
                                 setCancelTargetOrderId(order.id);
                                 setCancelTargetOrderItemId(null);
                                 setSelectedReason('');
                                 setCancelNote('');
+                                setCancelOtherReasonNote('');
                                 setShowCancelModal(true);
                               }}
-                              className={`${actionButtonBaseClass} ${actionButtonDangerClass}`}
+                              title={canCancel ? 'Cancel this order' : 'Cancellation deadline has passed'}
+                              className={`${actionButtonBaseClass} ${canCancel ? actionButtonDangerClass : actionButtonDisabledClass}`}
                             >
                               CANCEL ORDER
                             </button>
                           </>
+                        )}
+                        {hasReasonDetails(order) && (
+                          <button
+                            onClick={() => {
+                              setReasonDetailsOrder(order);
+                              setShowReasonDetailsModal(true);
+                            }}
+                            className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                          >
+                            VIEW REASON DETAILS
+                          </button>
                         )}
                         {(order.status === 'shipped' || order.status === 'to_ship') && (
                           <button
@@ -1212,24 +1367,23 @@ const MyOrders: React.FC = () => {
                         )}
                         {['delivered', 'completed'].includes(order.status) && (
                           <>
-                            {order.refund_stage?.can_mark_return_shipped ? (
+                            {!order.refund_stage ? (
                               <button
-                                onClick={() => handleMarkRefundReturnShipped(order)}
-                                className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
-                              >
-                                SHIP DEFECTIVE PRODUCT
-                              </button>
-                            ) : !order.refund_stage ? (
-                              <button
+                                disabled={!canRefund}
                                 onClick={() => {
+                                  if (!canRefund) {
+                                    return;
+                                  }
                                   setRefundOrderId(order.id);
                                   setRefundStep(1);
                                   setRefundReason('');
                                   setRefundMedia([]);
                                   setRefundNote('');
+                                  setRefundOtherReasonNote('');
                                   setShowRefundModal(true);
                                 }}
-                                className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                                title={canRefund ? 'Request refund' : 'Refund deadline has passed'}
+                                className={`${actionButtonBaseClass} ${canRefund ? actionButtonSecondaryClass : actionButtonDisabledClass}`}
                               >
                                 REFUND
                               </button>
@@ -1262,6 +1416,21 @@ const MyOrders: React.FC = () => {
                           </Link>
                         )}
                       </div>
+
+                      {/* Status Guidance */}
+                      {order.status === 'pending' && (
+                        <p className="mt-3 text-xs text-gray-500 text-right">
+                          You can't cancel the order once it gets processed.
+                        </p>
+                      )}
+
+                      {['delivered', 'completed'].includes(order.status) && (
+                        <p className={`mt-3 text-xs text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
+                          {canRefund
+                            ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
+                            : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );
@@ -1279,6 +1448,7 @@ const MyOrders: React.FC = () => {
                 setCancelTargetOrderItemId(null);
                 setSelectedReason('');
                 setCancelNote('');
+                setCancelOtherReasonNote('');
               }}
             ></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-lg w-full mx-4">
@@ -1313,16 +1483,27 @@ const MyOrders: React.FC = () => {
 
                   {selectedReason === 'other' && (
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">Note (optional)</label>
+                      <label className="block text-sm text-gray-600 mb-2">Other Reason Note <span className="text-red-500">*</span></label>
                       <textarea
-                        value={cancelNote}
-                        onChange={(e) => setCancelNote(e.target.value)}
+                        value={cancelOtherReasonNote}
+                        onChange={(e) => setCancelOtherReasonNote(e.target.value)}
                         className="w-full border border-gray-200 rounded p-2 text-sm"
                         rows={3}
-                        placeholder="Add a note about the reason..."
+                        placeholder="Please specify your reason..."
                       />
                     </div>
                   )}
+
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">Note (optional)</label>
+                    <textarea
+                      value={cancelNote}
+                      onChange={(e) => setCancelNote(e.target.value)}
+                      className="w-full border border-gray-200 rounded p-2 text-sm"
+                      rows={3}
+                      placeholder="Add a note about the reason..."
+                    />
+                  </div>
                 </div>
               </div>
               <div className="px-6 py-4 border-t flex justify-end gap-3">
@@ -1333,6 +1514,7 @@ const MyOrders: React.FC = () => {
                     setCancelTargetOrderItemId(null);
                     setSelectedReason('');
                     setCancelNote('');
+                    setCancelOtherReasonNote('');
                   }}
                   className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                 >
@@ -1340,8 +1522,8 @@ const MyOrders: React.FC = () => {
                 </button>
                 <button
                   onClick={handleSubmitCancel}
-                  disabled={!selectedReason || isSubmittingCancel}
-                  className={`${actionButtonBaseClass} ${!selectedReason || isSubmittingCancel ? actionButtonDisabledClass : actionButtonDangerClass}`}
+                  disabled={!selectedReason || (isOtherReason(selectedReason) && !cancelOtherReasonNote.trim()) || isSubmittingCancel}
+                  className={`${actionButtonBaseClass} ${!selectedReason || (isOtherReason(selectedReason) && !cancelOtherReasonNote.trim()) || isSubmittingCancel ? actionButtonDisabledClass : actionButtonDangerClass}`}
                 >
                   {isSubmittingCancel ? (
                     <>
@@ -1359,9 +1541,93 @@ const MyOrders: React.FC = () => {
             </div>
           </div>
         )}
+        {showReasonDetailsModal && reasonDetailsOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black opacity-40"
+              onClick={() => {
+                setShowReasonDetailsModal(false);
+                setReasonDetailsOrder(null);
+              }}
+            ></div>
+            <div className="bg-white rounded-lg shadow-xl z-50 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b">
+                <h3 className="text-lg font-semibold">Reason Details</h3>
+                <p className="text-sm text-gray-500">Order #{reasonDetailsOrder.order_number}</p>
+              </div>
+              <div className="px-6 py-4 space-y-6">
+                {(String(reasonDetailsOrder.cancellation_reason || '').trim()
+                  || String(reasonDetailsOrder.cancellation_other_reason_note || '').trim()
+                  || String(reasonDetailsOrder.cancellation_note || '').trim()) && (
+                  <section className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Cancellation Details</h4>
+                    <dl className="space-y-2 text-sm">
+                      <div>
+                        <dt className="text-gray-500">Reason</dt>
+                        <dd className="text-gray-900">{reasonDetailsOrder.cancellation_reason || '-'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-500">Other Reason Note</dt>
+                        <dd className="text-gray-900">{reasonDetailsOrder.cancellation_other_reason_note || '-'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-500">Note</dt>
+                        <dd className="text-gray-900 whitespace-pre-wrap">{reasonDetailsOrder.cancellation_note || '-'}</dd>
+                      </div>
+                    </dl>
+                  </section>
+                )}
+
+                {(String(reasonDetailsOrder.refund_stage?.reason_code || '').trim()
+                  || String(reasonDetailsOrder.refund_stage?.other_reason_note || '').trim()
+                  || String(reasonDetailsOrder.refund_stage?.reason_note || '').trim()) && (
+                  <section className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Refund Request Details</h4>
+                    <dl className="space-y-2 text-sm">
+                      <div>
+                        <dt className="text-gray-500">Reason</dt>
+                        <dd className="text-gray-900">{humanizeReasonCode(reasonDetailsOrder.refund_stage?.reason_code) || '-'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-500">Other Reason Note</dt>
+                        <dd className="text-gray-900 whitespace-pre-wrap">{reasonDetailsOrder.refund_stage?.other_reason_note || '-'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-500">Reason Note</dt>
+                        <dd className="text-gray-900 whitespace-pre-wrap">{reasonDetailsOrder.refund_stage?.reason_note || '-'}</dd>
+                      </div>
+                    </dl>
+                  </section>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowReasonDetailsModal(false);
+                    setReasonDetailsOrder(null);
+                  }}
+                  className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {showRefundModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowRefundModal(false)}></div>
+            <div
+              className="absolute inset-0 bg-black opacity-40"
+              onClick={() => {
+                setShowRefundModal(false);
+                setRefundOrderId(null);
+                setRefundStep(1);
+                setRefundReason('');
+                setRefundMedia([]);
+                setRefundNote('');
+                setRefundOtherReasonNote('');
+              }}
+            ></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
               <div className="px-8 py-4 border-b shrink-0">
                 <h3 className="text-xl font-semibold">Request Refund {refundStep === 2 && '- Payment Details'}</h3>
@@ -1402,6 +1668,21 @@ const MyOrders: React.FC = () => {
                         ))}
                       </div>
                     </div>
+
+                    {isOtherReason(refundReason) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Other Reason Note <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={refundOtherReasonNote}
+                          onChange={(e) => setRefundOtherReasonNote(e.target.value)}
+                          className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none resize-none"
+                          rows={4}
+                          placeholder="Please specify your refund reason..."
+                        />
+                      </div>
+                    )}
 
                     {/* Media Upload (Photos & Videos) */}
                     <div>
@@ -1479,11 +1760,11 @@ const MyOrders: React.FC = () => {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-700">Order Total:</span>
-                          <span className="text-sm text-gray-900">{formatPeso(orders.find(o => o.id === refundOrderId)?.grand_total ?? orders.find(o => o.id === refundOrderId)?.total_amount)}</span>
+                          <span className="text-sm text-gray-900">{refundTargetOrder ? formatPeso(resolveOrderGrandTotal(refundTargetOrder)) : formatPeso(0)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-bold text-gray-900">Refund Amount:</span>
-                          <span className="text-sm font-bold text-green-600">{formatPeso(orders.find(o => o.id === refundOrderId)?.grand_total ?? orders.find(o => o.id === refundOrderId)?.total_amount)}</span>
+                          <span className="text-sm font-bold text-green-600">{refundTargetOrder ? formatPeso(resolveOrderGrandTotal(refundTargetOrder)) : formatPeso(0)}</span>
                         </div>
                       </div>
                     </div>
@@ -1546,6 +1827,7 @@ const MyOrders: React.FC = () => {
                         setRefundReason('');
                         setRefundMedia([]);
                         setRefundNote('');
+                        setRefundOtherReasonNote('');
                       }}
                       className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                     >
@@ -1557,6 +1839,10 @@ const MyOrders: React.FC = () => {
                       onClick={() => {
                         if (!refundReason) {
                           Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
+                          return;
+                        }
+                        if (isOtherReason(refundReason) && !refundOtherReasonNote.trim()) {
+                          Swal.fire({ icon: 'warning', title: 'Other Reason Note is required', confirmButtonColor: '#000000' });
                           return;
                         }
                         if (!isMediaRequirementMet()) {
@@ -1572,9 +1858,9 @@ const MyOrders: React.FC = () => {
                         }
                         setRefundStep(2);
                       }}
-                      disabled={!refundReason || !isMediaRequirementMet()}
+                      disabled={!refundReason || (isOtherReason(refundReason) && !refundOtherReasonNote.trim()) || !isMediaRequirementMet()}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && isMediaRequirementMet()
+                        refundReason && (!isOtherReason(refundReason) || !!refundOtherReasonNote.trim()) && isMediaRequirementMet()
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
@@ -1584,9 +1870,9 @@ const MyOrders: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundReason || !isMediaRequirementMet() || isSubmittingRefund}
+                      disabled={!refundReason || (isOtherReason(refundReason) && !refundOtherReasonNote.trim()) || !isMediaRequirementMet() || isSubmittingRefund}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && isMediaRequirementMet() && !isSubmittingRefund
+                        refundReason && (!isOtherReason(refundReason) || !!refundOtherReasonNote.trim()) && isMediaRequirementMet() && !isSubmittingRefund
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}

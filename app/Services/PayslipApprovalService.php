@@ -6,6 +6,8 @@ use App\Models\Approval;
 use App\Models\HR\Payroll;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
+use App\Enums\NotificationType;
+use Illuminate\Support\Facades\Log;
 
 class PayslipApprovalService
 {
@@ -53,6 +55,8 @@ class PayslipApprovalService
             'approval_workflow_version' => 'v4_multi_level'
         ]);
 
+        $this->notifyPayslipApprovalRequested($payslip->fresh(), $generatedBy);
+
         return $approval;
     }
 
@@ -75,6 +79,8 @@ class PayslipApprovalService
                 'message' => 'Approval record not found'
             ];
         }
+
+        $previousLevel = (int) $approval->current_level;
 
         // Use ApprovalService to transition
         $result = $this->approvalService->approve($approval, $approver, $comments);
@@ -131,6 +137,15 @@ class PayslipApprovalService
             }
         }
 
+        $this->dispatchPayslipApprovalNotifications(
+            payslip: $payslip,
+            approval: $approval,
+            approver: $approver,
+            previousLevel: $previousLevel,
+            comments: $comments,
+            result: $result
+        );
+
         return $result;
     }
 
@@ -171,16 +186,142 @@ class PayslipApprovalService
             'current_approval_level' => $approval->current_level
         ]);
 
-        // Send rejection notification to the employee
-        $shopOwnerId = $approval->shop_owner_id;
-        if ($payslip->employee_id) {
-            $this->notificationService->notifyPayslipRejected($payslip->employee_id, $shopOwnerId, [
-                'period' => $payslip->period,
+        $this->dispatchPayslipRejectionNotifications($payslip, $approval, $comments);
+
+        return $result;
+    }
+
+    public function notifyPayslipApprovalRequested(Payroll $payslip, User $generatedBy): void
+    {
+        $payload = $this->buildPayslipNotificationData($payslip, $generatedBy, null);
+
+        $this->notificationService->sendToErpRole(
+            roleName: 'Finance',
+            shopId: (int) $payslip->shop_owner_id,
+            type: NotificationType::PAYROLL_GENERATED,
+            title: 'Payslip Approval Required',
+            message: "Payroll {$payload['period']} for {$payload['employee_name']} needs Finance review.",
+            data: $payload,
+            actionUrl: '/erp/finance/payslip-approvals',
+            priority: 'medium'
+        );
+    }
+
+    private function dispatchPayslipApprovalNotifications(
+        Payroll $payslip,
+        Approval $approval,
+        User $approver,
+        int $previousLevel,
+        ?string $comments,
+        array $result
+    ): void {
+        $payload = $this->buildPayslipNotificationData($payslip, $approver, $comments);
+        $shopOwnerId = (int) $payslip->shop_owner_id;
+
+        if ($result['is_final'] ?? false) {
+            $generatedByUserId = (int) ($payslip->generated_by ?? 0);
+            if ($generatedByUserId > 0) {
+                $this->notificationService->sendToUser(
+                    userId: $generatedByUserId,
+                    type: NotificationType::PAYROLL_GENERATED,
+                    title: 'Payslip Fully Approved',
+                    message: "Payroll {$payload['period']} for {$payload['employee_name']} completed all approval levels.",
+                    data: $payload,
+                    actionUrl: '/erp/hr/payslips',
+                    shopId: $shopOwnerId
+                );
+            }
+
+            $employeeUserId = (int) ($payslip->employee?->user?->id ?? 0);
+            if ($employeeUserId > 0) {
+                $this->notificationService->notifyPayslipReady($employeeUserId, $shopOwnerId, [
+                    'payroll_id' => $payslip->id,
+                    'period' => $payslip->payroll_period,
+                    'net_salary' => number_format((float) $payslip->net_salary, 2),
+                ]);
+            }
+
+            return;
+        }
+
+        if ($previousLevel === 1) {
+            $this->notificationService->sendToShopOwner(
+                shopOwnerId: $shopOwnerId,
+                type: NotificationType::PAYROLL_GENERATED,
+                title: 'Payslip Awaiting Shop Owner Approval',
+                message: "Payroll {$payload['period']} for {$payload['employee_name']} now requires your approval.",
+                data: $payload,
+                actionUrl: '/erp/finance/payslip-approvals',
+                priority: 'medium'
+            );
+
+            return;
+        }
+
+        if (in_array($previousLevel, [2, 3], true)) {
+            $title = $previousLevel === 2
+                ? 'Payslip Returned To Finance'
+                : 'Payslip Awaiting Final Finance Approval';
+            $message = $previousLevel === 2
+                ? "Payroll {$payload['period']} for {$payload['employee_name']} was approved by shop owner and is back to Finance."
+                : "Payroll {$payload['period']} for {$payload['employee_name']} now needs final Finance approval.";
+
+            $this->notificationService->sendToErpRole(
+                roleName: 'Finance',
+                shopId: $shopOwnerId,
+                type: NotificationType::PAYROLL_GENERATED,
+                title: $title,
+                message: $message,
+                data: $payload,
+                actionUrl: '/erp/finance/payslip-approvals',
+                priority: 'medium'
+            );
+        }
+    }
+
+    private function dispatchPayslipRejectionNotifications(Payroll $payslip, Approval $approval, string $comments): void
+    {
+        $payload = $this->buildPayslipNotificationData($payslip, null, $comments);
+        $shopOwnerId = (int) $approval->shop_owner_id;
+
+        $generatedByUserId = (int) ($payslip->generated_by ?? 0);
+        if ($generatedByUserId > 0) {
+            $this->notificationService->sendToUser(
+                userId: $generatedByUserId,
+                type: NotificationType::PAYSLIP_REJECTED,
+                title: 'Payslip Rejected In Approval Workflow',
+                message: "Payroll {$payload['period']} for {$payload['employee_name']} was rejected. Reason: {$comments}",
+                data: $payload,
+                actionUrl: '/erp/hr/payslips',
+                shopId: $shopOwnerId
+            );
+        }
+
+        $employeeUserId = (int) ($payslip->employee?->user?->id ?? 0);
+        if ($employeeUserId > 0) {
+            $this->notificationService->notifyPayslipRejected($employeeUserId, $shopOwnerId, [
+                'period' => $payslip->payroll_period,
                 'rejection_reason' => $comments,
             ]);
         }
+    }
 
-        return $result;
+    private function buildPayslipNotificationData(Payroll $payslip, ?User $actor = null, ?string $reason = null): array
+    {
+        $employeeName = trim((string) ($payslip->employee?->first_name ?? '') . ' ' . (string) ($payslip->employee?->last_name ?? ''));
+
+        return [
+            'payroll_id' => $payslip->id,
+            'employee_id' => $payslip->employee_id,
+            'employee_name' => $employeeName !== '' ? $employeeName : 'Employee',
+            'period' => $payslip->payroll_period,
+            'gross_salary' => number_format((float) $payslip->gross_salary, 2),
+            'net_salary' => number_format((float) $payslip->net_salary, 2),
+            'approval_level' => $payslip->current_approval_level,
+            'status' => $payslip->status,
+            'acted_by' => $actor?->name,
+            'rejection_reason' => $reason,
+        ];
     }
 
     /**
@@ -195,9 +336,9 @@ class PayslipApprovalService
             ->get();
 
         // Filter by user's ability to approve
-        return $approvals->filter(function ($approval) use ($approver) {
+        return $approvals->filter(function (Approval $approval) use ($approver) {
             return $approval->canApprove($approver);
-        })->map(function ($approval) {
+        })->map(function (Approval $approval) {
             // Load the associated payroll
             return $approval->approvable()->first();
         })->filter()
@@ -292,7 +433,7 @@ class PayslipApprovalService
 
             return true;
         } catch (\Exception $e) {
-            \Log::error('Payslip workflow migration failed', [
+            Log::error('Payslip workflow migration failed', [
                 'payroll_id' => $payslip->id,
                 'error' => $e->getMessage()
             ]);

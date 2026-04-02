@@ -3,15 +3,9 @@
 namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
-use App\Models\InventoryColorVariant;
-use App\Models\InventoryItem;
-use App\Models\InventorySize;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderRefund;
-use App\Models\Product;
-use App\Models\ProductVariant;
-use App\Models\StockMovement;
 use App\Enums\OrderStatus;
 use App\Services\NotificationService;
 use App\Services\OrderRefundService;
@@ -108,8 +102,6 @@ class OrderController extends Controller
                     $latestRefund = $order->refunds->first();
                 }
 
-                $refundStage = $this->formatCustomerRefundStage($latestRefund, $order);
-
                 $refundStatus = null;
                 $refundStatusNote = null;
                 if ((string) ($order->payment_status ?? 'pending') === 'refunded') {
@@ -189,7 +181,6 @@ class OrderController extends Controller
                     'pickup_enabled' => $order->pickup_enabled ?? false,
                     'refund_status' => $refundStatus,
                     'refund_status_note' => $refundStatusNote,
-                    'refund_stage' => $refundStage,
                 ];
             });
 
@@ -257,44 +248,6 @@ class OrderController extends Controller
 
             $this->paymentSettlementService->recordOrderRefundFailure($order, 'paymongo_refund_failed');
         }
-    }
-
-    private function formatCustomerRefundStage(?OrderRefund $latestRefund, Order $order): ?array
-    {
-        if (!$latestRefund || (string) ($latestRefund->flow_type ?? '') !== 'request_approval') {
-            return null;
-        }
-
-        $paymentStatus = strtolower((string) ($order->payment_status ?? 'pending'));
-        $refundStatus = strtolower((string) ($latestRefund->status ?? 'pending_approval'));
-        $shopOwnerStatus = strtolower((string) ($latestRefund->shop_owner_status ?? 'pending'));
-        $financeStatus = strtolower((string) ($latestRefund->finance_status ?? 'pending'));
-        $returnStatus = strtolower((string) ($latestRefund->return_status ?? 'awaiting_approval'));
-
-        return [
-            'id' => (int) $latestRefund->id,
-            'status' => $refundStatus,
-            'shop_owner_status' => $shopOwnerStatus,
-            'finance_status' => $financeStatus,
-            'return_status' => $returnStatus,
-            'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
-            'customer_return_carrier' => $latestRefund->customer_return_carrier,
-            'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
-            'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
-            'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
-            'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
-            'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
-            'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
-            'rejection_reason' => $latestRefund->rejection_reason,
-            'can_mark_return_shipped'
-                => $shopOwnerStatus === 'approved'
-                && $financeStatus === 'approved'
-                && $returnStatus === 'pending_customer_shipment'
-                && !in_array($refundStatus, ['rejected', 'failed'], true),
-            'is_refunded'
-                => $paymentStatus === 'refunded'
-                || in_array($refundStatus, ['succeeded'], true),
-        ];
     }
 
     private function resolveCheckoutSessionTotal(string $checkoutSessionId, string $secretKey): ?float
@@ -414,16 +367,13 @@ class OrderController extends Controller
 
     public function requestRefund(Request $request)
     {
-        $maxImageKb = 20480; // 20 MB
-        $maxVideoKb = 262144; // 256 MB
-
         $validated = $request->validate([
             'order_id' => 'required|integer',
             'reason' => 'required|string|max:255',
-            'refund_method' => 'nullable|string|max:100',
+            'refund_method' => 'required|string|max:100',
             'note' => 'nullable|string|max:1000',
             'media' => 'required|array|size:6',
-            'media.*' => 'required|file|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
+            'media.*' => 'required|file|max:20480|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -444,11 +394,7 @@ class OrderController extends Controller
             ], 404);
         }
 
-        $orderStatus = $order->status instanceof OrderStatus
-            ? $order->status->value
-            : (string) ($order->status ?? '');
-        
-        if (!in_array($orderStatus, ['delivered', 'completed'], true)) {
+        if (!in_array((string) $order->status, [OrderStatus::DELIVERED, OrderStatus::COMPLETED], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only delivered or completed orders can request a refund.',
@@ -492,23 +438,9 @@ class OrderController extends Controller
 
         foreach ($mediaFiles as $mediaFile) {
             $mime = strtolower((string) $mediaFile->getMimeType());
-            $sizeKb = (int) ceil(((int) $mediaFile->getSize()) / 1024);
-
             if (str_starts_with($mime, 'video/')) {
-                if ($sizeKb > $maxVideoKb) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Video evidence must not exceed 256MB.',
-                    ], 422);
-                }
                 $videoCount++;
             } else {
-                if ($sizeKb > $maxImageKb) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Each image evidence file must not exceed 20MB.',
-                    ], 422);
-                }
                 $imageCount++;
             }
         }
@@ -537,20 +469,17 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $refund = OrderRefund::create([
+        $refundRequest = OrderRefund::create([
             'order_id' => $order->id,
             'customer_id' => $order->customer_id,
             'shop_owner_id' => $order->shop_owner_id,
             'flow_type' => 'request_approval',
             'status' => 'pending_approval',
-            'shop_owner_status' => 'pending',
-            'finance_status' => 'pending',
-            'return_status' => 'awaiting_approval',
             'payment_gateway' => 'paymongo',
             'paymongo_payment_id' => $order->paymongo_payment_id,
             'amount' => round($amount, 2),
             'currency' => 'PHP',
-            'requested_refund_method' => 'original_payment_method',
+            'requested_refund_method' => (string) $validated['refund_method'],
             'reason_code' => Str::slug((string) $validated['reason'], '_'),
             'reason_note' => trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : ''))),
             'evidence_media' => $storedMedia,
@@ -558,231 +487,12 @@ class OrderController extends Controller
             'requested_at' => now(),
         ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Refund request submitted successfully. Your refund will be returned to your original payment method after approval.',
-            'refund' => [
-                'id' => (int) $refund->id,
-                'status' => (string) $refund->status,
-                'shop_owner_status' => (string) ($refund->shop_owner_status ?? 'pending'),
-                'finance_status' => (string) ($refund->finance_status ?? 'pending'),
-                'return_status' => (string) ($refund->return_status ?? 'awaiting_approval'),
-            ],
-        ]);
-    }
-
-    public function markRefundReturnShipped(Request $request, int $refundId)
-    {
-        $validated = $request->validate([
-            'tracking_number' => 'required|string|max:255',
-            'carrier_company' => 'required|string|max:255',
-            'rider_name' => 'required|string|max:255',
-            'rider_phone' => 'required|string|max:30',
-            'tracking_link' => 'required|url|max:500',
-            'note' => 'nullable|string|max:1000',
-            'shipped_at' => 'nullable|date',
-        ]);
-
-        $user = Auth::guard('user')->user();
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
-        }
-
-        $refund = OrderRefund::query()
-            ->where('id', $refundId)
-            ->where('flow_type', 'request_approval')
-            ->where('customer_id', (int) $user->id)
-            ->first();
-
-        if (!$refund) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Refund request not found.',
-            ], 404);
-        }
-
-        $result = $this->orderRefundService->markCustomerReturnShipped($refund, $validated);
-
-        if (($result['result'] ?? null) === 'invalid_state') {
-            return response()->json([
-                'success' => false,
-                'message' => $result['message'] ?? 'Return shipment cannot be submitted right now.',
-            ], 422);
-        }
+        $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
 
         return response()->json([
             'success' => true,
-            'message' => $result['message'] ?? 'Return shipment details submitted successfully.',
-            'refund' => $result['refund'],
+            'message' => 'Refund request submitted successfully and is pending approval.',
         ]);
-    }
-
-    private function normalizeSizeSystem(?string $rawSystem): string
-    {
-        $normalized = strtoupper(trim((string) $rawSystem));
-        return in_array($normalized, ['US', 'UK', 'EU', 'AU', 'CN'], true) ? $normalized : 'US';
-    }
-
-    private function parseSizeComponents(?string $rawSize): array
-    {
-        $normalizedRaw = trim((string) $rawSize);
-        if ($normalizedRaw === '') {
-            return ['system' => 'US', 'value' => '', 'explicit_system' => false];
-        }
-
-        if (preg_match('/^(US|UK|EU|AU|CN)\s*[:\-]?\s*(.+)$/i', $normalizedRaw, $matches)) {
-            return [
-                'system' => $this->normalizeSizeSystem($matches[1] ?? null),
-                'value' => trim((string) ($matches[2] ?? '')),
-                'explicit_system' => true,
-            ];
-        }
-
-        return ['system' => 'US', 'value' => $normalizedRaw, 'explicit_system' => false];
-    }
-
-    private function resolveInventorySizeRowForRestock(int $inventoryItemId, ?int $inventoryColorVariantId, ?string $rawSize): ?InventorySize
-    {
-        $parsed = $this->parseSizeComponents($rawSize);
-        $sizeValue = trim((string) ($parsed['value'] ?? ''));
-        $sizeSystem = (string) ($parsed['system'] ?? 'US');
-        $hasExplicitSystem = (bool) ($parsed['explicit_system'] ?? false);
-
-        if ($sizeValue === '') {
-            return null;
-        }
-
-        $query = InventorySize::where('inventory_item_id', $inventoryItemId)
-            ->where('size', $sizeValue);
-
-        if ($inventoryColorVariantId) {
-            $query->where('inventory_color_variant_id', $inventoryColorVariantId);
-        } else {
-            $query->whereNull('inventory_color_variant_id');
-        }
-
-        if ($hasExplicitSystem) {
-            $preferred = (clone $query)
-                ->where('size_system', $sizeSystem)
-                ->lockForUpdate()
-                ->first();
-
-            if ($preferred) {
-                return $preferred;
-            }
-        }
-
-        return $query->orderByRaw("CASE WHEN size_system = 'US' THEN 0 ELSE 1 END")
-            ->lockForUpdate()
-            ->first();
-    }
-
-    private function restoreInventoryForCancelledItem(object $item, int $orderId): void
-    {
-        if (empty($item->product_id) || empty($item->quantity)) {
-            return;
-        }
-
-        $qty = (int) $item->quantity;
-        if ($qty <= 0) {
-            return;
-        }
-
-        $product = Product::query()->lockForUpdate()->find((int) $item->product_id);
-        if (!$product) {
-            return;
-        }
-
-        $inventoryItem = InventoryItem::where('product_id', $product->id)
-            ->lockForUpdate()
-            ->first();
-
-        if (!$inventoryItem) {
-            $product->increment('stock_quantity', $qty);
-
-            if (!empty($item->size) && !empty($item->color)) {
-                $variant = ProductVariant::where('product_id', $product->id)
-                    ->where('size', $item->size)
-                    ->whereRaw('LOWER(color) = ?', [strtolower((string) $item->color)])
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($variant) {
-                    $variant->increment('quantity', $qty);
-                }
-            }
-
-            return;
-        }
-
-        $quantityBefore = (int) $inventoryItem->available_quantity;
-        $didSpecificRestock = false;
-
-        if (!empty($item->size) && !empty($item->color)) {
-            $normalizedColor = strtolower(trim((string) $item->color));
-
-            $inventoryColorVariant = InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
-                ->whereRaw('LOWER(color_name) = ?', [$normalizedColor])
-                ->lockForUpdate()
-                ->first();
-
-            $sizeRow = $this->resolveInventorySizeRowForRestock(
-                (int) $inventoryItem->id,
-                $inventoryColorVariant?->id,
-                (string) $item->size
-            );
-
-            if ($sizeRow) {
-                $sizeRow->increment('quantity', $qty);
-                $didSpecificRestock = true;
-            }
-
-            if ($inventoryColorVariant) {
-                if ($sizeRow) {
-                    $recomputedColorQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
-                        ->where('inventory_color_variant_id', $inventoryColorVariant->id)
-                        ->sum('quantity');
-
-                    $inventoryColorVariant->quantity = $recomputedColorQty;
-                    $inventoryColorVariant->save();
-                } else {
-                    $inventoryColorVariant->increment('quantity', $qty);
-                }
-                $didSpecificRestock = true;
-            }
-        }
-
-        $newTotalQty = (int) InventoryColorVariant::where('inventory_item_id', $inventoryItem->id)
-            ->sum('quantity');
-
-        if ($newTotalQty === 0) {
-            $newTotalQty = (int) InventorySize::where('inventory_item_id', $inventoryItem->id)
-                ->whereNull('inventory_color_variant_id')
-                ->sum('quantity');
-        }
-
-        if (!$didSpecificRestock) {
-            $newTotalQty = $quantityBefore + $qty;
-        }
-
-        $inventoryItem->available_quantity = $newTotalQty;
-        $inventoryItem->save();
-
-        StockMovement::create([
-            'inventory_item_id' => $inventoryItem->id,
-            'movement_type' => 'stock_in',
-            'quantity_change' => $qty,
-            'quantity_before' => $quantityBefore,
-            'quantity_after' => $newTotalQty,
-            'reference_type' => 'order',
-            'reference_id' => $orderId,
-            'notes' => 'Order cancellation stock restoration',
-            'performed_at' => now(),
-        ]);
-
-        $product->stock_quantity = $newTotalQty;
-        $product->save();
     }
     
     /**
@@ -865,7 +575,21 @@ class OrderController extends Controller
                     ], 404);
                 }
 
-                $this->restoreInventoryForCancelledItem($item, (int) $order->id);
+                $product = \App\Models\Product::find($item->product_id);
+                if ($product) {
+                    $product->increment('stock_quantity', $item->quantity);
+
+                    if ($item->size && $item->color) {
+                        $variant = \App\Models\ProductVariant::where('product_id', $product->id)
+                            ->where('size', $item->size)
+                            ->where('color', $item->color)
+                            ->first();
+
+                        if ($variant) {
+                            $variant->increment('quantity', $item->quantity);
+                        }
+                    }
+                }
 
                 $item->delete();
 
@@ -891,7 +615,23 @@ class OrderController extends Controller
 
             // Restore inventory for each item
             foreach ($order->items as $item) {
-                $this->restoreInventoryForCancelledItem($item, (int) $order->id);
+                $product = \App\Models\Product::find($item->product_id);
+                if ($product) {
+                    // Restore product stock
+                    $product->increment('stock_quantity', $item->quantity);
+                    
+                    // Restore variant stock if applicable
+                    if ($item->size && $item->color) {
+                        $variant = \App\Models\ProductVariant::where('product_id', $product->id)
+                            ->where('size', $item->size)
+                            ->where('color', $item->color)
+                            ->first();
+                        
+                        if ($variant) {
+                            $variant->increment('quantity', $item->quantity);
+                        }
+                    }
+                }
             }
 
             if ($isPaidOnlineOrder) {

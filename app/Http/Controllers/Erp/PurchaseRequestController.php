@@ -10,6 +10,7 @@ use App\Http\Requests\RejectPurchaseRequestRequest;
 use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
 use App\Services\ShopOwnerApprovalPolicyService;
+use App\Services\PurchaseRequestService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,8 @@ class PurchaseRequestController extends Controller
     use AuthorizesRequests;
 
     public function __construct(
-        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
+        private PurchaseRequestService $purchaseRequestService
     ) {}
 
     /**
@@ -338,7 +340,7 @@ class PurchaseRequestController extends Controller
             ], 403);
         }
 
-        $purchaseRequest->submitToFinance();
+        $purchaseRequest = $this->purchaseRequestService->submitToFinance((int) $purchaseRequest->id);
 
         return response()->json([
             'message' => 'Purchase request submitted to finance successfully.',
@@ -384,13 +386,11 @@ class PurchaseRequestController extends Controller
                 $recalculatedTotalCost
             );
 
-            if ($isFinanceFinalStage) {
-                $purchaseRequest->approve(Auth::id(), $request->approval_notes, 'finance_final', false);
-            } else {
-                $purchaseRequest->approve(Auth::id(), $request->approval_notes, 'finance_initial', $requiresOwnerApproval);
-            }
-
-            $freshRequest = $purchaseRequest->fresh(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'approver']);
+            $freshRequest = $this->purchaseRequestService->approvePurchaseRequest(
+                (int) $purchaseRequest->id,
+                (int) Auth::id(),
+                $request->approval_notes
+            )->load(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'approver']);
 
             $payload = $freshRequest->toArray();
             $payload['requires_owner_approval'] = $requiresOwnerApproval;
@@ -429,7 +429,11 @@ class PurchaseRequestController extends Controller
         }
 
         try {
-            $purchaseRequest->reject(Auth::id(), $request->rejection_reason);
+            $purchaseRequest = $this->purchaseRequestService->rejectPurchaseRequest(
+                (int) $purchaseRequest->id,
+                (int) Auth::id(),
+                $request->rejection_reason
+            );
 
             return response()->json([
                 'message' => 'Purchase request rejected successfully.',

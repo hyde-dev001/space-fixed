@@ -130,12 +130,20 @@ class SuperAdminController extends Controller
         $now = \Carbon\Carbon::now();
         $hasCancellationColumns = Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
             && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes');
+        $hasPlanChangeColumns = Schema::hasColumn('shop_owner_subscriptions', 'replaces_subscription_id')
+            && Schema::hasColumn('shop_owner_subscriptions', 'payment_method');
 
         // Fetch all subscriptions with relations
-        $subscriptions = \App\Models\ShopOwnerSubscription::with(['shopOwner', 'premiumPlan'])
+        $subscriptionModels = \App\Models\ShopOwnerSubscription::with(['shopOwner', 'premiumPlan'])
             ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($subscription) use ($now, $hasCancellationColumns) {
+            ->get();
+
+        $planNameBySubscriptionId = $subscriptionModels->mapWithKeys(function ($item) {
+            return [(int) $item->id => $item->premiumPlan?->name];
+        });
+
+        $subscriptions = $subscriptionModels
+            ->map(function ($subscription) use ($now, $hasCancellationColumns, $hasPlanChangeColumns, $planNameBySubscriptionId) {
                 $effectiveEndsAt = $subscription->ends_at;
                 if (!$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
                     $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
@@ -164,6 +172,10 @@ class SuperAdminController extends Controller
                     $cancellationNotes = $cancellationNotes ?: data_get($activity, 'properties.notes');
                 }
 
+                $replacesSubscriptionId = $hasPlanChangeColumns
+                    ? ($subscription->replaces_subscription_id ? (int) $subscription->replaces_subscription_id : null)
+                    : null;
+
                 return [
                     'id' => $subscription->id,
                     'shop' => [
@@ -187,6 +199,9 @@ class SuperAdminController extends Controller
                     'next_billing_at' => $nextBillingAt?->format('Y-m-d H:i:s'),
                     'cancellation_reason' => $cancellationReason,
                     'cancellation_notes' => $cancellationNotes,
+                    'payment_method' => $hasPlanChangeColumns ? $subscription->payment_method : null,
+                    'replaces_subscription_id' => $replacesSubscriptionId,
+                    'previous_plan_name' => $replacesSubscriptionId ? $planNameBySubscriptionId->get($replacesSubscriptionId) : null,
                     'created_at' => $subscription->created_at->format('Y-m-d H:i:s'),
                 ];
             });

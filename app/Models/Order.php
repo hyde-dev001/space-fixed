@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use App\Enums\OrderStatus;
 use App\Models\Notification;
 use App\Models\OrderRefund;
@@ -23,6 +24,8 @@ class Order extends Model
         'order_number',
         'total_amount',
         'shipping_fee',
+        'vat_amount',
+        'vat_rate',
         'status',
         'customer_name',
         'customer_email',
@@ -33,6 +36,8 @@ class Order extends Model
         'paymongo_link_id',
         'paymongo_payment_id',
         'paymongo_refund_id',
+        'cancellation_refund_window_started_at',
+        'cancellation_refund_window_minutes',
         'paid_at',
         'refunded_at',
         'payment_link_created_at',
@@ -41,6 +46,7 @@ class Order extends Model
         'payment_failure_reason',
         'refund_reason',
         'refund_note',
+        'cancellation_other_reason_note',
         'payment_expired_at',
         'payment_released_at',
         'invoice_generated',
@@ -69,6 +75,8 @@ class Order extends Model
         'total' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'shipping_fee' => 'decimal:2',
+        'vat_amount' => 'decimal:2',
+        'vat_rate' => 'decimal:2',
         'quantity' => 'integer',
         'invoice_generated' => 'boolean',
         'pickup_enabled' => 'boolean',
@@ -78,9 +86,70 @@ class Order extends Model
         'payment_failed_at' => 'datetime',
         'payment_expired_at' => 'datetime',
         'payment_released_at' => 'datetime',
+        'cancellation_refund_window_started_at' => 'datetime',
+        'cancellation_refund_window_minutes' => 'integer',
         'paid_at' => 'datetime',
         'refunded_at' => 'datetime',
     ];
+
+    public static function defaultCancellationRefundWindowMinutes(): int
+    {
+        return max(1, (int) config('orders.cancellation_refund_window_minutes', 10080));
+    }
+
+    public function resolveCancellationRefundWindowStartedAt(): ?Carbon
+    {
+        return $this->cancellation_refund_window_started_at
+            ? $this->cancellation_refund_window_started_at->copy()->utc()
+            : ($this->created_at ? $this->created_at->copy()->utc() : null);
+    }
+
+    public function resolveCancellationRefundWindowMinutes(): int
+    {
+        $minutes = (int) ($this->cancellation_refund_window_minutes ?? 0);
+
+        if ($minutes > 0) {
+            return $minutes;
+        }
+
+        $shopDays = null;
+
+        if ($this->relationLoaded('shopOwner')) {
+            $shopDays = (int) ($this->shopOwner?->order_refund_deadline_days ?? 0);
+        } elseif (!empty($this->shop_owner_id)) {
+            $shopDays = (int) ($this->shopOwner()->value('order_refund_deadline_days') ?? 0);
+        }
+
+        if ($shopDays > 0) {
+            return $shopDays * 1440;
+        }
+
+        return self::defaultCancellationRefundWindowMinutes();
+    }
+
+    public function getCancellationRefundDeadlineAtAttribute(): ?Carbon
+    {
+        $startedAt = $this->resolveCancellationRefundWindowStartedAt();
+
+        if (!$startedAt) {
+            return null;
+        }
+
+        return $startedAt->copy()->addMinutes($this->resolveCancellationRefundWindowMinutes());
+    }
+
+    public function isCancellationRefundWindowOpen(?Carbon $referenceTime = null): bool
+    {
+        $deadlineAt = $this->cancellation_refund_deadline_at;
+
+        if (!$deadlineAt) {
+            return true;
+        }
+
+        $reference = $referenceTime ? $referenceTime->copy()->utc() : now()->utc();
+
+        return $reference->lessThanOrEqualTo($deadlineAt);
+    }
 
     public function scopePayable($query)
     {

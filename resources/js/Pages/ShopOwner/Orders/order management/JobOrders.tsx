@@ -27,10 +27,15 @@ type Order = {
   shippingAddress: string;
   total_amount: number;
   shipping_fee: number;
+  vat_amount: number | null;
+  vat_rate: number | null;
   grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
+  cancellation_reason?: string | null;
+  cancellation_note?: string | null;
+  cancellation_other_reason_note?: string | null;
   eta?: string;
   orderedAt: string;
   processedAt?: string;
@@ -49,25 +54,78 @@ type Order = {
   latest_refund?: {
     id: number;
     status: string;
+    reason_code?: string | null;
+    reason_note?: string | null;
+    other_reason_note?: string | null;
     shop_owner_status: string;
     finance_status: string;
     return_status: string;
+    return_source?: string;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
     customer_return_rider_phone?: string | null;
     customer_return_tracking_link?: string | null;
     customer_return_shipped_at?: string | null;
+    staff_return_tracking_number?: string | null;
+    staff_return_carrier?: string | null;
+    staff_return_rider_name?: string | null;
+    staff_return_rider_phone?: string | null;
+    staff_return_tracking_link?: string | null;
+    staff_return_shipped_at?: string | null;
+    return_arranged_by_staff_at?: string | null;
     return_confirmed_at?: string | null;
     refund_executed_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
   } | null;
+  shippingAddressLine?: string;
+  shippingBarangay?: string;
+  shippingCity?: string;
+  shippingProvince?: string;
+  shippingRegion?: string;
+  shippingPostalCode?: string;
 };
 
 const parseAmount = (value: unknown): number => {
   const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+const buildPickupAddressHtml = (order: Order): string => {
+  const street = String(order.shippingAddressLine || '').trim();
+  const barangay = String(order.shippingBarangay || '').trim();
+  const city = String(order.shippingCity || '').trim();
+  const province = String(order.shippingProvince || '').trim();
+  const region = String(order.shippingRegion || '').trim();
+  const postalCode = String(order.shippingPostalCode || '').trim();
+
+  const hasStructured = [street, barangay, city, province, region, postalCode].some((part) => part !== '');
+
+  if (hasStructured) {
+    const rows = [
+      { label: 'Street / Building', value: street },
+      { label: 'Barangay / Landmark', value: barangay },
+      { label: 'City', value: city },
+      { label: 'Province', value: province },
+      { label: 'Region', value: region },
+      { label: 'Postal Code', value: postalCode },
+    ].filter((row) => row.value !== '');
+
+    return rows
+      .map((row) => `<div style="display:flex;gap:8px;align-items:flex-start;"><span style="min-width:130px;font-size:12px;color:#64748b;">${escapeHtml(row.label)}:</span><span style="font-size:13px;color:#111827;font-weight:600;line-height:1.35;">${escapeHtml(row.value)}</span></div>`)
+      .join('');
+  }
+
+  const fallbackAddress = String(order.shippingAddress || '').trim() || 'No shipping address found on this order.';
+  return `<div style="font-size:13px;color:#111827;font-weight:600;line-height:1.4;">${escapeHtml(fallbackAddress)}</div>`;
 };
 
 type MetricCardProps = {
@@ -284,7 +342,14 @@ export default function JobOrdersPage() {
         const mappedOrders: Order[] = ordersData.map((order: any) => {
           const itemSubtotal = parseAmount(order.total_amount);
           const shippingFee = parseAmount(order.shipping_fee);
-          const grandTotal = parseAmount(order.grand_total || itemSubtotal + shippingFee);
+          const hasStoredVat = order.vat_amount !== null && order.vat_amount !== undefined;
+          const rawVatRate = Number(order.vat_rate);
+          const vatRate = hasStoredVat && Number.isFinite(rawVatRate) && rawVatRate >= 0 ? rawVatRate : null;
+          const rawVatAmount = Number(order.vat_amount);
+          const vatAmount = hasStoredVat && Number.isFinite(rawVatAmount) && rawVatAmount >= 0
+            ? rawVatAmount
+            : null;
+          const grandTotal = parseAmount(order.grand_total || itemSubtotal + shippingFee + (vatAmount ?? 0));
 
           return {
             id: order.id,
@@ -293,12 +358,23 @@ export default function JobOrdersPage() {
             email: order.customer_email || '',
             phone: order.customer_phone || '',
             shippingAddress: order.shipping_address || '',
+            shippingAddressLine: order.shipping_address_line || '',
+            shippingBarangay: order.shipping_barangay || '',
+            shippingCity: order.shipping_city || '',
+            shippingProvince: order.shipping_province || '',
+            shippingRegion: order.shipping_region || '',
+            shippingPostalCode: order.shipping_postal_code || '',
             total_amount: itemSubtotal,
             shipping_fee: shippingFee,
+            vat_amount: vatAmount,
+            vat_rate: vatRate,
             grand_total: grandTotal,
             paymentStatus: order.payment_status || 'pending',
             paymentMethod: order.payment_method || '',
             status: order.status as any,
+            cancellation_reason: order.cancellation_reason || null,
+            cancellation_note: order.cancellation_note || null,
+            cancellation_other_reason_note: order.cancellation_other_reason_note || null,
             eta: order.eta || undefined,
             orderedAt: new Date(order.created_at).toLocaleString(),
             carrierCompany: order.carrier_company || undefined,
@@ -487,6 +563,13 @@ export default function JobOrdersPage() {
         };
       }
 
+      if (returnStatus === 'pending_staff_pickup') {
+        return {
+          label: 'Staff Pickup Scheduled',
+          className: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40',
+        };
+      }
+
       if (returnStatus === 'in_transit') {
         return {
           label: 'Return In Transit',
@@ -628,8 +711,250 @@ export default function JobOrdersPage() {
     if (!latestRefund) return false;
 
     return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
+      && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
       && !['rejected', 'failed', 'succeeded'].includes(String(latestRefund.status || '').toLowerCase());
+  };
+
+  const canArrangeReturnPickup = (order: Order) => {
+    if (!isIndividualRegistration) return false;
+
+    const latestRefund = order.latest_refund;
+    if (!latestRefund) return false;
+
+    const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+    const flowType = String(latestRefund.flow_type || '').toLowerCase();
+    const isBlocked = ['rejected', 'failed', 'succeeded'].includes(String(latestRefund.status || '').toLowerCase());
+
+    return flowType === 'request_approval'
+      && ['pending_customer_shipment', 'pending_staff_pickup'].includes(returnStatus)
+      && !isBlocked;
+  };
+
+  const handleArrangeReturnPickup = async (order: Order) => {
+    const pickupAddressHtml = buildPickupAddressHtml(order);
+    const customerName = String(order.customer || 'Customer').trim() || 'Customer';
+    const customerPhone = String(order.phone || '').trim() || 'No phone provided';
+    const existingPickup = order.latest_refund || null;
+    const defaultCarrier = String(existingPickup?.staff_return_carrier || '').trim();
+    const defaultRiderName = String(existingPickup?.staff_return_rider_name || '').trim();
+    const defaultRiderPhone = String(existingPickup?.staff_return_rider_phone || '').trim();
+    const defaultTrackingNumber = String(existingPickup?.staff_return_tracking_number || '').trim();
+    const defaultTrackingLink = String(existingPickup?.staff_return_tracking_link || '').trim();
+
+    const shipmentInput = await Swal.fire({
+      title: 'Arrange Return Pickup',
+      html: `
+        <div style="display:grid;gap:14px;text-align:left;">
+          <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#f8fafc;display:grid;gap:8px;">
+            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Order Context</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div>
+                <p style="margin:0;font-size:11px;color:#64748b;">Order #</p>
+                <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(String(order.order_number || '-'))}</p>
+              </div>
+              <div>
+                <p style="margin:0;font-size:11px;color:#64748b;">Customer</p>
+                <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(customerName)}</p>
+              </div>
+            </div>
+            <div>
+              <p style="margin:0;font-size:11px;color:#64748b;">Customer Phone</p>
+              <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(customerPhone)}</p>
+            </div>
+          </div>
+
+          <div style="display:grid;gap:6px;">
+            <label style="font-size:13px;font-weight:700;color:#334155;">Customer Pickup Address</label>
+            <div style="margin:0;min-height:80px;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;background:#f9fafb;display:grid;gap:6px;">
+              ${pickupAddressHtml}
+            </div>
+          </div>
+
+          <div style="display:grid;gap:10px;">
+            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
+
+            <div style="display:grid;gap:6px;">
+              <label style="font-size:13px;font-weight:600;color:#334155;">Carrier Company</label>
+              <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" value="${escapeHtml(defaultCarrier)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
+            </div>
+
+            <div style="display:grid;gap:6px;">
+              <label style="font-size:13px;font-weight:600;color:#334155;">Rider Name</label>
+              <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" value="${escapeHtml(defaultRiderName)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
+            </div>
+
+            <div style="display:grid;gap:6px;">
+              <label style="font-size:13px;font-weight:600;color:#334155;">Rider Number</label>
+              <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="15" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
+            </div>
+
+            <div style="display:grid;gap:6px;">
+              <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Number</label>
+              <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" value="${escapeHtml(defaultTrackingNumber)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
+            </div>
+
+            <div style="display:grid;gap:6px;">
+              <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Link</label>
+              <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." value="${escapeHtml(defaultTrackingLink)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
+            </div>
+          </div>
+
+          <p style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
+        </div>
+      `,
+      showCancelButton: true,
+      showCloseButton: true,
+      width: 640,
+      confirmButtonText: 'Save Pickup',
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#6b7280',
+      focusConfirm: false,
+      didOpen: () => {
+        const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
+        if (!riderPhoneInput) return;
+
+        riderPhoneInput.addEventListener('input', () => {
+          riderPhoneInput.value = riderPhoneInput.value.replace(/\D/g, '');
+        });
+
+        const carrierInput = document.getElementById('swal-carrier-company') as HTMLInputElement | null;
+        if (carrierInput) {
+          carrierInput.focus();
+        }
+      },
+      preConfirm: () => {
+        const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
+        const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
+        const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
+        const trackingNumber = (document.getElementById('swal-tracking-number') as HTMLInputElement | null)?.value?.trim() || '';
+        const trackingLink = (document.getElementById('swal-tracking-link') as HTMLInputElement | null)?.value?.trim() || '';
+
+        if (!carrierCompany || !riderName || !riderPhone || !trackingNumber || !trackingLink) {
+          Swal.showValidationMessage('Please complete all pickup details.');
+          return null;
+        }
+
+        if (!/^\d+$/.test(riderPhone)) {
+          Swal.showValidationMessage('Rider number must contain numbers only.');
+          return null;
+        }
+
+        try {
+          new URL(trackingLink);
+        } catch {
+          Swal.showValidationMessage('Tracking link must be a valid URL.');
+          return null;
+        }
+
+        return {
+          carrierCompany,
+          riderName,
+          riderPhone,
+          trackingNumber,
+          trackingLink,
+        };
+      },
+    });
+
+    if (!shipmentInput.isConfirmed || !shipmentInput.value) return;
+
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      const csrfData = await csrfResponse.json();
+
+      const response = await fetch(`/api/shop-owner/orders/${order.id}/arrange-return-pickup`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfData.csrf_token,
+        },
+        body: JSON.stringify({
+          tracking_number: shipmentInput.value.trackingNumber,
+          carrier_company: shipmentInput.value.carrierCompany,
+          rider_name: shipmentInput.value.riderName,
+          rider_phone: shipmentInput.value.riderPhone,
+          tracking_link: shipmentInput.value.trackingLink,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to arrange return pickup.');
+      }
+
+      const ordersResponse = await fetch('/api/shop-owner/orders', {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
+
+      if (ordersResponse.ok) {
+        const refreshed = await ordersResponse.json();
+        const payload = Array.isArray(refreshed) ? refreshed : (refreshed.data || []);
+        const mappedOrders: Order[] = payload.map((item: any) => {
+          const itemSubtotal = parseAmount(item.total_amount);
+          const shippingFee = parseAmount(item.shipping_fee);
+          const hasStoredVat = item.vat_amount !== null && item.vat_amount !== undefined;
+          const rawVatRate = Number(item.vat_rate);
+          const vatRate = hasStoredVat && Number.isFinite(rawVatRate) && rawVatRate >= 0 ? rawVatRate : null;
+          const rawVatAmount = Number(item.vat_amount);
+          const vatAmount = hasStoredVat && Number.isFinite(rawVatAmount) && rawVatAmount >= 0
+            ? rawVatAmount
+            : null;
+          const grandTotal = parseAmount(item.grand_total || itemSubtotal + shippingFee + (vatAmount ?? 0));
+
+          return {
+            id: item.id,
+            order_number: item.order_number,
+            customer: item.customer_name || 'Unknown',
+            email: item.customer_email || '',
+            phone: item.customer_phone || '',
+            shippingAddress: item.shipping_address || '',
+            total_amount: itemSubtotal,
+            shipping_fee: shippingFee,
+            vat_amount: vatAmount,
+            vat_rate: vatRate,
+            grand_total: grandTotal,
+            paymentStatus: item.payment_status || 'pending',
+            paymentMethod: item.payment_method || '',
+            status: item.status as any,
+            cancellation_reason: item.cancellation_reason || null,
+            cancellation_note: item.cancellation_note || null,
+            cancellation_other_reason_note: item.cancellation_other_reason_note || null,
+            orderedAt: new Date(item.created_at).toLocaleString(),
+            items: item.items || [],
+            quantity: item.items?.reduce((sum: number, row: any) => sum + row.quantity, 0) || 0,
+            product: item.items?.[0]?.product_name || '',
+            carrierCompany: item.carrier_company || undefined,
+            carrierName: item.carrier_name || undefined,
+            carrierPhone: item.carrier_phone || undefined,
+            trackingNumber: item.tracking_number || undefined,
+            trackingLink: item.tracking_link || undefined,
+            eta: item.eta || undefined,
+            pickup_enabled: item.pickup_enabled || false,
+            pickup_enabled_at: item.pickup_enabled_at || null,
+            latest_refund: item.latest_refund || null,
+          };
+        });
+
+        setOrders(mappedOrders);
+      }
+
+      await Swal.fire('Pickup Arranged', data?.message || 'Return pickup details were saved successfully.', 'success');
+    } catch (error) {
+      await Swal.fire({
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Unable to arrange return pickup.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
+      });
+    }
   };
 
   const handleConfirmReturnReceived = async (order: Order) => {
@@ -682,7 +1007,14 @@ export default function JobOrdersPage() {
         const mappedOrders: Order[] = payload.map((item: any) => {
           const itemSubtotal = parseAmount(item.total_amount);
           const shippingFee = parseAmount(item.shipping_fee);
-          const grandTotal = parseAmount(item.grand_total || itemSubtotal + shippingFee);
+          const hasStoredVat = item.vat_amount !== null && item.vat_amount !== undefined;
+          const rawVatRate = Number(item.vat_rate);
+          const vatRate = hasStoredVat && Number.isFinite(rawVatRate) && rawVatRate >= 0 ? rawVatRate : null;
+          const rawVatAmount = Number(item.vat_amount);
+          const vatAmount = hasStoredVat && Number.isFinite(rawVatAmount) && rawVatAmount >= 0
+            ? rawVatAmount
+            : null;
+          const grandTotal = parseAmount(item.grand_total || itemSubtotal + shippingFee + (vatAmount ?? 0));
 
           return {
             id: item.id,
@@ -693,10 +1025,15 @@ export default function JobOrdersPage() {
             shippingAddress: item.shipping_address || '',
             total_amount: itemSubtotal,
             shipping_fee: shippingFee,
+            vat_amount: vatAmount,
+            vat_rate: vatRate,
             grand_total: grandTotal,
             paymentStatus: item.payment_status || 'pending',
             paymentMethod: item.payment_method || '',
             status: item.status as any,
+            cancellation_reason: item.cancellation_reason || null,
+            cancellation_note: item.cancellation_note || null,
+            cancellation_other_reason_note: item.cancellation_other_reason_note || null,
             orderedAt: new Date(item.created_at).toLocaleString(),
             items: item.items || [],
             quantity: item.items?.reduce((sum: number, row: any) => sum + row.quantity, 0) || 0,
@@ -933,6 +1270,9 @@ export default function JobOrdersPage() {
               paymentStatus: order.payment_status || 'pending',
               paymentMethod: order.payment_method || '',
               status: order.status as any,
+              cancellation_reason: order.cancellation_reason || null,
+              cancellation_note: order.cancellation_note || null,
+              cancellation_other_reason_note: order.cancellation_other_reason_note || null,
               orderedAt: new Date(order.created_at).toLocaleString(),
               items: order.items || [],
               quantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
@@ -1339,6 +1679,10 @@ export default function JobOrdersPage() {
                             <span>Shipping Fee</span>
                             <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
                           </div>
+                          <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                            <span>{order.vat_rate !== null ? `VAT (${order.vat_rate}%)` : 'VAT'}</span>
+                            <span className="font-medium text-gray-800 dark:text-gray-200">{order.vat_amount !== null ? formatOrderTotal(order.vat_amount) : 'N/A'}</span>
+                          </div>
                           <div className={`flex items-center justify-between gap-2 text-sm font-semibold ${
                             order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
                               ? 'text-red-600 dark:text-red-400'
@@ -1430,6 +1774,17 @@ export default function JobOrdersPage() {
                               aria-label="Confirm returned item received"
                             >
                               <CheckCircleIcon className="size-5" />
+                            </button>
+                          )}
+                          {canArrangeReturnPickup(order) && (
+                            <button
+                              type="button"
+                              onClick={() => handleArrangeReturnPickup(order)}
+                              className="p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                              title="Arrange return pickup"
+                              aria-label="Arrange return pickup"
+                            >
+                              <PencilIcon className="size-5" />
                             </button>
                           )}
                           {/* Shipped orders will be completed when customer confirms receipt */}
@@ -1782,6 +2137,10 @@ export default function JobOrdersPage() {
                           <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(viewOrder.shipping_fee)}</span>
                         </div>
                         <div className="flex items-center justify-between pt-1">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{viewOrder.vat_rate !== null ? `VAT (${viewOrder.vat_rate}%)` : 'VAT'}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vat_amount !== null ? formatOrderTotal(viewOrder.vat_amount) : 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
                           <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
                           <span className={`inline-flex items-center gap-1 text-sm font-semibold ${
                             viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
@@ -1835,6 +2194,10 @@ export default function JobOrdersPage() {
                           <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(viewOrder.shipping_fee)}</span>
                         </div>
                         <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{viewOrder.vat_rate !== null ? `VAT (${viewOrder.vat_rate}%)` : 'VAT'}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vat_amount !== null ? formatOrderTotal(viewOrder.vat_amount) : 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
                           <span className={`inline-flex items-center gap-1 text-sm font-semibold ${
                             viewOrder.status === 'cancelled' || String(viewOrder.paymentStatus || '').toLowerCase() === 'refunded'
@@ -1863,6 +2226,41 @@ export default function JobOrdersPage() {
                     </div>
                   </div>
                 </div>
+                {(String(viewOrder.cancellation_reason || '').trim()
+                  || String(viewOrder.cancellation_other_reason_note || '').trim()
+                  || String(viewOrder.latest_refund?.reason_code || '').trim()
+                  || String(viewOrder.latest_refund?.other_reason_note || '').trim()) && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Reason Details</p>
+                    {(() => {
+                      const isCancelledOrder = String(viewOrder.status || '').toLowerCase() === 'cancelled';
+                      const cancellationMessage = String(
+                        viewOrder.cancellation_other_reason_note
+                          || viewOrder.cancellation_reason
+                          || ''
+                      ).trim();
+                      const refundMessage = String(
+                        viewOrder.latest_refund?.other_reason_note
+                          || viewOrder.latest_refund?.reason_code
+                          || ''
+                      ).trim();
+
+                      const label = isCancelledOrder ? 'Cancellation Message' : 'Refund Message';
+                      const value = isCancelledOrder ? cancellationMessage : refundMessage;
+
+                      if (!value) return null;
+
+                      return (
+                        <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600">{label}</span>
+                            <span className="font-medium">{value}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
                 {(viewOrder.trackingNumber || viewOrder.trackingLink || viewOrder.eta) && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shipping & Tracking</p>
@@ -1901,6 +2299,16 @@ export default function JobOrdersPage() {
                     title="Confirm returned item received"
                   >
                     Confirm Return Received
+                  </button>
+                )}
+                {canArrangeReturnPickup(viewOrder) && (
+                  <button
+                    type="button"
+                    onClick={() => handleArrangeReturnPickup(viewOrder)}
+                    className="px-4 py-2 border border-amber-600 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors"
+                    title="Arrange return pickup"
+                  >
+                    Arrange Return Pickup
                   </button>
                 )}
                 {viewOrder.status === "shipped" && (

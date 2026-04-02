@@ -643,12 +643,12 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const floorColor = '#d6d1c8';
 		const ceilingColor = '#efebe2';
 		const shelfColor = '#8b6a4a';
-		const ambientIntensity = isNightMode ? 0.06 : 1.45;
-		const keyLightIntensity = isNightMode ? 0.16 : 1.6;
-		const rimLightIntensity = isNightMode ? 0.12 : 1.05;
+		const ambientIntensity = isNightMode ? 0.14 : 1.45;
+		const keyLightIntensity = isNightMode ? 0.34 : 1.6;
+		const rimLightIntensity = isNightMode ? 0.22 : 1.05;
 		const fixtureEmissiveIntensity = lightsOn ? 1.9 : 0;
-		const fixturePointIntensity = lightsOn ? 0.95 : 0;
-		const fixtureSpotIntensity = lightsOn ? 2.4 : 0;
+		const fixturePointIntensity = lightsOn ? 1.15 : 0;
+		const fixtureSpotIntensity = lightsOn ? 3.1 : 0;
 
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color(sceneColor);
@@ -970,9 +970,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 		const cameraForward = new THREE.Vector3();
 
+		const runwayWidth = compactRoom ? 7.8 : (premiumRoom ? 14.2 : 10);
+		const runwayDepth = compactRoom ? 5.8 : (premiumRoom ? 11.2 : 8);
 		const runway = new THREE.Mesh(
-			new THREE.BoxGeometry(compactRoom ? 7.8 : (premiumRoom ? 14.2 : 10), 0.25, compactRoom ? 5.8 : (premiumRoom ? 11.2 : 8)),
-			new THREE.MeshStandardMaterial({ color: isNightMode ? '#7d8695' : '#f8fafc', roughness: 0.4, metalness: 0.2 }),
+			new THREE.BoxGeometry(runwayWidth, 0.25, runwayDepth),
+			new THREE.MeshStandardMaterial({ color: isNightMode ? '#8a939f' : '#d9dee4', roughness: 0.4, metalness: 0.2 }),
 		);
 		runway.position.set(0, 0.13, roomCenterZ);
 		runway.receiveShadow = true;
@@ -982,6 +984,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const decorMeshes: THREE.Mesh[] = [];
 		const decorMaterials: THREE.Material[] = [];
 		const decorTextures: THREE.Texture[] = [];
+		const loungeAccentLights: THREE.PointLight[] = [];
 
 		const createPosterTexture = (title: string, subtitle: string, accentColor: string) => {
 			const canvas = document.createElement('canvas');
@@ -1051,6 +1054,287 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		};
 
 		createPoster(new THREE.Vector3(0, compactRoom ? 7.6 : (premiumRoom ? 9.2 : 8.9), roomBackZ + 0.3), 0, posterPanelMaterialBack);
+
+		const decorScale = compactRoom ? 0.86 : (premiumRoom ? 1.2 : 1);
+		const decorDensity = compactRoom ? 1 : (premiumRoom ? 3 : 2);
+
+		const sofaFabricMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#d6d2c8' : '#e7e1d6',
+			roughness: 0.9,
+			metalness: 0.03,
+		});
+		const sofaBaseMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#6b4f35' : '#8f6745',
+			roughness: 0.64,
+			metalness: 0.04,
+		});
+		const sofaLegMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#5d432d' : '#7a5637',
+			roughness: 0.34,
+			metalness: 0.34,
+		});
+		const coffeeTableTopMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#b8a78f' : '#c79b66',
+			roughness: 0.52,
+			metalness: 0.08,
+		});
+		const coffeeTableLegMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#6b4f35' : '#8f6745',
+			roughness: 0.42,
+			metalness: 0.26,
+		});
+		const centerPotMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#7b5a40' : '#a88462',
+			roughness: 0.58,
+			metalness: 0.2,
+		});
+		const centerStemMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#6b4b32' : '#886143',
+			roughness: 0.78,
+			metalness: 0.02,
+		});
+		const centerLeafMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#5fcf96' : '#3ca26f',
+			roughness: 0.86,
+			metalness: 0.02,
+		});
+		const pillowMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#a9adb5' : '#c9ced6',
+			roughness: 0.78,
+			metalness: 0.02,
+		});
+		const lampPoleMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#6b4f35' : '#8f6745',
+			roughness: 0.36,
+			metalness: 0.34,
+		});
+		const lampShadeMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#f5ebd8' : '#fff4df',
+			roughness: 0.62,
+			metalness: 0.03,
+			emissive: '#ffe6b3',
+			emissiveIntensity: lightsOn ? 0.38 : 0.05,
+		});
+		const lampDiffuserMaterial = new THREE.MeshStandardMaterial({
+			color: isNightMode ? '#fff2d1' : '#fff8e7',
+			roughness: 0.3,
+			metalness: 0.02,
+			emissive: '#ffe8b3',
+			emissiveIntensity: lightsOn ? 0.75 : 0.08,
+		});
+		decorMaterials.push(
+			sofaFabricMaterial,
+			sofaBaseMaterial,
+			sofaLegMaterial,
+			coffeeTableTopMaterial,
+			coffeeTableLegMaterial,
+			centerPotMaterial,
+			centerStemMaterial,
+			centerLeafMaterial,
+			pillowMaterial,
+			lampPoleMaterial,
+			lampShadeMaterial,
+			lampDiffuserMaterial,
+		);
+
+		const loungeCenterZ = roomCenterZ + (compactRoom ? 0.15 : 0.35);
+		const loungeScale = compactRoom ? 1.08 : (premiumRoom ? 1.44 : 1.26);
+		const localToWorld = (origin: THREE.Vector3, local: THREE.Vector3, rotationY: number) => {
+			return local.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY).add(origin);
+		};
+
+		const createSofa = (x: number, z: number, rotationY: number, scaleMultiplier = 1) => {
+			const sofaScale = decorScale * scaleMultiplier;
+			const origin = new THREE.Vector3(x, 0.45 * sofaScale, z);
+
+			const base = new THREE.Mesh(
+				new THREE.BoxGeometry(2.55 * sofaScale, 0.44 * sofaScale, 1.08 * sofaScale),
+				sofaBaseMaterial,
+			);
+			base.position.copy(origin);
+			base.rotation.y = rotationY;
+			scene.add(base);
+			decorMeshes.push(base);
+
+			const seat = new THREE.Mesh(
+				new THREE.BoxGeometry(2.35 * sofaScale, 0.22 * sofaScale, 0.94 * sofaScale),
+				sofaFabricMaterial,
+			);
+			seat.position.copy(origin);
+			seat.position.y += 0.21 * sofaScale;
+			seat.rotation.y = rotationY;
+			scene.add(seat);
+			decorMeshes.push(seat);
+
+			const back = new THREE.Mesh(
+				new THREE.BoxGeometry(2.35 * sofaScale, 0.7 * sofaScale, 0.18 * sofaScale),
+				sofaFabricMaterial,
+			);
+			back.position.copy(localToWorld(origin, new THREE.Vector3(0, 0.5 * sofaScale, -0.39 * sofaScale), rotationY));
+			back.rotation.y = rotationY;
+			scene.add(back);
+			decorMeshes.push(back);
+
+			const leftArm = new THREE.Mesh(
+				new THREE.BoxGeometry(0.18 * sofaScale, 0.52 * sofaScale, 0.94 * sofaScale),
+				sofaFabricMaterial,
+			);
+			leftArm.position.copy(localToWorld(origin, new THREE.Vector3(-1.08 * sofaScale, 0.28 * sofaScale, 0), rotationY));
+			leftArm.rotation.y = rotationY;
+			scene.add(leftArm);
+			decorMeshes.push(leftArm);
+
+			const rightArm = leftArm.clone();
+			rightArm.position.copy(localToWorld(origin, new THREE.Vector3(1.08 * sofaScale, 0.28 * sofaScale, 0), rotationY));
+			scene.add(rightArm);
+			decorMeshes.push(rightArm);
+
+			[
+				new THREE.Vector3(-0.95 * sofaScale, -0.24 * sofaScale, -0.32 * sofaScale),
+				new THREE.Vector3(0.95 * sofaScale, -0.24 * sofaScale, -0.32 * sofaScale),
+				new THREE.Vector3(-0.95 * sofaScale, -0.24 * sofaScale, 0.32 * sofaScale),
+				new THREE.Vector3(0.95 * sofaScale, -0.24 * sofaScale, 0.32 * sofaScale),
+			].forEach((offset) => {
+				const leg = new THREE.Mesh(
+					new THREE.BoxGeometry(0.08 * sofaScale, 0.26 * sofaScale, 0.08 * sofaScale),
+					sofaLegMaterial,
+				);
+				leg.position.copy(localToWorld(origin, offset, rotationY));
+				scene.add(leg);
+				decorMeshes.push(leg);
+			});
+
+			[
+				new THREE.Vector3(-0.52 * sofaScale, 0.33 * sofaScale, 0),
+				new THREE.Vector3(0.52 * sofaScale, 0.33 * sofaScale, 0),
+			].forEach((offset) => {
+				const pillow = new THREE.Mesh(
+					new THREE.BoxGeometry(0.44 * sofaScale, 0.2 * sofaScale, 0.34 * sofaScale),
+					pillowMaterial,
+				);
+				pillow.position.copy(localToWorld(origin, offset, rotationY));
+				pillow.rotation.y = rotationY;
+				scene.add(pillow);
+				decorMeshes.push(pillow);
+			});
+		};
+
+		const coffeeTableTop = new THREE.Mesh(
+			new THREE.CylinderGeometry(1.34 * decorScale, 1.45 * decorScale, 0.1 * decorScale, 40),
+			coffeeTableTopMaterial,
+		);
+		coffeeTableTop.position.set(0, 0.74 * decorScale, loungeCenterZ);
+		scene.add(coffeeTableTop);
+		decorMeshes.push(coffeeTableTop);
+
+		const coffeeTableLegOffsets = [
+			new THREE.Vector3(0.86 * decorScale, 0.45 * decorScale, loungeCenterZ + 0.3 * decorScale),
+			new THREE.Vector3(-0.86 * decorScale, 0.45 * decorScale, loungeCenterZ + 0.3 * decorScale),
+			new THREE.Vector3(0.86 * decorScale, 0.45 * decorScale, loungeCenterZ - 0.3 * decorScale),
+			new THREE.Vector3(-0.86 * decorScale, 0.45 * decorScale, loungeCenterZ - 0.3 * decorScale),
+		];
+		coffeeTableLegOffsets.forEach((legPos) => {
+			const leg = new THREE.Mesh(
+				new THREE.BoxGeometry(0.12 * decorScale, 0.36 * decorScale, 0.12 * decorScale),
+				coffeeTableLegMaterial,
+			);
+			leg.position.set(legPos.x, legPos.y, legPos.z);
+			scene.add(leg);
+			decorMeshes.push(leg);
+		});
+
+		createSofa(0, loungeCenterZ - (compactRoom ? 2.25 : (premiumRoom ? 4.1 : 3.05)), 0, loungeScale);
+		createSofa(0, loungeCenterZ + (compactRoom ? 2.25 : (premiumRoom ? 4.1 : 3.05)), Math.PI, loungeScale);
+		if (decorDensity >= 2) {
+			createSofa(-(compactRoom ? 3.35 : (premiumRoom ? 5.35 : 4.25)), loungeCenterZ, Math.PI / 2, loungeScale * 0.9);
+			createSofa((compactRoom ? 3.35 : (premiumRoom ? 5.35 : 4.25)), loungeCenterZ, -Math.PI / 2, loungeScale * 0.9);
+		}
+
+		const centerpiecePot = new THREE.Mesh(
+			new THREE.CylinderGeometry(0.28 * decorScale, 0.34 * decorScale, 0.3 * decorScale, 20),
+			centerPotMaterial,
+		);
+		centerpiecePot.position.set(0, 0.7 * decorScale, loungeCenterZ);
+		scene.add(centerpiecePot);
+		decorMeshes.push(centerpiecePot);
+
+		[
+			new THREE.Vector3(0, 0.9 * decorScale, loungeCenterZ),
+			new THREE.Vector3(0.12 * decorScale, 0.92 * decorScale, loungeCenterZ + 0.08 * decorScale),
+			new THREE.Vector3(-0.12 * decorScale, 0.92 * decorScale, loungeCenterZ - 0.08 * decorScale),
+			new THREE.Vector3(0.1 * decorScale, 0.88 * decorScale, loungeCenterZ - 0.14 * decorScale),
+			new THREE.Vector3(-0.1 * decorScale, 0.88 * decorScale, loungeCenterZ + 0.14 * decorScale),
+		].forEach((stemBase) => {
+			const plantStem = new THREE.Mesh(
+				new THREE.CylinderGeometry(0.015 * decorScale, 0.02 * decorScale, 0.22 * decorScale, 10),
+				centerStemMaterial,
+			);
+			plantStem.position.set(stemBase.x, stemBase.y, stemBase.z);
+			scene.add(plantStem);
+			decorMeshes.push(plantStem);
+
+			const leafCenter = stemBase.clone();
+			leafCenter.y += 0.14 * decorScale;
+			const leafCluster = new THREE.Mesh(
+				new THREE.SphereGeometry(0.09 * decorScale, 12, 12),
+				centerLeafMaterial,
+			);
+			leafCluster.position.set(leafCenter.x, leafCenter.y, leafCenter.z);
+			scene.add(leafCluster);
+			decorMeshes.push(leafCluster);
+		});
+
+		const lampCanopy = new THREE.Mesh(
+			new THREE.CylinderGeometry(0.18 * decorScale, 0.22 * decorScale, 0.08 * decorScale, 20),
+			lampPoleMaterial,
+		);
+		lampCanopy.position.set(0, ceilingY - 0.28, loungeCenterZ);
+		scene.add(lampCanopy);
+		decorMeshes.push(lampCanopy);
+
+		const lampPole = new THREE.Mesh(
+			new THREE.CylinderGeometry(0.03 * decorScale, 0.03 * decorScale, (compactRoom ? 2 : 2.35) * decorScale, 14),
+			lampPoleMaterial,
+		);
+		lampPole.position.set(0, ceilingY - (compactRoom ? 1.3 : 1.55) * decorScale, loungeCenterZ);
+		scene.add(lampPole);
+		decorMeshes.push(lampPole);
+
+		const lampShade = new THREE.Mesh(
+			new THREE.CylinderGeometry(0.44 * decorScale, 0.34 * decorScale, 0.4 * decorScale, 24, 1, true),
+			lampShadeMaterial,
+		);
+		lampShade.position.set(0, ceilingY - (compactRoom ? 2.3 : 2.7) * decorScale, loungeCenterZ);
+		scene.add(lampShade);
+		decorMeshes.push(lampShade);
+
+		const lampDiffuser = new THREE.Mesh(
+			new THREE.SphereGeometry(0.22 * decorScale, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+			lampDiffuserMaterial,
+		);
+		lampDiffuser.position.set(0, lampShade.position.y - 0.18 * decorScale, loungeCenterZ);
+		scene.add(lampDiffuser);
+		decorMeshes.push(lampDiffuser);
+
+		const lampBulb = new THREE.Mesh(
+			new THREE.SphereGeometry(0.085 * decorScale, 14, 14),
+			new THREE.MeshStandardMaterial({
+				color: '#fff7d6',
+				emissive: '#ffe8b3',
+				emissiveIntensity: lightsOn ? 0.95 : 0.06,
+				roughness: 0.28,
+				metalness: 0.02,
+			}),
+		);
+		lampBulb.position.set(0, lampDiffuser.position.y - 0.06 * decorScale, loungeCenterZ);
+		scene.add(lampBulb);
+		decorMeshes.push(lampBulb);
+		decorMaterials.push(lampBulb.material as THREE.Material);
+
+		const loungeLampLight = new THREE.PointLight('#ffe8b3', lightsOn ? 1.7 : 0, compactRoom ? 8 : 11, 2);
+		loungeLampLight.position.set(0, lampBulb.position.y - 0.04 * decorScale, loungeCenterZ);
+		scene.add(loungeLampLight);
+		loungeAccentLights.push(loungeLampLight);
 
 		const fixtureMaterial = new THREE.MeshStandardMaterial({
 			color: lightsOn ? '#2f343b' : '#7b818a',
@@ -1170,6 +1454,34 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		ceilingSpot.target = ceilingTarget;
 		scene.add(ceilingSpot);
 		fixtureSpotLights.push(ceilingSpot);
+
+		const platformSpotTarget = new THREE.Object3D();
+		platformSpotTarget.position.set(0, 0.65, loungeCenterZ);
+		scene.add(platformSpotTarget);
+		fixtureTargets.push(platformSpotTarget);
+
+		const platformSpotLight = new THREE.SpotLight(
+			'#ffe8b3',
+			lightsOn ? (compactRoom ? 4.8 : 6.2) : 0,
+			compactRoom ? 16 : (premiumRoom ? 26 : 21),
+			Math.PI / 4,
+			0.34,
+			1.05,
+		);
+		platformSpotLight.position.set(0, ceilingY - 0.55, loungeCenterZ);
+		platformSpotLight.target = platformSpotTarget;
+		scene.add(platformSpotLight);
+		fixtureSpotLights.push(platformSpotLight);
+
+		const platformFillLight = new THREE.PointLight(
+			'#fff2d1',
+			lightsOn ? (compactRoom ? 0.95 : 1.35) : 0,
+			compactRoom ? 10 : (premiumRoom ? 16 : 13),
+			2,
+		);
+		platformFillLight.position.set(0, compactRoom ? 2.45 : 2.85, loungeCenterZ);
+		scene.add(platformFillLight);
+		fixturePointLights.push(platformFillLight);
 
 		const loader = new THREE.TextureLoader();
 		const textureCache = new Map<string, THREE.Texture>();
@@ -1750,6 +2062,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			focusCardMaterial.dispose();
 			scene.remove(focusGroup);
 			scene.remove(swipeGuideGroup);
+			loungeAccentLights.forEach((light) => light.dispose());
 			fixturePointLights.forEach((light) => light.dispose());
 			fixtureSpotLights.forEach((light) => light.dispose());
 			fixtureTargets.forEach((target) => scene.remove(target));

@@ -363,7 +363,7 @@ export default function UploadInventory() {
   const fetchStocks = async () => {
     setLoadingStocks(true);
     try {
-      const res = await inventoryItemAPI.getAll({ per_page: 200 });
+      const res = await inventoryItemAPI.getAll({ per_page: 50 });
       setStocks(mapAndFilterVisibleStocks(res.data ?? []));
     } catch (err) {
       console.error('Failed to load inventory items', err);

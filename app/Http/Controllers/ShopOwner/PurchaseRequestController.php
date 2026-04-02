@@ -5,11 +5,16 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\PurchaseRequest;
+use App\Services\PurchaseRequestService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class PurchaseRequestController extends Controller
 {
+    public function __construct(
+        private PurchaseRequestService $purchaseRequestService
+    ) {}
+
     private const PURCHASE_REQUEST_RELATIONS = [
         'supplier',
         'inventoryItem',
@@ -102,10 +107,10 @@ class PurchaseRequestController extends Controller
         ]);
 
         try {
-            $purchaseRequest->approve(
-                $shopOwner->id,
-                $request->approval_notes,
-                'shop_owner'
+            $purchaseRequest = $this->purchaseRequestService->approvePurchaseRequest(
+                (int) $purchaseRequest->id,
+                (int) $shopOwner->id,
+                $request->approval_notes
             );
 
             $fresh = $purchaseRequest->fresh(self::PURCHASE_REQUEST_RELATIONS);
@@ -155,7 +160,11 @@ class PurchaseRequestController extends Controller
         ]);
 
         try {
-            $purchaseRequest->reject($shopOwner->id, $request->rejection_reason);
+            $purchaseRequest = $this->purchaseRequestService->rejectPurchaseRequest(
+                (int) $purchaseRequest->id,
+                (int) $shopOwner->id,
+                $request->rejection_reason
+            );
 
             $fresh = $purchaseRequest->fresh(self::PURCHASE_REQUEST_RELATIONS);
             $payload = $fresh->toArray();

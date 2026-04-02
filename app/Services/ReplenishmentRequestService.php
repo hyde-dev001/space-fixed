@@ -2,13 +2,19 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationType;
 use App\Models\ReplenishmentRequest;
 use App\Models\PurchaseRequest;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ReplenishmentRequestService
 {
+    public function __construct(
+        private NotificationService $notificationService
+    ) {}
+
     /**
      * Create a new replenishment request.
      */
@@ -34,7 +40,10 @@ class ReplenishmentRequestService
                 'inventory_item_id' => $replenishmentRequest->inventory_item_id
             ]);
 
-            return $replenishmentRequest->fresh();
+            $freshRequest = $replenishmentRequest->fresh();
+            $this->notifyReplenishmentRequestSubmitted($freshRequest);
+
+            return $freshRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -92,7 +101,10 @@ class ReplenishmentRequestService
                 'accepted_by' => $userId
             ]);
 
-            return $request->fresh();
+            $freshRequest = $request->fresh();
+            $this->dispatchReplenishmentAcceptedNotifications($freshRequest, $userId, $notes);
+
+            return $freshRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -128,7 +140,10 @@ class ReplenishmentRequestService
                 'rejected_by' => $userId
             ]);
 
-            return $request->fresh();
+            $freshRequest = $request->fresh();
+            $this->dispatchReplenishmentRejectedNotifications($freshRequest, $userId, $notes);
+
+            return $freshRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -160,7 +175,10 @@ class ReplenishmentRequestService
                 'requested_by' => $userId
             ]);
 
-            return $request->fresh();
+            $freshRequest = $request->fresh();
+            $this->dispatchReplenishmentNeedsDetailsNotifications($freshRequest, $userId, $notes);
+
+            return $freshRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -253,5 +271,138 @@ class ReplenishmentRequestService
             ->whereIn('status', ['pending', 'needs_details'])
             ->orderBy('requested_date', 'asc')
             ->get();
+    }
+
+    public function notifyReplenishmentRequestSubmitted(ReplenishmentRequest $request): void
+    {
+        $payload = $this->buildReplenishmentNotificationData($request, null, null);
+
+        $this->sendToProcurementOrFinance(
+            shopOwnerId: (int) $request->shop_owner_id,
+            type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
+            title: 'New Replenishment Request',
+            message: "Replenishment request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
+            data: $payload,
+            actionUrl: '/erp/procurement/replenishment-request-approval',
+            priority: $request->priority === 'high' ? 'high' : 'medium'
+        );
+    }
+
+    private function dispatchReplenishmentAcceptedNotifications(ReplenishmentRequest $request, int $reviewerId, ?string $notes): void
+    {
+        $requesterId = (int) ($request->requested_by ?? 0);
+        if ($requesterId <= 0) {
+            return;
+        }
+
+        $payload = $this->buildReplenishmentNotificationData($request, $reviewerId, $notes);
+
+        $this->notificationService->sendToUser(
+            userId: $requesterId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Replenishment Request Accepted',
+            message: "Your replenishment request {$payload['request_number']} has been accepted.",
+            data: $payload,
+            actionUrl: '/erp/procurement/replenishment-request-approval',
+            shopId: (int) $request->shop_owner_id,
+            priority: 'medium'
+        );
+    }
+
+    private function dispatchReplenishmentRejectedNotifications(ReplenishmentRequest $request, int $reviewerId, ?string $notes): void
+    {
+        $requesterId = (int) ($request->requested_by ?? 0);
+        if ($requesterId <= 0) {
+            return;
+        }
+
+        $reason = trim((string) ($notes ?? ''));
+        $payload = $this->buildReplenishmentNotificationData($request, $reviewerId, $reason);
+        $message = "Your replenishment request {$payload['request_number']} was rejected.";
+        if ($reason !== '') {
+            $message .= " Reason: {$reason}";
+        }
+
+        $this->notificationService->sendToUser(
+            userId: $requesterId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Replenishment Request Rejected',
+            message: $message,
+            data: $payload,
+            actionUrl: '/erp/procurement/replenishment-request-approval',
+            shopId: (int) $request->shop_owner_id,
+            priority: 'medium'
+        );
+    }
+
+    private function dispatchReplenishmentNeedsDetailsNotifications(ReplenishmentRequest $request, int $reviewerId, string $notes): void
+    {
+        $requesterId = (int) ($request->requested_by ?? 0);
+        if ($requesterId <= 0) {
+            return;
+        }
+
+        $payload = $this->buildReplenishmentNotificationData($request, $reviewerId, $notes);
+
+        $this->notificationService->sendToUser(
+            userId: $requesterId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Replenishment Request Needs Details',
+            message: "More details were requested for replenishment request {$payload['request_number']}.",
+            data: $payload,
+            actionUrl: '/erp/procurement/replenishment-request-approval',
+            shopId: (int) $request->shop_owner_id,
+            priority: 'medium'
+        );
+    }
+
+    private function sendToProcurementOrFinance(
+        int $shopOwnerId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        array $data,
+        string $actionUrl,
+        string $priority
+    ): void {
+        $recipients = User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->get();
+
+        if ($recipients->isEmpty()) {
+            $recipients = User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->get();
+        }
+
+        foreach ($recipients as $recipient) {
+            $this->notificationService->sendToUser(
+                userId: (int) $recipient->id,
+                type: $type,
+                title: $title,
+                message: $message,
+                data: $data,
+                actionUrl: $actionUrl,
+                shopId: $shopOwnerId,
+                priority: $priority
+            );
+        }
+    }
+
+    private function buildReplenishmentNotificationData(ReplenishmentRequest $request, ?int $actorId, ?string $note): array
+    {
+        return [
+            'request_id' => $request->id,
+            'request_number' => $request->request_number,
+            'inventory_item_id' => $request->inventory_item_id,
+            'product_name' => $request->product_name,
+            'quantity_needed' => $request->quantity_needed,
+            'priority' => $request->priority,
+            'status' => $request->status,
+            'notes' => $note,
+            'acted_by' => $actorId,
+        ];
     }
 }

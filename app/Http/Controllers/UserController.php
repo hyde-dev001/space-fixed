@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Auth\Events\Registered;
 use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
@@ -23,6 +24,46 @@ use Inertia\Inertia;
  */
 class UserController extends Controller
 {
+    /**
+     * Check whether an email can be used for public registration flows.
+     */
+    public function checkEmailAvailability(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => ['required', 'string', 'email', 'max:255', new NotDisposableEmail()],
+        ], [
+            'email.required' => 'Email is required',
+            'email.email' => 'Please provide a valid email address',
+        ]);
+
+        if ($validator->fails()) {
+            $message = (string) ($validator->errors()->first('email') ?: 'Email is not available');
+
+            return response()->json([
+                'available' => false,
+                'exists_in_employees' => false,
+                'exists_in_users' => false,
+                'exists_in_shop_owners' => false,
+                'message' => $message,
+            ], 422);
+        }
+
+        $normalizedEmail = strtolower(trim((string) $request->input('email')));
+
+        $existsInEmployees = Employee::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
+        $existsInUsers = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
+        $existsInShopOwners = ShopOwner::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
+        $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
+
+        return response()->json([
+            'available' => $available,
+            'exists_in_employees' => $existsInEmployees,
+            'exists_in_users' => $existsInUsers,
+            'exists_in_shop_owners' => $existsInShopOwners,
+            'message' => $available ? 'Email is available' : 'This email is already registered',
+        ]);
+    }
+
     /**
      * Register a new user account
      * 
@@ -40,7 +81,7 @@ class UserController extends Controller
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', new NotDisposableEmail()],
-                'phone' => 'required|string|max:15|min:10',
+                'phone' => ['required', 'regex:/^\d{11}$/'],
                 'age' => 'required|integer|min:18|max:120',
                 'password' => [
                     'required',
@@ -62,7 +103,7 @@ class UserController extends Controller
                 'email.email' => 'Please provide a valid email address',
                 'email.unique' => 'This email is already registered',
                 'phone.required' => 'Phone number is required',
-                'phone.min' => 'Phone number must be at least 10 digits',
+                'phone.regex' => 'Phone number must be exactly 11 digits',
                 'age.required' => 'Age is required',
                 'age.min' => 'You must be at least 18 years old to register',
                 'password.required' => 'Password is required',

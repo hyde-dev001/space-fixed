@@ -6,6 +6,7 @@ use App\Models\Approval;
 use App\Models\Finance\Expense;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
+use App\Enums\NotificationType;
 
 class ExpenseApprovalService
 {
@@ -75,6 +76,8 @@ class ExpenseApprovalService
             ];
         }
 
+        $previousLevel = (int) $approval->current_level;
+
         // Use ApprovalService to transition
         $result = $this->approvalService->approve($approval, $approver, $comments);
 
@@ -105,6 +108,14 @@ class ExpenseApprovalService
                 'status' => $statusMapping[$nextLevel] ?? 'submitted'
             ]);
         }
+
+        $this->dispatchExpenseApprovalNotifications(
+            expense: $expense,
+            approval: $approval,
+            approver: $approver,
+            previousLevel: $previousLevel,
+            result: $result
+        );
 
         return $result;
     }
@@ -143,18 +154,120 @@ class ExpenseApprovalService
             'current_approval_level' => $approval->current_level
         ]);
 
-        // Send rejection notification to the requester
-        $shopOwnerId = $approval->shop_owner_id;
-        if ($expense->created_by) {
-            $this->notificationService->notifyExpenseRejected($expense->created_by, $shopOwnerId, [
-                'reference' => $expense->reference,
-                'amount' => (float)$expense->amount,
-                'category' => $expense->category,
-                'rejection_reason' => $comments,
-            ]);
-        }
+        $this->dispatchExpenseRejectionNotifications($expense, $approval, $comments);
 
         return $result;
+    }
+
+    private function dispatchExpenseApprovalNotifications(
+        Expense $expense,
+        Approval $approval,
+        User $approver,
+        int $previousLevel,
+        array $result
+    ): void {
+        $shopOwnerId = (int) $approval->shop_owner_id;
+        $expenseData = $this->buildExpenseNotificationData($expense, $approver, null);
+
+        if ($result['is_final'] ?? false) {
+            $requesterId = $this->resolveRequesterId($expense, $approval);
+            if ($requesterId) {
+                $this->notificationService->sendToUser(
+                    userId: $requesterId,
+                    type: NotificationType::EXPENSE_APPROVAL,
+                    title: 'Expense Approved',
+                    message: "Your expense {$expenseData['reference']} for ₱{$expenseData['amount']} has been approved.",
+                    data: $expenseData,
+                    actionUrl: '/erp/finance/expenses',
+                    shopId: $shopOwnerId
+                );
+            }
+
+            return;
+        }
+
+        if ($previousLevel === 1) {
+            $this->notificationService->sendToShopOwner(
+                shopOwnerId: $shopOwnerId,
+                type: NotificationType::EXPENSE_REQUEST_PENDING,
+                title: 'Expense Awaiting Your Approval',
+                message: "Expense {$expenseData['reference']} for ₱{$expenseData['amount']} now requires shop owner approval.",
+                data: $expenseData,
+                actionUrl: '/shop-owner/expenses',
+                priority: 'medium'
+            );
+
+            return;
+        }
+
+        if (in_array($previousLevel, [2, 3], true)) {
+            $title = $previousLevel === 2
+                ? 'Expense Returned To Finance'
+                : 'Expense Awaiting Final Finance Approval';
+            $message = $previousLevel === 2
+                ? "Expense {$expenseData['reference']} was approved by shop owner and is back to Finance for review."
+                : "Expense {$expenseData['reference']} passed Finance review and needs final Finance approval.";
+
+            $this->notificationService->sendToErpRole(
+                roleName: 'Finance',
+                shopId: $shopOwnerId,
+                type: NotificationType::EXPENSE_REQUEST_PENDING,
+                title: $title,
+                message: $message,
+                data: $expenseData,
+                actionUrl: '/erp/finance/expenses',
+                priority: 'medium'
+            );
+        }
+    }
+
+    private function dispatchExpenseRejectionNotifications(Expense $expense, Approval $approval, string $comments): void
+    {
+        $requesterId = $this->resolveRequesterId($expense, $approval);
+        if (!$requesterId) {
+            return;
+        }
+
+        $this->notificationService->notifyExpenseRejected(
+            userId: $requesterId,
+            shopId: (int) $approval->shop_owner_id,
+            expenseData: $this->buildExpenseNotificationData($expense, null, $comments)
+        );
+    }
+
+    private function buildExpenseNotificationData(Expense $expense, ?User $actor = null, ?string $reason = null): array
+    {
+        $meta = is_array($expense->meta) ? $expense->meta : [];
+
+        return [
+            'expense_id' => $expense->id,
+            'reference' => $expense->reference,
+            'amount' => number_format((float) $expense->amount, 2),
+            'category' => $expense->category,
+            'vendor' => $expense->vendor,
+            'submitted_by' => $actor?->name ?? ($meta['submitted_by_name'] ?? 'Staff'),
+            'rejection_reason' => $reason,
+        ];
+    }
+
+    private function resolveRequesterId(Expense $expense, Approval $approval): ?int
+    {
+        $meta = is_array($expense->meta) ? $expense->meta : [];
+
+        $candidates = [
+            $expense->created_by ?? null,
+            $meta['created_by'] ?? null,
+            $approval->requested_by ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            $userId = (int) $candidate;
+            if ($userId > 0) {
+                return $userId;
+            }
+        }
+
+        return null;
     }
 
     /**

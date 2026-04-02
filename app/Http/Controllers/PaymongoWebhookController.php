@@ -7,6 +7,7 @@ use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerSubscriptionPayment;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Enums\NotificationType;
@@ -376,7 +377,7 @@ class PaymongoWebhookController extends Controller
             return response()->json(['message' => 'Subscription not found'], 404);
         }
 
-        $activated = DB::transaction(function () use ($subscription, $sessionId, $paymentId, $paidAmount) {
+        $activated = DB::transaction(function () use ($subscription, $sessionId, $paymentId, $paidAmount, $metadata) {
             // Lock the specific row; prevents duplicate activation under concurrent webhooks
             $locked = ShopOwnerSubscription::where('id', $subscription->id)
                 ->lockForUpdate()
@@ -424,6 +425,42 @@ class PaymongoWebhookController extends Controller
             }
 
             $locked->update($updatePayload);
+
+            // Upgrade path: once the new paid subscription is active, immediately end
+            // access for the previous subscription and clear stale pending downgrade data.
+            if ($locked->replaces_subscription_id) {
+                $source = ShopOwnerSubscription::query()
+                    ->where('id', (int) $locked->replaces_subscription_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($source && $source->status === 'active') {
+                    $sourceUpdate = [
+                        'status' => 'cancelled',
+                        'ends_at' => now(),
+                    ];
+
+                    if (
+                        Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
+                        && Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
+                    ) {
+                        $sourceUpdate['auto_renew'] = false;
+                        $sourceUpdate['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
+                    }
+
+                    if (Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')) {
+                        $sourceUpdate['pending_premium_plan_id'] = null;
+                    }
+
+                    if (Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')) {
+                        $sourceUpdate['pending_plan_effective_at'] = null;
+                    }
+
+                    $source->update($sourceUpdate);
+                }
+            }
+
+            $this->syncSubscriptionPaymentLedger($sessionId, $paymentId, $locked, $metadata, 'paid', $paidAmount);
 
             activity()
                 ->performedOn($locked)
@@ -500,7 +537,7 @@ class PaymongoWebhookController extends Controller
             return response()->json(['message' => 'Subscription not found — no action'], 200);
         }
 
-        DB::transaction(function () use ($subscription, $sessionId) {
+        DB::transaction(function () use ($subscription, $sessionId, $metadata) {
             $locked = ShopOwnerSubscription::where('id', $subscription->id)
                 ->lockForUpdate()
                 ->first();
@@ -511,6 +548,7 @@ class PaymongoWebhookController extends Controller
             }
 
             $locked->update(['status' => 'failed']);
+            $this->syncSubscriptionPaymentLedger($sessionId, null, $locked, $metadata, 'failed', null);
 
             activity()
                 ->performedOn($locked)
@@ -551,6 +589,50 @@ class PaymongoWebhookController extends Controller
         }
 
         return response()->json(['message' => 'Failure recorded'], 200);
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     */
+    private function syncSubscriptionPaymentLedger(
+        ?string $sessionId,
+        ?string $paymentId,
+        ShopOwnerSubscription $subscription,
+        array $metadata,
+        string $status,
+        ?float $paidAmount
+    ): void {
+        $query = ShopOwnerSubscriptionPayment::query();
+
+        if (!empty($metadata['payment_record_id'])) {
+            $query->where('id', (int) $metadata['payment_record_id']);
+        } elseif ($sessionId) {
+            $query->where('paymongo_session_id', $sessionId);
+        } else {
+            $query->where('subscription_id', $subscription->id)
+                ->where('status', 'pending');
+        }
+
+        $paymentRecord = $query->latest('id')->first();
+        if (!$paymentRecord) {
+            return;
+        }
+
+        $updates = [
+            'subscription_id' => $subscription->id,
+            'status' => $status,
+        ];
+
+        if ($paymentId) {
+            $updates['paymongo_payment_id'] = $paymentId;
+        }
+
+        if ($status === 'paid') {
+            $updates['paid_at'] = now();
+            $updates['amount_paid'] = $paidAmount ?? $paymentRecord->amount_due;
+        }
+
+        $paymentRecord->update($updates);
     }
 
     /**

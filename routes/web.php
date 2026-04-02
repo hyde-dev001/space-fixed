@@ -337,6 +337,7 @@ Route::get('/shop-owner/login', function () {
 })->name('shop-owner.login.form');
 
 // User Authentication Routes
+Route::get('/auth/check-email-availability', [UserController::class, 'checkEmailAvailability'])->name('auth.check-email-availability');
 Route::post('/user/register', [UserController::class, 'register'])->name('user.register');
 Route::post('/user/login', [UserController::class, 'login'])->name('user.login');
 Route::post('/user/logout', [UserController::class, 'logout'])->name('user.logout');
@@ -507,6 +508,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
             ]);
         })->name('job-orders-repair');
 
+        Route::get('/point-of-sale', function () {
+            return Inertia::render('ShopOwner/Repairs/service management/POS');
+        })->name('point-of-sale');
+
         Route::get('/upload-services', function () {
             return Inertia::render('ShopOwner/Repairs/service management/uploadService');
         })->name('upload-services');
@@ -615,16 +620,71 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
                             $paymentStatus = strtolower((string) ($attributes['payment_status'] ?? ''));
                             $hasPaidSignal = $paymentStatus === 'paid' || count($payments) > 0;
 
-                            if ($hasPaidSignal) {
+                            if ($hasPaidSignal && in_array($subscription->status, ['pending', 'failed'], true)) {
                                 $startsAt = now();
                                 $paymentId = $payments[0]['id'] ?? null;
+                                $durationDays = max(1, (int) ($subscription->premiumPlan?->duration_days ?? 30));
+                                $endsAt = $startsAt->copy()->addDays($durationDays);
 
-                                $subscription->update([
-                                    'status' => 'active',
-                                    'paymongo_payment_id' => $paymentId,
-                                    'starts_at' => $startsAt,
-                                    'ends_at' => null,
-                                ]);
+                                \Illuminate\Support\Facades\DB::transaction(function () use ($subscription, $startsAt, $endsAt, $paymentId) {
+                                    $lockedSubscription = \App\Models\ShopOwnerSubscription::query()
+                                        ->where('id', $subscription->id)
+                                        ->lockForUpdate()
+                                        ->first();
+
+                                    if (!$lockedSubscription || !in_array($lockedSubscription->status, ['pending', 'failed'], true)) {
+                                        return;
+                                    }
+
+                                    $updatePayload = [
+                                        'status' => 'active',
+                                        'paymongo_payment_id' => $paymentId,
+                                        'starts_at' => $startsAt,
+                                        'ends_at' => $endsAt,
+                                    ];
+
+                                    if (
+                                        \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
+                                        && \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
+                                    ) {
+                                        $updatePayload['auto_renew'] = true;
+                                        $updatePayload['auto_renew_status'] = \App\Models\ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
+                                    }
+
+                                    $lockedSubscription->update($updatePayload);
+
+                                    if ($lockedSubscription->replaces_subscription_id) {
+                                        $source = \App\Models\ShopOwnerSubscription::query()
+                                            ->where('id', (int) $lockedSubscription->replaces_subscription_id)
+                                            ->lockForUpdate()
+                                            ->first();
+
+                                        if ($source && $source->status === 'active') {
+                                            $sourceUpdate = [
+                                                'status' => 'cancelled',
+                                                'ends_at' => $startsAt,
+                                            ];
+
+                                            if (
+                                                \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
+                                                && \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
+                                            ) {
+                                                $sourceUpdate['auto_renew'] = false;
+                                                $sourceUpdate['auto_renew_status'] = \App\Models\ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
+                                            }
+
+                                            if (\Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')) {
+                                                $sourceUpdate['pending_premium_plan_id'] = null;
+                                            }
+
+                                            if (\Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')) {
+                                                $sourceUpdate['pending_plan_effective_at'] = null;
+                                            }
+
+                                            $source->update($sourceUpdate);
+                                        }
+                                    }
+                                });
 
                                 return redirect()
                                     ->route('shop-owner.premium-benefits')
@@ -778,6 +838,8 @@ Route::middleware('auth:user')->prefix('api/staff')->group(function () {
         ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/confirm-return-received', [\App\Http\Controllers\Api\StaffOrderController::class, 'confirmReturnReceived'])
         ->middleware('permission:access-staff-job-orders');
+    Route::post('orders/{id}/arrange-return-pickup', [\App\Http\Controllers\Api\StaffOrderController::class, 'arrangeReturnPickup'])
+        ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/complete', [\App\Http\Controllers\Api\StaffOrderController::class, 'complete'])
         ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/activate-pickup', [\App\Http\Controllers\Api\StaffOrderController::class, 'activatePickup'])
@@ -798,14 +860,17 @@ Route::prefix('api/products')->group(function () {
         Route::get('meta/showroom-entitlement', [\App\Http\Controllers\Api\ProductController::class, 'showroomEntitlement'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::get('my/products', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])
+            ->middleware('throttle:120,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::put('{id}', [\App\Http\Controllers\Api\ProductController::class, 'update'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::delete('{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])
+            ->middleware('throttle:120,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])
+            ->middleware('throttle:180,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::get('{id}/variants', [\App\Http\Controllers\Api\ProductController::class, 'getVariants'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
@@ -824,16 +889,20 @@ Route::prefix('api/products')->group(function () {
         Route::put('{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariant'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::delete('{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariant'])
+            ->middleware('throttle:180,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
 
         // Color Variant Image Management
         Route::post('{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])
+            ->middleware('throttle:240,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::put('{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariantImage'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::delete('{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])
+            ->middleware('throttle:240,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('{productId}/color-variants/{colorVariantId}/images/reorder', [\App\Http\Controllers\Api\ProductController::class, 'reorderColorVariantImages'])
+            ->middleware('throttle:240,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
     });
 });
@@ -1575,7 +1644,7 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
         $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(50);
         return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->middleware('permission:access-upload-inventory')->name('upload-stocks');
     Route::get('/inventory-dashboard', function () {
@@ -1644,7 +1713,7 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
         $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(200);
+            ->where('shop_owner_id', $shopOwnerId)->orderBy('created_at', 'desc')->paginate(50);
         return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->name('upload-stocks');
 
@@ -2024,6 +2093,14 @@ Route::get('/erp/repairer/pricing-and-services', function () {
         ->get();
     return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
 })->middleware(['auth:user', 'permission:access-pricing-services', 'check.user.business.type:repair,both'])->name('erp.repairer.pricing-services');
+
+// Repairer Point of Sale Route - frontend cashier page for in-shop payments
+Route::get('/erp/repairer/point-of-sale', function () {
+    if (Auth::guard('user')->user()?->force_password_change) {
+        return redirect()->route('erp.profile');
+    }
+    return Inertia::render('ERP/repairer/POS');
+})->middleware(['auth:user'])->name('erp.repairer.point-of-sale');
 
 // Common Routes (for testing/development)
 Route::group([], function () {

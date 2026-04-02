@@ -501,6 +501,7 @@ class CheckoutController extends Controller
             $shopIndex = 0;
             $ordersHasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
             $requestedPaymentMethod = strtolower((string) ($validated['payment_method'] ?? 'paymongo'));
+            $vatRatePercent = 12.0;
 
             $isCodCheckout = in_array($requestedPaymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
             if (!$isCodCheckout && !empty($shopOwnerIds)) {
@@ -574,10 +575,14 @@ class CheckoutController extends Controller
                             'customer_id'           => $customerId,
                             'shop_owner_id'         => $shopOwnerId,
                         ]);
+                        $existingVatAmount = $existingOrder->vat_amount !== null
+                            ? max(0.0, (float) $existingOrder->vat_amount)
+                            : round(max(0.0, (float) $existingOrder->total_amount) * ($vatRatePercent / 100), 2);
+
                         $createdOrders[] = [
                             'id'          => $existingOrder->id,
                             'order_number' => $existingOrder->order_number,
-                            'total'       => ((float) $existingOrder->total_amount) + ((float) ($existingOrder->shipping_fee ?? 0)),
+                            'total'       => ((float) $existingOrder->total_amount) + ((float) ($existingOrder->shipping_fee ?? 0)) + $existingVatAmount,
                             'items_count' => count($shopItems),
                         ];
                         continue;
@@ -735,15 +740,20 @@ class CheckoutController extends Controller
                     }
 
                     // Update order totals. Keep legacy `total` in sync as grand total fallback.
+                    $orderVatAmount = round($orderTotal * ($vatRatePercent / 100), 2);
+                    $orderGrandTotal = $orderTotal + $shippingFeeForOrder + $orderVatAmount;
+
                     $order->update($this->filterOrderColumns([
                         'total_amount' => $orderTotal,
-                        'total' => $orderTotal + $shippingFeeForOrder,
+                        'vat_amount' => $orderVatAmount,
+                        'vat_rate' => $vatRatePercent,
+                        'total' => $orderGrandTotal,
                     ]));
 
                     $createdOrders[] = [
                         'id' => $order->id,
                         'order_number' => $order->order_number,
-                        'total' => $orderTotal + $shippingFeeForOrder,
+                        'total' => $orderGrandTotal,
                         'items_count' => count($shopItems),
                     ];
 
@@ -752,9 +762,11 @@ class CheckoutController extends Controller
                         'order_number' => $order->order_number,
                         'shop_owner_id' => $shopOwnerId,
                         'customer_id' => $customerId,
-                        'total' => $orderTotal + $shippingFeeForOrder,
+                        'total' => $orderGrandTotal,
                         'item_subtotal' => $orderTotal,
                         'shipping_fee' => $shippingFeeForOrder,
+                        'vat_amount' => $orderVatAmount,
+                        'vat_rate' => $vatRatePercent,
                     ]);
 
                     // Create or find conversation and send automatic message to customer
@@ -839,7 +851,7 @@ class CheckoutController extends Controller
                             $systemMessage .= "**Products:**\n";
                             $systemMessage .= $productLines->join("\n") . "\n";
                         }
-                        $systemMessage .= "**Total:** ₱" . number_format($orderTotal + $shippingFeeForOrder, 2) . "\n";
+                        $systemMessage .= "**Total:** ₱" . number_format($orderGrandTotal, 2) . "\n";
                             $systemMessage .= "**Status:** Pending Payment\n\n";
                             $systemMessage .= "Thank you for your order! Please complete payment to start processing.";
 
@@ -872,7 +884,7 @@ class CheckoutController extends Controller
                             orderData: [
                                 'order_id' => $order->id,
                                 'order_number' => $order->order_number,
-                                'total' => number_format($orderTotal + $shippingFeeForOrder, 2),
+                                'total' => number_format($orderGrandTotal, 2),
                                 'items_count' => count($shopItems),
                                 'customer_name' => $validated['customer_name'],
                                 'customer_email' => $validated['customer_email'],
@@ -896,7 +908,7 @@ class CheckoutController extends Controller
                             orderData: [
                                 'order_id' => $order->id,
                                 'order_number' => $order->order_number,
-                                'total' => number_format($orderTotal + $shippingFeeForOrder, 2),
+                                'total' => number_format($orderGrandTotal, 2),
                                 'items_count' => count($shopItems),
                                 'customer_name' => $validated['customer_name'],
                                 'customer_email' => $validated['customer_email'],
@@ -983,7 +995,15 @@ class CheckoutController extends Controller
                         'status' => $order->status,
                         'total_amount' => $order->total_amount,
                         'shipping_fee' => (float) ($order->shipping_fee ?? 0),
-                        'grand_total' => ((float) $order->total_amount) + ((float) ($order->shipping_fee ?? 0)),
+                        'vat_amount' => $order->vat_amount !== null
+                            ? (float) $order->vat_amount
+                            : round(((float) $order->total_amount) * 0.12, 2),
+                        'vat_rate' => $order->vat_rate !== null ? (float) $order->vat_rate : 12.0,
+                        'grand_total' => ((float) $order->total_amount)
+                            + ((float) ($order->shipping_fee ?? 0))
+                            + ($order->vat_amount !== null
+                                ? (float) $order->vat_amount
+                                : round(((float) $order->total_amount) * 0.12, 2)),
                         'created_at' => $order->created_at->format('Y-m-d H:i:s'),
                         'shop_id' => $order->shopOwner ? $order->shopOwner->id : null,
                         'shop_name' => $order->shopOwner->business_name ?? 'Unknown Shop',
@@ -1160,14 +1180,6 @@ class CheckoutController extends Controller
                 }
             }
 
-            $amount = $itemSubtotal + $shippingFee;
-            if ($amount <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid payable amount',
-                ], 422);
-            }
-
             $description = 'SoleSpace Order #' . $order->order_number;
             $successUrl = url('/order-success') . '?paymongo_success=1';
             $failedUrl = url('/order-success') . '?paymongo_failed=1';
@@ -1189,6 +1201,43 @@ class CheckoutController extends Controller
                     'quantity' => 1,
                 ];
             }
+
+            $resolvedVatRate = $order->vat_rate !== null
+                ? max(0.0, (float) $order->vat_rate)
+                : 12.0;
+            if ($resolvedVatRate <= 0) {
+                $resolvedVatRate = 12.0;
+            }
+
+            $vatAmount = $order->vat_amount !== null
+                ? max(0.0, (float) $order->vat_amount)
+                : round($itemSubtotal * ($resolvedVatRate / 100), 2);
+
+            if ($order->vat_amount === null || $order->vat_rate === null) {
+                $order->update($this->filterOrderColumns([
+                    'vat_amount' => $vatAmount,
+                    'vat_rate' => $resolvedVatRate,
+                    'total' => $itemSubtotal + $shippingFee + $vatAmount,
+                ]));
+            }
+
+            $amount = $itemSubtotal + $shippingFee + $vatAmount;
+            if ($amount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid payable amount',
+                ], 422);
+            }
+
+            if ($vatAmount > 0) {
+                $lineItems[] = [
+                    'currency' => 'PHP',
+                    'amount' => (int) round($vatAmount * 100),
+                    'name' => 'VAT (12%)',
+                    'quantity' => 1,
+                ];
+            }
+
             if (empty($lineItems)) {
                 $lineItems[] = [
                     'currency' => 'PHP',

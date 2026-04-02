@@ -6,12 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\StockRequestApproval;
 use App\Models\InventoryItem;
 use App\Http\Requests\ApproveStockRequestRequest;
+use App\Services\StockRequestApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class StockRequestApprovalController extends Controller
 {
+    public function __construct(
+        private StockRequestApprovalService $stockRequestApprovalService
+    ) {}
+
     private function isInventoryWorkflow(Request $request): bool
     {
         $routeName = (string) optional($request->route())->getName();
@@ -170,6 +174,8 @@ class StockRequestApprovalController extends Controller
             'notes'             => $validated['notes'] ?? null,
         ]);
 
+        $this->stockRequestApprovalService->notifyStockRequestSubmitted($stockRequest->fresh());
+
         return response()->json([
             'message'       => 'Stock request submitted successfully.',
             'stock_request' => $stockRequest->load(['inventoryItem', 'requester']),
@@ -204,8 +210,6 @@ class StockRequestApprovalController extends Controller
         }
 
         try {
-            DB::beginTransaction();
-
             if ($stockRequest->request_source === 'repair' && $isInventoryWorkflow) {
                 $stockRequest->inventory_approved_by = Auth::id();
                 $stockRequest->inventory_approved_date = now();
@@ -217,16 +221,19 @@ class StockRequestApprovalController extends Controller
                 }
 
                 $stockRequest->save();
+                $this->stockRequestApprovalService->notifyStockRequestForwardedToProcurement($stockRequest->fresh(), (int) Auth::id());
             } else {
-                $stockRequest->approve(Auth::id(), $request->approval_notes);
+                $stockRequest = $this->stockRequestApprovalService->approveStockRequest(
+                    (int) $id,
+                    (int) Auth::id(),
+                    $request->approval_notes
+                );
             }
 
             // TODO: Optionally auto-create PR if configured
             // if ($request->auto_create_pr) {
             //     // Create purchase request logic here
             // }
-
-            DB::commit();
 
             return response()->json([
                 'message' => ($stockRequest->request_source === 'repair' && $isInventoryWorkflow)
@@ -236,7 +243,6 @@ class StockRequestApprovalController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'message' => 'Failed to approve stock request.',
                 'error' => $e->getMessage()
@@ -278,7 +284,11 @@ class StockRequestApprovalController extends Controller
         ]);
 
         try {
-            $stockRequest->reject(Auth::id(), $validatedData['rejection_reason']);
+            $stockRequest = $this->stockRequestApprovalService->rejectStockRequest(
+                (int) $id,
+                (int) Auth::id(),
+                $validatedData['rejection_reason']
+            );
 
             return response()->json([
                 'message' => 'Stock request rejected successfully.',
@@ -330,7 +340,11 @@ class StockRequestApprovalController extends Controller
         }
 
         try {
-            $stockRequest->requestDetails(Auth::id(), $approvalNotes);
+            $stockRequest = $this->stockRequestApprovalService->requestDetails(
+                (int) $id,
+                (int) Auth::id(),
+                $approvalNotes
+            );
 
             return response()->json([
                 'message' => 'Additional details requested successfully.',

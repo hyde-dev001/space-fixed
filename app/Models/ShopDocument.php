@@ -82,6 +82,7 @@ class ShopDocument extends Model
             'mayors_permit' => "Mayor's Permit",
             'bir_certificate' => 'BIR Certificate',
             'valid_id' => 'Valid ID',
+            'other_supporting_document' => 'Other Supporting Document',
         ];
 
         return $types[$this->document_type] ?? $this->document_type;

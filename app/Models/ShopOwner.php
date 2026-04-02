@@ -66,6 +66,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'require_two_way_approval', // Require owner approval on high value repairs
         'repair_payment_policy', // deposit_50 | full_upfront
         'repair_workload_limit', // Max concurrent active repairs (default 20)
+        'order_refund_deadline_days', // Refund/cancellation eligibility window for product orders
         'paymongo_secret_key',  // Encrypted PayMongo secret key for this shop
         'operating_hours',      // JSON field storing weekly schedule
         'status',               // pending, approved, or rejected
@@ -117,6 +118,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_geofence_radius' => 'integer',
         'attendance_geofence_enabled' => 'boolean',
         'established_year' => 'integer',
+        'order_refund_deadline_days' => 'integer',
     ];
 
     /**

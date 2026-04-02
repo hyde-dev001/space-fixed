@@ -1,0 +1,1123 @@
+import { Head, usePage } from "@inertiajs/react";
+import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import Swal from "sweetalert2";
+
+type PaymentMethod = "cash" | "gcash" | "card";
+
+type RepairOrderOption = {
+	id: string;
+	customer: string;
+	service: string;
+	amount: number;
+	requestedServices: string[];
+};
+
+type RepairServiceOption = {
+	id: string;
+	name: string;
+	category: string;
+	price: number;
+	duration: string;
+};
+
+type ServicePackageOption = {
+	id: string;
+	name: string;
+	description: string;
+	includedServices: string[];
+	price: number;
+	saveText: string;
+};
+
+type CatalogCardItem =
+	| { kind: "package"; key: string; pkg: ServicePackageOption }
+	| { kind: "service"; key: string; service: RepairServiceOption };
+
+type POSItem = {
+	id: string;
+	label: string;
+	qty: number;
+	unitPrice: number;
+	source: "manual" | "repair-order" | "service-catalog" | "package";
+};
+
+type ReceiptSnapshot = {
+	receiptNo: string;
+	createdAtISO: string;
+	dateLabel: string;
+	cashierName: string;
+	customerName: string;
+	customerPhone: string;
+	paymentMethod: PaymentMethod;
+	notes: string;
+	cashReceived: number;
+	subtotal: number;
+	discount: number;
+	vatRate: number;
+	vatAmount: number;
+	totalDue: number;
+	change: number;
+	items: POSItem[];
+};
+
+const VAT_RATE = 12;
+const SERVICES_PER_PAGE = 6;
+
+const fallbackRepairOrders: RepairOrderOption[] = [
+	{ id: "R1", customer: "Miguel Santos", service: "Deep Sole Reglue", amount: 980, requestedServices: ["Deep Sole Reglue", "Stitch Repair"] },
+	{ id: "R2", customer: "Lia Cruz", service: "Full Clean + Deodorize", amount: 550, requestedServices: ["Full Clean + Deodorize"] },
+	{ id: "R3", customer: "Noah Dela Rosa", service: "Heel Replacement", amount: 1250, requestedServices: ["Heel Replacement", "Midsole Whitening"] },
+];
+
+const fallbackServices: RepairServiceOption[] = [
+	{ id: "S1", name: "Deep Sole Reglue", category: "Sole", price: 980, duration: "2-3 days" },
+	{ id: "S2", name: "Heel Replacement", category: "Heel", price: 1250, duration: "2 days" },
+	{ id: "S3", name: "Full Clean + Deodorize", category: "Cleaning", price: 550, duration: "Same day" },
+	{ id: "S4", name: "Leather Repaint", category: "Color", price: 750, duration: "1-2 days" },
+	{ id: "S5", name: "Stitch Repair", category: "Upper", price: 450, duration: "1 day" },
+	{ id: "S6", name: "Midsole Whitening", category: "Whitening", price: 650, duration: "Same day" },
+];
+
+const fallbackPackages: ServicePackageOption[] = [
+	{
+		id: "P1",
+		name: "Starter Clean Package",
+		description: "Best for routine restoration and whitening.",
+		includedServices: ["Full Clean + Deodorize", "Midsole Whitening"],
+		price: 1099,
+		saveText: "Save P101",
+	},
+	{
+		id: "P2",
+		name: "Repair Restore Package",
+		description: "Great for structural shoe repairs and patch work.",
+		includedServices: ["Deep Sole Reglue", "Stitch Repair"],
+		price: 1299,
+		saveText: "Save P131",
+	},
+];
+
+const mockReceiptHistory: ReceiptSnapshot[] = [
+	{
+		receiptNo: "POS-20260406-10021",
+		createdAtISO: "2026-04-06T09:15:00.000+08:00",
+		dateLabel: "Mon, Apr 06, 2026, 09:15 AM",
+		cashierName: "Thomas Rodriguez",
+		customerName: "Miguel Santos",
+		customerPhone: "09171234567",
+		paymentMethod: "cash",
+		notes: "Pickup at 5 PM",
+		cashReceived: 3000,
+		subtotal: 2279,
+		discount: 0,
+		vatRate: VAT_RATE,
+		vatAmount: 273.48,
+		totalDue: 2552.48,
+		change: 447.52,
+		items: [
+			{ id: "mock-1", label: "Repair Restore Package (2 services)", qty: 1, unitPrice: 1299, source: "package" },
+			{ id: "mock-2", label: "Deep Sole Reglue", qty: 1, unitPrice: 980, source: "service-catalog" },
+		],
+	},
+	{
+		receiptNo: "POS-20260405-09876",
+		createdAtISO: "2026-04-05T14:40:00.000+08:00",
+		dateLabel: "Sun, Apr 05, 2026, 02:40 PM",
+		cashierName: "Thomas Rodriguez",
+		customerName: "Lia Cruz",
+		customerPhone: "",
+		paymentMethod: "gcash",
+		notes: "Paid via GCash",
+		cashReceived: 1270,
+		subtotal: 980,
+		discount: 0,
+		vatRate: VAT_RATE,
+		vatAmount: 117.6,
+		totalDue: 1097.6,
+		change: 172.4,
+		items: [
+			{ id: "mock-3", label: "Deep Sole Reglue", qty: 1, unitPrice: 980, source: "service-catalog" },
+		],
+	},
+];
+
+const formatPeso = (value: number): string => {
+	return new Intl.NumberFormat("en-PH", {
+		style: "currency",
+		currency: "PHP",
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(Number.isFinite(value) ? value : 0);
+};
+
+const toSafeNumber = (value: string): number => {
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed) || parsed < 0) return 0;
+	return parsed;
+};
+
+const toDigitsOnly = (value: string): string => value.replace(/[^0-9]/g, "");
+
+const normalizeServiceName = (value: string): string => value.trim().toLowerCase();
+
+const toDateInputValue = (isoValue: string): string => {
+	const date = new Date(isoValue);
+	if (Number.isNaN(date.getTime())) return "";
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+};
+
+const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
+	const lines = [
+		"SoleSpace Repair POS",
+		"Point of Sale Receipt",
+		"",
+		`Receipt: ${snapshot.receiptNo}`,
+		`Date: ${snapshot.dateLabel}`,
+		`Customer: ${snapshot.customerName}`,
+		...(snapshot.customerPhone.length > 0 ? [`Phone: ${snapshot.customerPhone}`] : []),
+		`Cashier: ${snapshot.cashierName}`,
+		`Method: ${snapshot.paymentMethod.toUpperCase()}`,
+		"",
+		"Items:",
+		...snapshot.items.map((line) => `${line.label} | ${line.qty} x ${formatPeso(line.unitPrice)} = ${formatPeso(line.qty * line.unitPrice)}`),
+		"",
+		`Subtotal: ${formatPeso(snapshot.subtotal)}`,
+		`Discount: - ${formatPeso(snapshot.discount)}`,
+		`VAT (${snapshot.vatRate.toFixed(2)}%): ${formatPeso(snapshot.vatAmount)}`,
+		`Total: ${formatPeso(snapshot.totalDue)}`,
+		`Tendered: ${formatPeso(snapshot.cashReceived)}`,
+		`Change: ${formatPeso(snapshot.change)}`,
+		...(snapshot.notes.trim().length > 0 ? ["", `Notes: ${snapshot.notes}`] : []),
+		"",
+		"Thank you for trusting SoleSpace Repair.",
+	];
+
+	return lines.join("\n");
+};
+
+const PointOfSalePage = () => {
+	const { props } = usePage();
+	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
+
+	const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
+	const [orderSearch, setOrderSearch] = useState<string>("");
+	const [serviceSearch, setServiceSearch] = useState<string>("");
+	const [customerName, setCustomerName] = useState<string>("");
+	const [customerPhone, setCustomerPhone] = useState<string>("");
+	const [servicePage, setServicePage] = useState<number>(1);
+
+	const [items, setItems] = useState<POSItem[]>([]);
+	const [discountInput, setDiscountInput] = useState<string>("0");
+	const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+	const [cashReceivedInput, setCashReceivedInput] = useState<string>("");
+	const [notes, setNotes] = useState<string>("");
+	const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
+	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
+	const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+	const [receiptHistory, setReceiptHistory] = useState<ReceiptSnapshot[]>(mockReceiptHistory);
+	const [historySearch, setHistorySearch] = useState<string>("");
+	const [historyDate, setHistoryDate] = useState<string>("");
+	const [selectedRepairOrder, setSelectedRepairOrder] = useState<RepairOrderOption | null>(null);
+
+	const [repairOrders, setRepairOrders] = useState<RepairOrderOption[]>(fallbackRepairOrders);
+	const [serviceCatalog, setServiceCatalog] = useState<RepairServiceOption[]>(fallbackServices);
+	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+
+	useEffect(() => {
+		let isMounted = true;
+
+		const loadData = async () => {
+			setIsLoadingData(true);
+			try {
+				const [servicesResult, ordersResult] = await Promise.allSettled([
+					axios.get("/api/repair-services"),
+					axios.get("/api/repairer/repairs"),
+				]);
+
+				if (isMounted && servicesResult.status === "fulfilled") {
+					const rawServices = Array.isArray((servicesResult.value.data as any)?.data)
+						? (servicesResult.value.data as any).data
+						: Array.isArray(servicesResult.value.data)
+							? servicesResult.value.data
+							: [];
+
+					const mappedServices: RepairServiceOption[] = rawServices
+						.map((entry: any, index: number) => {
+							const price = Number(entry?.price ?? entry?.amount ?? 0);
+							return {
+								id: String(entry?.id ?? `S-${index}`),
+								name: String(entry?.name ?? entry?.service_name ?? "Repair Service"),
+								category: String(entry?.category ?? entry?.service_category ?? "General"),
+								price: Number.isFinite(price) ? price : 0,
+								duration: String(entry?.duration ?? entry?.turnaround_time ?? "1-2 days"),
+							};
+						})
+						.filter((entry: RepairServiceOption) => entry.price > 0);
+
+					if (mappedServices.length > 0) {
+						setServiceCatalog(mappedServices);
+					}
+				}
+
+				if (isMounted && ordersResult.status === "fulfilled") {
+					const rawOrders = Array.isArray((ordersResult.value.data as any)?.data)
+						? (ordersResult.value.data as any).data
+						: Array.isArray(ordersResult.value.data)
+							? ordersResult.value.data
+							: [];
+
+					const mappedOrders: RepairOrderOption[] = rawOrders
+						.map((entry: any, index: number) => {
+							const amount = Number(entry?.total ?? entry?.finalPrice ?? entry?.amount ?? 0);
+							const selectedServicesRaw = Array.isArray(entry?.selectedServices)
+								? entry.selectedServices
+								: typeof entry?.service === "string"
+									? [entry.service]
+									: typeof entry?.item === "string"
+										? [entry.item]
+										: [];
+
+							const requestedServices = selectedServicesRaw
+								.map((selected: any) => {
+									if (typeof selected === "string") return selected;
+									return String(selected?.name ?? selected?.service_name ?? "");
+								})
+								.map((serviceName: string) => serviceName.trim())
+								.filter((serviceName: string) => serviceName.length > 0);
+
+							const primaryService = String(entry?.service ?? entry?.item ?? entry?.service_name ?? requestedServices[0] ?? "Repair Service");
+							return {
+								id: String(entry?.id ?? `R-${index}`),
+								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
+								service: primaryService,
+								amount: Number.isFinite(amount) ? amount : 0,
+								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
+							};
+						})
+						.filter((entry: RepairOrderOption) => entry.amount > 0);
+
+					if (mappedOrders.length > 0) {
+						setRepairOrders(mappedOrders);
+					}
+				}
+			} catch {
+				// Use fallback data when endpoints are unavailable.
+			} finally {
+				if (isMounted) {
+					setIsLoadingData(false);
+				}
+			}
+		};
+
+		loadData();
+
+		return () => {
+			isMounted = false;
+		};
+	}, []);
+
+	const subtotal = useMemo(() => {
+		return items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+	}, [items]);
+
+	const discount = useMemo(() => {
+		return Math.min(toSafeNumber(discountInput), subtotal);
+	}, [discountInput, subtotal]);
+
+	const taxableBase = useMemo(() => Math.max(subtotal - discount, 0), [subtotal, discount]);
+	const vatAmount = useMemo(() => taxableBase * (VAT_RATE / 100), [taxableBase]);
+	const totalDue = useMemo(() => taxableBase + vatAmount, [taxableBase, vatAmount]);
+
+	const cashReceived = useMemo(() => toSafeNumber(cashReceivedInput), [cashReceivedInput]);
+	const tenderedAmount = paymentMethod === "cash" ? cashReceived : totalDue;
+	const changeValue = Math.max(tenderedAmount - totalDue, 0);
+	const shortValue = Math.max(totalDue - tenderedAmount, 0);
+	const hasInsufficientCash = paymentMethod === "cash" && shortValue > 0;
+	const isPaid = receiptSnapshot !== null && items.length > 0;
+	const isCustomerNameValid = customerName.trim().length > 0;
+	const isCustomerPhoneValid = customerPhone.length === 11;
+
+	const canPay = items.length > 0 && isCustomerNameValid && isCustomerPhoneValid && (paymentMethod !== "cash" || cashReceivedInput.trim().length > 0) && !hasInsufficientCash;
+	const canPrint = isPaid;
+
+	const selectedOrderServiceSet = useMemo(() => {
+		if (!selectedRepairOrder) return null;
+		return new Set(selectedRepairOrder.requestedServices.map((serviceName) => normalizeServiceName(serviceName)));
+	}, [selectedRepairOrder]);
+
+	const visiblePackages = useMemo(() => {
+		const query = serviceSearch.trim().toLowerCase();
+		if (!query) return fallbackPackages;
+		return fallbackPackages.filter((pkg) => {
+			return (
+				pkg.name.toLowerCase().includes(query) ||
+				pkg.description.toLowerCase().includes(query) ||
+				pkg.includedServices.some((serviceName) => serviceName.toLowerCase().includes(query))
+			);
+		});
+	}, [serviceSearch]);
+
+	const resetOrderInputs = () => {
+		setItems([]);
+		setDiscountInput("0");
+		setPaymentMethod("cash");
+		setCashReceivedInput("");
+		setNotes("");
+		setCustomerName("");
+		setCustomerPhone("");
+		setSelectedRepairOrder(null);
+	};
+
+	const addFromRepairOrder = (order: RepairOrderOption) => {
+		const requestedServices = order.requestedServices.length > 0 ? order.requestedServices : [order.service];
+		const perServiceFallbackPrice = requestedServices.length > 0 ? order.amount / requestedServices.length : order.amount;
+
+		const generatedItems: POSItem[] = requestedServices.map((serviceName, index) => {
+			const matchedService = serviceCatalog.find((service) => normalizeServiceName(service.name) === normalizeServiceName(serviceName));
+			const resolvedPrice = matchedService?.price ?? perServiceFallbackPrice;
+
+			return {
+				id: `order-${order.id}-${index}`,
+				label: serviceName,
+				qty: 1,
+				unitPrice: Number.isFinite(resolvedPrice) ? resolvedPrice : 0,
+				source: "repair-order",
+			};
+		});
+
+		setItems(generatedItems);
+		setSelectedRepairOrder(order);
+		setCustomerName(order.customer);
+		setOrderSearch("");
+		setIsOrderModalOpen(false);
+	};
+
+	const addFromServiceCatalog = (service: RepairServiceOption) => {
+		if (selectedRepairOrder) return;
+
+		setItems((prev) => [
+			...prev,
+			{
+				id: `service-${service.id}-${Date.now()}`,
+				label: service.name,
+				qty: 1,
+				unitPrice: service.price,
+				source: "service-catalog",
+			},
+		]);
+	};
+
+	const addPackageToOrder = (pkg: ServicePackageOption) => {
+		if (selectedRepairOrder) return;
+
+		setItems((prev) => [
+			...prev,
+			{
+				id: `package-${pkg.id}-${Date.now()}`,
+				label: `${pkg.name} (${pkg.includedServices.length} services)`,
+				qty: 1,
+				unitPrice: pkg.price,
+				source: "package",
+			},
+		]);
+	};
+
+	const isPackageSelected = (pkg: ServicePackageOption): boolean => {
+		const packageName = normalizeServiceName(pkg.name);
+		return items.some((item) => {
+			return item.source === "package" && normalizeServiceName(item.label).startsWith(packageName);
+		});
+	};
+
+	const isServiceSelected = (service: RepairServiceOption): boolean => {
+		const serviceName = normalizeServiceName(service.name);
+		return items.some((item) => normalizeServiceName(item.label) === serviceName);
+	};
+
+	const filteredRepairOrders = useMemo(() => {
+		const query = orderSearch.trim().toLowerCase();
+		if (!query) return repairOrders;
+		return repairOrders.filter((order) => {
+			return (
+				order.customer.toLowerCase().includes(query) ||
+				order.service.toLowerCase().includes(query)
+			);
+		});
+	}, [orderSearch, repairOrders]);
+
+	const filteredServiceCatalog = useMemo(() => {
+		const query = serviceSearch.trim().toLowerCase();
+		if (!query) return serviceCatalog;
+		return serviceCatalog.filter((service) => {
+			return (
+				service.name.toLowerCase().includes(query) ||
+				service.category.toLowerCase().includes(query)
+			);
+		});
+	}, [serviceSearch, serviceCatalog]);
+
+	const filteredReceiptHistory = useMemo(() => {
+		const query = historySearch.trim().toLowerCase();
+		return receiptHistory.filter((receipt) => {
+			const matchesDate = historyDate.length === 0 || toDateInputValue(receipt.createdAtISO) === historyDate;
+			if (!matchesDate) return false;
+
+			if (query.length === 0) return true;
+			const haystack = [
+				receipt.receiptNo,
+				receipt.customerName,
+				receipt.customerPhone,
+				receipt.cashierName,
+				receipt.paymentMethod,
+				receipt.items.map((item) => item.label).join(" "),
+			]
+				.join(" ")
+				.toLowerCase();
+
+			return haystack.includes(query);
+		});
+	}, [historyDate, historySearch, receiptHistory]);
+
+	const combinedCatalogCards = useMemo<CatalogCardItem[]>(() => {
+		const packageCards: CatalogCardItem[] = visiblePackages.map((pkg) => ({ kind: "package", key: `package-${pkg.id}`, pkg }));
+		const serviceCards: CatalogCardItem[] = filteredServiceCatalog.map((service) => ({ kind: "service", key: `service-${service.id}`, service }));
+		return [...packageCards, ...serviceCards];
+	}, [visiblePackages, filteredServiceCatalog]);
+
+	const totalCatalogPages = useMemo(() => {
+		return Math.max(1, Math.ceil(combinedCatalogCards.length / SERVICES_PER_PAGE));
+	}, [combinedCatalogCards.length]);
+
+	const paginatedCatalogCards = useMemo(() => {
+		const start = (servicePage - 1) * SERVICES_PER_PAGE;
+		return combinedCatalogCards.slice(start, start + SERVICES_PER_PAGE);
+	}, [combinedCatalogCards, servicePage]);
+
+	useEffect(() => {
+		setServicePage(1);
+	}, [serviceSearch]);
+
+	useEffect(() => {
+		if (servicePage > totalCatalogPages) {
+			setServicePage(totalCatalogPages);
+		}
+	}, [servicePage, totalCatalogPages]);
+
+	const removeItem = (id: string) => {
+		setItems((prev) => prev.filter((item) => item.id !== id));
+	};
+
+	const clearTransaction = () => {
+		resetOrderInputs();
+		setReceiptSnapshot(null);
+		setIsReceiptModalOpen(false);
+	};
+
+	const handlePay = () => {
+		if (!canPay) return;
+
+		const now = new Date();
+		const snapshot: ReceiptSnapshot = {
+			receiptNo: `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getTime()).slice(-5)}`,
+			createdAtISO: now.toISOString(),
+			dateLabel: now.toLocaleString("en-PH", {
+				weekday: "short",
+				month: "short",
+				day: "2-digit",
+				year: "numeric",
+				hour: "2-digit",
+				minute: "2-digit",
+			}),
+			cashierName,
+			customerName: customerName.trim(),
+			customerPhone: customerPhone.trim(),
+			paymentMethod,
+			notes,
+			cashReceived: tenderedAmount,
+			subtotal,
+			discount,
+			vatRate: VAT_RATE,
+			vatAmount,
+			totalDue,
+			change: changeValue,
+			items: [...items],
+		};
+
+		setReceiptSnapshot(snapshot);
+		setReceiptHistory((prev) => [snapshot, ...prev]);
+		resetOrderInputs();
+
+		Swal.fire({
+			icon: "success",
+			title: "Payment Successful!",
+			text: `Amount: ${formatPeso(snapshot.totalDue)}`,
+			confirmButtonColor: "#10b981",
+			confirmButtonText: "View Receipt",
+		}).then((result) => {
+			if (result.isConfirmed) {
+				setIsReceiptModalOpen(true);
+			}
+		});
+	};
+
+	const printReceipt = () => {
+		if (!canPrint || !receiptSnapshot) return;
+		setIsReceiptModalOpen(true);
+		setTimeout(() => {
+			window.print();
+		}, 80);
+	};
+
+	return (
+		<AppLayoutERP hideHeader={isOrderModalOpen || isReceiptModalOpen || isHistoryModalOpen}>
+			<Head title="Point of Sale" />
+
+			<style>{`
+				@media print {
+					@page {
+						size: A4;
+						margin: 12mm;
+					}
+
+					body * {
+						visibility: hidden !important;
+					}
+
+					body {
+						background: #fff !important;
+					}
+
+					.pos-print-area,
+					.pos-print-area * {
+						visibility: visible !important;
+					}
+
+					.pos-print-area {
+						position: static !important;
+						inset: auto !important;
+						width: 100% !important;
+						max-width: none !important;
+						min-height: calc(297mm - 24mm);
+						padding: 16mm !important;
+						margin: 0 !important;
+						background: #fff !important;
+						border: 0 !important;
+						border-radius: 0 !important;
+						box-shadow: none !important;
+					}
+
+					.receipt-modal-actions {
+						display: none !important;
+					}
+				}
+			`}</style>
+
+			<div className="space-y-6 p-4 md:p-6">
+				{!isOrderModalOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
+				<div className="flex items-center justify-between">
+					<div>
+						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
+						<p className="mt-1 text-sm text-slate-500">Manage repair cashier transactions and payment processing.</p>
+					</div>
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => setIsHistoryModalOpen(true)}
+							className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+						>
+							History
+						</button>
+						<button
+							type="button"
+							onClick={() => setIsOrderModalOpen(true)}
+							className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+						>
+							Open Order Picker
+						</button>
+					</div>
+				</div>
+				)}
+
+				<div className="grid grid-cols-1 gap-6 xl:h-[calc(100vh-170px)] xl:grid-cols-12 xl:items-stretch">
+					<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
+						<div className="grid grid-cols-1 gap-4">
+							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
+								<p className="mb-3 text-xs text-slate-500">Input customer name and phone number before payment.</p>
+								<div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+									<input
+										title="Customer name"
+										value={customerName}
+										onChange={(event) => setCustomerName(event.target.value)}
+										placeholder="Customer name"
+										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+									<input
+										title="Customer phone number"
+										type="text"
+										inputMode="numeric"
+										pattern="[0-9]*"
+										maxLength={11}
+										value={customerPhone}
+										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+										placeholder="Phone number"
+										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+								</div>
+								{customerPhone.length > 0 && !isCustomerPhoneValid && (
+									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
+								)}
+								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
+							</div>
+						</div>
+
+						<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:flex-1 xl:min-h-0 xl:flex xl:flex-col">
+							<div className="mb-4 flex items-center justify-between">
+								<h2 className="text-lg font-semibold text-slate-900">Repair Service Catalog</h2>
+								<span className="text-xs text-slate-500">{selectedRepairOrder ? "Requested services highlighted" : "Tap to add"}</span>
+							</div>
+							<input
+								title="Search repair services"
+								value={serviceSearch}
+								onChange={(event) => setServiceSearch(event.target.value)}
+								placeholder="Search service name or category"
+								className="mb-4 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+							/>
+
+							{isLoadingData && (
+								<div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">Loading services and repair orders...</div>
+							)}
+
+							<div className="mb-1 flex items-center justify-between">
+								<h3 className="text-2xl font-semibold text-slate-900">Packages and Individual Services</h3>
+								<span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Choose one or more</span>
+							</div>
+
+							<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
+								{paginatedCatalogCards.map((card) => {
+									if (card.kind === "package") {
+										const selected = isPackageSelected(card.pkg);
+										return (
+											<button
+												type="button"
+												key={card.key}
+												onClick={() => addPackageToOrder(card.pkg)}
+												disabled={!!selectedRepairOrder}
+												className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+											>
+												<div className="flex h-full flex-col">
+													<div className="flex items-start justify-between">
+														<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
+														<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+															{selected && (
+																<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																	<path d="M4 10l4 4 8-8" />
+																</svg>
+															)}
+														</span>
+													</div>
+													<p className="mt-3 text-xl font-semibold text-slate-900">{card.pkg.name}</p>
+													<p className="mt-1 text-xs text-slate-600">{card.pkg.description}</p>
+													<p className="mt-2 text-xs text-slate-700">Includes {card.pkg.includedServices.length} services</p>
+													<p className="text-xs text-slate-700">{card.pkg.saveText}</p>
+													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+														<p className="text-2xl font-bold text-slate-900">{formatPeso(card.pkg.price)}</p>
+														<p className="text-xs text-slate-500">Bundle offer</p>
+													</div>
+												</div>
+											</button>
+										);
+									}
+
+									const isRequestedService = !selectedOrderServiceSet || selectedOrderServiceSet.has(normalizeServiceName(card.service.name));
+									const selected = isServiceSelected(card.service);
+
+									return (
+										<button
+											type="button"
+											key={card.key}
+											onClick={() => addFromServiceCatalog(card.service)}
+											disabled={!isRequestedService}
+											className={`h-56 rounded-xl border p-4 text-left transition ${
+												isRequestedService
+													? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
+													: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+											}`}
+										>
+											<div className="flex h-full flex-col">
+												<div className="flex items-start justify-between">
+													<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{card.service.category}</span>
+													<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+														{selected && (
+															<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																<path d="M4 10l4 4 8-8" />
+															</svg>
+														)}
+													</span>
+												</div>
+												<p className="mt-3 text-xl font-semibold text-slate-900">{card.service.name}</p>
+												<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+													<li>{card.service.category} service for customer request.</li>
+													<li>Estimated turnaround: {card.service.duration}.</li>
+												</ul>
+												<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+													<p className="text-2xl font-bold text-slate-900">{formatPeso(card.service.price)}</p>
+													<p className="text-xs text-slate-500">{card.service.duration}</p>
+												</div>
+												{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+											</div>
+										</button>
+									);
+								})}
+							</div>
+
+							{combinedCatalogCards.length > 0 && (
+								<div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-700">
+									<p>
+										Showing {(servicePage - 1) * SERVICES_PER_PAGE + 1} to {Math.min(servicePage * SERVICES_PER_PAGE, combinedCatalogCards.length)} of {combinedCatalogCards.length} results
+									</p>
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											onClick={() => setServicePage((prev) => Math.max(prev - 1, 1))}
+											disabled={servicePage === 1}
+											className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+										>
+											&#8249;
+										</button>
+										<div className="h-9 min-w-10 rounded-lg bg-blue-600 px-3 text-center text-sm font-semibold leading-9 text-white">
+											{servicePage}
+										</div>
+										<button
+											type="button"
+											onClick={() => setServicePage((prev) => Math.min(prev + 1, totalCatalogPages))}
+											disabled={servicePage === totalCatalogPages}
+											className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+										>
+											&#8250;
+										</button>
+									</div>
+								</div>
+							)}
+						</div>
+					</section>
+
+					<section className="space-y-6 xl:col-span-4 xl:h-full">
+						<div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:h-full">
+							<div className="flex items-center justify-between">
+								<h2 className="text-lg font-semibold text-slate-900">Current Order</h2>
+								{isPaid && <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Paid</span>}
+							</div>
+
+							<div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
+								{items.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">No services in order yet.</div>
+								) : (
+									items.map((item) => (
+										<div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+											<div className="mb-2 flex items-start justify-between gap-2">
+												<p className="text-sm font-medium text-slate-900">{item.label}</p>
+												<button
+													type="button"
+													onClick={() => removeItem(item.id)}
+													title="Remove item"
+													aria-label="Remove item"
+													className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+												>
+													<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+														<path d="M3 6h18" />
+														<path d="M8 6V4h8v2" />
+														<path d="M19 6l-1 14H6L5 6" />
+														<path d="M10 11v6" />
+														<path d="M14 11v6" />
+													</svg>
+												</button>
+											</div>
+											<p className="text-right text-sm font-bold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
+										</div>
+									))
+								)}
+							</div>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Discount (PHP)</label>
+							<input
+								title="Discount in PHP"
+								type="text"
+								inputMode="numeric"
+								pattern="[0-9]*"
+								min={0}
+								value={discountInput}
+								onChange={(event) => setDiscountInput(toDigitsOnly(event.target.value))}
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+							/>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
+							<select
+								title="Payment method"
+								value={paymentMethod}
+								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+							>
+								<option value="cash">Cash</option>
+								<option value="gcash">GCash</option>
+								<option value="card">Card</option>
+							</select>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
+							<input
+								title="Cash received"
+								type="text"
+								inputMode="numeric"
+								pattern="[0-9]*"
+								min={0}
+								value={cashReceivedInput}
+								onChange={(event) => setCashReceivedInput(toDigitsOnly(event.target.value))}
+								disabled={paymentMethod !== "cash"}
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
+							/>
+
+							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+								<div className="space-y-2 text-sm">
+									<div className="flex items-center justify-between text-slate-600"><span>Subtotal</span><span>{formatPeso(subtotal)}</span></div>
+									<div className="flex items-center justify-between text-slate-600"><span>Discount</span><span>- {formatPeso(discount)}</span></div>
+									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(vatAmount)}</span></div>
+									<div className="my-2 border-t border-dashed border-slate-300" />
+									<div className="flex items-center justify-between text-base font-bold text-slate-900"><span>Total Due</span><span>{formatPeso(totalDue)}</span></div>
+									<div className="flex items-center justify-between text-slate-700"><span>Tendered</span><span>{formatPeso(tenderedAmount)}</span></div>
+									<div className="flex items-center justify-between text-green-700"><span>Change</span><span className="font-semibold">{formatPeso(changeValue)}</span></div>
+								</div>
+							</div>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</label>
+							<textarea
+								title="Cashier notes"
+								value={notes}
+								onChange={(event) => setNotes(event.target.value)}
+								rows={2}
+								placeholder="Optional cashier notes"
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+							/>
+
+							{hasInsufficientCash && (
+								<div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+									Insufficient cash by {formatPeso(shortValue)}. Add more cash before payment.
+								</div>
+							)}
+
+							<div className="mt-auto grid grid-cols-2 gap-2">
+								<button
+									type="button"
+									onClick={handlePay}
+									disabled={!canPay}
+									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+								>
+									Pay
+								</button>
+								<button
+									type="button"
+									onClick={clearTransaction}
+									className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+								>
+									Clear
+								</button>
+							</div>
+						</div>
+
+					</section>
+				</div>
+
+				{isOrderModalOpen && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+						<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+								<h3 className="text-lg font-semibold text-slate-900">Attach From Repair Orders</h3>
+								<button
+									type="button"
+									onClick={() => setIsOrderModalOpen(false)}
+									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="p-5">
+								<input
+									title="Search repair order"
+									value={orderSearch}
+									onChange={(event) => setOrderSearch(event.target.value)}
+									placeholder="Search by customer or service"
+									className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+								/>
+
+								<div className="mt-4 max-h-90 space-y-3 overflow-y-auto pr-1">
+									{filteredRepairOrders.length === 0 ? (
+										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No matching repair orders.</div>
+									) : (
+										filteredRepairOrders.map((order) => (
+											<div key={order.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+												<div>
+													<p className="font-semibold text-slate-900">{order.customer}</p>
+													<p className="text-sm text-slate-600">{order.service}</p>
+													<p className="text-xs text-slate-500">Services: {order.requestedServices.join(", ")}</p>
+													<p className="text-xs text-slate-500">Estimated amount {formatPeso(order.amount)}</p>
+												</div>
+												<button
+													type="button"
+													onClick={() => addFromRepairOrder(order)}
+													className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+												>
+													Add
+												</button>
+											</div>
+										))
+									)}
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{isHistoryModalOpen && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+						<div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+								<h3 className="text-lg font-semibold text-slate-900">Receipt History</h3>
+								<button
+									type="button"
+									onClick={() => setIsHistoryModalOpen(false)}
+									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="space-y-4 p-5">
+								<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+									<input
+										title="Search receipt history"
+										value={historySearch}
+										onChange={(event) => setHistorySearch(event.target.value)}
+										placeholder="Search by receipt, customer, cashier, item"
+										className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+									<input
+										title="Filter by receipt date"
+										type="date"
+										value={historyDate}
+										onChange={(event) => setHistoryDate(event.target.value)}
+										className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+								</div>
+
+								<div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+									{filteredReceiptHistory.length === 0 ? (
+										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No receipts found for current filter.</div>
+									) : (
+										filteredReceiptHistory.map((receipt) => (
+											<div key={receipt.receiptNo} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+												<div className="flex flex-wrap items-start justify-between gap-3">
+													<div>
+														<p className="text-sm font-semibold text-slate-900">{receipt.receiptNo}</p>
+														<p className="text-xs text-slate-600">{receipt.dateLabel}</p>
+														<p className="text-xs text-slate-600">Customer: {receipt.customerName}</p>
+														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()}</p>
+													</div>
+													<div className="flex items-center gap-2">
+														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
+														<button
+															type="button"
+															onClick={() => {
+																setReceiptSnapshot(receipt);
+																setIsHistoryModalOpen(false);
+																setIsReceiptModalOpen(true);
+															}}
+															className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-blue-500"
+														>
+															View
+														</button>
+													</div>
+												</div>
+											</div>
+										))
+									)}
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{isReceiptModalOpen && receiptSnapshot && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
+								<button
+									type="button"
+									onClick={() => setIsReceiptModalOpen(false)}
+									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="max-h-[75vh] overflow-y-auto p-5">
+								<div className="pos-print-area mx-auto w-full max-w-[320px] rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-800">
+									<div className="text-center">
+										<p className="text-sm font-bold">SoleSpace Repair POS</p>
+										<p>Point of Sale Receipt</p>
+									</div>
+
+									<div className="mt-2 border-t border-dashed border-slate-300 pt-2">
+										<p>Receipt: {receiptSnapshot.receiptNo}</p>
+										<p>Date: {receiptSnapshot.dateLabel}</p>
+										<p>Customer: {receiptSnapshot.customerName}</p>
+										{receiptSnapshot.customerPhone.length > 0 && <p>Phone: {receiptSnapshot.customerPhone}</p>}
+										<p>Cashier: {receiptSnapshot.cashierName}</p>
+										<p>Method: {receiptSnapshot.paymentMethod.toUpperCase()}</p>
+									</div>
+
+									<div className="mt-2 border-t border-dashed border-slate-300 pt-2">
+										{receiptSnapshot.items.map((line) => (
+											<div key={line.id} className="mb-1">
+												<p className="font-medium">{line.label}</p>
+												<p className="text-slate-600">{line.qty} x {formatPeso(line.unitPrice)} = {formatPeso(line.qty * line.unitPrice)}</p>
+											</div>
+										))}
+									</div>
+
+									<div className="mt-2 border-t border-dashed border-slate-300 pt-2">
+										<div className="flex justify-between"><span>Subtotal</span><span>{formatPeso(receiptSnapshot.subtotal)}</span></div>
+										<div className="flex justify-between"><span>Discount</span><span>- {formatPeso(receiptSnapshot.discount)}</span></div>
+										<div className="flex justify-between"><span>VAT ({receiptSnapshot.vatRate.toFixed(2)}%)</span><span>{formatPeso(receiptSnapshot.vatAmount)}</span></div>
+										<div className="mt-1 flex justify-between font-bold"><span>Total</span><span>{formatPeso(receiptSnapshot.totalDue)}</span></div>
+										<div className="flex justify-between"><span>Tendered</span><span>{formatPeso(receiptSnapshot.cashReceived)}</span></div>
+										<div className="flex justify-between font-semibold text-emerald-700"><span>Change</span><span>{formatPeso(receiptSnapshot.change)}</span></div>
+									</div>
+
+									{receiptSnapshot.notes.trim().length > 0 && (
+										<div className="mt-2 border-t border-dashed border-slate-300 pt-2">
+											<p className="font-semibold">Notes</p>
+											<p>{receiptSnapshot.notes}</p>
+										</div>
+									)}
+
+									<p className="mt-3 text-center text-[10px] text-slate-500">Thank you for trusting SoleSpace Repair.</p>
+								</div>
+							</div>
+
+							<div className="receipt-modal-actions border-t border-slate-200 px-5 py-4" />
+						</div>
+					</div>
+				)}
+
+			</div>
+		</AppLayoutERP>
+	);
+};
+
+export default PointOfSalePage;

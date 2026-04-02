@@ -154,6 +154,18 @@ const productManagementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+        <path d="M2 10h20"></path>
+        <path d="M6 14h2"></path>
+      </svg>
+    ),
+    name: "Point of Sale",
+    route: "shop-owner.point-of-sale",
+    path: "/shop-owner/point-of-sale",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9"></path>
         <path d="M15 13l-3-3m0 0l-3 3m3-3v12"></path>
       </svg>
@@ -225,6 +237,8 @@ const customerManagementItems: NavItem[] = [
 ];
 
 type MenuType = "main" | "approval" | "product" | "customer";
+const SIDEBAR_PREFETCH: Array<"hover"> = ["hover"];
+const SIDEBAR_PREFETCH_CACHE = "30s";
 
 const AppSidebar_shopOwner: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
@@ -384,22 +398,6 @@ const AppSidebar_shopOwner: React.FC = () => {
       return path;
     }
   }, []);
-
-  const isMenuActive = useCallback(
-    (nav: NavItem) => {
-      if (nav.route && isActive(nav.route)) return true;
-      if (!nav.route && nav.path && isPathActive(nav.path)) return true;
-      if (nav.route === "shop-owner.repair-reject-approval" && url.startsWith("/shop-owner/history-rejection")) {
-        return true;
-      }
-      if (nav.subItems) {
-        return nav.subItems.some(sub => isActive(sub.route));
-      }
-      return false;
-    },
-    [isActive, isPathActive, url]
-  );
-
   useEffect(() => {
     let submenuMatched = false;
     let matchedKey: string | null = null;
@@ -496,6 +494,8 @@ const AppSidebar_shopOwner: React.FC = () => {
             (nav.route || nav.path) && (
               <Link
                 href={getHref(nav.route, nav.path) || "#"}
+                prefetch={SIDEBAR_PREFETCH}
+                cacheFor={SIDEBAR_PREFETCH_CACHE}
                 className={`menu-item group ${nav.route
                     ? isActive(nav.route)
                       ? "menu-item-active"
@@ -557,6 +557,8 @@ const AppSidebar_shopOwner: React.FC = () => {
                   <li key={subItem.name}>
                     <Link
                       href={route(subItem.route)}
+                      prefetch={SIDEBAR_PREFETCH}
+                      cacheFor={SIDEBAR_PREFETCH_CACHE}
                       className={`menu-dropdown-item ${isActive(subItem.route)
                           ? "menu-dropdown-item-active"
                           : "menu-dropdown-item-inactive"
@@ -614,7 +616,12 @@ const AppSidebar_shopOwner: React.FC = () => {
         className={`py-8 flex ${!isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
           }`}
       >
-        <Link href={route("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
+                <Link
+          href={route("landing")}
+          prefetch={SIDEBAR_PREFETCH}
+          cacheFor={SIDEBAR_PREFETCH_CACHE}
+          className="flex items-center gap-2 hover:scale-105 transition-transform duration-200"
+        >
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />

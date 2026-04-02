@@ -12,10 +12,38 @@ export default function OrderSuccess() {
       const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
       const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
       const pendingOrderIdRaw = sessionStorage.getItem('pendingOrderId');
+      const pendingOrderId = Number(pendingOrderIdRaw || '0');
+
+      const cancelPendingOrder = async () => {
+        if (!Number.isFinite(pendingOrderId) || pendingOrderId <= 0) {
+          return;
+        }
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        await fetch('/orders/cancel', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+          },
+          body: JSON.stringify({
+            order_id: pendingOrderId,
+            reason: 'payment_not_completed',
+            note: 'Auto-cancelled from OrderSuccess after failed PayMongo return.',
+          }),
+        });
+      };
 
       window.history.replaceState({}, '', '/order-success');
 
       if (isPaymongoFailed) {
+        try {
+          await cancelPendingOrder();
+        } catch (error) {
+          console.warn('Failed to auto-cancel pending order after failed PayMongo return:', error);
+        }
         sessionStorage.removeItem('pendingOrderId');
         router.visit('/my-orders', { replace: true });
         return;
@@ -65,6 +93,11 @@ export default function OrderSuccess() {
           router.visit('/my-orders', { replace: true });
           return;
         } else {
+          try {
+            await cancelPendingOrder();
+          } catch (error) {
+            console.warn('Failed to auto-cancel unpaid order after verification:', error);
+          }
           sessionStorage.removeItem('pendingOrderId');
           router.visit('/my-orders', { replace: true });
           return;

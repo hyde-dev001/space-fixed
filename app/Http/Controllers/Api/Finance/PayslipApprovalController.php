@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -594,24 +595,6 @@ class PayslipApprovalController extends Controller
                 $payslip
             );
 
-            // If this was the final approval (level 4), send notification to employee
-            if (($result['is_final'] ?? false) && $payslip->employee && $payslip->employee->user) {
-                try {
-                    $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
-                    if ($employeeUserId > 0) {
-                        $this->notificationService->notifyPayslipReady($employeeUserId, $actor['shop_owner_id'], [
-                            'payroll_id' => $payslip->id,
-                            'period' => $payslip->payroll_period,
-                            'net_salary' => number_format((float) $payslip->net_salary, 2),
-                        ]);
-                    }
-
-                    $payslip->employee->user->notify(new PayslipGenerated($payslip));
-                } catch (\Exception $e) {
-                    \Log::error('Failed to notify employee of payslip', ['error' => $e->getMessage()]);
-                }
-            }
-
             return response()->json([
                 'message' => $result['message'],
                 'payslip' => $this->transformPayslip($payslip->fresh([
@@ -663,7 +646,7 @@ class PayslipApprovalController extends Controller
                     $payslip->employee->user->notify(new PayslipGenerated($payslip));
                 }
             } catch (\Exception $notificationError) {
-                \Log::error('Failed to send final approval payslip notification', [
+                Log::error('Failed to send final approval payslip notification', [
                     'payroll_id' => $payslip->id,
                     'error' => $notificationError->getMessage(),
                 ]);
@@ -872,26 +855,6 @@ class PayslipApprovalController extends Controller
                         $payslip
                     );
 
-                    if (($result['is_final'] ?? false) && $payslip->employee && $payslip->employee->user) {
-                        try {
-                            $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
-                            if ($employeeUserId > 0) {
-                                $this->notificationService->notifyPayslipReady($employeeUserId, $actor['shop_owner_id'], [
-                                    'payroll_id' => $payslip->id,
-                                    'period' => $payslip->payroll_period,
-                                    'net_salary' => number_format((float) $payslip->net_salary, 2),
-                                ]);
-                            }
-
-                            $payslip->employee->user->notify(new PayslipGenerated($payslip));
-                        } catch (\Exception $notificationError) {
-                            \Log::error('Failed to send batch final approval payslip notification', [
-                                'payroll_id' => $payslip->id,
-                                'error' => $notificationError->getMessage(),
-                            ]);
-                        }
-                    }
-
                     $approvedCount++;
                     continue;
                 }
@@ -938,7 +901,7 @@ class PayslipApprovalController extends Controller
                         $payslip->employee->user->notify(new PayslipGenerated($payslip));
                     }
                 } catch (\Exception $notificationError) {
-                    \Log::error('Failed to send batch final approval payslip notification', [
+                    Log::error('Failed to send batch final approval payslip notification', [
                         'payroll_id' => $payslip->id,
                         'error' => $notificationError->getMessage(),
                     ]);

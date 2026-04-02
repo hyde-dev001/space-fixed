@@ -1709,13 +1709,54 @@ export const EmployeeManagement: React.FC<{
     }
 
     // Email validation
+    const trimmedEmail = addEmployeeForm.email.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(addEmployeeForm.email)) {
+    if (!emailRegex.test(trimmedEmail)) {
       Swal.fire({
         title: "Invalid Email",
         text: "Please enter a valid email address.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    const normalizedPhone = addEmployeeForm.phone.replace(/\D/g, '').slice(0, 11);
+    if (normalizedPhone && !/^\d{11}$/.test(normalizedPhone)) {
+      Swal.fire({
+        title: "Invalid Phone Number",
+        text: "Phone number must be exactly 11 digits.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    try {
+      const availabilityResponse = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(trimmedEmail)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      const availabilityData = await availabilityResponse.json().catch(() => ({}));
+      if (!availabilityData?.available) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Email not available',
+          text: availabilityData?.message || 'This email is already registered.',
+          confirmButtonColor: '#ef4444'
+        });
+        return;
+      }
+    } catch {
+      Swal.fire({
+        icon: 'error',
+        title: 'Email Check Failed',
+        text: 'Unable to verify email right now. Please try again.',
+        confirmButtonColor: '#ef4444'
       });
       return;
     }
@@ -1754,8 +1795,8 @@ export const EmployeeManagement: React.FC<{
             body: JSON.stringify({
               firstName: addEmployeeForm.firstName,
               lastName: addEmployeeForm.lastName,
-              email: addEmployeeForm.email,
-              phone: addEmployeeForm.phone,
+              email: trimmedEmail,
+              phone: normalizedPhone,
               position: addEmployeeForm.position || 'General Staff',
               department: addEmployeeForm.department || 'General',
               role: addEmployeeForm.department || 'Staff',
@@ -2532,9 +2573,13 @@ export const EmployeeManagement: React.FC<{
                             onChange={(e) =>
                               setAddEmployeeForm({
                                 ...addEmployeeForm,
-                                phone: e.target.value,
+                                phone: e.target.value.replace(/\D/g, '').slice(0, 11),
                               })
                             }
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={11}
+                            placeholder="09XXXXXXXXX"
                             className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
                           />
                         </div>

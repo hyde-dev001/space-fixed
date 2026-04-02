@@ -72,6 +72,11 @@ interface OperatingHours {
   close: string;
 }
 
+interface RegistrationDocument {
+  url: string;
+  type?: string;
+}
+
 interface Registration {
   id: number;
   firstName: string;
@@ -84,6 +89,7 @@ interface Registration {
   registrationType?: string;
   serviceType: string;
   operatingHours: OperatingHours[];
+  documents?: RegistrationDocument[];
   documentUrls: string[];
   status: "pending" | "approved" | "rejected";
   createdAt: string;
@@ -170,6 +176,18 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
+
+  const getDocumentTypeLabel = (documentType?: string, otherIndex = 1) => {
+    const normalized = (documentType || '').toLowerCase();
+
+    if (normalized === 'dti_registration') return 'Business Registration (DTI/SEC)';
+    if (normalized === 'mayors_permit') return "Mayor's Permit";
+    if (normalized === 'bir_certificate') return 'BIR Certificate';
+    if (normalized === 'valid_id') return 'Valid ID';
+    if (normalized.startsWith('other')) return `Other Supporting Document #${otherIndex}`;
+
+    return 'Supporting Document';
+  };
 
   const formatRegistrationType = (registrationType?: string) => {
     if (!registrationType) return 'Not specified';
@@ -310,6 +328,14 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   React.useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filterStatus]);
+
+  const selectedRegistrationDocuments: RegistrationDocument[] = selectedRegistration
+    ? (
+      selectedRegistration.documents && selectedRegistration.documents.length > 0
+        ? selectedRegistration.documents
+        : (selectedRegistration.documentUrls || []).map((url) => ({ url }))
+    )
+    : [];
 
   return (
     <AppLayout>
@@ -633,11 +659,16 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                       <div>
                         <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3 flex items-center">
                           <DocsIcon className="w-5 h-5 mr-2" />
-                          Submitted Documents
+                          Submitted Documents ({selectedRegistrationDocuments.length})
                         </h4>
                         <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg max-h-96 overflow-y-auto">
-                          {selectedRegistration.documentUrls && selectedRegistration.documentUrls.length > 0 ? (
-                            selectedRegistration.documentUrls.map((url, index) => (
+                          {selectedRegistrationDocuments.length > 0 ? (
+                            selectedRegistrationDocuments.map((document, index) => {
+                              const otherCountBefore = selectedRegistrationDocuments
+                                .slice(0, index)
+                                .filter((item) => (item.type || '').toLowerCase().startsWith('other')).length;
+
+                              return (
                               <div key={index} className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center space-x-2">
@@ -649,7 +680,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                                         Document {index + 1}
                                       </p>
                                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        {['BIR Registration', 'Valid ID', 'Business Permit', 'Tax Certificate'][index % 4]}
+                                        {getDocumentTypeLabel(document.type, otherCountBefore + 1)}
                                       </p>
                                     </div>
                                   </div>
@@ -672,10 +703,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                                     <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
                                       <img
-                                        src={url}
+                                        src={document.url}
                                         alt={`Document ${index + 1}`}
                                         className="max-w-full max-h-96 rounded cursor-pointer hover:opacity-95"
-                                        onClick={() => setLightboxUrl(url)}
+                                        onClick={() => setLightboxUrl(document.url)}
                                         onError={(e) => {
                                           e.currentTarget.style.display = 'none';
                                           const parent = e.currentTarget.parentElement;
@@ -686,7 +717,8 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                                   </div>
                                 )}
                               </div>
-                            ))
+                            );
+                          })
                           ) : (
                             <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
                               No documents uploaded

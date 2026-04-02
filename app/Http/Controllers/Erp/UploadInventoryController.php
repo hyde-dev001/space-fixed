@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\ProductColorVariant;
 use App\Models\ProductColorVariantImage;
 use App\Models\ProductVariant;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -119,6 +120,29 @@ class UploadInventoryController extends Controller
                     'message' => 'At least one color variant is required for shoes.'
                 ], 422);
             }
+        }
+
+        if (!empty($validated['color_variants'])) {
+            $seenColorIdentities = [];
+            foreach ($validated['color_variants'] as $index => &$variantData) {
+                $canonicalColorName = $this->canonicalizeColorName((string) ($variantData['color_name'] ?? ''));
+                $colorIdentity = $this->normalizeColorIdentity($canonicalColorName);
+
+                if (isset($seenColorIdentities[$colorIdentity])) {
+                    return response()->json([
+                        'message' => 'Duplicate color variants are not allowed.',
+                        'errors' => [
+                            "color_variants.{$index}.color_name" => [
+                                'This combined color already exists in the same stock entry.',
+                            ],
+                        ],
+                    ], 422);
+                }
+
+                $seenColorIdentities[$colorIdentity] = true;
+                $variantData['color_name'] = $canonicalColorName;
+            }
+            unset($variantData);
         }
         
         $shopOwnerId = $request->user()->shop_owner_id;
@@ -253,6 +277,16 @@ class UploadInventoryController extends Controller
             
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($this->isDuplicateColorConstraintError($e)) {
+                return response()->json([
+                    'message' => 'Combined color already exists in this stock item. Try a different color combination.',
+                    'errors' => [
+                        'color_variants' => ['Duplicate combined color is not allowed.'],
+                    ],
+                ], 422);
+            }
+
             return response()->json([
                 'message' => 'Error creating inventory item',
                 'error' => $e->getMessage()
@@ -490,6 +524,23 @@ class UploadInventoryController extends Controller
             ], 422);
         }
 
+        $canonicalColorName = $this->canonicalizeColorName($validated['color_name']);
+        $newColorIdentity = $this->normalizeColorIdentity($canonicalColorName);
+
+        $existingColorIdentities = $item->colorVariants()
+            ->pluck('color_name')
+            ->map(fn ($name) => $this->normalizeColorIdentity((string) $name))
+            ->all();
+
+        if (in_array($newColorIdentity, $existingColorIdentities, true)) {
+            return response()->json([
+                'message' => 'This color variant already exists for this item.',
+                'errors' => [
+                    'color_name' => ['Duplicate combined color is not allowed.'],
+                ],
+            ], 422);
+        }
+
         DB::beginTransaction();
         try {
             $totalQty = collect($validated['sizes'] ?? [])->sum('quantity');
@@ -497,7 +548,7 @@ class UploadInventoryController extends Controller
             // 1. Create the inventory colour variant
             $colorVariant = InventoryColorVariant::create([
                 'inventory_item_id' => $item->id,
-                'color_name'        => $validated['color_name'],
+                'color_name'        => $canonicalColorName,
                 'color_code'        => $validated['color_code'] ?? null,
                 'quantity'          => $totalQty,
             ]);
@@ -553,7 +604,7 @@ class UploadInventoryController extends Controller
                     'quantity_before'   => $quantityBefore,
                     'quantity_after'    => $newTotalQty,
                     'reference_type'    => 'colour_added',
-                    'notes'             => "Added colour variant: {$validated['color_name']}",
+                    'notes'             => "Added colour variant: {$canonicalColorName}",
                     'performed_by'      => $request->user()->id,
                     'performed_at'      => now(),
                 ]);
@@ -567,7 +618,7 @@ class UploadInventoryController extends Controller
                 $productColorVariant = ProductColorVariant::create([
                     'product_id'         => $item->product_id,
                     'inventory_color_id' => $colorVariant->id,
-                    'color_name'         => $validated['color_name'],
+                    'color_name'         => $canonicalColorName,
                     'color_code'         => $validated['color_code'] ?? null,
                     'is_active'          => true,
                     'sort_order'         => $nextSortOrder,
@@ -594,7 +645,7 @@ class UploadInventoryController extends Controller
                         [
                             'product_id' => $item->product_id,
                             'size'       => $variantSizeValue,
-                            'color'      => $validated['color_name'],
+                            'color'      => $canonicalColorName,
                         ],
                         [
                             'quantity'  => $sizeData['quantity'],
@@ -621,6 +672,16 @@ class UploadInventoryController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($this->isDuplicateColorConstraintError($e)) {
+                return response()->json([
+                    'message' => 'Combined color already exists for this stock item. Try a different color combination.',
+                    'errors' => [
+                        'color_name' => ['Duplicate combined color is not allowed.'],
+                    ],
+                ], 422);
+            }
+
             return response()->json([
                 'message' => 'Error adding colour variant',
                 'error'   => $e->getMessage(),
@@ -909,6 +970,56 @@ class UploadInventoryController extends Controller
         $random = strtoupper(Str::random(4));
         
         return "{$prefix}-{$nameCode}-{$random}";
+    }
+
+    protected function canonicalizeColorName(string $colorName): string
+    {
+        $parts = preg_split('/\+/', $colorName) ?: [];
+        $normalized = [];
+
+        foreach ($parts as $part) {
+            $cleaned = trim((string) preg_replace('/\s+/', ' ', (string) $part));
+            if ($cleaned === '') {
+                continue;
+            }
+
+            $display = ucwords(strtolower($cleaned));
+            $normalized[strtolower($display)] = $display;
+        }
+
+        if (empty($normalized)) {
+            return trim((string) preg_replace('/\s+/', ' ', $colorName));
+        }
+
+        ksort($normalized, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return implode(' + ', array_values($normalized));
+    }
+
+    protected function normalizeColorIdentity(string $colorName): string
+    {
+        return strtolower($this->canonicalizeColorName($colorName));
+    }
+
+    protected function isDuplicateColorConstraintError(\Throwable $exception): bool
+    {
+        if (!$exception instanceof QueryException) {
+            return false;
+        }
+
+        $sqlState = (string) ($exception->errorInfo[0] ?? '');
+        $message = strtolower((string) $exception->getMessage());
+
+        if ($sqlState !== '23000') {
+            return false;
+        }
+
+        return str_contains($message, 'duplicate')
+            && (
+                str_contains($message, 'inventory_color_variants')
+                || str_contains($message, 'unique_inventory_color')
+                || str_contains($message, 'color_name')
+            );
     }
     
     /**

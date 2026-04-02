@@ -77,7 +77,8 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
             $apiKey = $order->shopOwner?->paymongo_secret_key;
             $itemSubtotal = max(0.0, (float) $order->total_amount);
             $shippingFee = max(0.0, (float) ($order->shipping_fee ?? 0));
-            $amount = $itemSubtotal + $shippingFee;
+            $vatAmount = $order->vat_amount !== null ? max(0.0, (float) $order->vat_amount) : 0.0;
+            $amount = $itemSubtotal + $shippingFee + $vatAmount;
             $description = 'SoleSpace Order #' . $order->order_number;
 
             $lineItems = [];
@@ -94,6 +95,14 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
                     'currency' => 'PHP',
                     'amount' => (int) round($shippingFee * 100),
                     'name' => 'Shipping Fee',
+                    'quantity' => 1,
+                ];
+            }
+            if ($vatAmount > 0) {
+                $lineItems[] = [
+                    'currency' => 'PHP',
+                    'amount' => (int) round($vatAmount * 100),
+                    'name' => 'VAT (12%)',
                     'quantity' => 1,
                 ];
             }

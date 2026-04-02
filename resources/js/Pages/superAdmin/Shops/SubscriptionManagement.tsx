@@ -33,6 +33,9 @@ interface SubscriptionItem {
   next_billing_at: string | null;
   cancellation_reason: string | null;
   cancellation_notes: string | null;
+  payment_method?: string | null;
+  replaces_subscription_id?: number | null;
+  previous_plan_name?: string | null;
   created_at: string;
 }
 
@@ -52,6 +55,7 @@ interface PageProps extends Record<string, unknown> {
 
 type SortValue = 'latest' | 'oldest' | 'amount_high' | 'amount_low';
 type UiStatus = 'ongoing' | 'end' | 'deactivated';
+type ChangeTypeFilter = 'all' | 'upgraded' | 'regular';
 
 const StoreIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -148,6 +152,33 @@ const StatusBadge = ({ uiStatus }: { uiStatus: UiStatus }) => {
   );
 };
 
+const isUpgradeRecord = (item: SubscriptionItem) => {
+  const paymentMethod = String(item.payment_method || '').toLowerCase();
+  if (paymentMethod === 'proration_credit') return true;
+
+  if (item.replaces_subscription_id) return true;
+
+  const planPrice = Number(item.premium_plan?.price || 0);
+  const paidAmount = Number(item.amount_paid || 0);
+
+  // Fallback for older records: prorated upgrades usually pay less than full target plan price.
+  return planPrice > 0 && paidAmount > 0 && paidAmount + 0.01 < planPrice;
+};
+
+const SubscriptionTypeBadge = ({ item }: { item: SubscriptionItem }) => {
+  const upgraded = isUpgradeRecord(item);
+
+  return upgraded ? (
+    <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-900/40 dark:bg-blue-900/25 dark:text-blue-300">
+      Upgraded
+    </span>
+  ) : (
+    <span className="inline-flex rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+      Regular
+    </span>
+  );
+};
+
 const MetricCard = ({
   title,
   value,
@@ -211,6 +242,7 @@ export default function SubscriptionManagement() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | UiStatus>('all');
+  const [changeTypeFilter, setChangeTypeFilter] = useState<ChangeTypeFilter>('all');
   const [sortBy, setSortBy] = useState<SortValue>('latest');
   const [currentPage, setCurrentPage] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState<number | null>(null);
@@ -284,7 +316,13 @@ export default function SubscriptionManagement() {
         item.shop.email?.toLowerCase().includes(keyword) ||
         item.plan_code?.toLowerCase().includes(keyword);
       const matchesStatus = statusFilter === 'all' || uiStatus === statusFilter;
-      return matchesSearch && matchesStatus;
+      const upgraded = isUpgradeRecord(item);
+      const matchesChangeType =
+        changeTypeFilter === 'all' ||
+        (changeTypeFilter === 'upgraded' && upgraded) ||
+        (changeTypeFilter === 'regular' && !upgraded);
+
+      return matchesSearch && matchesStatus && matchesChangeType;
     });
 
     return filtered.sort((a, b) => {
@@ -293,7 +331,7 @@ export default function SubscriptionManagement() {
       if (sortBy === 'amount_high') return b.amount_paid - a.amount_paid;
       return a.amount_paid - b.amount_paid;
     });
-  }, [subscriptions, search, statusFilter, sortBy]);
+  }, [subscriptions, search, statusFilter, changeTypeFilter, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -302,7 +340,19 @@ export default function SubscriptionManagement() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, sortBy]);
+  }, [search, statusFilter, changeTypeFilter, sortBy]);
+
+  const upgradedCount = useMemo(() => subscriptions.filter(isUpgradeRecord).length, [subscriptions]);
+  const subscriptionById = useMemo(() => {
+    return subscriptions.reduce<Record<number, SubscriptionItem>>((acc, item) => {
+      acc[item.id] = item;
+      return acc;
+    }, {});
+  }, [subscriptions]);
+  const selectedPreviousSubscription = useMemo(() => {
+    if (!selected?.replaces_subscription_id) return null;
+    return subscriptionById[selected.replaces_subscription_id] || null;
+  }, [selected, subscriptionById]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -373,7 +423,7 @@ export default function SubscriptionManagement() {
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <input
                 type="text"
                 value={search}
@@ -396,6 +446,17 @@ export default function SubscriptionManagement() {
               </select>
 
               <select
+                value={changeTypeFilter}
+                onChange={(e) => setChangeTypeFilter(e.target.value as ChangeTypeFilter)}
+                aria-label="Filter subscriptions by change type"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="all">All Types</option>
+                <option value="upgraded">Upgraded Only</option>
+                <option value="regular">Regular Only</option>
+              </select>
+
+              <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortValue)}
                 aria-label="Sort subscriptions"
@@ -411,6 +472,9 @@ export default function SubscriptionManagement() {
             <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
               Showing {rows.length} of {subscriptions.length} subscriptions
             </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Upgrade records: {upgradedCount} total. "Upgraded" means the plan was changed mid-cycle and charged with prorated amount.
+            </p>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -421,6 +485,7 @@ export default function SubscriptionManagement() {
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Shop Details</th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Plan</th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Amount</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Type</th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Started</th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Next Billing</th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Expires</th>
@@ -431,7 +496,7 @@ export default function SubscriptionManagement() {
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-14 text-center">
+                      <td colSpan={9} className="px-6 py-14 text-center">
                         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">No subscriptions found</p>
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Try changing filters or searching by another keyword.</p>
                       </td>
@@ -452,6 +517,9 @@ export default function SubscriptionManagement() {
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                         {formatMoney(subscription.amount_paid)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <SubscriptionTypeBadge item={subscription} />
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.starts_at)}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(subscription.next_billing_at)}</td>
@@ -568,11 +636,17 @@ export default function SubscriptionManagement() {
                     {selected.premium_plan?.name ?? 'No linked plan'}
                   </p>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Status: {resolveUiStatus(selected.status, selected.ends_at) === 'ongoing' ? 'Active' : 'Not Active'}</p>
+                  {isUpgradeRecord(selected) ? (
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      Previous Plan: <span className="font-medium text-gray-700 dark:text-gray-200">{selected.previous_plan_name || selectedPreviousSubscription?.premium_plan?.name || 'Unavailable'}</span>
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-700">
                   <p className="text-xs uppercase tracking-wide text-gray-400">Amount Paid</p>
                   <p className="mt-2 text-base font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(selected.amount_paid)}</p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Type: {isUpgradeRecord(selected) ? 'Upgraded (prorated)' : 'Regular subscription'}</p>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Showroom slots: {selected.showroom_slot_limit}</p>
                 </div>
 

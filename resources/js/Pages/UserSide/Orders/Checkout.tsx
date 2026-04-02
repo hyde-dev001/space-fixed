@@ -71,11 +71,6 @@ const Checkout: React.FC = () => {
     address: '',
     is_default: false
   });
-
-
-  // Payment method state
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'Online'>('COD');
-
   const parseOptions = (rawOptions: any) => {
     if (!rawOptions) return {};
     if (typeof rawOptions === 'string') {

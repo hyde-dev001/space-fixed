@@ -8,7 +8,7 @@ use App\Models\HR\AuditLog;
 use App\Models\HR\SalaryChange;
 use App\Models\HR\Payroll;
 use App\Models\User;
-use App\Services\NotificationService;
+use App\Services\HR\SalaryChangeApprovalService;
 use App\Traits\HR\LogsHRActivity;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +20,10 @@ use Illuminate\Support\Facades\Validator;
 class SalaryChangeController extends Controller
 {
     use LogsHRActivity;
+
+    public function __construct(
+        private SalaryChangeApprovalService $salaryChangeApprovalService
+    ) {}
 
     // ─── Auth helpers ─────────────────────────────────────────
 
@@ -251,19 +255,11 @@ class SalaryChangeController extends Controller
 
             DB::commit();
 
-            app(NotificationService::class)->notifySalaryChangeSubmittedToShopOwner(
-                $shopOwnerId,
-                [
-                    'salary_change_id' => $change->id,
-                    'employee_id' => $employee->id,
-                    'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')),
-                    'previous_salary' => $previousSalary,
-                    'new_salary' => $newSalary,
-                    'effective_date' => $effectiveDate->toDateString(),
-                    'proposed_by' => $user->id,
-                    'proposed_by_name' => $user->name,
-                    'reason' => $request->reason,
-                ]
+            $this->salaryChangeApprovalService->notifySalaryChangeSubmitted(
+                $change->fresh(),
+                $employee,
+                $user,
+                (string) $request->reason
             );
 
             return response()->json([
@@ -345,13 +341,12 @@ class SalaryChangeController extends Controller
             return response()->json(['error' => 'You cannot approve a salary change you proposed.'], 403);
         }
 
-        DB::beginTransaction();
         try {
-            $change->status      = SalaryChange::STATUS_APPROVED;
-            $change->approved_by = $user?->id;
-            $change->approved_at = now();
-            $change->notes       = $request->notes;
-            $change->save();
+            $change = $this->salaryChangeApprovalService->approveSalaryChange(
+                $change,
+                $user,
+                $request->notes
+            );
 
             $employee = $change->employee;
             $this->auditCustom(
@@ -373,31 +368,12 @@ class SalaryChangeController extends Controller
                 ]
             );
 
-            DB::commit();
-
-            if ($change->proposed_by) {
-                app(NotificationService::class)->notifySalaryChangeApprovedToHr(
-                    (int) $change->proposed_by,
-                    (int) $shopOwnerId,
-                    [
-                        'salary_change_id' => $change->id,
-                        'employee_id' => $employee->id,
-                        'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')),
-                        'new_salary' => (float) $change->new_salary,
-                        'effective_date' => $change->effective_date->toDateString(),
-                        'approved_by' => $user?->id,
-                        'approved_by_name' => $user?->name,
-                    ]
-                );
-            }
-
             return response()->json([
                 'message' => 'Salary change approved. HR must finalize and apply this request.',
                 'data'    => $change->fresh(['employee:id,first_name,last_name', 'approver:id,name']),
             ]);
 
-        } catch (\Exception $e) {
-            DB::rollBack();
+        } catch (\Throwable $e) {
             return response()->json(['error' => 'Approval failed: ' . $e->getMessage()], 500);
         }
     }
@@ -433,11 +409,15 @@ class SalaryChangeController extends Controller
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
-        $change->status      = SalaryChange::STATUS_REJECTED;
-        $change->rejected_by = $user?->id;
-        $change->rejected_at = now();
-        $change->notes       = $request->notes;
-        $change->save();
+        try {
+            $change = $this->salaryChangeApprovalService->rejectSalaryChange(
+                $change,
+                $user,
+                (string) $request->notes
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Rejection failed: ' . $e->getMessage()], 500);
+        }
 
         $employee = $change->employee;
         $this->auditCustom(

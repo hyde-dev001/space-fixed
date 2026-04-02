@@ -5,14 +5,356 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerSubscriptionPayment;
+use App\Services\PremiumProrationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class PremiumCheckoutController extends Controller
 {
+    /**
+     * Preview an upgrade with proration.
+     *
+     * POST /api/shop-owner/premium/upgrade
+     */
+    public function upgrade(Request $request, PremiumProrationService $prorationService)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $validated = $request->validate([
+            'user_id' => 'nullable|integer',
+            'new_plan_id' => 'nullable|integer|exists:premium_plans,id',
+            'plan_code' => 'nullable|string|exists:premium_plans,plan_code',
+        ]);
+
+        $targetPlan = $this->resolveTargetPlan($validated);
+        if (!$targetPlan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A valid target plan is required.',
+            ], 422);
+        }
+
+        $currentSubscription = $this->resolveEntitledSubscription((int) $shopOwner->id);
+        if (!$currentSubscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription found. Please subscribe normally instead of upgrading.',
+            ], 409);
+        }
+
+        $currentPlan = $currentSubscription->premiumPlan;
+        if (!$currentPlan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current subscription plan is missing. Please contact support.',
+            ], 422);
+        }
+
+        if ((float) $targetPlan->price <= (float) $currentPlan->price) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Upgrade requires a higher-priced plan. Use schedule downgrade for lower plans.',
+            ], 422);
+        }
+
+        $preview = $prorationService->preview($currentSubscription, $currentPlan, $targetPlan, now());
+
+        return response()->json([
+            'success' => true,
+            'current_plan' => [
+                'id' => $currentPlan->id,
+                'name' => $currentPlan->name,
+                'plan_code' => $currentPlan->plan_code,
+                'price' => (float) $currentPlan->price,
+                'duration_days' => (int) $currentPlan->duration_days,
+                'showroom_slot_limit' => (int) $currentPlan->showroom_slot_limit,
+            ],
+            'new_plan' => [
+                'id' => $targetPlan->id,
+                'name' => $targetPlan->name,
+                'plan_code' => $targetPlan->plan_code,
+                'price' => (float) $targetPlan->price,
+                'duration_days' => (int) $targetPlan->duration_days,
+                'showroom_slot_limit' => (int) $targetPlan->showroom_slot_limit,
+            ],
+            'remaining_value' => $preview['remaining_value'],
+            'remaining_days' => $preview['remaining_days'],
+            'daily_rate' => $preview['daily_rate'],
+            'new_plan_price' => $preview['new_plan_price'],
+            'final_price' => $preview['final_price'],
+            'new_expiry' => $preview['new_expiry'],
+            'payment_required' => $preview['payment_required'],
+            'slot_delta' => max(0, (int) $targetPlan->showroom_slot_limit - (int) $currentPlan->showroom_slot_limit),
+        ]);
+    }
+
+    /**
+     * Confirm an upgrade and process payment.
+     *
+     * POST /api/shop-owner/premium/confirm-upgrade
+     */
+    public function confirmUpgrade(Request $request, PremiumProrationService $prorationService)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $validated = $request->validate([
+            'user_id' => 'nullable|integer',
+            'new_plan_id' => 'nullable|integer|exists:premium_plans,id',
+            'plan_code' => 'nullable|string|exists:premium_plans,plan_code',
+        ]);
+
+        $targetPlan = $this->resolveTargetPlan($validated);
+        if (!$targetPlan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A valid target plan is required.',
+            ], 422);
+        }
+
+        if (!$this->hasPlanChangeColumns()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Upgrade flow is not available yet. Please run the latest migrations first.',
+            ], 409);
+        }
+
+        $currentSubscription = $this->resolveEntitledSubscription((int) $shopOwner->id);
+        if (!$currentSubscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription found. Please subscribe normally instead of upgrading.',
+            ], 409);
+        }
+
+        $currentPlan = $currentSubscription->premiumPlan;
+        if (!$currentPlan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current subscription plan is missing. Please contact support.',
+            ], 422);
+        }
+
+        if ((float) $targetPlan->price <= (float) $currentPlan->price) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Upgrade requires a higher-priced plan. Use schedule downgrade for lower plans.',
+            ], 422);
+        }
+
+        $preview = $prorationService->preview($currentSubscription, $currentPlan, $targetPlan, now());
+        $finalPrice = (float) $preview['final_price'];
+        $prorationCredit = (float) $preview['remaining_value'];
+        $newEndsAt = now()->addDays(max(1, (int) $targetPlan->duration_days));
+
+        if ($finalPrice <= 0) {
+            $newSubscription = DB::transaction(function () use ($shopOwner, $currentSubscription, $targetPlan, $newEndsAt, $prorationCredit) {
+                $lockedCurrent = ShopOwnerSubscription::query()
+                    ->where('id', $currentSubscription->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $newSubscription = ShopOwnerSubscription::create([
+                    'shop_owner_id' => $shopOwner->id,
+                    'premium_plan_id' => $targetPlan->id,
+                    'plan_code' => $targetPlan->plan_code,
+                    'showroom_slot_limit' => $targetPlan->showroom_slot_limit,
+                    'status' => 'active',
+                    'auto_renew' => true,
+                    'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
+                    'replaces_subscription_id' => $lockedCurrent->id,
+                    'payment_method' => 'proration_credit',
+                    'paid_amount' => 0,
+                    'starts_at' => now(),
+                    'ends_at' => $newEndsAt,
+                ]);
+
+                $lockedCurrent->update([
+                    'status' => 'cancelled',
+                    'auto_renew' => false,
+                    'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED,
+                    'ends_at' => now(),
+                    'pending_premium_plan_id' => null,
+                    'pending_plan_effective_at' => null,
+                ]);
+
+                ShopOwnerSubscriptionPayment::create([
+                    'shop_owner_id' => $shopOwner->id,
+                    'subscription_id' => $newSubscription->id,
+                    'source_subscription_id' => $lockedCurrent->id,
+                    'from_premium_plan_id' => $lockedCurrent->premium_plan_id,
+                    'to_premium_plan_id' => $targetPlan->id,
+                    'payment_type' => 'upgrade',
+                    'gateway' => 'paymongo',
+                    'currency' => 'PHP',
+                    'plan_price' => (float) $targetPlan->price,
+                    'proration_credit' => $prorationCredit,
+                    'amount_due' => 0,
+                    'amount_paid' => 0,
+                    'status' => 'paid',
+                    'metadata' => [
+                        'zero_charge_upgrade' => true,
+                    ],
+                    'paid_at' => now(),
+                ]);
+
+                return $newSubscription;
+            });
+
+            return response()->json([
+                'success' => true,
+                'immediate_applied' => true,
+                'payment_required' => false,
+                'remaining_value' => $prorationCredit,
+                'final_price' => 0,
+                'new_expiry' => $newSubscription->ends_at?->toISOString(),
+                'subscription' => $newSubscription->fresh('premiumPlan'),
+            ]);
+        }
+
+        $pendingSubscription = ShopOwnerSubscription::create([
+            'shop_owner_id' => $shopOwner->id,
+            'premium_plan_id' => $targetPlan->id,
+            'plan_code' => $targetPlan->plan_code,
+            'showroom_slot_limit' => $targetPlan->showroom_slot_limit,
+            'status' => 'pending',
+            'auto_renew' => true,
+            'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
+            'replaces_subscription_id' => $currentSubscription->id,
+            'payment_method' => 'paymongo',
+            'paid_amount' => $finalPrice,
+        ]);
+
+        $payment = ShopOwnerSubscriptionPayment::create([
+            'shop_owner_id' => $shopOwner->id,
+            'subscription_id' => $pendingSubscription->id,
+            'source_subscription_id' => $currentSubscription->id,
+            'from_premium_plan_id' => $currentSubscription->premium_plan_id,
+            'to_premium_plan_id' => $targetPlan->id,
+            'payment_type' => 'upgrade',
+            'gateway' => 'paymongo',
+            'currency' => 'PHP',
+            'plan_price' => (float) $targetPlan->price,
+            'proration_credit' => $prorationCredit,
+            'amount_due' => $finalPrice,
+            'status' => 'pending',
+            'metadata' => [
+                'source_subscription_id' => $currentSubscription->id,
+                'new_expiry' => $newEndsAt->toISOString(),
+            ],
+        ]);
+
+        $checkoutResult = $this->createCheckoutSession(
+            amount: $finalPrice,
+            successUrl: route('shop-owner.premium-success', ['subscription_id' => $pendingSubscription->id]),
+            cancelUrl: route('shop-owner.premium-cancel', ['subscription_id' => $pendingSubscription->id]),
+            description: 'SoleSpace ' . $targetPlan->name . ' upgrade charge (after prorated credit)',
+            lineItemName: 'SoleSpace ' . $targetPlan->name . ' Upgrade',
+            metadata: [
+                'type' => 'premium_subscription_upgrade',
+                'subscription_id' => (string) $pendingSubscription->id,
+                'source_subscription_id' => (string) $currentSubscription->id,
+                'payment_record_id' => (string) $payment->id,
+                'plan_code' => $targetPlan->plan_code,
+                'proration_credit' => (string) $prorationCredit,
+                'final_price' => (string) $finalPrice,
+            ]
+        );
+
+        if (!($checkoutResult['success'] ?? false)) {
+            $pendingSubscription->update(['status' => 'failed']);
+            $payment->update(['status' => 'failed']);
+
+            return response()->json([
+                'success' => false,
+                'message' => (string) ($checkoutResult['message'] ?? 'Failed to create checkout session.'),
+            ], 502);
+        }
+
+        $pendingSubscription->update([
+            'paymongo_session_id' => $checkoutResult['session_id'],
+        ]);
+
+        $payment->update([
+            'paymongo_session_id' => $checkoutResult['session_id'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'immediate_applied' => false,
+            'payment_required' => true,
+            'checkout_url' => $checkoutResult['checkout_url'],
+            'session_id' => $checkoutResult['session_id'],
+            'remaining_value' => $prorationCredit,
+            'final_price' => $finalPrice,
+            'new_expiry' => $newEndsAt->toISOString(),
+        ]);
+    }
+
+    /**
+     * Schedule a downgrade to be applied at period end.
+     *
+     * POST /api/shop-owner/premium/schedule-downgrade
+     */
+    public function scheduleDowngrade(Request $request)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $validated = $request->validate([
+            'user_id' => 'nullable|integer',
+            'new_plan_id' => 'nullable|integer|exists:premium_plans,id',
+            'plan_code' => 'nullable|string|exists:premium_plans,plan_code',
+        ]);
+
+        if (!$this->hasPlanChangeColumns()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Downgrade scheduling is not available yet. Please run the latest migrations first.',
+            ], 409);
+        }
+
+        $targetPlan = $this->resolveTargetPlan($validated);
+        if (!$targetPlan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A valid target plan is required.',
+            ], 422);
+        }
+
+        $subscription = $this->resolveEntitledSubscription((int) $shopOwner->id);
+        if (!$subscription || !$subscription->premiumPlan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription found to downgrade.',
+            ], 404);
+        }
+
+        if ((float) $targetPlan->price >= (float) $subscription->premiumPlan->price) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Downgrade requires a lower-priced target plan.',
+            ], 422);
+        }
+
+        $effectiveAt = $subscription->ends_at ?: $subscription->starts_at?->copy()->addDays((int) $subscription->premiumPlan->duration_days);
+
+        $subscription->update([
+            'pending_premium_plan_id' => $targetPlan->id,
+            'pending_plan_effective_at' => $effectiveAt,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Downgrade scheduled successfully. It will apply at the end of the current billing cycle.',
+            'effective_at' => $effectiveAt?->toISOString(),
+            'subscription' => $subscription->fresh(['premiumPlan', 'pendingPremiumPlan']),
+        ]);
+    }
+
     /**
      * Initiate a PayMongo checkout session for a premium subscription.
      *
@@ -80,6 +422,8 @@ class PremiumCheckoutController extends Controller
         // Platform key: this charge is paid TO SoleSpace, so we use our own key
         $apiKey = config('services.paymongo.secret_key');
 
+        $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
+
         $response = Http::withHeaders([
             'Content-Type'  => 'application/json',
             'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
@@ -99,7 +443,7 @@ class PremiumCheckoutController extends Controller
                         'description' => $description,
                         'quantity'    => 1,
                     ]],
-                    'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
+                    'payment_method_types' => $paymentMethodTypes,
                     'metadata'             => [
                         'type'            => 'premium_subscription',
                         'subscription_id' => (string) $subscription->id,
@@ -335,13 +679,13 @@ class PremiumCheckoutController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
-        $entitledSubscription = ShopOwnerSubscription::with('premiumPlan')
+        $entitledSubscription = ShopOwnerSubscription::with(['premiumPlan', 'pendingPremiumPlan'])
             ->where('shop_owner_id', $shopOwner->id)
             ->showroomEntitled()
             ->latest('updated_at')
             ->first();
 
-        $subscription = $entitledSubscription ?: ShopOwnerSubscription::with('premiumPlan')
+        $subscription = $entitledSubscription ?: ShopOwnerSubscription::with(['premiumPlan', 'pendingPremiumPlan'])
             ->where('shop_owner_id', $shopOwner->id)
             ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'cancelled' THEN 1 WHEN 'pending' THEN 2 WHEN 'expired' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END")
             ->latest('updated_at')
@@ -362,11 +706,124 @@ class PremiumCheckoutController extends Controller
     {
         $plans = PremiumPlan::where('status', 'active')
             ->orderBy('price')
-            ->get(['plan_code', 'name', 'description', 'price', 'duration_days', 'showroom_slot_limit']);
+            ->get(['id', 'plan_code', 'name', 'description', 'price', 'duration_days', 'showroom_slot_limit']);
 
         return response()->json([
             'success' => true,
             'plans'   => $plans,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $validated
+     */
+    private function resolveTargetPlan(array $validated): ?PremiumPlan
+    {
+        if (!empty($validated['new_plan_id'])) {
+            return PremiumPlan::query()
+                ->where('id', (int) $validated['new_plan_id'])
+                ->where('status', 'active')
+                ->first();
+        }
+
+        if (!empty($validated['plan_code'])) {
+            return PremiumPlan::query()
+                ->where('plan_code', (string) $validated['plan_code'])
+                ->where('status', 'active')
+                ->first();
+        }
+
+        return null;
+    }
+
+    private function resolveEntitledSubscription(int $shopOwnerId): ?ShopOwnerSubscription
+    {
+        return ShopOwnerSubscription::with('premiumPlan')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->showroomEntitled()
+            ->latest('updated_at')
+            ->first();
+    }
+
+    private function hasPlanChangeColumns(): bool
+    {
+        return Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')
+            && Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')
+            && Schema::hasColumn('shop_owner_subscriptions', 'replaces_subscription_id');
+    }
+
+    /**
+     * @param array<string, string> $metadata
+     * @return array<string, mixed>
+     */
+    private function createCheckoutSession(
+        float $amount,
+        string $successUrl,
+        string $cancelUrl,
+        string $description,
+        string $lineItemName,
+        array $metadata
+    ): array {
+        $apiKey = (string) config('services.paymongo.secret_key');
+
+        $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
+
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+        ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+            'data' => [
+                'attributes' => [
+                    'success_url' => $successUrl,
+                    'cancel_url' => $cancelUrl,
+                    'description' => $description,
+                    'send_email_receipt' => true,
+                    'show_description' => true,
+                    'show_line_items' => true,
+                    'line_items' => [[
+                        'currency' => 'PHP',
+                        'amount' => (int) round($amount * 100),
+                        'name' => $lineItemName,
+                        'description' => $description,
+                        'quantity' => 1,
+                    ]],
+                    'payment_method_types' => $paymentMethodTypes,
+                    'metadata' => $metadata,
+                ],
+            ],
+        ]);
+
+        if ($response->failed()) {
+            $errors = $response->json('errors');
+            $errorMsg = $errors[0]['detail'] ?? $response->json('message') ?? 'PayMongo error';
+
+            Log::error('PayMongo checkout session failed', [
+                'http_status' => $response->status(),
+                'body' => $response->json(),
+                'metadata' => $metadata,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Payment gateway error: ' . $errorMsg,
+            ];
+        }
+
+        $data = $response->json();
+        $checkoutUrl = $data['data']['attributes']['checkout_url'] ?? null;
+        $sessionId = $data['data']['id'] ?? null;
+
+        if (!$checkoutUrl || !$sessionId) {
+            return [
+                'success' => false,
+                'message' => 'Incomplete response from payment gateway.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'checkout_url' => $checkoutUrl,
+            'session_id' => $sessionId,
+        ];
     }
 }

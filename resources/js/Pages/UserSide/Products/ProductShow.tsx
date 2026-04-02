@@ -411,11 +411,11 @@ const ProductShow: React.FC = () => {
   const mainPageVariantQuantity = getMainPageVariantQuantity();
 
   const buttonBaseClass =
-    'group inline-flex items-center justify-center gap-3 rounded-full px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-10 sm:py-4 sm:text-sm disabled:cursor-not-allowed disabled:opacity-50';
+    'group inline-flex w-full items-center justify-center gap-3 rounded-full px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-10 sm:py-4 sm:text-sm disabled:cursor-not-allowed disabled:opacity-50';
   const buttonLightClass =
-    'border border-black/15 bg-white/90 text-slate-900 backdrop-blur-md shadow-[0_18px_35px_-18px_rgba(0,0,0,0.35)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_24px_38px_-18px_rgba(0,0,0,0.45)] focus-visible:ring-[#16233b] focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+    'border border-gray-300 bg-white text-black shadow-[0_8px_24px_-16px_rgba(0,0,0,0.25)] hover:border-black hover:bg-gray-50 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:ring-offset-white';
   const buttonDarkClass =
-    'border border-black/65 bg-black/85 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_22px_40px_-18px_rgba(0,0,0,0.95)] focus-visible:ring-[#16233b] focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+    'border border-black bg-black text-white shadow-[0_12px_28px_-16px_rgba(0,0,0,0.75)] hover:bg-gray-900 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:ring-offset-white';
   const qtyStepperButtonClass =
     'h-11 w-11 inline-flex items-center justify-center rounded-full border border-black/15 bg-white/90 text-slate-900 backdrop-blur-md shadow-[0_12px_24px_-18px_rgba(0,0,0,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_18px_30px_-18px_rgba(0,0,0,0.55)] disabled:cursor-not-allowed disabled:opacity-40';
   const qtyInputClass =
@@ -1019,135 +1019,142 @@ const ProductShow: React.FC = () => {
           </div>
         </div>
 
-        <div className="max-w-[1200px] mx-auto px-0 xl:px-12 pt-14 xl:pt-28 pb-28 xl:pb-20">
-          <div className="flex flex-col xl:flex-row gap-0 xl:gap-8">
+        <div className="max-w-[1280px] mx-auto px-0 xl:px-12 pt-14 xl:pt-24 pb-28 xl:pb-20">
+          <div className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1fr)_420px] gap-0 xl:gap-10">
             <div className="flex-1">
-              {/* Main Image Display - Adidas Style */}
-              <div className="bg-white rounded-lg overflow-hidden">
-                <div className="relative bg-gray-50 aspect-square flex items-center justify-center group">
-                  {!slideTransition && (
-                    <img
-                      src={selectedImage}
-                      alt={product.name}
-                      onClick={() => setEnlargedImage(selectedImage)}
-                      className="absolute inset-0 w-full h-full object-contain cursor-zoom-in transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-105"
-                    />
+              <div className="bg-white">
+                <div className="xl:grid xl:grid-cols-[72px_minmax(0,1fr)] xl:items-start xl:gap-4">
+                  {images.length > 1 && (
+                    <div className="hidden xl:flex flex-col gap-2 max-h-[620px] overflow-y-auto pr-1">
+                      {images.map((img: string, idx: number) => {
+                        const isSelected = selectedImage === img;
+                        return (
+                          <button
+                            key={`desktop-${img}-${idx}`}
+                            onClick={() => switchMainImage(img)}
+                            disabled={isSlideRunning}
+                            className={`relative w-14 h-14 rounded-md overflow-hidden border transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-70 ${
+                              isSelected ? 'border-black' : 'border-gray-200 hover:border-gray-500'
+                            }`}
+                            aria-label={`View image ${idx + 1}`}
+                          >
+                            <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
 
-                  {slideTransition && (
-                    <>
+                  <div className="relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:rounded-md">
+                    {!slideTransition && (
                       <img
-                        src={slideTransition.from}
+                        src={selectedImage}
                         alt={product.name}
-                        onClick={() => setEnlargedImage(slideTransition.from)}
-                        className={`absolute inset-0 w-full h-full object-contain cursor-zoom-in transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                          slidePhase === 'run'
-                            ? slideTransition.direction === 'next'
-                              ? 'translate-x-[-100%]'
-                              : 'translate-x-[100%]'
-                            : 'translate-x-0'
-                        }`}
+                        onClick={() => setEnlargedImage(selectedImage)}
+                        className="absolute inset-0 w-full h-full object-contain cursor-zoom-in transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
                       />
-                      <img
-                        src={slideTransition.to}
-                        alt={product.name}
-                        onClick={() => setEnlargedImage(slideTransition.to)}
-                        className={`absolute inset-0 w-full h-full object-contain cursor-zoom-in transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                          slidePhase === 'run'
-                            ? 'translate-x-0'
-                            : slideTransition.direction === 'next'
-                              ? 'translate-x-[100%]'
-                              : 'translate-x-[-100%]'
-                        }`}
-                      />
-                    </>
-                  )}
-                  
-                  {/* 3D & 360 Virtual Showroom Buttons */}
-                  <div className="absolute top-4 right-4 flex flex-col gap-2 transition-opacity xl:opacity-0 xl:group-hover:opacity-100">
-                    {/* 360 Viewer Button */}
-                    {hasShowroomFrames && (
-                      <button
-                        onClick={() => setShow3DShowroom(true)}
-                        className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-white/35 bg-black/80 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                        title="View 360 Interactive"
-                        aria-label="View 360 interactive"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          <circle cx="12" cy="12" r="3" strokeWidth={1.8} />
-                        </svg>
-                      </button>
                     )}
 
-                  </div>
-                  
-                  {/* Navigation Arrow Buttons - Overlaid on Image */}
-                  {images.length > 1 && (
-                    <>
-                      {/* Left Arrow */}
-                      <button
-                        onClick={() => {
-                          const currentIdx = images.indexOf(selectedImage);
-                          if (currentIdx > 0) {
-                            switchMainImage(images[currentIdx - 1], 'prev');
-                          }
-                        }}
-                        disabled={images.indexOf(selectedImage) === 0 || isSlideRunning}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 disabled:opacity-30 disabled:cursor-not-allowed transition-all xl:opacity-0 xl:group-hover:opacity-100"
-                        aria-label="Previous image"
-                      >
-                        <svg className="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </button>
+                    {slideTransition && (
+                      <>
+                        <img
+                          src={slideTransition.from}
+                          alt={product.name}
+                          onClick={() => setEnlargedImage(slideTransition.from)}
+                          className={`absolute inset-0 w-full h-full object-contain cursor-zoom-in transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                            slidePhase === 'run'
+                              ? slideTransition.direction === 'next'
+                                ? 'translate-x-[-100%]'
+                                : 'translate-x-[100%]'
+                              : 'translate-x-0'
+                          }`}
+                        />
+                        <img
+                          src={slideTransition.to}
+                          alt={product.name}
+                          onClick={() => setEnlargedImage(slideTransition.to)}
+                          className={`absolute inset-0 w-full h-full object-contain cursor-zoom-in transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                            slidePhase === 'run'
+                              ? 'translate-x-0'
+                              : slideTransition.direction === 'next'
+                                ? 'translate-x-[100%]'
+                                : 'translate-x-[-100%]'
+                          }`}
+                        />
+                      </>
+                    )}
 
-                      {/* Right Arrow */}
-                      <button
-                        onClick={() => {
-                          const currentIdx = images.indexOf(selectedImage);
-                          if (currentIdx < images.length - 1) {
-                            switchMainImage(images[currentIdx + 1], 'next');
-                          }
-                        }}
-                        disabled={images.indexOf(selectedImage) === images.length - 1 || isSlideRunning}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 disabled:opacity-30 disabled:cursor-not-allowed transition-all xl:opacity-0 xl:group-hover:opacity-100"
-                        aria-label="Next image"
-                      >
-                        <svg className="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                    </>
-                  )}
+                    <div className="absolute top-4 right-4 flex flex-col gap-2 transition-opacity xl:opacity-0 xl:group-hover:opacity-100">
+                      {hasShowroomFrames && (
+                        <button
+                          onClick={() => setShow3DShowroom(true)}
+                          className="h-10 w-10 inline-flex items-center justify-center rounded-full border border-white/35 bg-black/80 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                          title="View 360 Interactive"
+                          aria-label="View 360 interactive"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            <circle cx="12" cy="12" r="3" strokeWidth={1.8} />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+
+                    {images.length > 1 && (
+                      <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const currentIdx = images.indexOf(selectedImage);
+                            if (currentIdx > 0) {
+                              switchMainImage(images[currentIdx - 1], 'prev');
+                            }
+                          }}
+                          disabled={images.indexOf(selectedImage) === 0 || isSlideRunning}
+                          className="h-10 w-10 rounded-full bg-white/90 text-black shadow-sm transition hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                          aria-label="Previous image"
+                          title="Previous image"
+                        >
+                          <svg className="mx-auto w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const currentIdx = images.indexOf(selectedImage);
+                            if (currentIdx < images.length - 1) {
+                              switchMainImage(images[currentIdx + 1], 'next');
+                            }
+                          }}
+                          disabled={images.indexOf(selectedImage) === images.length - 1 || isSlideRunning}
+                          className="h-10 w-10 rounded-full bg-white/90 text-black shadow-sm transition hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                          aria-label="Next image"
+                          title="Next image"
+                        >
+                          <svg className="mx-auto w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* Thumbnail Navigation Strip + Counter */}
                 {images.length > 1 && (
-                  <div className="mt-4 px-2">
-                    {/* Thumbnail Navigation Strip - Horizontal Scroll (Adidas Style) */}
+                  <div className="mt-4 px-4 xl:hidden">
                     <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pb-2">
                       {images.map((img: string, idx: number) => {
                         const isSelected = selectedImage === img;
                         return (
-                          <button 
-                            key={`${img}-${idx}`} 
-                            onClick={() => switchMainImage(img)} 
+                          <button
+                            key={`${img}-${idx}`}
+                            onClick={() => switchMainImage(img)}
                             disabled={isSlideRunning}
-                            className={`
-                              relative w-16 h-16 rounded-md overflow-hidden shrink-0 border-2 transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-70
-                              ${isSelected 
-                                ? 'border-black' 
-                                : 'border-gray-200 hover:border-gray-400'
-                              }
-                            `}
+                            className={`relative w-16 h-16 rounded-md overflow-hidden shrink-0 border-2 transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-70 ${
+                              isSelected ? 'border-black' : 'border-gray-200 hover:border-gray-400'
+                            }`}
                             aria-label={`View image ${idx + 1}`}
                           >
-                            <img 
-                              src={img} 
-                              alt={`Thumbnail ${idx + 1}`} 
-                              className="w-full h-full object-cover" 
-                            />
+                            <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
                           </button>
                         );
                       })}
@@ -1158,34 +1165,27 @@ const ProductShow: React.FC = () => {
             </div>
 
             <div className="w-full xl:w-[420px] px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0">
-              <h1 className="text-lg sm:text-xl xl:text-2xl font-bold mt-0 mb-2 text-black">{product.name}</h1>
+              <h1 className="text-xl sm:text-2xl xl:text-[1.9rem] font-semibold mt-0 mb-1 text-black leading-tight">{product.name}</h1>
               
               {product.brand && (
-                <div className="text-sm text-gray-600 mb-2">Brand: {product.brand}</div>
+                <div className="text-base text-gray-600 mb-3">{product.brand}</div>
               )}
               
-              <div className="flex items-center gap-4 mb-3">
+              <div className="mb-4">
                 <div className="flex items-center gap-2">
                   {product.compare_at_price && (
                     <div className="text-sm text-gray-400 line-through">{product.compare_at_price}</div>
                   )}
-                  <div className="text-2xl xl:text-xl font-bold text-black">{product.price}</div>
+                  <div className="text-3xl xl:text-[1.75rem] font-semibold text-black">{product.price}</div>
                 </div>
-                <div className="text-sm text-gray-600">
+                <div className="mt-1 text-xs text-gray-500">
                   {product.views_count || 0} views · {product.sales_count || 0} sold
                 </div>
               </div>
 
-              {product.stock_quantity !== undefined && (
-                <div className={`text-sm mb-4 ${product.stock_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {product.stock_quantity > 0 ? `${product.stock_quantity} in stock` : 'Out of stock'}
-                </div>
-              )}
-
               {product.description && (
-                <div className="mb-6">
-                  <div className="text-sm font-medium text-black mb-2">Description</div>
-                  <p className="text-sm text-gray-700 leading-relaxed">{product.description}</p>
+                <div className="mb-5">
+                  <p className="text-[15px] text-gray-700 leading-relaxed">{product.description}</p>
                 </div>
               )}
 
@@ -1196,10 +1196,10 @@ const ProductShow: React.FC = () => {
               {/* Color Selection - Adidas Style */}
               {hasColorVariants ? (
                 <div className="mb-6">
-                  <div className="text-sm font-semibold text-gray-900 mb-3">
+                  <div className="text-sm font-medium text-gray-900 mb-3">
                     Color: <span className="font-normal">{selectedColor}</span>
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-2.5">
                     {product.colorVariants.map((colorVariant: ColorVariant) => {
                       const thumbnail = colorVariant.images.find(img => img.is_thumbnail) || colorVariant.images[0];
                       const isSelected = colorVariant.color_name.toLowerCase() === selectedColor?.toLowerCase();
@@ -1208,32 +1208,28 @@ const ProductShow: React.FC = () => {
                         <button
                           key={colorVariant.id}
                           onClick={() => setSelectedColor(colorVariant.color_name)}
-                          className={`relative group transition-all ${
+                          className={`relative transition-all ${
                             isSelected
                               ? 'ring-2 ring-black ring-offset-2'
                               : 'ring-1 ring-gray-300 hover:ring-gray-400'
-                          } rounded-lg overflow-hidden`}
+                          } rounded-md overflow-hidden`}
                           title={colorVariant.color_name}
                         >
                           {thumbnail && (
                             <img
                               src={thumbnail.image_path}
                               alt={colorVariant.color_name}
-                              className="w-20 h-20 object-cover"
+                              className="w-14 h-14 object-cover"
                             />
                           )}
                           {!thumbnail && (
-                            <div
-                              className="w-20 h-20"
-                              style={{ backgroundColor: colorVariant.color_code }}
-                            />
+                            <svg className="w-14 h-14" viewBox="0 0 56 56" role="img" aria-label={colorVariant.color_name}>
+                              <rect x="0" y="0" width="56" height="56" fill={colorVariant.color_code} />
+                            </svg>
                           )}
-                          <div className="absolute inset-x-0 bottom-0 bg-black/70 text-white text-[10px] py-1 px-1 text-center font-medium">
-                            {colorVariant.color_name}
-                          </div>
                           {isSelected && (
                             <div className="absolute top-1 right-1 bg-black text-white rounded-full p-0.5">
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                               </svg>
                             </div>
@@ -1250,8 +1246,8 @@ const ProductShow: React.FC = () => {
                 /* Legacy Color Selection */
                 ((product.colors_available && Array.isArray(product.colors_available) && product.colors_available.length > 0) || (product.colors && Array.isArray(product.colors) && product.colors.length > 0)) && (
                   <div className="mb-6">
-                    <div className="text-sm font-semibold text-gray-900 mb-3">Color: {selectedColor}</div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="text-sm font-medium text-gray-900 mb-3">Color: {selectedColor}</div>
+                    <div className="flex flex-wrap gap-2.5">
                       {(product.colors_available || product.colors).map((color: string) => {
                         const colorVariants = product.variants?.filter((v: any) => 
                           String(v.color).toLowerCase() === String(color).toLowerCase() && v.image
@@ -1269,17 +1265,14 @@ const ProductShow: React.FC = () => {
                               String(selectedColor).toLowerCase() === String(color).toLowerCase()
                                 ? 'ring-2 ring-black ring-offset-2'
                                 : 'ring-1 ring-gray-300 hover:ring-gray-400'
-                            } rounded overflow-hidden transition-all`}
+                            } rounded-md overflow-hidden transition-all`}
                             title={color}
                           >
                             <img
                               src={colorImage}
                               alt={color}
-                              className="w-16 h-16 object-cover"
+                              className="w-14 h-14 object-cover"
                             />
-                            <div className="absolute inset-x-0 bottom-0 bg-black/70 text-white text-[10px] py-0.5 px-1 text-center">
-                              {color}
-                            </div>
                           </button>
                         );
                       })}
@@ -1288,17 +1281,21 @@ const ProductShow: React.FC = () => {
                 )
               )}
 
-              <div className="mt-6">
-                  <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm text-black">Size</div>
-                  <button onClick={() => setShowSizeChart(true)} className="text-sm text-black underline" type="button">Size Chart</button>
+              <div className="mt-5">
+                  <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-medium text-black">Select Size</div>
+                  <button onClick={() => setShowSizeChart(true)} className="text-sm text-black underline" type="button">Size Guide</button>
                 </div>
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 gap-2.5">
                   {sizeOptions.map((option: SizeOption) => (
                     <button
                       key={option.key}
                       onClick={() => setSelectedSize(option.value)}
-                      className={`px-3 py-2 border rounded ${isSameSize(selectedSize, option.value) ? 'bg-black text-white' : 'bg-white text-black'}`}
+                      className={`rounded-md border bg-white px-3 py-2.5 text-sm font-medium text-black transition-colors ${
+                        isSameSize(selectedSize, option.value)
+                          ? 'border-black shadow-[inset_0_0_0_1px_rgba(17,24,39,0.85)]'
+                          : 'border-gray-300 hover:border-gray-500'
+                      }`}
                     >
                       {option.label}
                     </button>
@@ -1423,7 +1420,7 @@ const ProductShow: React.FC = () => {
               )}
 
               <div className="mt-6">
-                <div className="text-sm text-black mb-2">Quantity</div>
+                <div className="text-sm font-medium text-black mb-2">Quantity</div>
                 <div className="flex items-center gap-3">
                   <button 
                     onClick={() => setQty(Math.max(1, qty - 1))} 
@@ -1483,7 +1480,7 @@ const ProductShow: React.FC = () => {
               </div>
 
               {/* Desktop CTA buttons */}
-              <div className="mt-6 hidden xl:flex gap-3">
+              <div className="mt-7 hidden xl:flex flex-col gap-3">
                 <AddToCartButton
                   productId={product.id}
                   product={{ 
@@ -1493,8 +1490,8 @@ const ProductShow: React.FC = () => {
                     qty: qty,
                     selectedImage: selectedImage
                   }}
-                  className={`flex-1 ${buttonBaseClass} ${buttonLightClass}`}
-                  label="Add to Cart"
+                  className={`${buttonBaseClass} ${buttonDarkClass}`}
+                  label="Add to Bag"
                   disabled={!selectedSize || !selectedColor || mainPageVariantQuantity === 0}
                 />
                 <AddToCartButton
@@ -1506,7 +1503,7 @@ const ProductShow: React.FC = () => {
                     qty: qty,
                     selectedImage: selectedImage
                   }}
-                  className={`flex-1 ${buttonBaseClass} ${buttonDarkClass}`}
+                  className={`${buttonBaseClass} ${buttonLightClass}`}
                   label="Buy Now"
                   buyNow={true}
                   disabled={!selectedSize || !selectedColor || mainPageVariantQuantity === 0}
@@ -1580,6 +1577,8 @@ const ProductShow: React.FC = () => {
                     <button
                       onClick={() => setShowAddToCartModal(false)}
                       className="absolute top-3 right-3 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-white/90 hover:bg-white shadow-md text-gray-600 hover:text-gray-900 transition-all"
+                      aria-label="Close add to cart modal"
+                      title="Close"
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

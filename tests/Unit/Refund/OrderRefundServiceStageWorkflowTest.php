@@ -136,6 +136,52 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function customer_return_shipment_is_blocked_when_staff_pickup_mode_is_active(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'status' => 'pending_approval',
+        ]);
+
+        $result = $this->service->markCustomerReturnShipped($refund, [
+            'tracking_number' => 'TRK-BLOCK',
+            'carrier' => 'LBC',
+        ]);
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertStringContainsString('handled by staff', strtolower((string) $result['message']));
+    }
+
+    #[Test]
+    public function staff_pickup_arrangement_sets_pending_staff_pickup_and_staff_fields(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+            'status' => 'pending_approval',
+        ]);
+
+        $result = $this->service->arrangeStaffReturnPickup($refund, [
+            'tracking_number' => 'TRK-STAFF-123',
+            'carrier_company' => 'J&T',
+            'rider_name' => 'Rider One',
+            'rider_phone' => '09171234567',
+            'tracking_link' => 'https://track.example/TRK-STAFF-123',
+        ], staffId: 77);
+
+        $this->assertSame('pickup_arranged', $result['result']);
+        $this->assertSame('pending_staff_pickup', $refund->return_status);
+        $this->assertSame('staff', $refund->return_source);
+        $this->assertSame('TRK-STAFF-123', $refund->staff_return_tracking_number);
+        $this->assertSame('J&T', $refund->staff_return_carrier);
+        $this->assertSame(77, $refund->return_arranged_by_staff_id);
+    }
+
+    #[Test]
     public function staff_can_confirm_return_received_after_shipment(): void
     {
         $refund = $this->makeRefund([
@@ -151,6 +197,24 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->assertSame('received', $refund->return_status);
         $this->assertSame(77, $refund->return_confirmed_by_staff_id);
         $this->assertNotNull($refund->return_confirmed_at);
+    }
+
+    #[Test]
+    public function staff_can_confirm_return_received_from_pending_staff_pickup_state(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'status' => 'pending_approval',
+        ]);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: 88, notes: 'Collected and inspected');
+
+        $this->assertSame('received', $result['result']);
+        $this->assertSame('received', $refund->return_status);
+        $this->assertSame(88, $refund->return_confirmed_by_staff_id);
     }
 
     #[Test]
@@ -288,6 +352,11 @@ final class InMemoryOrderRefund extends OrderRefund
     }
 
     public function fresh($with = [])
+    {
+        return $this;
+    }
+
+    public function refresh()
     {
         return $this;
     }

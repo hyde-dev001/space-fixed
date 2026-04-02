@@ -9,47 +9,22 @@ use App\Models\HR\LeaveBalance;
 use App\Models\HR\LeavePolicy;
 use App\Models\HR\LeaveApprovalHierarchy;
 use App\Models\HR\AuditLog;
-use App\Services\NotificationService;
+use App\Services\HR\LeaveApprovalService;
 use App\Traits\HR\LogsHRActivity;
-use App\Notifications\HR\LeaveRequestSubmitted;
-use App\Notifications\HR\LeaveRequestApproved;
-use App\Notifications\HR\LeaveRequestRejected;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
 
 class LeaveController extends Controller
 {
     use LogsHRActivity;
 
-    protected NotificationService $notificationService;
-
-    public function __construct(NotificationService $notificationService)
-    {
-        $this->notificationService = $notificationService;
-    }
-
-    /**
-     * Resolve linked ERP user account for an employee.
-     * Uses email + shop scope to avoid cross-shop collisions.
-     */
-    private function resolveEmployeeUser(Employee $employee): ?User
-    {
-        $email = trim((string) $employee->email);
-        if ($email === '') {
-            return null;
-        }
-
-        return User::query()
-            ->where('email', $email)
-            ->where('shop_owner_id', $employee->shop_owner_id)
-            ->first();
-    }
+    public function __construct(
+        private LeaveApprovalService $leaveApprovalService
+    ) {}
     /**
      * Display a listing of leave requests.
      */
@@ -266,45 +241,12 @@ class LeaveController extends Controller
             ['leave_type' => $request->leaveType, 'days' => $noOfDays]
         );
 
-        // ==================== 4. SEND LIVE + LARAVEL NOTIFICATIONS ====================
-        // Send live DB notification to all HR users in this shop
-        try {
-            $this->notificationService->notifyLeaveSubmitted($user->shop_owner_id, [
-                'leave_request_id' => $leaveRequest->id,
-                'employee_name'    => $employee->first_name . ' ' . $employee->last_name,
-                'leave_type'       => $request->leaveType,
-                'no_of_days'       => $noOfDays,
-                'start_date'       => $request->startDate,
-                'end_date'         => $request->endDate,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Failed to send live leave submitted notification', ['error' => $e->getMessage()]);
-        }
-
-        if ($policy->requires_approval && $approverInfo) {
-            try {
-                $approver = $approverInfo['approver'];
-                Notification::send($approver, new LeaveRequestSubmitted($leaveRequest, $employee, $approverInfo));
-                
-                // Log notification sent
-                AuditLog::createLog([
-                    'employee_id' => $request->employee_id,
-                    'module' => AuditLog::MODULE_LEAVE,
-                    'action' => 'notification_sent',
-                    'entity_type' => LeaveRequest::class,
-                    'entity_id' => $leaveRequest->id,
-                    'description' => "Leave approval notification sent to " . $approver->name,
-                    'severity' => AuditLog::SEVERITY_INFO,
-                    'tags' => ['notification', 'leave_approval'],
-                ]);
-            } catch (\Exception $e) {
-                // Log notification failure but don't fail the request
-                \Log::error('Failed to send leave notification', [
-                    'leave_request_id' => $leaveRequest->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
+        // ==================== 4. SERVICE-LEVEL TRANSITION NOTIFICATIONS ====================
+        $this->leaveApprovalService->notifyLeaveSubmitted(
+            $leaveRequest->fresh(['employee', 'approver']),
+            $employee,
+            ($policy->requires_approval && $approverInfo) ? $approverInfo : null
+        );
 
         return response()->json([
             'message' => 'Leave request created successfully',
@@ -467,29 +409,14 @@ class LeaveController extends Controller
             ], 422);
         }
 
-        // Simple approval - skip leave balance check for now
-        // Approve the leave request
-        $leaveRequest->update([
-            'status' => 'approved',
-            'approved_by' => $user->id,
-            'approval_date' => now(),
-        ]);
-
-        // Deduct leave balance
-        $leaveBalance = LeaveBalance::forEmployee($leaveRequest->employee_id)
-            ->forYear($leaveRequest->start_date->year)
-            ->forShopOwner($leaveRequest->shop_owner_id)
-            ->first();
-
-        if (!$leaveBalance) {
-            $leaveBalance = LeaveBalance::createForNewEmployee(
-                $leaveRequest->employee_id,
-                $leaveRequest->shop_owner_id,
-                $leaveRequest->start_date->year
-            );
+        // Service-level transition handles state update, balance mutation, and notifications.
+        try {
+            $leaveRequest = $this->leaveApprovalService->approveLeaveRequest($leaveRequest, $user);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to approve leave request: ' . $e->getMessage()
+            ], 500);
         }
-
-        $leaveBalance->deductForType($leaveRequest->leave_type, $leaveRequest->no_of_days);
 
         // Audit log (if trait is available)
         if (method_exists($this, 'auditApproved')) {
@@ -499,38 +426,6 @@ class LeaveController extends Controller
                 "Leave request approved: {$leaveRequest->employee->first_name} {$leaveRequest->employee->last_name} - {$leaveRequest->leave_type} leave for {$leaveRequest->no_of_days} days",
                 ['workflow', 'approval']
             );
-        }
-
-        // Send live + Laravel notifications to employee
-        try {
-            $employee = $leaveRequest->employee;
-            if ($employee) {
-                $employeeUser = $this->resolveEmployeeUser($employee);
-
-                if ($employeeUser) {
-                    $this->notificationService->notifyLeaveApproved($employeeUser->id, $user->shop_owner_id, [
-                        'leave_request_id' => $leaveRequest->id,
-                        'leave_type'       => $leaveRequest->leave_type,
-                        'start_date'       => $leaveRequest->start_date?->toDateString(),
-                        'end_date'         => $leaveRequest->end_date?->toDateString(),
-                    ]);
-
-                    // Keep queued Laravel notification for secondary channels (mail, etc.).
-                    $employeeUser->notify(new LeaveRequestApproved($leaveRequest, $user));
-                } else {
-                    \Log::warning('Leave approved but no linked ERP user found for requester notification', [
-                        'employee_id' => $employee->id,
-                        'employee_email' => $employee->email,
-                        'shop_owner_id' => $employee->shop_owner_id,
-                        'leave_request_id' => $leaveRequest->id,
-                    ]);
-                }
-            }
-        } catch (\Exception $e) {
-            \Log::error('Failed to send leave approval notification', [
-                'leave_request_id' => $leaveRequest->id,
-                'error' => $e->getMessage()
-            ]);
         }
 
         return response()->json([
@@ -632,59 +527,16 @@ class LeaveController extends Controller
             ], 422);
         }
 
-        $leaveRequest->reject($request->reason);
-
-        // Restore balance if it was already approved (shouldn't happen normally, but just in case)
-        if ($leaveRequest->getOriginal('status') === 'approved') {
-            $leaveBalance = LeaveBalance::forEmployee($leaveRequest->employee_id)
-                ->forYear($leaveRequest->start_date->year)
-                ->forShopOwner($leaveRequest->shop_owner_id)
-                ->first();
-            if ($leaveBalance) {
-                $leaveBalance->restoreForType($leaveRequest->leave_type, $leaveRequest->no_of_days);
-            }
-        }
-
-        // Audit logging
-        \Log::info('Leave request rejected', [
-            'rejector_id' => $user->id,
-            'rejector_role' => $user->role,
-            'leave_request_id' => $id,
-            'employee_id' => $leaveRequest->employee_id,
-            'rejection_reason' => $request->reason
-        ]);
-
-        // Send live + Laravel notifications to employee
         try {
-            $employee = $leaveRequest->employee;
-            if ($employee) {
-                $employeeUser = $this->resolveEmployeeUser($employee);
-
-                if ($employeeUser) {
-                    $this->notificationService->notifyLeaveRejected($employeeUser->id, $user->shop_owner_id, [
-                        'leave_request_id' => $leaveRequest->id,
-                        'leave_type'       => $leaveRequest->leave_type,
-                        'start_date'       => $leaveRequest->start_date?->toDateString(),
-                        'end_date'         => $leaveRequest->end_date?->toDateString(),
-                        'reason'           => $request->reason,
-                    ]);
-
-                    // Keep queued Laravel notification for secondary channels (mail, etc.).
-                    $employeeUser->notify(new LeaveRequestRejected($leaveRequest, $user));
-                } else {
-                    \Log::warning('Leave rejected but no linked ERP user found for requester notification', [
-                        'employee_id' => $employee->id,
-                        'employee_email' => $employee->email,
-                        'shop_owner_id' => $employee->shop_owner_id,
-                        'leave_request_id' => $leaveRequest->id,
-                    ]);
-                }
-            }
-        } catch (\Exception $e) {
-            \Log::error('Failed to send leave rejection notification', [
-                'leave_request_id' => $leaveRequest->id,
-                'error' => $e->getMessage()
-            ]);
+            $leaveRequest = $this->leaveApprovalService->rejectLeaveRequest(
+                $leaveRequest,
+                $user,
+                (string) $request->reason
+            );
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to reject leave request: ' . $e->getMessage()
+            ], 500);
         }
 
         return response()->json([
@@ -964,24 +816,8 @@ class LeaveController extends Controller
             'approval_level' => 1,
         ]);
 
-        // Notify HR/approvers about the new self-service leave request.
-        try {
-            $this->notificationService->notifyLeaveSubmitted((int) $user->shop_owner_id, [
-                'leave_request_id' => $leaveRequest->id,
-                'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: ($employee->name ?? $user->name ?? 'Employee'),
-                'leave_type' => $leaveRequest->leave_type,
-                'no_of_days' => $leaveRequest->no_of_days,
-                'start_date' => $leaveRequest->start_date,
-                'end_date' => $leaveRequest->end_date,
-                'reason' => $leaveRequest->reason,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Failed to send leave submitted notification from self-request flow', [
-                'leave_request_id' => $leaveRequest->id,
-                'employee_id' => $employee->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // Centralized submit transition notification hook
+        $this->leaveApprovalService->notifyLeaveSubmitted($leaveRequest->fresh(['employee', 'approver']), $employee);
 
         return response()->json([
             'message' => 'Leave request submitted successfully',

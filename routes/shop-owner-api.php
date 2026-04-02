@@ -139,24 +139,38 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     Route::prefix('products')->middleware('check.business.type:retail,both')->group(function () {
         Route::get('/meta/showroom-entitlement', [\App\Http\Controllers\Api\ProductController::class, 'showroomEntitlement'])->name('shop_owner.products.showroom-entitlement');
-        Route::get('/', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])->name('shop_owner.products.index');
+        Route::get('/', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])
+            ->middleware('throttle:120,1')
+            ->name('shop_owner.products.index');
         Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])->name('shop_owner.products.store');
         Route::get('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'show'])->name('shop_owner.products.show');
         Route::put('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'update'])->name('shop_owner.products.update');
-        Route::delete('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])->name('shop_owner.products.destroy');
-        Route::post('/upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])->name('shop_owner.products.upload-image');
+        Route::delete('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])
+            ->middleware('throttle:120,1')
+            ->name('shop_owner.products.destroy');
+        Route::post('/upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])
+            ->middleware('throttle:180,1')
+            ->name('shop_owner.products.upload-image');
         Route::get('/{id}/variants', [\App\Http\Controllers\Api\ProductController::class, 'getVariants'])->name('shop_owner.products.variants');
         
         // Color variants
         Route::get('/{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'getColorVariants'])->name('shop_owner.products.color-variants.index');
         Route::post('/{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'storeColorVariant'])->name('shop_owner.products.color-variants.store');
         Route::put('/{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariant'])->name('shop_owner.products.color-variants.update');
-        Route::delete('/{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariant'])->name('shop_owner.products.color-variants.destroy');
+        Route::delete('/{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariant'])
+            ->middleware('throttle:180,1')
+            ->name('shop_owner.products.color-variants.destroy');
         
         // Color variant images
-        Route::post('/{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])->name('shop_owner.products.color-variants.images.store');
-        Route::delete('/{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])->name('shop_owner.products.color-variants.images.destroy');
-        Route::post('/{productId}/color-variants/{colorVariantId}/images/reorder', [\App\Http\Controllers\Api\ProductController::class, 'reorderColorVariantImages'])->name('shop_owner.products.color-variants.images.reorder');
+        Route::post('/{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])
+            ->middleware('throttle:240,1')
+            ->name('shop_owner.products.color-variants.images.store');
+        Route::delete('/{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])
+            ->middleware('throttle:240,1')
+            ->name('shop_owner.products.color-variants.images.destroy');
+        Route::post('/{productId}/color-variants/{colorVariantId}/images/reorder', [\App\Http\Controllers\Api\ProductController::class, 'reorderColorVariantImages'])
+            ->middleware('throttle:240,1')
+            ->name('shop_owner.products.color-variants.images.reorder');
     });
 
     // ============================================
@@ -174,6 +188,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show'])->name('shop_owner.orders.show');
         Route::patch('/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus'])->name('shop_owner.orders.update-status');
         Route::post('/{id}/activate-pickup', [\App\Http\Controllers\ShopOwner\OrderController::class, 'activatePickup'])->name('shop_owner.orders.activate-pickup');
+        Route::post('/{id}/arrange-return-pickup', [\App\Http\Controllers\ShopOwner\OrderController::class, 'arrangeReturnPickup'])->name('shop_owner.orders.arrange-return-pickup');
         Route::post('/{id}/confirm-return-received', [\App\Http\Controllers\ShopOwner\OrderController::class, 'confirmReturnReceived'])->name('shop_owner.orders.confirm-return-received');
     });
 
@@ -246,6 +261,12 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/plans', [PremiumCheckoutController::class, 'plans'])->name('shop_owner.premium.plans');
         // Current shop's subscription status
         Route::get('/subscription', [PremiumCheckoutController::class, 'currentSubscription'])->name('shop_owner.premium.subscription');
+        // Preview proration and final charge for upgrade
+        Route::post('/upgrade', [PremiumCheckoutController::class, 'upgrade'])->name('shop_owner.premium.upgrade.preview');
+        // Confirm and process upgrade payment
+        Route::post('/confirm-upgrade', [PremiumCheckoutController::class, 'confirmUpgrade'])->name('shop_owner.premium.upgrade.confirm');
+        // Schedule downgrade at cycle end
+        Route::post('/schedule-downgrade', [PremiumCheckoutController::class, 'scheduleDowngrade'])->name('shop_owner.premium.downgrade.schedule');
         // Toggle auto-renew for the active premium subscription
         Route::patch('/auto-renew', [PremiumCheckoutController::class, 'toggleAutoRenewal'])->name('shop_owner.premium.auto-renew');
         // Initiate PayMongo checkout for a premium plan

@@ -50,6 +50,7 @@ const CAVITE_CITIES = [
 ];
 
 const CAVITE_ADDRESS_KEYWORDS = ['cavite', ...CAVITE_CITIES].map((entry) => entry.toLowerCase());
+const MAX_ADDITIONAL_DOCUMENTS = 8;
 
 const inferCaviteCity = (text: string) => {
   const normalized = text.toLowerCase();
@@ -64,6 +65,8 @@ const isWithinCaviteBounds = (lat: number, lng: number) => (
 );
 
 export default function ShopOwnerRegistration() {
+  type AdditionalDocument = { id: number; file: File | null; fileName: string };
+
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     firstName: "",
@@ -85,6 +88,8 @@ export default function ShopOwnerRegistration() {
     bir: { file: null as File | null, fileName: '' },
     valid_id: { file: null as File | null, fileName: '' },
   });
+  const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocument[]>([]);
+  const nextAdditionalDocId = useRef(1);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -111,6 +116,27 @@ export default function ShopOwnerRegistration() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+
+    if (name === 'phone') {
+      const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
+      setFormData(prev => ({ ...prev, phone: digitsOnly }));
+
+      if (errors.phone) {
+        setErrors(prev => ({ ...prev, phone: '' }));
+      }
+      return;
+    }
+
+    if (name === 'postalCode') {
+      const numericValue = value.replace(/\D/g, '');
+      setFormData(prev => ({ ...prev, postalCode: numericValue }));
+
+      if (errors.postal_code) {
+        setErrors(prev => ({ ...prev, postal_code: '' }));
+      }
+      return;
+    }
+
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'businessAddress') {
       setSelectedCity(inferCaviteCity(value));
@@ -120,9 +146,6 @@ export default function ShopOwnerRegistration() {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
 
-    if (name === 'postalCode' && errors.postal_code) {
-      setErrors(prev => ({ ...prev, postal_code: '' }));
-    }
   };
 
   const handleSelectChange = (value: string) => {
@@ -135,6 +158,47 @@ export default function ShopOwnerRegistration() {
 
   const handleRegistrationTypeChange = (value: string) => {
     setFormData(prev => ({ ...prev, registrationType: value }));
+  };
+
+  const handleAddAdditionalDocument = () => {
+    if (additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Limit Reached',
+        text: `You can add up to ${MAX_ADDITIONAL_DOCUMENTS} other supporting documents.`,
+        confirmButtonColor: '#3085d6',
+      });
+      return;
+    }
+
+    const newId = nextAdditionalDocId.current;
+    nextAdditionalDocId.current += 1;
+    setAdditionalDocuments((prev) => [...prev, { id: newId, file: null, fileName: '' }]);
+  };
+
+  const handleAdditionalDocumentDrop = (id: number, files: File[]) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const file = files[0];
+    setAdditionalDocuments((prev) => prev.map((doc) => (
+      doc.id === id
+        ? { ...doc, file, fileName: file.name }
+        : doc
+    )));
+
+    Swal.fire({
+      icon: 'info',
+      title: 'File Attached',
+      html: `<p><strong>${file.name}</strong> was added to <strong>Other Supporting Documents</strong>.</p><p class="text-sm text-gray-600">You can add more documents if needed.</p>`,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#3085d6',
+    });
+  };
+
+  const handleRemoveAdditionalDocument = (id: number) => {
+    setAdditionalDocuments((prev) => prev.filter((doc) => doc.id !== id));
   };
 
   const getCaviteLocationState = () => {
@@ -347,6 +411,10 @@ export default function ShopOwnerRegistration() {
       }
     }
 
+    if (!/^\d{11}$/.test(formData.phone.trim())) {
+      return { valid: false, message: 'Phone number must be 11 digits.' };
+    }
+
     if (!hasValidGeoCoordinates()) {
       return { valid: false, message: 'Please set a valid shop location (latitude and longitude).' };
     }
@@ -372,8 +440,58 @@ export default function ShopOwnerRegistration() {
     return { valid: true, message: '' };
   };
 
-  const handleNext = () => {
+  const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(email)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify email right now. Please try again.',
+      };
+    }
+  };
+
+  const handleNext = async () => {
     if (validateStep(currentStep)) {
+      if (currentStep === 1 && !/^\d{11}$/.test(formData.phone.trim())) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number must be 11 digits.' }));
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid phone number',
+          text: 'Phone number must be 11 digits.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+
+      if (currentStep === 1) {
+        const trimmedEmail = formData.email.trim();
+        const result = await checkEmailAvailability(trimmedEmail);
+
+        if (!result.available) {
+          const message = result.message || 'This email is already registered';
+          setErrors(prev => ({ ...prev, email: message }));
+          Swal.fire({
+            icon: 'error',
+            title: 'Email not available',
+            text: message,
+            confirmButtonColor: '#3085d6',
+          });
+          return;
+        }
+      }
+
       setCurrentStep(currentStep + 1);
     } else {
       const geofenceMessage = currentStep === 2
@@ -470,31 +588,30 @@ export default function ShopOwnerRegistration() {
         if (uploadedDocuments.valid_id.file) {
           submitData.append('valid_id', uploadedDocuments.valid_id.file);
         }
+        additionalDocuments.forEach((doc) => {
+          if (doc.file) {
+            submitData.append('other_documents[]', doc.file);
+          }
+        });
 
         // Submit to backend
         router.post(route('shop-owner.register'), submitData, {
           forceFormData: true,
-          onSuccess: (page) => {
+          onSuccess: () => {
             setIsSubmitting(false);
-            // Check if response contains redirect to verification
-            const props = page.props as any;
-            if (props.success) {
-              Swal.fire({
-                icon: 'success',
-                title: 'Registration Successful!',
-                html: `
-                  <p>Thank you for registering!</p>
-                  <p class="mt-3">We've sent a verification email to:</p>
-                  <p class="font-semibold text-blue-600 mt-2">${formData.email}</p>
-                  <p class="text-sm text-gray-600 mt-3">Please check your inbox and click the verification link to complete your registration.</p>
-                `,
-                confirmButtonText: 'OK',
-                confirmButtonColor: '#3085d6',
-              });
-              // Router will automatically handle redirect to verification.notice
-            } else {
+            Swal.fire({
+              icon: 'success',
+              title: 'Registration Submitted!',
+              html: `
+                <p>Thank you for registering.</p>
+                <p class="mt-3">Your application is now under review.</p>
+                <p class="text-sm text-gray-600 mt-3">You will receive status updates through email.</p>
+              `,
+              confirmButtonText: 'OK',
+              confirmButtonColor: '#3085d6',
+            }).then(() => {
               setShowSuccessModal(true);
-            }
+            });
           },
           onError: (backendErrors) => {
             setIsSubmitting(false);
@@ -525,6 +642,16 @@ export default function ShopOwnerRegistration() {
       }
     }
   };
+
+  const requiredUploadCount = [
+    uploadedDocuments.dti.file,
+    uploadedDocuments.mayors_permit.file,
+    uploadedDocuments.bir.file,
+    uploadedDocuments.valid_id.file,
+  ].filter(Boolean).length;
+  const additionalUploadCount = additionalDocuments.filter((doc) => !!doc.file).length;
+  const hasAdditionalDocuments = additionalDocuments.length > 0;
+  const hasReachedAdditionalLimit = additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS;
 
   return (
     <>
@@ -626,6 +753,9 @@ export default function ShopOwnerRegistration() {
                       name="phone"
                       value={formData.phone}
                       onChange={handleInputChange}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={11}
                       placeholder="Enter phone number"
                       className={errors.phone ? 'border-red-500' : ''}
                     />
@@ -694,6 +824,8 @@ export default function ShopOwnerRegistration() {
                         name="postalCode"
                         value={formData.postalCode}
                         onChange={handleInputChange}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         placeholder="Enter postal or ZIP code"
                         className={errors.postal_code ? 'border-red-500' : ''}
                       />
@@ -848,7 +980,17 @@ export default function ShopOwnerRegistration() {
                       <li>No edits or filters—the document must be authentic and readable.</li>
                     </ul>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold text-gray-900">Required Documents</h4>
+                      <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                        {requiredUploadCount} / 4 uploaded
+                      </span>
+                    </div>
+                    <p className="mb-4 text-xs text-gray-500">
+                      Complete all required uploads before proceeding to the review step.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>Shop Registration (DTI) {uploadedDocuments.dti.file && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
                       <DropzoneComponent
@@ -998,6 +1140,77 @@ export default function ShopOwnerRegistration() {
                       )}
                       {errors.valid_id && <p className="mt-1 text-sm text-red-600">{errors.valid_id}</p>}
                     </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-4 md:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">Other Supporting Documents (Optional)</h4>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Add extra proof files like lease contracts, permits, or other shop-related documents.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddAdditionalDocument}
+                        disabled={hasReachedAdditionalLimit}
+                        className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-transparent"
+                      >
+                        + Others
+                      </button>
+                    </div>
+
+                    {hasAdditionalDocuments ? (
+                      <>
+                        <p className="mt-4 text-xs font-medium text-blue-700">
+                          {additionalUploadCount} of {additionalDocuments.length} optional document(s) uploaded
+                        </p>
+                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                          {additionalDocuments.map((doc, index) => (
+                            <div key={doc.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                              <div className="mb-2 flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">Supporting Document #{index + 1}</p>
+                                  <p className="text-xs text-gray-500">Optional upload</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveAdditionalDocument(doc.id)}
+                                  className="inline-flex items-center rounded-md border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                              <DropzoneComponent
+                                onDrop={(files) => handleAdditionalDocumentDrop(doc.id, files)}
+                                isUploaded={!!doc.file}
+                                fileName={doc.fileName}
+                              />
+                              {doc.file && (
+                                <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
+                                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                  </svg>
+                                  Document uploaded successfully
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-4 rounded-lg border border-blue-100 bg-white p-4 text-center">
+                        <p className="text-sm font-medium text-gray-700">No optional document added yet.</p>
+                        <p className="mt-1 text-xs text-gray-500">Use the Others button when you want to attach extra proof files.</p>
+                      </div>
+                    )}
+
+                    {hasReachedAdditionalLimit && (
+                      <p className="mt-3 text-xs text-amber-700">
+                        You reached the maximum of {MAX_ADDITIONAL_DOCUMENTS} optional documents.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex justify-between pt-4">

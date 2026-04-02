@@ -1379,6 +1379,8 @@ class RepairRequestController extends Controller
             $successUrl = url('/my-repairs') . '?paymongo_success=1';
             $failedUrl = url('/my-repairs') . '?paymongo_failed=1';
 
+            $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
+
             $paymentResponse = \Illuminate\Support\Facades\Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
@@ -1397,7 +1399,7 @@ class RepairRequestController extends Controller
                             'name' => $description,
                             'quantity' => 1,
                         ]],
-                        'payment_method_types' => ['card', 'gcash', 'paymaya', 'grab_pay'],
+                        'payment_method_types' => $paymentMethodTypes,
                     ],
                 ],
             ]);

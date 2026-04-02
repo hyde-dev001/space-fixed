@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\NotificationService;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -38,6 +39,12 @@ class CustomerOrderController extends Controller
 
             // Transform orders to include items
             $ordersWithItems = $orders->map(function ($order) {
+                $windowMinutes = max(1, (int) ($order->cancellation_refund_window_minutes ?? config('orders.cancellation_refund_window_minutes', 10080)));
+                $windowStartedAt = $order->cancellation_refund_window_started_at
+                    ? Carbon::parse($order->cancellation_refund_window_started_at)->utc()
+                    : Carbon::parse($order->created_at)->utc();
+                $deadlineAt = $windowStartedAt->copy()->addMinutes($windowMinutes);
+
                 // Get order items from order_items table if it exists
                 // For now, we'll parse from a JSON field or create a simple structure
                 $items = DB::table('order_items')
@@ -59,6 +66,10 @@ class CustomerOrderController extends Controller
                     'total_amount' => (float) $order->total_amount,
                     'status' => $order->status,
                     'created_at' => $order->created_at,
+                    'cancellation_refund_deadline_at' => $deadlineAt->toIso8601String(),
+                    'cancellation_refund_deadline_passed' => now()->utc()->greaterThan($deadlineAt),
+                    'cancellation_refund_window_minutes' => $windowMinutes,
+                    'cancellation_refund_timezone' => 'UTC',
                     'items' => $items->toArray(),
                 ];
             });

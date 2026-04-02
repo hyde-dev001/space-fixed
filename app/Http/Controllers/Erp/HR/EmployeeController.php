@@ -108,7 +108,7 @@ class EmployeeController extends Controller
             'firstName' => 'required|string|max:50',
             'lastName' => 'required|string|max:50',
             'email' => 'required|email|unique:employees,email|unique:users,email',
-            'phone' => 'nullable|string|max:20|unique:employees,phone|unique:users,phone',
+            'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
             'position' => 'required|string|max:100',
             'department' => 'required|string|max:100',
             'hireDate' => 'nullable|date',
@@ -121,6 +121,8 @@ class EmployeeController extends Controller
             'emergencyPhone' => 'nullable|string|max:20',
             'location' => 'nullable|string|max:100',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+        ], [
+            'phone.regex' => 'Phone number must be exactly 11 digits.',
         ]);
 
         if ($validator->fails()) {
@@ -334,7 +336,7 @@ class EmployeeController extends Controller
             'firstName' => 'sometimes|required|string|max:50',
             'lastName' => 'sometimes|required|string|max:50',
             'email' => 'sometimes|required|email|unique:employees,email,' . $employee->id,
-            'phone' => 'sometimes|required|string|max:20',
+            'phone' => 'sometimes|required|regex:/^\d{11}$/',
             'position' => 'sometimes|required|string|max:100',
             'department' => 'sometimes|required|string|max:100',
             'hireDate' => 'sometimes|required|date',
@@ -347,6 +349,8 @@ class EmployeeController extends Controller
             'emergencyPhone' => 'sometimes|required|string|max:20',
             'suspensionReason' => 'nullable|string',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+        ], [
+            'phone.regex' => 'Phone number must be exactly 11 digits.',
         ]);
 
         // Salary changes must go through the dedicated workflow (Phase 7).

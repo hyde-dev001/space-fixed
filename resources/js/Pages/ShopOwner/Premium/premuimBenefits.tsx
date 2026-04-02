@@ -13,6 +13,7 @@ const cancellationReasons = [
 ] as const;
 
 type PremiumPlan = {
+	id: number;
 	plan_code: string;
 	name: string;
 	description: string | null;
@@ -31,8 +32,49 @@ type PremiumSubscription = {
 	cancellation_reason?: string | null;
 	cancellation_notes?: string | null;
 	premiumPlan?: {
+		id?: number | null;
 		name?: string | null;
+		price?: string | number | null;
+		showroom_slot_limit?: number | null;
 	} | null;
+	pendingPremiumPlan?: {
+		id?: number | null;
+		name?: string | null;
+		plan_code?: string | null;
+		showroom_slot_limit?: number | null;
+	} | null;
+	pending_premium_plan?: {
+		id?: number | null;
+		name?: string | null;
+		plan_code?: string | null;
+		showroom_slot_limit?: number | null;
+	} | null;
+	pending_plan_effective_at?: string | null;
+};
+
+type UpgradePreview = {
+	current_plan: {
+		id: number;
+		name: string;
+		plan_code: string;
+		price: number;
+		showroom_slot_limit: number;
+	};
+	new_plan: {
+		id: number;
+		name: string;
+		plan_code: string;
+		price: number;
+		showroom_slot_limit: number;
+	};
+	remaining_days: number;
+	daily_rate?: number;
+	remaining_value: number;
+	new_plan_price: number;
+	final_price: number;
+	new_expiry: string;
+	payment_required: boolean;
+	slot_delta: number;
 };
 
 interface Props {}
@@ -69,6 +111,13 @@ const PremiumBenefits: React.FC<Props> = () => {
 	const [cancelReason, setCancelReason] = useState<string>('');
 	const [cancelReasonNotes, setCancelReasonNotes] = useState('');
 	const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
+	const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+	const [upgradePreview, setUpgradePreview] = useState<UpgradePreview | null>(null);
+	const [loadingPlanAction, setLoadingPlanAction] = useState<string | null>(null);
+	const [confirmingUpgrade, setConfirmingUpgrade] = useState(false);
+	const [schedulingDowngradePlanCode, setSchedulingDowngradePlanCode] = useState<string | null>(null);
+	const [showDowngradeModal, setShowDowngradeModal] = useState(false);
+	const [selectedDowngradePlan, setSelectedDowngradePlan] = useState<PremiumPlan | null>(null);
 
 	useEffect(() => {
 		const loadPremiumData = async () => {
@@ -92,11 +141,13 @@ const PremiumBenefits: React.FC<Props> = () => {
 	}, []);
 
 	useEffect(() => {
-		if (!showCancelModal) return;
+		if (!showCancelModal && !showUpgradeModal && !showDowngradeModal) return;
 
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === 'Escape') {
 				setShowCancelModal(false);
+				setShowUpgradeModal(false);
+				setShowDowngradeModal(false);
 			}
 		};
 
@@ -107,7 +158,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 			document.body.style.overflow = '';
 			window.removeEventListener('keydown', onKeyDown);
 		};
-	}, [showCancelModal]);
+	}, [showCancelModal, showUpgradeModal, showDowngradeModal]);
 
 	const now = new Date();
 	const hasRemainingAccess = (sub: PremiumSubscription | null) => {
@@ -119,6 +170,112 @@ const PremiumBenefits: React.FC<Props> = () => {
 	const activeSubscription = hasRemainingAccess(subscription) ? subscription : null;
 	const formatCurrency = (value: string | number) => `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	const getDurationLabel = (days: number) => (days === 30 ? '1 month' : `${days} days`);
+	const getPlanPrice = (plan: PremiumPlan) => Number(plan.price ?? 0);
+	const currentPlanCode = activeSubscription?.plan_code ? String(activeSubscription.plan_code).toLowerCase() : null;
+	const currentPlan = plans.find((plan) => String(plan.plan_code).toLowerCase() === currentPlanCode) || null;
+	const pendingPlanCode =
+		subscription?.pendingPremiumPlan?.plan_code ||
+		subscription?.pending_premium_plan?.plan_code ||
+		null;
+	const pendingPlanName =
+		subscription?.pendingPremiumPlan?.name ||
+		subscription?.pending_premium_plan?.name ||
+		null;
+
+	const refreshSubscription = async () => {
+		const response = await axios.get('/api/shop-owner/premium/subscription', { withCredentials: true });
+		setSubscription(response.data?.subscription ?? null);
+	};
+
+	const handleUpgradePreview = async (plan: PremiumPlan) => {
+		setLoadingPlanAction(plan.plan_code);
+		setError(null);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.post(
+				'/api/shop-owner/premium/upgrade',
+				{ new_plan_id: plan.id },
+				{ withCredentials: true, headers: { 'X-CSRF-TOKEN': csrfToken || '' } },
+			);
+
+			setUpgradePreview(response.data as UpgradePreview);
+			setShowUpgradeModal(true);
+		} catch (err: any) {
+			setError(err?.response?.data?.message || 'Unable to preview upgrade pricing.');
+		} finally {
+			setLoadingPlanAction(null);
+		}
+	};
+
+	const handleConfirmUpgrade = async () => {
+		if (!upgradePreview) return;
+
+		setConfirmingUpgrade(true);
+		setError(null);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.post(
+				'/api/shop-owner/premium/confirm-upgrade',
+				{ new_plan_id: upgradePreview.new_plan.id },
+				{ withCredentials: true, headers: { 'X-CSRF-TOKEN': csrfToken || '' } },
+			);
+
+			const checkoutUrl = response.data?.checkout_url;
+			if (checkoutUrl) {
+				window.location.href = checkoutUrl;
+				return;
+			}
+
+			setShowUpgradeModal(false);
+			setUpgradePreview(null);
+			await refreshSubscription();
+		} catch (err: any) {
+			setError(err?.response?.data?.message || 'Unable to confirm upgrade.');
+		} finally {
+			setConfirmingUpgrade(false);
+		}
+	};
+
+	const handleScheduleDowngrade = async (plan: PremiumPlan) => {
+		setSchedulingDowngradePlanCode(plan.plan_code);
+		setError(null);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.post(
+				'/api/shop-owner/premium/schedule-downgrade',
+				{ new_plan_id: plan.id },
+				{ withCredentials: true, headers: { 'X-CSRF-TOKEN': csrfToken || '' } },
+			);
+
+			setSubscription(response.data?.subscription ?? null);
+			return true;
+		} catch (err: any) {
+			setError(err?.response?.data?.message || 'Unable to schedule downgrade.');
+			return false;
+		} finally {
+			setSchedulingDowngradePlanCode(null);
+		}
+	};
+
+	const openDowngradeModal = (plan: PremiumPlan) => {
+		setSelectedDowngradePlan(plan);
+		setShowDowngradeModal(true);
+	};
+
+	const closeDowngradeModal = () => {
+		if (selectedDowngradePlan && schedulingDowngradePlanCode === selectedDowngradePlan.plan_code) return;
+		setShowDowngradeModal(false);
+		setSelectedDowngradePlan(null);
+	};
+
+	const handleConfirmDowngrade = async () => {
+		if (!selectedDowngradePlan) return;
+		const scheduled = await handleScheduleDowngrade(selectedDowngradePlan);
+		if (!scheduled) return;
+
+		setShowDowngradeModal(false);
+		setSelectedDowngradePlan(null);
+	};
 	const handleCheckout = async (planCode: string) => {
 		setCheckoutPlan(planCode);
 		setError(null);
@@ -195,6 +352,19 @@ const PremiumBenefits: React.FC<Props> = () => {
 		setCancelReasonError(null);
 		setShowCancelModal(true);
 	};
+
+	const closeUpgradeModal = () => {
+		if (confirmingUpgrade) return;
+		setShowUpgradeModal(false);
+		setUpgradePreview(null);
+	};
+
+	const currentPlanPrice = Number(currentPlan?.price ?? 0);
+	const selectedDowngradePrice = Number(selectedDowngradePlan?.price ?? 0);
+	const downgradeSavings = Math.max(0, currentPlanPrice - selectedDowngradePrice);
+	const estimatedDowngradeDate = activeSubscription?.ends_at
+		? new Date(activeSubscription.ends_at).toLocaleDateString()
+		: 'the end of your current cycle';
 
 	return (
 		<>
@@ -273,15 +443,37 @@ const PremiumBenefits: React.FC<Props> = () => {
 									const isCurrentPlan =
 										Boolean(activeSubscription?.plan_code) &&
 										String(activeSubscription?.plan_code).toLowerCase() === String(plan.plan_code).toLowerCase();
+									const hasActiveSubscription = Boolean(activeSubscription);
+									const currentPrice = currentPlan ? getPlanPrice(currentPlan) : 0;
+									const selectedPrice = getPlanPrice(plan);
+									const isUpgradeOption = hasActiveSubscription && !isCurrentPlan && selectedPrice > currentPrice;
+									const isDowngradeOption = hasActiveSubscription && !isCurrentPlan && selectedPrice < currentPrice;
 									const canCheckoutThisPlan = !activeSubscription && !checkoutPlan;
+									const canClickPlanAction =
+										(!!canCheckoutThisPlan) ||
+										isUpgradeOption ||
+										isDowngradeOption;
 									const shouldShowShowroomButton = isCurrentPlan && Boolean(virtualShowroomHref);
-									const planButtonLabel = checkoutPlan === plan.plan_code
-										? 'Starting Checkout...'
+									const isPlanLoading =
+										checkoutPlan === plan.plan_code ||
+										loadingPlanAction === plan.plan_code ||
+										schedulingDowngradePlanCode === plan.plan_code;
+									const isPlanPendingDowngrade =
+										Boolean(pendingPlanCode) &&
+										String(pendingPlanCode).toLowerCase() === String(plan.plan_code).toLowerCase();
+									const planButtonLabel = isPlanLoading
+										? isUpgradeOption
+											? 'Calculating...'
+											: isDowngradeOption
+												? 'Scheduling...'
+												: 'Starting Checkout...'
 										: isCurrentPlan
 											? 'View Virtual Showroom'
-											: activeSubscription
-												? 'Active Subscription'
-												: 'Subscribe Now';
+											: isUpgradeOption
+												? 'Upgrade Now'
+												: isDowngradeOption
+													? (isPlanPendingDowngrade ? 'Downgrade Scheduled' : 'Schedule Downgrade')
+													: 'Subscribe Now';
 									return (
 										<div
 											key={plan.plan_code}
@@ -319,6 +511,11 @@ const PremiumBenefits: React.FC<Props> = () => {
 																	Your subscription will automatically renew at the end of each billing period unless you cancel before the renewal date.
 																</p>
 															)}
+															{pendingPlanName ? (
+																<p className="mt-2 text-xs font-medium text-[#16233b]">
+																	Downgrade scheduled to {pendingPlanName} on {subscription?.pending_plan_effective_at ? new Date(subscription.pending_plan_effective_at).toLocaleDateString() : 'your next cycle'}.
+																</p>
+															) : null}
 														</div>
 													) : null}
 												</div>
@@ -343,13 +540,23 @@ const PremiumBenefits: React.FC<Props> = () => {
 														onClick={() => {
 															if (canCheckoutThisPlan) {
 																handleCheckout(plan.plan_code);
+																return;
+															}
+
+															if (isUpgradeOption) {
+																handleUpgradePreview(plan);
+																return;
+															}
+
+															if (isDowngradeOption && !isPlanPendingDowngrade) {
+																openDowngradeModal(plan);
 															}
 														}}
-														disabled={!canCheckoutThisPlan}
+														disabled={!canClickPlanAction || isPlanLoading || isPlanPendingDowngrade}
 														className={`${actionBtnBase} ${
 															isCurrentPlan
 																? `${actionBtnDark} cursor-default`
-																: activeSubscription
+																: !canClickPlanAction || isPlanPendingDowngrade
 																	? 'cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-400'
 																	: actionBtnDark
 														}`}
@@ -422,6 +629,119 @@ const PremiumBenefits: React.FC<Props> = () => {
 						</section>
 				</div>
 			</div>
+
+				{showUpgradeModal && upgradePreview ? (
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+						<div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title">
+							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
+								<div>
+									<h2 id="upgrade-modal-title" className="text-2xl font-bold tracking-tight text-black">Upgrade to {upgradePreview.new_plan.name}</h2>
+									<p className="mt-1.5 text-sm leading-relaxed text-black/65">
+										Your upgrade takes effect immediately after payment is completed.
+									</p>
+								</div>
+								<button
+									type="button"
+									onClick={closeUpgradeModal}
+									disabled={confirmingUpgrade}
+									className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-black/70 transition hover:border-gray-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+									aria-label="Close upgrade modal"
+								>
+									<svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+										<path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+									</svg>
+								</button>
+							</div>
+
+							<div className="space-y-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm">
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Current Plan</span><span className="font-semibold text-black">{upgradePreview.current_plan.name}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Remaining Days</span><span className="font-semibold text-black">{Number(upgradePreview.remaining_days || 0).toFixed(2)} days</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">New Plan Price</span><span className="font-semibold text-black">{formatCurrency(upgradePreview.new_plan_price)}</span></div>
+								{typeof upgradePreview.daily_rate === 'number' ? (
+									<div className="flex items-center justify-between gap-3"><span className="text-black/65">Current Plan Daily Rate</span><span className="font-semibold text-black">{formatCurrency(upgradePreview.daily_rate)}</span></div>
+								) : null}
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Remaining Value Credit</span><span className="font-semibold text-emerald-700">{formatCurrency(Math.max(0, upgradePreview.remaining_value))}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Credit Computation</span><span className="font-semibold text-black/75">{typeof upgradePreview.daily_rate === 'number' ? `${formatCurrency(upgradePreview.daily_rate)} x ${Number(upgradePreview.remaining_days || 0).toFixed(2)} days` : `${Number(upgradePreview.remaining_days || 0).toFixed(2)} days`}</span></div>
+								<div className="flex items-center justify-between gap-3 border-t border-gray-200 pt-3"><span className="text-black/65">You Pay Today</span><span className="text-lg font-bold text-black">{formatCurrency(upgradePreview.final_price)}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">New Expiry</span><span className="font-semibold text-black">{new Date(upgradePreview.new_expiry).toLocaleDateString()}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Slot Increase</span><span className="font-semibold text-black">+{upgradePreview.slot_delta} slots ({upgradePreview.current_plan.showroom_slot_limit} → {upgradePreview.new_plan.showroom_slot_limit})</span></div>
+							</div>
+
+							<div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+								<button
+									type="button"
+									onClick={closeUpgradeModal}
+									disabled={confirmingUpgrade}
+									className="rounded-full border border-gray-300 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-black/70 transition hover:border-gray-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={handleConfirmUpgrade}
+									disabled={confirmingUpgrade}
+									className="rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:-translate-y-0.5 hover:bg-black disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:opacity-60"
+								>
+									{confirmingUpgrade ? 'Processing...' : 'Confirm Upgrade'}
+								</button>
+							</div>
+						</div>
+					</div>
+				) : null}
+
+				{showDowngradeModal && selectedDowngradePlan ? (
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+						<div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="downgrade-modal-title">
+							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
+								<div>
+									<h2 id="downgrade-modal-title" className="text-2xl font-bold tracking-tight text-black">Schedule Downgrade to {selectedDowngradePlan.name}?</h2>
+									<p className="mt-1.5 text-sm leading-relaxed text-black/65">
+										Your current plan stays active for now. Downgrade will apply on {estimatedDowngradeDate}.
+									</p>
+								</div>
+								<button
+									type="button"
+									onClick={closeDowngradeModal}
+									disabled={schedulingDowngradePlanCode === selectedDowngradePlan.plan_code}
+									className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-black/70 transition hover:border-gray-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+									aria-label="Close downgrade modal"
+								>
+									<svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+										<path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+									</svg>
+								</button>
+							</div>
+
+							<div className="space-y-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm">
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Current Plan</span><span className="font-semibold text-black">{currentPlan?.name || 'Current plan'}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">New Plan</span><span className="font-semibold text-black">{selectedDowngradePlan.name}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Current Price</span><span className="font-semibold text-black">{formatCurrency(currentPlanPrice)}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">New Price (next cycle)</span><span className="font-semibold text-black">{formatCurrency(selectedDowngradePrice)}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Estimated Savings per cycle</span><span className="font-semibold text-emerald-700">{formatCurrency(downgradeSavings)}</span></div>
+								<div className="flex items-center justify-between gap-3"><span className="text-black/65">Slot Capacity Change</span><span className="font-semibold text-black">{currentPlan?.showroom_slot_limit ?? '-'} → {selectedDowngradePlan.showroom_slot_limit}</span></div>
+							</div>
+
+							<div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+								<button
+									type="button"
+									onClick={closeDowngradeModal}
+									disabled={schedulingDowngradePlanCode === selectedDowngradePlan.plan_code}
+									className="rounded-full border border-gray-300 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-black/70 transition hover:border-gray-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={handleConfirmDowngrade}
+									disabled={schedulingDowngradePlanCode === selectedDowngradePlan.plan_code}
+									className="rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:-translate-y-0.5 hover:bg-black disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:opacity-60"
+								>
+									{schedulingDowngradePlanCode === selectedDowngradePlan.plan_code ? 'Scheduling...' : 'Confirm Downgrade'}
+								</button>
+							</div>
+						</div>
+					</div>
+				) : null}
 
 				{showCancelModal ? (
 					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">

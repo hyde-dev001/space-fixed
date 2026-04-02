@@ -20,6 +20,9 @@ interface CheckoutData {
   items: CartItem[];
   total_amount: number;
   shipping_fee?: number;
+  vat_amount?: number;
+  vat_rate?: number;
+  grand_total?: number;
   customer_name: string;
   customer_email: string;
   customer_phone: string;
@@ -58,7 +61,7 @@ interface ShippingEstimateData {
   pay_after_order_notice?: string;
 }
 
-type PaymentMethod = 'paymongo' | 'cod';
+type PaymentMethod = 'paymongo';
 
 const PH_REGION_OPTIONS = [
   'Abra',
@@ -190,7 +193,7 @@ const Payment: React.FC = () => {
   const [paymentRecovery, setPaymentRecovery] = useState<{
     scope: 'order' | 'repair';
     id: number;
-    reason: 'expired' | 'failed';
+    reason: 'expired' | 'failed' | 'invalid_state';
   } | null>(null);
   const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
 
@@ -494,7 +497,7 @@ const Payment: React.FC = () => {
         try {
           const data = JSON.parse(stored);
           setCheckoutData(data);
-          setSelectedPaymentMethod(data.payment_method === 'cod' ? 'cod' : 'paymongo');
+          setSelectedPaymentMethod('paymongo');
           // Sync local state with loaded data
           setCustomerEmail(data.customer_email || '');
           setCustomerName(data.customer_name || '');
@@ -596,6 +599,14 @@ const Payment: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const isFailed = params.get('paymongo_failed') === '1';
     const isExpired = params.get('paymongo_expired') === '1' || params.get('expired') === '1';
+    const hasInvalidStateSignal = [
+      params.get('paymongo_error') || '',
+      params.get('error_code') || '',
+      params.get('error') || '',
+      params.get('state') || '',
+      document.referrer || '',
+      window.location.href || '',
+    ].some((value) => /resource_invalid_state|invalid_state|grab_pay\/webhook/i.test(String(value)));
 
     if (!isFailed && !isExpired) {
       return;
@@ -604,26 +615,120 @@ const Payment: React.FC = () => {
     const pendingOrderId = Number(sessionStorage.getItem('pendingOrderId') || '0');
     const pendingRepairId = Number(sessionStorage.getItem('pendingRepairId') || repairIdParam || '0');
 
+    const recoveryReason: 'expired' | 'failed' | 'invalid_state' = isExpired
+      ? 'expired'
+      : (hasInvalidStateSignal ? 'invalid_state' : 'failed');
+
     if (isRepairPayment && Number.isFinite(pendingRepairId) && pendingRepairId > 0) {
       setPaymentRecovery({
         scope: 'repair',
         id: pendingRepairId,
-        reason: isExpired ? 'expired' : 'failed',
+        reason: recoveryReason,
       });
     } else if (Number.isFinite(pendingOrderId) && pendingOrderId > 0) {
       setPaymentRecovery({
         scope: 'order',
         id: pendingOrderId,
-        reason: isExpired ? 'expired' : 'failed',
+        reason: recoveryReason,
       });
     }
 
     params.delete('paymongo_failed');
     params.delete('paymongo_expired');
     params.delete('expired');
+    params.delete('paymongo_error');
+    params.delete('error_code');
+    params.delete('error');
+    params.delete('state');
     const queryString = params.toString();
     window.history.replaceState({}, '', `${window.location.pathname}${queryString ? `?${queryString}` : ''}`);
   }, [isRepairPayment, repairIdParam]);
+
+  useEffect(() => {
+    if (isRepairPayment || isPremiumPayment) {
+      return;
+    }
+
+    const pendingOrderId = Number(sessionStorage.getItem('pendingOrderId') || '0');
+    if (!Number.isFinite(pendingOrderId) || pendingOrderId <= 0) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const hasExplicitPaymongoResult =
+      params.get('paymongo_success') === '1'
+      || params.get('paymongo_failed') === '1'
+      || params.get('paymongo_expired') === '1'
+      || params.get('expired') === '1';
+
+    if (hasExplicitPaymongoResult) {
+      return;
+    }
+
+    const referrer = (document.referrer || '').toLowerCase();
+    const cameFromPaymongo = referrer.includes('paymongo');
+    if (!cameFromPaymongo) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const releaseUnpaidOrder = async () => {
+      try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        const verifyRes = await fetch(`/api/orders/${pendingOrderId}/verify-payment`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+          },
+        });
+
+        const verifyData = await verifyRes.json().catch(() => ({}));
+        if (verifyData?.success && verifyData?.payment_verified) {
+          return;
+        }
+
+        await fetch('/orders/cancel', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+          },
+          body: JSON.stringify({
+            order_id: pendingOrderId,
+            reason: 'payment_not_completed',
+            note: 'Auto-cancelled after returning from PayMongo without confirmed payment.',
+          }),
+        });
+
+        if (!isCancelled) {
+          sessionStorage.removeItem('pendingOrderId');
+          setPaymentRecovery(null);
+
+          await Swal.fire({
+            icon: 'info',
+            title: 'Payment Not Completed',
+            text: 'Your previous unpaid order was cancelled automatically. You can place a new order when ready.',
+            confirmButtonColor: '#000000',
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to auto-release unpaid order after PayMongo back navigation:', error);
+      }
+    };
+
+    releaseUnpaidOrder();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isPremiumPayment, isRepairPayment]);
 
   // Load saved user address and pre-fill form
   useEffect(() => {
@@ -885,7 +990,11 @@ const Payment: React.FC = () => {
 
       window.location.href = checkoutUrl;
     } catch (error: any) {
-      const message = error?.message || 'Unable to create a new payment session.';
+      const rawMessage = String(error?.message || 'Unable to create a new payment session.');
+      const isInvalidState = /resource_invalid_state|invalid_state|grab_pay/i.test(rawMessage);
+      const message = isInvalidState
+        ? 'The previous wallet session became invalid or stale. Please create a fresh payment session and complete checkout in one attempt.'
+        : rawMessage;
       setPayError(message);
 
       Swal.fire({
@@ -1006,18 +1115,6 @@ const Payment: React.FC = () => {
       // Save address if checkbox is checked
       await saveAddressToAccount(orderId);
 
-      if (selectedPaymentMethod === 'cod') {
-        setIsProcessing(false);
-        await Swal.fire({
-          icon: 'success',
-          title: 'Order Placed',
-          text: 'Your Cash on Delivery order has been placed successfully.',
-          confirmButtonColor: '#000000',
-        });
-        router.visit('/my-orders');
-        return;
-      }
-
       // Create a dedicated payment retry session that also persists fresh link metadata.
       const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
         method: 'POST',
@@ -1036,7 +1133,7 @@ const Payment: React.FC = () => {
       if (!response.ok) {
         const errorData = await response.json();
         if (errorData.error === 'shop_payment_not_configured') {
-          throw new Error('This shop has not set up online payments yet. Please choose Cash on Delivery or contact the shop.');
+          throw new Error('This shop has not set up online payments yet. Please contact the shop owner.');
         }
         throw new Error(errorData.error || 'Failed to create payment link');
       }
@@ -1069,14 +1166,26 @@ const Payment: React.FC = () => {
     return <div>Loading...</div>;
   }
 
-  const subtotal = checkoutData.total_amount;
+  const subtotal = Number(checkoutData.total_amount ?? 0);
   const checkoutShipping = Number(checkoutData.shipping_fee);
   const shipping = !isPremiumPayment && !isRepairPayment
     ? (Number.isFinite(checkoutShipping)
       ? Math.max(0, checkoutShipping)
       : Math.max(0, Number(shippingEstimate?.max_fee ?? 0)))
     : 0;
-  const total = subtotal + shipping;
+  const parsedVatRate = Number(checkoutData.vat_rate);
+  const vatRatePercent = Number.isFinite(parsedVatRate) && parsedVatRate >= 0 ? parsedVatRate : 12;
+  const hasStoredVat = checkoutData.vat_amount !== undefined && checkoutData.vat_amount !== null;
+  const parsedVatAmount = Number(checkoutData.vat_amount);
+  const computedVatAmount = subtotal * (vatRatePercent / 100);
+  const vatAmount = !isPremiumPayment && !isRepairPayment
+    ? (hasStoredVat && Number.isFinite(parsedVatAmount) && parsedVatAmount >= 0 ? parsedVatAmount : computedVatAmount)
+    : 0;
+  const total = !isPremiumPayment && !isRepairPayment
+    ? subtotal + shipping + vatAmount
+    : subtotal + shipping;
+  const vatLabel = `VAT (${vatRatePercent}%)`;
+  const vatDisplay = `₱${vatAmount.toLocaleString()}`;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);
   const hasShippingEstimate = Boolean(shippingEstimate);
   const shippingSummaryValue = hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable');
@@ -1106,7 +1215,9 @@ const Payment: React.FC = () => {
               <p className="text-sm font-medium text-amber-900 mb-2">
                 {paymentRecovery.reason === 'expired'
                   ? 'Payment session expired. Create a new payment session to continue.'
-                  : 'Payment was not completed. You can create a new payment session and try again.'}
+                  : paymentRecovery.reason === 'invalid_state'
+                    ? 'PayMongo returned an invalid/stale wallet state for this attempt. Please create a fresh payment session and try again without using old tabs or back navigation.'
+                    : 'Payment was not completed. You can create a new payment session and try again.'}
               </p>
               <button
                 type="button"
@@ -1224,6 +1335,11 @@ const Payment: React.FC = () => {
                   {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
                 </div>
 
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-700">{vatLabel}</span>
+                  <span className="text-gray-700">{vatDisplay}</span>
+                </div>
+
                 <div className="border-t border-gray-200 pt-4 mt-4 flex items-center justify-between">
                   <span className="text-2xl font-semibold text-black">Total</span>
                   <span className="text-4xl font-bold text-black">₱{total.toLocaleString()}</span>
@@ -1235,34 +1351,8 @@ const Payment: React.FC = () => {
             <div className="mt-2 bg-white px-4 py-5 border-y border-gray-200">
               <h3 className="text-3xl font-semibold text-black mb-4">Payment method</h3>
 
-              {!isPremiumPayment && (
-                <label
-                  className={`flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
-                    selectedPaymentMethod === 'cod' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex min-w-11 items-center justify-center rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                      COD
-                    </span>
-                    <div>
-                      <p className="text-base font-medium text-black leading-tight">Cash on delivery</p>
-                      <p className="text-xs text-gray-500 mt-1">Pay when your order arrives</p>
-                    </div>
-                  </div>
-                  <input
-                    type="radio"
-                    name="mobile-payment-method"
-                    value="cod"
-                    checked={selectedPaymentMethod === 'cod'}
-                    onChange={() => setSelectedPaymentMethod('cod')}
-                    className="h-5 w-5 accent-indigo-600"
-                  />
-                </label>
-              )}
-
               <label
-                className={`mt-3 flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
+                className={`flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
                   selectedPaymentMethod === 'paymongo' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
                 }`}
               >
@@ -1723,26 +1813,9 @@ const Payment: React.FC = () => {
                     </div>
                   </label>
 
-                  {!isPremiumPayment && (
-                    <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
-                      <input
-                        type="radio"
-                        name="payment-method"
-                        value="cod"
-                        checked={selectedPaymentMethod === 'cod'}
-                        onChange={() => setSelectedPaymentMethod('cod')}
-                        className="w-4 h-4 mt-1"
-                      />
-                      <div>
-                        <span className="text-sm font-medium text-black">Cash on Delivery (COD)</span>
-                        <p className="text-xs text-gray-600">Pay in cash when your order arrives.</p>
-                      </div>
-                    </label>
-                  )}
                 </div>
 
                 <div className="w-full">
-                {selectedPaymentMethod === 'paymongo' ? (
                   <>
                     <div className="border border-gray-400 border-b-0 rounded-t p-3 mb-0">
                       <div className="flex items-center justify-between">
@@ -1767,11 +1840,6 @@ const Payment: React.FC = () => {
                       You'll be redirected to Secure Payments via PayMongo to complete your purchase.
                     </div>
                   </>
-                ) : (
-                  <div className="border border-gray-400 rounded bg-gray-50 px-3 py-3 text-sm text-black">
-                    You selected Cash on Delivery. Payment will be collected when your order is delivered.
-                  </div>
-                )}
                 </div>
               </div>
 
@@ -1783,7 +1851,7 @@ const Payment: React.FC = () => {
                   isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
-                {isProcessing ? 'Processing...' : selectedPaymentMethod === 'cod' ? 'Place order' : 'Pay now'}
+                {isProcessing ? 'Processing...' : 'Pay now'}
               </button>
 
               {payError && (
@@ -1857,6 +1925,10 @@ const Payment: React.FC = () => {
                     {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                     {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
                   </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{vatLabel}</span>
+                    <span className="text-black font-medium">{vatDisplay}</span>
+                  </div>
                 </div>
 
                 {/* Total */}
@@ -1886,7 +1958,7 @@ const Payment: React.FC = () => {
                   isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
-                {isProcessing ? 'Processing...' : selectedPaymentMethod === 'cod' ? 'Place order' : 'Continue to payment'}
+                {isProcessing ? 'Processing...' : 'Continue to payment'}
               </button>
             </div>
           </div>

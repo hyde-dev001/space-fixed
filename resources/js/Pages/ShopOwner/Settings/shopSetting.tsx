@@ -37,6 +37,7 @@ type ShopSettingsPayload = {
 	}>;
 	repair_payment_policy: 'deposit_50' | 'full_upfront';
 	repair_workload_limit: number;
+	order_refund_deadline_days: number;
 	has_paymongo_key: boolean;
 	// Geofence
 	attendance_geofence_enabled: boolean;
@@ -191,6 +192,10 @@ const ShopSetting: React.FC = () => {
 	const [limitInputValue, setLimitInputValue] = useState<string>(String(serverLimit));
 	const [limitInputError, setLimitInputError] = useState<string | null>(null);
 	const [limitSaveSuccess, setLimitSaveSuccess] = useState(false);
+	const [orderRefundDeadlineDays, setOrderRefundDeadlineDays] = useState<number>(shop_settings.order_refund_deadline_days ?? 7);
+	const [refundDeadlineInputValue, setRefundDeadlineInputValue] = useState<string>(String(shop_settings.order_refund_deadline_days ?? 7));
+	const [refundDeadlineInputError, setRefundDeadlineInputError] = useState<string | null>(null);
+	const [refundDeadlineSaveSuccess, setRefundDeadlineSaveSuccess] = useState(false);
 
 	// Geofence state
 	const [geofenceEnabled, setGeofenceEnabled] = useState(shop_settings.attendance_geofence_enabled ?? false);
@@ -521,6 +526,38 @@ const ShopSetting: React.FC = () => {
 				},
 				onError: () => {
 					setLimitInputError('Failed to save. Please try again.');
+				},
+			},
+		);
+	};
+
+	const handleSaveOrderRefundDeadlineDays = () => {
+		const parsed = Number(refundDeadlineInputValue);
+		if (!Number.isFinite(parsed) || parsed < 1 || parsed > 30) {
+			setRefundDeadlineInputError('Please enter a refund deadline from 1 to 30 days.');
+			return;
+		}
+
+		const newDays = Math.floor(parsed);
+		setRefundDeadlineInputError(null);
+
+		router.put(
+			'/shop-owner/settings',
+			{
+				approval_pages: approvalPages,
+				repair_payment_policy: repairPaymentPolicy,
+				order_refund_deadline_days: newDays,
+			},
+			{
+				preserveScroll: true,
+				onSuccess: () => {
+					setOrderRefundDeadlineDays(newDays);
+					setRefundDeadlineSaveSuccess(true);
+					window.setTimeout(() => setRefundDeadlineSaveSuccess(false), 2200);
+				},
+				onError: (pageErrors) => {
+					const pageValidationErrors = pageErrors as Record<string, string | undefined>;
+					setRefundDeadlineInputError(pageValidationErrors.order_refund_deadline_days || 'Failed to save refund deadline. Please try again.');
 				},
 			},
 		);
@@ -1062,6 +1099,62 @@ const ShopSetting: React.FC = () => {
 										Current limit: <span className="font-semibold text-gray-700">{repairRequestLimit}</span> active repair orders.
 									</p>
 								</div>
+
+							</div>
+						</div>
+					)}
+
+					{(shop_settings.business_type === 'retail' || shop_settings.business_type === 'both') && (
+						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3">
+							<div className="border-b border-gray-200 p-6">
+								<h2 className="text-xl font-semibold text-gray-900">Product Refund Deadline</h2>
+								<p className="mt-1 text-sm text-gray-600">
+									Set how many days customers can request refund for product orders after order creation.
+								</p>
+							</div>
+							<div className="p-6">
+								<div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4">
+									<p className="mb-3 text-sm text-gray-700">
+										Allowed range is 1 to 30 days. This applies to new product orders for your shop.
+									</p>
+									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+										<label className="sr-only" htmlFor="order-refund-deadline-days">Refund deadline in days</label>
+										<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-xs">
+											<input
+												id="order-refund-deadline-days"
+												type="number"
+												min={1}
+												max={30}
+												step={1}
+												title="Refund deadline in days"
+												placeholder="7"
+												value={refundDeadlineInputValue}
+												onChange={(e) => {
+													setRefundDeadlineInputValue(e.target.value);
+													if (refundDeadlineInputError) setRefundDeadlineInputError(null);
+												}}
+												className="w-full border-0 px-1 py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
+											/>
+											<span className="text-sm font-medium text-gray-500">days</span>
+										</div>
+										<button
+											type="button"
+											onClick={handleSaveOrderRefundDeadlineDays}
+											className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+										>
+											Save Refund Deadline
+										</button>
+									</div>
+									{refundDeadlineInputError && <p className="mt-2 text-xs text-red-600">{refundDeadlineInputError}</p>}
+									{refundDeadlineSaveSuccess && (
+										<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+											<Check size={13} /> Refund deadline saved.
+										</p>
+									)}
+								</div>
+								<p className="mt-3 text-xs text-gray-500">
+									Current refund deadline: <span className="font-semibold text-gray-700">{orderRefundDeadlineDays}</span> day(s).
+								</p>
 							</div>
 						</div>
 					)}

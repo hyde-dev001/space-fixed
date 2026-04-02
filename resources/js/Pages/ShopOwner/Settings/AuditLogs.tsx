@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
 import Swal from "sweetalert2";
+import { useActivityLogFormatters } from "../../../hooks/useActivityLogFormatters";
+import { useFilteredPagination } from "../../../hooks/useFilteredPagination";
 
 interface ActivityLog {
   id: number;
@@ -9,11 +11,12 @@ interface ActivityLog {
   description: string;
   subject_type: string | null;
   subject_id: number | null;
+  subject_label?: string;
   causer_type: string | null;
   causer_id: number | null;
   event: string;
   properties: Record<string, any>;
-  changes: Record<string, { old: any; new: any }>;
+  changes: Record<string, { old: any; new: any; label?: string }>;
   created_at: string;
   updated_at: string;
   causer?: {
@@ -59,12 +62,6 @@ const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
 const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
   </svg>
 );
 
@@ -142,13 +139,13 @@ const MetricCard: React.FC<MetricData> = ({
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       {/* Animated background gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+      <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
+          <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
 
@@ -180,38 +177,40 @@ const MetricCard: React.FC<MetricData> = ({
 export default function ShopOwnerAuditLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const { escapeHtml, formatSubjectType, formatValue, parseUserAgent, formatDetailedDescription } = useActivityLogFormatters();
   const { props } = usePage<any>();
   const shopOwner = props.auth?.shop_owner;
-  const isIndividual: boolean = shopOwner?.is_individual ?? false;
   const canManageStaff: boolean = shopOwner?.can_manage_staff ?? false;
   const businessType: string = shopOwner?.business_type ?? 'repair';
   const isRepairType = businessType === 'repair' || businessType === 'both (retail & repair)';
-  const isRetailType = businessType === 'retail' || businessType === 'both (retail & repair)';
 
   const [pagination, setPagination] = useState<PaginationData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  
-  // Filters
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [eventFilter, setEventFilter] = useState("");
-  const [subjectTypeFilter, setSubjectTypeFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => {
-    fetchLogs(currentPage);
-  }, [currentPage, dateFrom, dateTo, eventFilter, subjectTypeFilter]);
+  const { page, perPage, filters, setFilter, setPersistentPage, resetFilters, loading, setLoading } = useFilteredPagination({
+    perPage: 10,
+    defaultFilters: {
+      event: "",
+      subject_type: "",
+      date_from: "",
+      date_to: "",
+    },
+    pageParamName: "page",
+    onFilterChange: (newFilters, newPage) => {
+      fetchLogs(newFilters, newPage);
+    },
+  });
 
-  const fetchLogs = async (page: number) => {
+  const fetchLogs = async (currentFilters: Record<string, any>, currentPage: number) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append('page', page.toString());
-      if (dateFrom) params.append('date_from', dateFrom);
-      if (dateTo) params.append('date_to', dateTo);
-      if (eventFilter) params.append('event', eventFilter);
-      if (subjectTypeFilter) params.append('subject_type', subjectTypeFilter);
+      params.append("page", currentPage.toString());
+      params.append("per_page", perPage.toString());
+      if (currentFilters.date_from) params.append("date_from", String(currentFilters.date_from));
+      if (currentFilters.date_to) params.append("date_to", String(currentFilters.date_to));
+      if (currentFilters.event) params.append("event", String(currentFilters.event));
+      if (currentFilters.subject_type) params.append("subject_type", String(currentFilters.subject_type));
 
       const response = await fetch(`/api/activity-logs?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch logs');
@@ -232,109 +231,6 @@ export default function ShopOwnerAuditLogs() {
     }
   };
 
-  const clearFilters = () => {
-    setDateFrom("");
-    setDateTo("");
-    setEventFilter("");
-    setSubjectTypeFilter("");
-  };
-
-  // Format value for display
-  const formatValue = (value: any): string => {
-    if (value === null || value === undefined) return 'N/A';
-    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-    if (typeof value === 'object') return JSON.stringify(value);
-    if (typeof value === 'number' && value > 100 && value < 999999) {
-      // Likely a price
-      return `₱${parseFloat(value.toString()).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    return value.toString();
-  };
-
-  // Parse user agent to readable format
-  const parseUserAgent = (ua: string): string => {
-    if (!ua || ua === 'N/A') return 'Unknown Device';
-    
-    let browser = 'Unknown Browser';
-    let os = 'Unknown OS';
-    
-    if (ua.includes('Chrome')) browser = 'Chrome';
-    else if (ua.includes('Firefox')) browser = 'Firefox';
-    else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
-    else if (ua.includes('Edge')) browser = 'Edge';
-    
-    if (ua.includes('Windows')) os = 'Windows';
-    else if (ua.includes('Mac')) os = 'macOS';
-    else if (ua.includes('Linux')) os = 'Linux';
-    else if (ua.includes('Android')) os = 'Android';
-    else if (ua.includes('iOS')) os = 'iOS';
-    
-    return `${browser} on ${os}`;
-  };
-
-  // Format detailed description with context
-  const formatDetailedDescription = (log: ActivityLog): string => {
-    const causerName = log.causer?.name || 'Unknown User';
-    const causerRole = log.causer?.role ? ` (${log.causer.role})` : '';
-    const subjectType = formatSubjectType(log.subject_type);
-    
-    const changes = log.changes || {};
-    const changedFields = Object.keys(changes);
-    
-    // Get entity name from properties if available
-    const entityName = log.properties?.attributes?.name || 
-                       log.properties?.attributes?.reference || 
-                       log.properties?.attributes?.order_number || 
-                       log.properties?.attributes?.title || '';
-    
-    const entityDisplay = entityName ? ` "${entityName}"` : '';
-    
-    switch (log.event) {
-      case 'created':
-        return `${causerName}${causerRole} created a new ${subjectType}${entityDisplay}`;
-      
-      case 'updated':
-        if (changedFields.length === 1) {
-          const field = changedFields[0].replace(/_/g, ' ');
-          const oldVal = formatValue(changes[changedFields[0]].old);
-          const newVal = formatValue(changes[changedFields[0]].new);
-          return `${causerName}${causerRole} updated ${subjectType}${entityDisplay} - Changed ${field} from ${oldVal} to ${newVal}`;
-        } else if (changedFields.length > 1) {
-          return `${causerName}${causerRole} updated ${subjectType}${entityDisplay} - Modified ${changedFields.length} fields`;
-        }
-        return `${causerName}${causerRole} updated ${subjectType}${entityDisplay}`;
-      
-      case 'deleted':
-        return `${causerName}${causerRole} deleted ${subjectType}${entityDisplay}`;
-      
-      default:
-        return log.description || `${causerName}${causerRole} performed ${log.event} on ${subjectType}${entityDisplay}`;
-    }
-  };
-
-  // Get subject URL for linking
-  const getSubjectUrl = (log: ActivityLog): string | null => {
-    if (!log.subject_type || !log.subject_id) return null;
-    
-    const type = log.subject_type.split('\\').pop()?.toLowerCase();
-    
-    switch (type) {
-      case 'product':
-        return `/shop-owner/products?id=${log.subject_id}`;
-      case 'expense':
-        return `/finance/expenses?id=${log.subject_id}`;
-      case 'user':
-      case 'employee':
-        return `/shop-owner/user-access-control?id=${log.subject_id}`;
-      case 'order':
-        return `/shop-owner/orders?id=${log.subject_id}`;
-      case 'customer':
-        return `/erp/crm/customers?id=${log.subject_id}`;
-      default:
-        return null;
-    }
-  };
-
   const viewLogDetails = (log: ActivityLog) => {
     const properties = log.properties;
     const changes = log.changes || {};
@@ -347,14 +243,14 @@ export default function ShopOwnerAuditLogs() {
     if (Object.keys(changes).length > 0) {
       diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Changes Made:</h3><div class="space-y-3">';
       for (const [field, change] of Object.entries(changes)) {
-        const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const fieldName = escapeHtml((change as any).label || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()));
         diffHtml += `
           <div class="bg-gray-50 p-3 rounded-lg">
             <p class="font-semibold text-gray-700 mb-2">${fieldName}:</p>
             <div class="flex gap-4">
               <div class="flex-1">
                 <p class="text-xs text-gray-500 mb-1">Old Value</p>
-                <p class="text-red-600 line-through bg-red-50 px-2 py-1 rounded">${formatValue(change.old)}</p>
+                <p class="text-red-600 line-through bg-red-50 px-2 py-1 rounded">${escapeHtml(formatValue(change.old, field))}</p>
               </div>
               <div class="flex items-center">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -363,7 +259,7 @@ export default function ShopOwnerAuditLogs() {
               </div>
               <div class="flex-1">
                 <p class="text-xs text-gray-500 mb-1">New Value</p>
-                <p class="text-green-600 bg-green-50 px-2 py-1 rounded font-semibold">${formatValue(change.new)}</p>
+                <p class="text-green-600 bg-green-50 px-2 py-1 rounded font-semibold">${escapeHtml(formatValue(change.new, field))}</p>
               </div>
             </div>
           </div>
@@ -375,7 +271,7 @@ export default function ShopOwnerAuditLogs() {
       if (Object.keys(attributes).length > 0) {
         diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Created With:</h3><div class="bg-green-50 p-3 rounded-lg"><div class="space-y-1">';
         for (const [key, value] of Object.entries(attributes)) {
-          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${key.replace(/_/g, ' ')}:</span> ${formatValue(value)}</div>`;
+          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${escapeHtml(key.replace(/_/g, ' '))}:</span> ${escapeHtml(formatValue(value, key))}</div>`;
         }
         diffHtml += '</div></div></div>';
       }
@@ -386,17 +282,17 @@ export default function ShopOwnerAuditLogs() {
       <div class="mt-4 border-t pt-4">
         <h3 class="font-semibold text-lg mb-3">Security Information:</h3>
         <div class="bg-blue-50 p-3 rounded-lg space-y-2">
-          <p class="text-sm"><span class="font-semibold text-gray-700">IP Address:</span> <span class="text-blue-700 font-mono">${log.metadata.ip_address}</span></p>
-          <p class="text-sm"><span class="font-semibold text-gray-700">Device/Browser:</span> <span class="text-gray-600">${parseUserAgent(log.metadata.user_agent)}</span></p>
+          <p class="text-sm"><span class="font-semibold text-gray-700">IP Address:</span> <span class="text-blue-700 font-mono">${escapeHtml(log.metadata.ip_address)}</span></p>
+          <p class="text-sm"><span class="font-semibold text-gray-700">Device/Browser:</span> <span class="text-gray-600">${escapeHtml(parseUserAgent(log.metadata.user_agent))}</span></p>
         </div>
       </div>
     ` : '';
 
     const causerHtml = log.causer ? `
       <div class="bg-indigo-50 p-3 rounded-lg mb-4">
-        <p class="text-sm"><span class="font-semibold text-gray-700">Performed by:</span> <span class="text-indigo-700 font-semibold">${log.causer.name}</span></p>
-        <p class="text-sm"><span class="font-semibold text-gray-700">Role:</span> <span class="text-indigo-600">${log.causer.role}</span></p>
-        <p class="text-sm"><span class="font-semibold text-gray-700">Email:</span> <span class="text-gray-600">${log.causer.email}</span></p>
+        <p class="text-sm"><span class="font-semibold text-gray-700">Performed by:</span> <span class="text-indigo-700 font-semibold">${escapeHtml(log.causer.name)}</span></p>
+        <p class="text-sm"><span class="font-semibold text-gray-700">Role:</span> <span class="text-indigo-600">${escapeHtml(log.causer.role)}</span></p>
+        <p class="text-sm"><span class="font-semibold text-gray-700">Email:</span> <span class="text-gray-600">${escapeHtml(log.causer.email)}</span></p>
       </div>
     ` : '';
 
@@ -405,8 +301,8 @@ export default function ShopOwnerAuditLogs() {
       html: `
         <div class="text-left">
           ${causerHtml}
-          <p class="mb-2 text-sm"><strong>Date:</strong> ${new Date(log.created_at).toLocaleString()}</p>
-          <p class="mb-4 text-sm"><strong>Subject Type:</strong> ${formatSubjectType(log.subject_type)}</p>
+          <p class="mb-2 text-sm"><strong>Date:</strong> ${escapeHtml(new Date(log.created_at).toLocaleString())}</p>
+          <p class="mb-4 text-sm"><strong>Subject Type:</strong> ${escapeHtml(formatSubjectType(log.subject_type))}</p>
           ${diffHtml}
           ${metadataHtml}
         </div>
@@ -424,32 +320,6 @@ export default function ShopOwnerAuditLogs() {
       case 'deleted': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
-  };
-
-  const formatSubjectType = (type: string | null) => {
-    if (!type) return 'N/A';
-    const parts = type.split('\\');
-    const typeName = parts[parts.length - 1];
-    
-    // Convert to user-friendly names
-    const friendlyNames: Record<string, string> = {
-      'Product': 'Product',
-      'Expense': 'Expense',
-      'Invoice': 'Invoice',
-      'User': 'Employee',
-      'Employee': 'Employee',
-      'Order': 'Order',
-      'Customer': 'Customer',
-      'RepairService': 'Repair Service',
-      'RepairRequest': 'Repair Request',
-      'LeaveRequest': 'Leave Request',
-      'AttendanceRecord': 'Attendance Record',
-      'Attendance': 'Attendance',
-      'Payroll': 'Payroll',
-      'PriceChangeRequest': 'Price Change Request',
-    };
-    
-    return friendlyNames[typeName] || typeName;
   };
 
   return (
@@ -520,6 +390,7 @@ export default function ShopOwnerAuditLogs() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="flex items-center gap-2 text-gray-700 font-semibold mb-4 hover:text-blue-600 transition"
+            aria-label={showFilters ? "Hide audit log filters" : "Show audit log filters"}
           >
             <FunnelIcon className="w-5 h-5" />
             {showFilters ? 'Hide' : 'Show'} Filters
@@ -528,31 +399,40 @@ export default function ShopOwnerAuditLogs() {
           {showFilters && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+                <label htmlFor="shop-audit-date-from" className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
                 <input
+                  id="shop-audit-date-from"
                   type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  value={String(filters.date_from || "")}
+                  onChange={(e) => setFilter("date_from", e.target.value || null)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  title="Filter by start date"
+                  aria-label="Filter logs from date"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+                <label htmlFor="shop-audit-date-to" className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
                 <input
+                  id="shop-audit-date-to"
                   type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  value={String(filters.date_to || "")}
+                  onChange={(e) => setFilter("date_to", e.target.value || null)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  title="Filter by end date"
+                  aria-label="Filter logs to date"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Event</label>
+                <label htmlFor="shop-audit-event-filter" className="block text-sm font-medium text-gray-700 mb-1">Event</label>
                 <select
-                  value={eventFilter}
-                  onChange={(e) => setEventFilter(e.target.value)}
+                  id="shop-audit-event-filter"
+                  value={String(filters.event || "")}
+                  onChange={(e) => setFilter("event", e.target.value || null)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  title="Filter by event type"
+                  aria-label="Filter by event type"
                 >
                   <option value="">All Events</option>
                   <option value="created">Created</option>
@@ -562,11 +442,14 @@ export default function ShopOwnerAuditLogs() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
+                <label htmlFor="shop-audit-subject-filter" className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
                 <select
-                  value={subjectTypeFilter}
-                  onChange={(e) => setSubjectTypeFilter(e.target.value)}
+                  id="shop-audit-subject-filter"
+                  value={String(filters.subject_type || "")}
+                  onChange={(e) => setFilter("subject_type", e.target.value || null)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  title="Filter by activity type"
+                  aria-label="Filter by activity type"
                 >
                   <option value="">All Types</option>
                   <option value="Product">Products</option>
@@ -586,7 +469,7 @@ export default function ShopOwnerAuditLogs() {
 
               <div className="md:col-span-4">
                 <button
-                  onClick={clearFilters}
+                  onClick={() => resetFilters()}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
                 >
                   Clear Filters
@@ -606,7 +489,11 @@ export default function ShopOwnerAuditLogs() {
             <div className="text-center py-12 text-gray-500">
               <DocumentTextIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
               <p className="text-lg">No activity logs found</p>
-              <p className="text-sm text-gray-400 mt-2">Activities will appear here as changes are made</p>
+              <p className="text-sm text-gray-400 mt-2">
+                {Object.values(filters).some((f) => f)
+                  ? "Try adjusting your filters or clear them to see all activities"
+                  : "Activities will appear here as changes are made"}
+              </p>
             </div>
           ) : (
             <>
@@ -624,7 +511,6 @@ export default function ShopOwnerAuditLogs() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {logs.map((log) => {
-                      const subjectUrl = getSubjectUrl(log);
                       const formattedDesc = formatDetailedDescription(log);
                       
                       return (
@@ -659,6 +545,7 @@ export default function ShopOwnerAuditLogs() {
                               onClick={() => viewLogDetails(log)}
                               className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-2 rounded-lg transition"
                               title="View details"
+                              aria-label={`View details for ${formattedDesc}`}
                             >
                               <EyeIcon className="w-5 h-5" />
                             </button>
@@ -681,9 +568,16 @@ export default function ShopOwnerAuditLogs() {
 
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
+                      onClick={() => {
+                        if (page > 1) {
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                          setPersistentPage(page - 1);
+                        }
+                      }}
+                      disabled={page === 1}
                       className="px-3 py-1 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition"
+                      title="Previous page"
+                      aria-label="Previous page"
                     >
                       <ChevronLeftIcon className="w-5 h-5" />
                     </button>
@@ -693,14 +587,17 @@ export default function ShopOwnerAuditLogs() {
                       if (
                         pageNum === 1 ||
                         pageNum === pagination.last_page ||
-                        (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
+                        (pageNum >= page - 1 && pageNum <= page + 1)
                       ) {
                         return (
                           <button
                             key={pageNum}
-                            onClick={() => setCurrentPage(pageNum)}
+                            onClick={() => {
+                              setPersistentPage(pageNum);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
                             className={`px-3 py-1 border rounded-lg transition ${
-                              currentPage === pageNum
+                              page === pageNum
                                 ? 'bg-blue-500 text-white border-blue-500'
                                 : 'hover:bg-white'
                             }`}
@@ -708,16 +605,23 @@ export default function ShopOwnerAuditLogs() {
                             {pageNum}
                           </button>
                         );
-                      } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                      } else if (pageNum === page - 2 || pageNum === page + 2) {
                         return <span key={pageNum} className="px-2">...</span>;
                       }
                       return null;
                     })}
 
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(pagination.last_page, prev + 1))}
-                      disabled={currentPage === pagination.last_page}
+                      onClick={() => {
+                        if (page < pagination.last_page) {
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                          setPersistentPage(page + 1);
+                        }
+                      }}
+                      disabled={page === pagination.last_page}
                       className="px-3 py-1 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition"
+                      title="Next page"
+                      aria-label="Next page"
                     >
                       <ChevronRightIcon className="w-5 h-5" />
                     </button>

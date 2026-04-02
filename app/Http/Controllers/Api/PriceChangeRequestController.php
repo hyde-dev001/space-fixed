@@ -153,6 +153,15 @@ class PriceChangeRequestController extends Controller
                     }
                 }
 
+                try {
+                    $this->priceChangeApprovalService->notifyPriceChangeApprovalRequested($existingRequest->fresh());
+                } catch (\Exception $e) {
+                    \Log::error('Failed to notify finance about updated price change request', [
+                        'price_change_id' => $existingRequest->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 activity()
                     ->causedBy($actor)
                     ->performedOn($existingRequest)
@@ -229,6 +238,15 @@ class PriceChangeRequestController extends Controller
                     'error' => $e->getMessage()
                 ]);
                 // Continue despite error - request is still created
+            }
+
+            try {
+                $this->priceChangeApprovalService->notifyPriceChangeApprovalRequested($priceChangeRequest->fresh());
+            } catch (\Exception $e) {
+                \Log::error('Failed to notify finance about new price change request', [
+                    'price_change_id' => $priceChangeRequest->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             DB::commit();

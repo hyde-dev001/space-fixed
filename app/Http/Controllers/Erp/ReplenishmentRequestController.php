@@ -5,12 +5,16 @@ namespace App\Http\Controllers\ERP;
 use App\Http\Controllers\Controller;
 use App\Models\ReplenishmentRequest;
 use App\Http\Requests\StoreReplenishmentRequestRequest;
+use App\Services\ReplenishmentRequestService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class ReplenishmentRequestController extends Controller
 {
+    public function __construct(
+        private ReplenishmentRequestService $replenishmentRequestService
+    ) {}
+
     /**
      * Display a listing of replenishment requests.
      */
@@ -63,8 +67,6 @@ class ReplenishmentRequestController extends Controller
         $this->authorize('create', ReplenishmentRequest::class);
 
         try {
-            DB::beginTransaction();
-
             $data = $request->validated();
             $data['shop_owner_id'] = Auth::user()->shop_owner_id;
             $data['requested_by'] = Auth::id();
@@ -74,9 +76,7 @@ class ReplenishmentRequestController extends Controller
             // Generate request number
             $data['request_number'] = $this->generateRequestNumber();
 
-            $replenishmentRequest = ReplenishmentRequest::create($data);
-
-            DB::commit();
+            $replenishmentRequest = $this->replenishmentRequestService->createReplenishmentRequest($data);
 
             return response()->json([
                 'message' => 'Replenishment request created successfully.',
@@ -84,7 +84,6 @@ class ReplenishmentRequestController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'message' => 'Failed to create replenishment request.',
                 'error' => $e->getMessage()
@@ -185,7 +184,11 @@ class ReplenishmentRequestController extends Controller
         ]);
 
         try {
-            $replenishmentRequest->accept(Auth::id(), $validatedData['response_notes'] ?? null);
+            $replenishmentRequest = $this->replenishmentRequestService->acceptRequest(
+                (int) $id,
+                (int) Auth::id(),
+                $validatedData['response_notes'] ?? null
+            );
 
             return response()->json([
                 'message' => 'Replenishment request accepted successfully.',
@@ -229,7 +232,11 @@ class ReplenishmentRequestController extends Controller
         }
 
         try {
-            $replenishmentRequest->reject(Auth::id(), $responseNotes);
+            $replenishmentRequest = $this->replenishmentRequestService->rejectRequest(
+                (int) $id,
+                (int) Auth::id(),
+                $responseNotes
+            );
 
             return response()->json([
                 'message' => 'Replenishment request rejected successfully.',
@@ -267,7 +274,11 @@ class ReplenishmentRequestController extends Controller
         }
 
         try {
-            $replenishmentRequest->requestDetails(Auth::id(), $responseNotes);
+            $replenishmentRequest = $this->replenishmentRequestService->requestAdditionalDetails(
+                (int) $id,
+                (int) Auth::id(),
+                $responseNotes
+            );
 
             return response()->json([
                 'message' => 'Additional details requested successfully.',

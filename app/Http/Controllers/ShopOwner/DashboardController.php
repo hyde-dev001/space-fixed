@@ -211,15 +211,23 @@ class DashboardController extends Controller
             ->limit(10)
             ->get()
             ->map(function($order) {
+                $paymentStatus = $order->payment_status instanceof \BackedEnum
+                    ? $order->payment_status->value
+                    : (string) ($order->payment_status ?? '');
+
+                $orderStatus = $order->status instanceof \BackedEnum
+                    ? $order->status->value
+                    : (string) ($order->status ?? '');
+
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
                     'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
                     'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                     'total_amount' => $order->total_amount,
-                    'status' => (string) $order->payment_status === 'refunded' || (string) $order->status === 'refund'
+                    'status' => $paymentStatus === 'refunded' || $orderStatus === 'refund'
                         ? 'refunded'
-                        : $order->status,
+                        : $orderStatus,
                     'items_count' => $order->items->count(),
                     'order_items' => $order->items->map(function($item) {
                         return [

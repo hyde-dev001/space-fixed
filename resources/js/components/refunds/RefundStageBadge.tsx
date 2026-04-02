@@ -66,6 +66,13 @@ export const resolveRefundStageBadge = (request: RefundStageSnapshot): RefundSta
 		};
 	}
 
+	if (returnStatus === "pending_staff_pickup") {
+		return {
+			label: "Staff Pickup Scheduled",
+			className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+		};
+	}
+
 	if (returnStatus === "in_transit") {
 		return {
 			label: "Return In Transit",

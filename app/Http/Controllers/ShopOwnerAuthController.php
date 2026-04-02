@@ -40,7 +40,7 @@ class ShopOwnerAuthController extends Controller
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:shop_owners,email', new NotDisposableEmail()],
-                'phone' => 'required|string|max:20|min:10',
+                'phone' => ['required', 'regex:/^\d{11}$/'],
                 'business_name' => 'required|string|max:255',
                 'business_address' => 'required|string|max:500',
                 'postal_code' => 'nullable|string|max:20',
@@ -59,6 +59,8 @@ class ShopOwnerAuthController extends Controller
                 'mayors_permit' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
                 'bir_certificate' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
                 'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+                'other_documents' => 'nullable|array|max:8',
+                'other_documents.*' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
             ], [
                 'first_name.required' => 'First name is required',
                 'last_name.required' => 'Last name is required',
@@ -66,6 +68,7 @@ class ShopOwnerAuthController extends Controller
                 'email.email' => 'Please provide a valid email address',
                 'email.unique' => 'This email is already registered',
                 'phone.required' => 'Phone number is required',
+                'phone.regex' => 'Phone number must be exactly 11 digits',
                 'business_name.required' => 'Business name is required',
                 'business_address.required' => 'Business address is required',
                 'business_type.required' => 'Business type is required',
@@ -74,6 +77,8 @@ class ShopOwnerAuthController extends Controller
                 'mayors_permit.required' => "Mayor's Permit is required",
                 'bir_certificate.required' => 'BIR Certificate is required',
                 'valid_id.required' => 'Valid ID is required',
+                'other_documents.array' => 'Other supporting documents must be a valid list of files.',
+                'other_documents.max' => 'You can upload up to 8 other supporting documents.',
             ]);
 
             $caviteLocationPolicy->assertRegistrationLocation(
@@ -129,6 +134,24 @@ class ShopOwnerAuthController extends Controller
                     ShopDocument::create([
                         'shop_owner_id' => $shopOwner->id,
                         'document_type' => $documentType,
+                        'file_path' => $filePath,
+                        'status' => 'pending',
+                    ]);
+                }
+            }
+
+            if ($request->hasFile('other_documents')) {
+                foreach ((array) $request->file('other_documents') as $file) {
+                    if (!$file) {
+                        continue;
+                    }
+
+                    $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
+
+                    ShopDocument::create([
+                        'shop_owner_id' => $shopOwner->id,
+                        'document_type' => 'other_supporting_document',
                         'file_path' => $filePath,
                         'status' => 'pending',
                     ]);

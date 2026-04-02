@@ -222,17 +222,19 @@ class PaymentLifecycleFeatureTest extends TestCase
     }
 
     #[Test]
-    public function cod_order_is_marked_paid_when_customer_confirms_delivery(): void
+    public function confirm_delivery_does_not_force_order_payment_status(): void
     {
         $shopOwner = $this->createShopOwner();
         $customer = User::factory()->create();
 
         $order = $this->createOrder($shopOwner, $customer, [
             'status' => OrderStatus::SHIPPED,
-            'payment_method' => 'cod',
+            'payment_method' => 'paymongo',
             'payment_status' => 'pending',
             'paid_at' => null,
         ]);
+
+        /** @var \App\Models\User $customer */
 
         $response = $this->actingAs($customer, 'user')
             ->postJson('/orders/confirm-delivery', [
@@ -245,8 +247,8 @@ class PaymentLifecycleFeatureTest extends TestCase
         $order->refresh();
 
         $this->assertSame(OrderStatus::DELIVERED, $order->status);
-        $this->assertSame('paid', (string) $order->payment_status);
-        $this->assertNotNull($order->paid_at);
+        $this->assertSame('pending', (string) $order->payment_status);
+        $this->assertNull($order->paid_at);
     }
 
     #[Test]
@@ -269,6 +271,8 @@ class PaymentLifecycleFeatureTest extends TestCase
             'payment_expired_at' => now()->subMinutes(30),
             'intake_delivery_method' => 'walk_in',  // Required for in-shop payment
         ]);
+
+        /** @var \App\Models\User $repairer */
 
         $response = $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/mark-paid-in-shop");

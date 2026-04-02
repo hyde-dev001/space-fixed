@@ -6,6 +6,7 @@ use App\Models\Approval;
 use App\Models\PriceChangeRequest;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
+use App\Enums\NotificationType;
 
 class PriceChangeApprovalService
 {
@@ -81,6 +82,8 @@ class PriceChangeApprovalService
             ];
         }
 
+        $previousLevel = (int) $approval->current_level;
+
         // Use ApprovalService to transition
         $result = $this->approvalService->approve($approval, $approver, $comments);
 
@@ -131,6 +134,14 @@ class PriceChangeApprovalService
                 ]);
             }
         }
+
+        $this->dispatchPriceChangeApprovalNotifications(
+            priceChange: $priceChange,
+            approval: $approval,
+            approver: $approver,
+            previousLevel: $previousLevel,
+            result: $result
+        );
 
         return $result;
     }
@@ -185,16 +196,150 @@ class PriceChangeApprovalService
             ]);
         }
 
-        // Send rejection notification to the shop owner
-        $shopOwnerId = $priceChange->shop_owner_id;
-        $this->notificationService->notifyPriceChangeRejected($shopOwnerId, [
-            'product_name' => $priceChange->product?->name ?? 'Product',
-            'old_price' => (float)$priceChange->old_price,
-            'new_price' => (float)$priceChange->new_price,
-            'rejection_reason' => $comments,
-        ]);
+        $this->dispatchPriceChangeRejectionNotifications($priceChange, $approval, $comments);
 
         return $result;
+    }
+
+    public function notifyPriceChangeApprovalRequested(PriceChangeRequest $priceChange): void
+    {
+        $payload = $this->buildPriceChangeNotificationData($priceChange);
+
+        $this->notificationService->sendToErpRole(
+            roleName: 'Finance',
+            shopId: (int) $priceChange->shop_owner_id,
+            type: NotificationType::PRICE_CHANGE_REQUEST,
+            title: 'New Price Change Request',
+            message: "{$payload['product_name']}: ₱{$payload['old_price']} → ₱{$payload['new_price']} needs Finance review.",
+            data: $payload,
+            actionUrl: '/erp/finance',
+            priority: 'medium'
+        );
+    }
+
+    private function dispatchPriceChangeApprovalNotifications(
+        PriceChangeRequest $priceChange,
+        Approval $approval,
+        User $approver,
+        int $previousLevel,
+        array $result
+    ): void {
+        $payload = $this->buildPriceChangeNotificationData($priceChange, $approver, null);
+        $shopOwnerId = (int) $priceChange->shop_owner_id;
+
+        if ($result['is_final'] ?? false) {
+            $requesterId = $this->resolveRequesterId($priceChange, $approval);
+            if ($requesterId) {
+                $this->notificationService->sendToUser(
+                    userId: $requesterId,
+                    type: NotificationType::PRICE_CHANGE_REQUEST,
+                    title: 'Price Change Approved and Applied',
+                    message: "{$payload['product_name']} price was updated from ₱{$payload['old_price']} to ₱{$payload['new_price']}.",
+                    data: $payload,
+                    actionUrl: '/erp/finance',
+                    shopId: $shopOwnerId
+                );
+            }
+
+            // Owner-approval bypass flow: keep shop owner informed when Finance finalizes directly.
+            if ($approval->total_levels === 1 && $previousLevel === 1) {
+                $this->notificationService->sendToShopOwner(
+                    shopOwnerId: $shopOwnerId,
+                    type: NotificationType::PRICE_CHANGE_REQUEST,
+                    title: 'Price Change Finalized by Finance',
+                    message: "{$payload['product_name']} was approved and applied directly by Finance (owner approval disabled).",
+                    data: $payload,
+                    actionUrl: '/shop-owner/price-approvals',
+                    priority: 'medium'
+                );
+            }
+
+            return;
+        }
+
+        if ($previousLevel === 1) {
+            $this->notificationService->sendToShopOwner(
+                shopOwnerId: $shopOwnerId,
+                type: NotificationType::PRICE_CHANGE_REQUEST,
+                title: 'Price Change Awaiting Your Approval',
+                message: "{$payload['product_name']}: ₱{$payload['old_price']} → ₱{$payload['new_price']} now needs shop owner approval.",
+                data: $payload,
+                actionUrl: '/shop-owner/price-approvals',
+                priority: 'medium'
+            );
+
+            return;
+        }
+
+        if ($previousLevel === 2) {
+            $this->notificationService->sendToErpRole(
+                roleName: 'Finance',
+                shopId: $shopOwnerId,
+                type: NotificationType::PRICE_CHANGE_REQUEST,
+                title: 'Price Change Returned to Finance',
+                message: "{$payload['product_name']} was approved by shop owner and now needs final Finance approval.",
+                data: $payload,
+                actionUrl: '/erp/finance',
+                priority: 'medium'
+            );
+        }
+    }
+
+    private function dispatchPriceChangeRejectionNotifications(PriceChangeRequest $priceChange, Approval $approval, string $comments): void
+    {
+        $payload = $this->buildPriceChangeNotificationData($priceChange, null, $comments);
+        $shopOwnerId = (int) $priceChange->shop_owner_id;
+
+        // Keep shop owner informed on any rejection outcome.
+        $this->notificationService->notifyPriceChangeRejected($shopOwnerId, $payload);
+
+        $requesterId = $this->resolveRequesterId($priceChange, $approval);
+        if ($requesterId) {
+            $this->notificationService->sendToUser(
+                userId: $requesterId,
+                type: NotificationType::PRICE_CHANGE_REJECTED,
+                title: 'Price Change Request Rejected',
+                message: "{$payload['product_name']} price change was rejected. Reason: {$comments}",
+                data: $payload,
+                actionUrl: '/erp/finance',
+                shopId: $shopOwnerId
+            );
+        }
+    }
+
+    private function buildPriceChangeNotificationData(
+        PriceChangeRequest $priceChange,
+        ?User $actor = null,
+        ?string $reason = null
+    ): array {
+        return [
+            'price_change_id' => $priceChange->id,
+            'product_id' => $priceChange->product_id,
+            'product_name' => $priceChange->product_name,
+            'old_price' => number_format((float) $priceChange->current_price, 2),
+            'new_price' => number_format((float) $priceChange->proposed_price, 2),
+            'change_percentage' => $priceChange->getPriceChangePercentage(),
+            'submitted_by' => $actor?->name ?? ($priceChange->requester?->name ?? 'Staff'),
+            'reason' => $priceChange->reason,
+            'rejection_reason' => $reason,
+        ];
+    }
+
+    private function resolveRequesterId(PriceChangeRequest $priceChange, Approval $approval): ?int
+    {
+        $candidates = [
+            $priceChange->requested_by ?? null,
+            $approval->requested_by ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            $userId = (int) $candidate;
+            if ($userId > 0) {
+                return $userId;
+            }
+        }
+
+        return null;
     }
 
     /**

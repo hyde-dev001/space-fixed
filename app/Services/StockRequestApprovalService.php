@@ -2,13 +2,19 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationType;
 use App\Models\StockRequestApproval;
 use App\Models\PurchaseRequest;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class StockRequestApprovalService
 {
+    public function __construct(
+        private NotificationService $notificationService
+    ) {}
+
     /**
      * Approve a stock request.
      */
@@ -33,7 +39,10 @@ class StockRequestApprovalService
                 'approved_by' => $userId
             ]);
 
-            return $stockRequest->fresh();
+            $freshStockRequest = $stockRequest->fresh();
+            $this->dispatchStockRequestApprovedNotifications($freshStockRequest, $userId, $notes);
+
+            return $freshStockRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -70,7 +79,10 @@ class StockRequestApprovalService
                 'reason' => $reason
             ]);
 
-            return $stockRequest->fresh();
+            $freshStockRequest = $stockRequest->fresh();
+            $this->dispatchStockRequestRejectedNotifications($freshStockRequest, $userId, $reason);
+
+            return $freshStockRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -102,7 +114,10 @@ class StockRequestApprovalService
                 'requested_by' => $userId
             ]);
 
-            return $stockRequest->fresh();
+            $freshStockRequest = $stockRequest->fresh();
+            $this->dispatchStockRequestNeedsDetailsNotifications($freshStockRequest, $userId, $notes);
+
+            return $freshStockRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -228,5 +243,150 @@ class StockRequestApprovalService
         ]);
 
         return $results;
+    }
+
+    public function notifyStockRequestSubmitted(StockRequestApproval $stockRequest): void
+    {
+        $payload = $this->buildStockRequestNotificationData($stockRequest, null, null);
+
+        $this->sendToProcurementOrFinance(
+            shopOwnerId: (int) $stockRequest->shop_owner_id,
+            type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
+            title: 'New Stock Request Submitted',
+            message: "Stock request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
+            data: $payload,
+            actionUrl: '/erp/procurement/stock-request-approval',
+            priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
+        );
+    }
+
+    public function notifyStockRequestForwardedToProcurement(StockRequestApproval $stockRequest, int $inventoryApproverId): void
+    {
+        $payload = $this->buildStockRequestNotificationData($stockRequest, $inventoryApproverId, null);
+
+        $this->sendToProcurementOrFinance(
+            shopOwnerId: (int) $stockRequest->shop_owner_id,
+            type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
+            title: 'Repair Material Request Forwarded',
+            message: "Repair material request {$payload['request_number']} for {$payload['product_name']} is now ready for procurement approval.",
+            data: $payload,
+            actionUrl: '/erp/procurement/stock-request-approval',
+            priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
+        );
+    }
+
+    private function dispatchStockRequestApprovedNotifications(StockRequestApproval $stockRequest, int $approverId, ?string $notes): void
+    {
+        $requesterId = (int) ($stockRequest->requested_by ?? 0);
+        if ($requesterId <= 0) {
+            return;
+        }
+
+        $payload = $this->buildStockRequestNotificationData($stockRequest, $approverId, $notes);
+
+        $this->notificationService->sendToUser(
+            userId: $requesterId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Stock Request Approved',
+            message: "Your stock request {$payload['request_number']} for {$payload['product_name']} was approved.",
+            data: $payload,
+            actionUrl: '/erp/procurement/stock-request-approval',
+            shopId: (int) $stockRequest->shop_owner_id,
+            priority: 'medium'
+        );
+    }
+
+    private function dispatchStockRequestRejectedNotifications(StockRequestApproval $stockRequest, int $rejectorId, string $reason): void
+    {
+        $requesterId = (int) ($stockRequest->requested_by ?? 0);
+        if ($requesterId <= 0) {
+            return;
+        }
+
+        $payload = $this->buildStockRequestNotificationData($stockRequest, $rejectorId, $reason);
+
+        $this->notificationService->sendToUser(
+            userId: $requesterId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Stock Request Rejected',
+            message: "Your stock request {$payload['request_number']} was rejected. Reason: {$reason}",
+            data: $payload,
+            actionUrl: '/erp/procurement/stock-request-approval',
+            shopId: (int) $stockRequest->shop_owner_id,
+            priority: 'medium'
+        );
+    }
+
+    private function dispatchStockRequestNeedsDetailsNotifications(StockRequestApproval $stockRequest, int $reviewerId, string $notes): void
+    {
+        $requesterId = (int) ($stockRequest->requested_by ?? 0);
+        if ($requesterId <= 0) {
+            return;
+        }
+
+        $payload = $this->buildStockRequestNotificationData($stockRequest, $reviewerId, $notes);
+
+        $this->notificationService->sendToUser(
+            userId: $requesterId,
+            type: NotificationType::LOW_STOCK_ALERT,
+            title: 'Stock Request Needs Details',
+            message: "More details were requested for {$payload['request_number']}.",
+            data: $payload,
+            actionUrl: '/erp/procurement/stock-request-approval',
+            shopId: (int) $stockRequest->shop_owner_id,
+            priority: 'medium'
+        );
+    }
+
+    private function sendToProcurementOrFinance(
+        int $shopOwnerId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        array $data,
+        string $actionUrl,
+        string $priority
+    ): void {
+        $recipients = User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->get();
+
+        if ($recipients->isEmpty()) {
+            $recipients = User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->get();
+        }
+
+        foreach ($recipients as $recipient) {
+            $this->notificationService->sendToUser(
+                userId: (int) $recipient->id,
+                type: $type,
+                title: $title,
+                message: $message,
+                data: $data,
+                actionUrl: $actionUrl,
+                shopId: $shopOwnerId,
+                priority: $priority
+            );
+        }
+    }
+
+    private function buildStockRequestNotificationData(StockRequestApproval $stockRequest, ?int $actorId, ?string $note): array
+    {
+        return [
+            'request_id' => $stockRequest->id,
+            'request_number' => $stockRequest->request_number,
+            'product_name' => $stockRequest->product_name,
+            'quantity_needed' => $stockRequest->quantity_needed,
+            'priority' => $stockRequest->priority,
+            'requested_size' => $stockRequest->requested_size,
+            'requested_color' => $stockRequest->requested_color,
+            'status' => $stockRequest->status,
+            'request_source' => $stockRequest->request_source,
+            'notes' => $note,
+            'acted_by' => $actorId,
+        ];
     }
 }
