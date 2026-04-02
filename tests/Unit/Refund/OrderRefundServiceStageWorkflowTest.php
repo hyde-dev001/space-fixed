@@ -278,6 +278,49 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function execute_refund_retries_with_captured_amount_for_same_day_partial_rejection(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'status' => 'pending_approval',
+            'amount' => 900.00,
+        ]);
+
+        $this->paymongoRefundService
+            ->expects($this->exactly(2))
+            ->method('createRefund')
+            ->willReturnOnConsecutiveCalls(
+                [
+                    'success' => false,
+                    'message' => 'Cannot partially refund for payments done on the same day.',
+                ],
+                [
+                    'success' => true,
+                    'status' => 'succeeded',
+                    'refund_id' => 're_retry_full_amount',
+                ],
+            );
+
+        $this->paymongoRefundService
+            ->expects($this->once())
+            ->method('getPaymentAmountInCentavos')
+            ->willReturn(250000);
+
+        $this->paymentSettlementService
+            ->expects($this->once())
+            ->method('settleOrderRefunded');
+
+        $result = $this->service->executeApprovedRefund($refund, processedBy: 99);
+
+        $this->assertSame('refunded', $result['result']);
+        $this->assertSame('succeeded', $refund->status);
+        $this->assertSame(2500.00, (float) $refund->amount);
+        $this->assertSame('re_retry_full_amount', $refund->paymongo_refund_id);
+    }
+
+    #[Test]
     public function shop_owner_rejection_sets_rejected_state_and_reason(): void
     {
         $refund = $this->makeRefund([
