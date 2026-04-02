@@ -266,7 +266,6 @@ export function OvertimeRequests() {
       }
 
       const data = await response.json();
-      console.log('Overtime requests API response:', data);
 
       // Check if response has Laravel pagination structure
       if (data.data && Array.isArray(data.data)) {
