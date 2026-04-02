@@ -1269,11 +1269,10 @@ const AppSidebar_ERP: React.FC = () => {
     });
   };
 
-  // Check if user has Inventory Manager role or explicit inventory gate permission
+  // Check if user has explicit inventory gate/page permissions
   // NOTE: 'access-inventory-overview' is intentionally excluded — it belongs to the Manager's
   // own overview page inside the Manager module, NOT the full Inventory module.
   const hasInventoryAccess = () => {
-    if (normalizedRoles.includes('INVENTORY MANAGER')) return true;
     if (permissions.includes('view-inventory')) return true;
     // Only individual inventory module page permissions grant sidebar access
     const inventoryPagePermissions = [

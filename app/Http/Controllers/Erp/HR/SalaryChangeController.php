@@ -11,15 +11,21 @@ use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
 use App\Traits\HR\LogsHRActivity;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class SalaryChangeController extends Controller
 {
     use LogsHRActivity;
+
+    private ?array $salaryChangeColumns = null;
+    private ?array $employeeColumns = null;
 
     public function __construct(
         private SalaryChangeApprovalService $salaryChangeApprovalService
@@ -36,6 +42,42 @@ class SalaryChangeController extends Controller
     {
         return ($user?->hasRole('Shop Owner') ?? false)
             || ($user?->can('approve-salary-change') ?? false);
+    }
+
+    private function hasSalaryChangeColumn(string $column): bool
+    {
+        if ($this->salaryChangeColumns === null) {
+            try {
+                $this->salaryChangeColumns = array_fill_keys(Schema::getColumnListing('salary_changes'), true);
+            } catch (\Throwable $e) {
+                $this->salaryChangeColumns = [];
+            }
+        }
+
+        return isset($this->salaryChangeColumns[$column]);
+    }
+
+    private function hasEmployeeColumn(string $column): bool
+    {
+        if ($this->employeeColumns === null) {
+            try {
+                $this->employeeColumns = array_fill_keys(Schema::getColumnListing('employees'), true);
+            } catch (\Throwable $e) {
+                $this->employeeColumns = [];
+            }
+        }
+
+        return isset($this->employeeColumns[$column]);
+    }
+
+    private function isSchemaDriftQueryException(QueryException $exception): bool
+    {
+        $message = (string) $exception->getMessage();
+
+        return str_contains($message, 'SQLSTATE[42S22]')
+            || str_contains($message, 'SQLSTATE[42S02]')
+            || str_contains($message, 'Unknown column')
+            || str_contains($message, 'Base table or view not found');
     }
 
     /**
@@ -98,56 +140,103 @@ class SalaryChangeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $query = SalaryChange::forShopOwner($shopOwnerId)
-            ->with(['employee:id,first_name,last_name,department,position',
+        try {
+            $employeeSelect = ['id', 'first_name', 'last_name'];
+            if ($this->hasEmployeeColumn('department')) {
+                $employeeSelect[] = 'department';
+            }
+            if ($this->hasEmployeeColumn('position')) {
+                $employeeSelect[] = 'position';
+            }
+
+            $query = SalaryChange::forShopOwner($shopOwnerId)
+                ->with([
+                    'employee:' . implode(',', $employeeSelect),
                     'proposer:id,name',
                     'approver:id,name',
-                    'rejector:id,name'])
-            ->orderByDesc('created_at');
+                    'rejector:id,name',
+                ])
+                ->orderByDesc('created_at');
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            if ($request->filled('status')) {
+                $requestedStatus = strtolower((string) $request->status);
+                if (in_array($requestedStatus, array_keys(SalaryChange::STATUSES), true)) {
+                    $query->where('status', $requestedStatus);
+                }
+            }
+
+            if ($request->filled('employee_id')) {
+                $query->where('employee_id', (int) $request->employee_id);
+            }
+
+            if ($request->filled('change_type')) {
+                $requestedType = strtolower((string) $request->change_type);
+                if (in_array($requestedType, array_keys(SalaryChange::CHANGE_TYPES), true)) {
+                    $query->where('change_type', $requestedType);
+                }
+            }
+
+            if ($request->filled('from')) {
+                $query->whereDate('effective_date', '>=', $request->from);
+            }
+
+            if ($request->filled('to')) {
+                $query->whereDate('effective_date', '<=', $request->to);
+            }
+
+            $perPage = max(1, min(100, (int) $request->get('per_page', 15)));
+            $results = $query->paginate($perPage);
+
+            // Summary counts
+            $baseCount = SalaryChange::forShopOwner($shopOwnerId);
+            $summary = [
+                'pending'   => (clone $baseCount)->where('status', 'pending')->count(),
+                'approved'  => (clone $baseCount)->where('status', 'approved')->count(),
+                'applied'   => (clone $baseCount)->where('status', 'applied')->count(),
+                'rejected'  => (clone $baseCount)->where('status', 'rejected')->count(),
+                'cancelled' => $this->hasSalaryChangeColumn('status')
+                    ? (clone $baseCount)->where('status', 'cancelled')->count()
+                    : 0,
+            ];
+
+            return response()->json([
+                'data'    => $results->items(),
+                'meta'    => [
+                    'current_page' => $results->currentPage(),
+                    'last_page'    => $results->lastPage(),
+                    'per_page'     => $results->perPage(),
+                    'total'        => $results->total(),
+                ],
+                'summary' => $summary,
+            ]);
+        } catch (QueryException $e) {
+            Log::error('Salary changes index query failed', [
+                'shop_owner_id' => $shopOwnerId,
+                'error' => $e->getMessage(),
+            ]);
+
+            if ($this->isSchemaDriftQueryException($e)) {
+                return response()->json([
+                    'data' => [],
+                    'meta' => [
+                        'current_page' => 1,
+                        'last_page' => 1,
+                        'per_page' => 15,
+                        'total' => 0,
+                    ],
+                    'summary' => [
+                        'pending' => 0,
+                        'approved' => 0,
+                        'applied' => 0,
+                        'rejected' => 0,
+                        'cancelled' => 0,
+                    ],
+                    'warning' => 'Salary changes are temporarily unavailable while updates are being applied.',
+                ]);
+            }
+
+            return response()->json(['error' => 'Server Error'], 500);
         }
-
-        if ($request->filled('employee_id')) {
-            $query->where('employee_id', (int) $request->employee_id);
-        }
-
-        if ($request->filled('change_type')) {
-            $query->where('change_type', $request->change_type);
-        }
-
-        if ($request->filled('from')) {
-            $query->whereDate('effective_date', '>=', $request->from);
-        }
-
-        if ($request->filled('to')) {
-            $query->whereDate('effective_date', '<=', $request->to);
-        }
-
-        $perPage = (int) $request->get('per_page', 15);
-        $results = $query->paginate($perPage);
-
-        // Summary counts
-        $baseCount = SalaryChange::forShopOwner($shopOwnerId);
-        $summary = [
-            'pending'   => (clone $baseCount)->where('status', 'pending')->count(),
-            'approved'  => (clone $baseCount)->where('status', 'approved')->count(),
-            'applied'   => (clone $baseCount)->where('status', 'applied')->count(),
-            'rejected'  => (clone $baseCount)->where('status', 'rejected')->count(),
-            'cancelled' => (clone $baseCount)->where('status', 'cancelled')->count(),
-        ];
-
-        return response()->json([
-            'data'    => $results->items(),
-            'meta'    => [
-                'current_page' => $results->currentPage(),
-                'last_page'    => $results->lastPage(),
-                'per_page'     => $results->perPage(),
-                'total'        => $results->total(),
-            ],
-            'summary' => $summary,
-        ]);
     }
 
     // ─── Store ────────────────────────────────────────────────
