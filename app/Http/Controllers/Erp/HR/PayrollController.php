@@ -577,7 +577,17 @@ class PayrollController extends Controller
 
                     $payroll->markAsPaid($paymentDate, $disbursementDetails);
 
-                    $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, $paymentDate);
+                    // Expense sync is best-effort only. Do not block disbursement if
+                    // finance expense schema/config differs in production.
+                    try {
+                        $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, $paymentDate);
+                    } catch (\Throwable $expenseError) {
+                        \Log::warning('Payroll disbursement expense sync skipped', [
+                            'payroll_id' => $payroll->id,
+                            'shop_owner_id' => $payroll->shop_owner_id,
+                            'error' => $expenseError->getMessage(),
+                        ]);
+                    }
                 });
 
                 $processedCount++;
@@ -586,7 +596,7 @@ class PayrollController extends Controller
                     $idempotencyConflicts++;
                 }
                 $errors[] = $e->getMessage();
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 $errors[] = "Error processing payroll ID {$payrollId}: " . $e->getMessage();
             }
         }
