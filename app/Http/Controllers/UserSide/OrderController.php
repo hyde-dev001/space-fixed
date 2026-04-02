@@ -117,7 +117,13 @@ class OrderController extends Controller
                     $latestRefundStatus = strtolower((string) ($latestRefund?->status ?? ''));
                     $hasRefundReference = !empty($order->paymongo_refund_id) || !empty($latestRefund?->paymongo_refund_id);
 
-                    if (in_array($latestRefundStatus, ['requested', 'pending_approval', 'processing'], true) || $hasRefundReference) {
+                    // Treat any non-terminal request-approval status as in-progress to prevent duplicate requests.
+                    if ($latestRefund && !in_array($latestRefundStatus, ['rejected', 'failed'], true)) {
+                        $refundStatus = $latestRefundStatus === 'succeeded' ? 'refunded' : 'processing';
+                        $refundStatusNote = $latestRefundStatus === 'succeeded'
+                            ? 'Refund has been completed and credited back to your original payment method.'
+                            : 'Refund is being processed by PayMongo and your payment provider. Settlement usually reflects within 2-4 business days.';
+                    } elseif ($hasRefundReference) {
                         $refundStatus = 'processing';
                         $refundStatusNote = 'Refund is being processed by PayMongo and your payment provider. Settlement usually reflects within 2-4 business days.';
                     }
@@ -189,6 +195,15 @@ class OrderController extends Controller
                     'pickup_enabled' => $order->pickup_enabled ?? false,
                     'refund_status' => $refundStatus,
                     'refund_status_note' => $refundStatusNote,
+                    'refund_stage' => $latestRefund ? [
+                        'id' => $latestRefund->id,
+                        'status' => (string) ($latestRefund->status ?? ''),
+                        'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
+                        'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
+                        'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                        'rejection_reason' => $latestRefund->rejection_reason,
+                        'is_refunded' => in_array(strtolower((string) ($latestRefund->status ?? '')), ['succeeded', 'refunded'], true),
+                    ] : null,
                 ];
             });
 
@@ -593,7 +608,12 @@ class OrderController extends Controller
             && $this->hasOrderRefundColumn('status')
             && !$this->orderRefundColumnIntrospectionFailed
         ) {
-            $query->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded']);
+            // Block duplicate requests unless latest flow is explicitly terminal/rejected.
+            $query->where(function ($statusQuery) {
+                $statusQuery
+                    ->whereNull('status')
+                    ->orWhereNotIn('status', ['rejected', 'failed']);
+            });
         }
 
         return $query;
