@@ -129,7 +129,6 @@ class PositionSeeder extends Seeder
                     'generate-payslip',
                     'view-hr-reports',
                     'export-hr-reports',
-                    'view-hr-audit-logs',
                     'view-dashboard',
                 ],
             ],

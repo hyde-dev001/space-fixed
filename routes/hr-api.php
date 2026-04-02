@@ -21,24 +21,24 @@
  */
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Erp\HR\EmployeeController;
+use App\Http\Controllers\ERP\HR\EmployeeController;
 use App\Http\Controllers\InvitationController;
-use App\Http\Controllers\Erp\HR\AttendanceController;
-use App\Http\Controllers\Erp\HR\LeaveController;
-use App\Http\Controllers\Erp\HR\PayrollController;
-use App\Http\Controllers\Erp\HR\PayrollBatchController;
-use App\Http\Controllers\Erp\HR\PayrollComponentController;
+use App\Http\Controllers\ERP\HR\AttendanceController;
+use App\Http\Controllers\ERP\HR\LeaveController;
+use App\Http\Controllers\ERP\HR\PayrollController;
+use App\Http\Controllers\ERP\HR\PayrollBatchController;
+use App\Http\Controllers\ERP\HR\PayrollComponentController;
 // Payslip approval moved to Finance module (finance-api.php + App\Http\Controllers\Api\Finance\PayslipApprovalController)
 // use App\Http\Controllers\ERP\HR\PayslipApprovalController;
 // use App\Http\Controllers\ERP\HR\PerformanceController; // TODO: Implement this controller
-use App\Http\Controllers\Erp\HR\DepartmentController;
-use App\Http\Controllers\Erp\HR\DocumentController;
-use App\Http\Controllers\Erp\HR\AuditLogController as HRAuditLogController;
-use App\Http\Controllers\Erp\HR\NotificationController;
-use App\Http\Controllers\Erp\HR\HRAnalyticsController;
-use App\Http\Controllers\Erp\HR\SuspensionRequestController;
-use App\Http\Controllers\Erp\HR\SalaryChangeController;
-use App\Http\Controllers\Erp\HR\HolidayCalendarController;
+use App\Http\Controllers\ERP\HR\DepartmentController;
+use App\Http\Controllers\ERP\HR\DocumentController;
+use App\Http\Controllers\ERP\HR\AuditLogController as HRAuditLogController;
+use App\Http\Controllers\ERP\HR\NotificationController;
+use App\Http\Controllers\ERP\HR\HRAnalyticsController;
+use App\Http\Controllers\ERP\HR\SuspensionRequestController;
+use App\Http\Controllers\ERP\HR\SalaryChangeController;
+use App\Http\Controllers\ERP\HR\HolidayCalendarController;
 
 /**
  * ERP Notification Routes (All ERP users)
@@ -55,22 +55,6 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
     Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark_all_as_read');
     Route::delete('/{id}', [NotificationController::class, 'destroy'])->name('hr.notifications.destroy');
     Route::delete('/clear-read', [NotificationController::class, 'clearRead'])->name('hr.notifications.clear_read');
-});
-
-/**
- * HR Audit Log Routes
- * Access is permission-based and independent from the general HR module permissions.
- */
-Route::prefix('api/hr/audit-logs')->middleware(['auth:user', 'permission:access-audit-logs', 'shop.isolation'])->group(function () {
-    Route::get('/', [HRAuditLogController::class, 'index'])->name('hr.audit.index');
-    Route::get('/statistics', [HRAuditLogController::class, 'statistics'])->name('hr.audit.statistics');
-    Route::get('/entity/history', [HRAuditLogController::class, 'entityHistory'])->name('hr.audit.entity_history');
-    Route::get('/critical', [HRAuditLogController::class, 'criticalLogs'])->name('hr.audit.critical');
-    Route::get('/export', [HRAuditLogController::class, 'export'])->name('hr.audit.export');
-    Route::get('/filters/options', [HRAuditLogController::class, 'filterOptions'])->name('hr.audit.filter_options');
-    Route::get('/user/{userId}/activity', [HRAuditLogController::class, 'userActivity'])->name('hr.audit.user_activity');
-    Route::get('/employee/{employeeId}/activity', [HRAuditLogController::class, 'employeeActivity'])->name('hr.audit.employee_activity');
-    Route::get('/{id}', [HRAuditLogController::class, 'show'])->name('hr.audit.show');
 });
 
 /**
@@ -180,11 +164,11 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     // OVERTIME MANAGEMENT
     // ============================================
     Route::prefix('overtime-requests')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'index'])->name('hr.overtime.index');
-        Route::post('/{id}/approve', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'approve'])->name('hr.overtime.approve');
-        Route::post('/{id}/reject', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'reject'])->name('hr.overtime.reject');
-        Route::post('/{id}/confirm-hours', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'confirmHours'])->name('hr.overtime.confirm_hours');
-        Route::post('/assign', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'assignOvertime'])->name('hr.overtime.assign');
+        Route::get('/', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'index'])->name('hr.overtime.index');
+        Route::post('/{id}/approve', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'approve'])->name('hr.overtime.approve');
+        Route::post('/{id}/reject', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'reject'])->name('hr.overtime.reject');
+        Route::post('/{id}/confirm-hours', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'confirmHours'])->name('hr.overtime.confirm_hours');
+        Route::post('/assign', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'assignOvertime'])->name('hr.overtime.assign');
     });
 
     // ============================================
@@ -283,6 +267,21 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     });
 
     // ============================================
+    // AUDIT LOGS (HR Module)
+    // ============================================
+    Route::prefix('audit-logs')->middleware('permission:access-audit-logs|view-all-audit-logs')->group(function () {
+        Route::get('/', [HRAuditLogController::class, 'index'])->name('hr.audit.index');
+        Route::get('/statistics', [HRAuditLogController::class, 'statistics'])->name('hr.audit.statistics');
+        Route::get('/entity/history', [HRAuditLogController::class, 'entityHistory'])->name('hr.audit.entity_history');
+        Route::get('/critical', [HRAuditLogController::class, 'criticalLogs'])->name('hr.audit.critical');
+        Route::get('/export', [HRAuditLogController::class, 'export'])->name('hr.audit.export');
+        Route::get('/filters/options', [HRAuditLogController::class, 'filterOptions'])->name('hr.audit.filter_options');
+        Route::get('/user/{userId}/activity', [HRAuditLogController::class, 'userActivity'])->name('hr.audit.user_activity');
+        Route::get('/employee/{employeeId}/activity', [HRAuditLogController::class, 'employeeActivity'])->name('hr.audit.employee_activity');
+        Route::get('/{id}', [HRAuditLogController::class, 'show'])->name('hr.audit.show');
+    });
+
+    // ============================================
     // PERMISSION MANAGEMENT
     // ============================================
     Route::get('/permissions/available', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'getAvailablePermissions'])->name('hr.permissions.available');
@@ -336,12 +335,12 @@ Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
     // SELF-SERVICE OVERTIME
     // ============================================
     Route::prefix('overtime')->group(function () {
-        Route::post('/request', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'staffRequest'])->name('staff.overtime.request');
-        Route::get('/my-requests', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'staffMyRequests'])->name('staff.overtime.my_requests');
-        Route::get('/today-approved', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'getTodayApprovedOvertime'])->name('staff.overtime.today_approved');
-        Route::post('/{id}/check-in', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'overtimeCheckIn'])->name('staff.overtime.check_in');
-        Route::post('/{id}/check-out', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'overtimeCheckOut'])->name('staff.overtime.check_out');
-        Route::post('/{id}/cancel', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'cancel'])->name('staff.overtime.cancel');
+        Route::post('/request', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'staffRequest'])->name('staff.overtime.request');
+        Route::get('/my-requests', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'staffMyRequests'])->name('staff.overtime.my_requests');
+        Route::get('/today-approved', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'getTodayApprovedOvertime'])->name('staff.overtime.today_approved');
+        Route::post('/{id}/check-in', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'overtimeCheckIn'])->name('staff.overtime.check_in');
+        Route::post('/{id}/check-out', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'overtimeCheckOut'])->name('staff.overtime.check_out');
+        Route::post('/{id}/cancel', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'cancel'])->name('staff.overtime.cancel');
     });
 
     // ============================================

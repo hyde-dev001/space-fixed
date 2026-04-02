@@ -15,10 +15,7 @@ class AuditLogController extends Controller
             return false;
         }
 
-        return $user->hasRole('Manager')
-            || $user->can('access-audit-logs')
-            || $user->can('view-finance-audit-logs')
-            || $user->can('view-hr-audit-logs')
+        return $user->can('access-audit-logs')
             || $user->can('view-all-audit-logs');
     }
 
