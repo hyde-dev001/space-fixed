@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\ERP\HR;
+namespace App\Http\Controllers\Erp\HR;
 
 use App\Http\Controllers\Controller;
 use App\Models\HR\Payroll;
