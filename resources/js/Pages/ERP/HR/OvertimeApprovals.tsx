@@ -536,14 +536,15 @@ export function OvertimeRequests() {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
           'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         credentials: 'include',
         body: JSON.stringify(assignData),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to assign overtime');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || 'Failed to assign overtime');
       }
 
       const result = await response.json();

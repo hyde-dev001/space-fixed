@@ -449,11 +449,12 @@ const ViewAttendance: React.FC = () => {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       const response = await fetch(`/api/hr/attendance/${editRecord.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-TOKEN': csrfToken || '',
           'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
         },
         credentials: 'include',
         body: JSON.stringify({

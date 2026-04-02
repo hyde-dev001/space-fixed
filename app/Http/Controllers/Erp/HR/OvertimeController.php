@@ -7,6 +7,7 @@ use App\Models\HR\OvertimeRequest;
 use App\Models\HR\LeaveRequest;
 use App\Models\Employee;
 use App\Services\HR\OvertimeApprovalService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -16,7 +17,8 @@ use Carbon\Carbon;
 class OvertimeController extends Controller
 {
     public function __construct(
-        private OvertimeApprovalService $overtimeApprovalService
+        private OvertimeApprovalService $overtimeApprovalService,
+        private NotificationService $notificationService
     ) {}
 
     /**
@@ -658,8 +660,17 @@ class OvertimeController extends Controller
     public function confirmHours(Request $request, $id): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user->can('manage-attendance') && !$user->hasRole('Manager')) {
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (
+            ! $user->hasRole('Manager')
+            && ! $user->can('manage-attendance')
+            && ! $user->can('access-overtime-approvals')
+            && ! $user->can('access-attendance-records')
+        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -716,8 +727,17 @@ class OvertimeController extends Controller
     public function assignOvertime(Request $request): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user->can('manage-attendance') && !$user->hasRole('Manager')) {
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (
+            ! $user->hasRole('Manager')
+            && ! $user->can('manage-attendance')
+            && ! $user->can('access-overtime-approvals')
+            && ! $user->can('access-attendance-records')
+        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
