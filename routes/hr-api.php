@@ -34,7 +34,7 @@ use App\Http\Controllers\ERP\HR\PayrollComponentController;
 use App\Http\Controllers\ERP\HR\DepartmentController;
 use App\Http\Controllers\ERP\HR\DocumentController;
 use App\Http\Controllers\ERP\HR\AuditLogController as HRAuditLogController;
-use App\Http\Controllers\ERP\HR\NotificationController;
+use App\Http\Controllers\Erp\HR\NotificationController;
 use App\Http\Controllers\ERP\HR\HRAnalyticsController;
 use App\Http\Controllers\ERP\HR\SuspensionRequestController;
 use App\Http\Controllers\ERP\HR\SalaryChangeController;
