@@ -482,6 +482,26 @@ class ManagerController extends Controller
                 return response()->json(['error' => 'No shop association found'], 403);
             }
 
+            $rawBusinessType = strtolower(trim((string) DB::table('shop_owners')
+                ->where('id', $shopOwnerId)
+                ->value('business_type')));
+
+            $normalizedBusinessType = str_contains($rawBusinessType, 'both') ? 'both' : $rawBusinessType;
+            $hasRepairSignal = str_contains($normalizedBusinessType, 'repair') || str_contains($normalizedBusinessType, 'service');
+            $hasRetailSignal = str_contains($normalizedBusinessType, 'retail') || str_contains($normalizedBusinessType, 'shoe') || str_contains($normalizedBusinessType, 'product');
+
+            if ($hasRepairSignal && !$hasRetailSignal) {
+                $canRetail = false;
+                $canRepair = true;
+            } elseif ($hasRetailSignal && !$hasRepairSignal) {
+                $canRetail = true;
+                $canRepair = false;
+            } else {
+                $canRetail = true;
+                $canRepair = true;
+                $normalizedBusinessType = 'both';
+            }
+
             $dateRange = $this->resolveDashboardDateRange((string) $request->input('range', 'last_30_days'));
             $rangeStart = $dateRange['start'];
             $rangeEnd = $dateRange['end'];
@@ -509,37 +529,45 @@ class ManagerController extends Controller
             $repairClosedRejectedStatuses = ['manager_approved', 'manager_rejected', 'rejected', 'cancelled'];
             
             // Sales KPI: paid + fulfilled orders in selected period
-            $orderSales = DB::table('orders')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', ['completed', 'delivered', 'shipped'])
-                ->where('payment_status', 'paid')
-                ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart, $rangeEnd])
-                ->sum('total_amount');
+            $orderSales = $canRetail
+                ? DB::table('orders')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', ['completed', 'delivered', 'shipped'])
+                    ->where('payment_status', 'paid')
+                    ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart, $rangeEnd])
+                    ->sum('total_amount')
+                : 0;
 
             // Add standalone posted invoices (not tied to an order) to avoid missing finance-only sales
-            $standaloneInvoiceSales = DB::table('finance_invoices')
-                ->where('shop_id', $shopOwnerId)
-                ->where('status', 'posted')
-                ->whereNull('job_order_id')
-                ->whereBetween('created_at', [$rangeStart, $rangeEnd])
-                ->sum('total');
+            $standaloneInvoiceSales = $canRetail
+                ? DB::table('finance_invoices')
+                    ->where('shop_id', $shopOwnerId)
+                    ->where('status', 'posted')
+                    ->whereNull('job_order_id')
+                    ->whereBetween('created_at', [$rangeStart, $rangeEnd])
+                    ->sum('total')
+                : 0;
 
             $totalSales = (float) $orderSales + (float) $standaloneInvoiceSales;
 
             // Previous period comparison (same duration as selected period)
-            $previousOrderSales = DB::table('orders')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', ['completed', 'delivered', 'shipped'])
-                ->where('payment_status', 'paid')
-                ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$previousStart, $previousEnd])
-                ->sum('total_amount');
+            $previousOrderSales = $canRetail
+                ? DB::table('orders')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', ['completed', 'delivered', 'shipped'])
+                    ->where('payment_status', 'paid')
+                    ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$previousStart, $previousEnd])
+                    ->sum('total_amount')
+                : 0;
 
-            $previousStandaloneInvoiceSales = DB::table('finance_invoices')
-                ->where('shop_id', $shopOwnerId)
-                ->where('status', 'posted')
-                ->whereNull('job_order_id')
-                ->whereBetween('created_at', [$previousStart, $previousEnd])
-                ->sum('total');
+            $previousStandaloneInvoiceSales = $canRetail
+                ? DB::table('finance_invoices')
+                    ->where('shop_id', $shopOwnerId)
+                    ->where('status', 'posted')
+                    ->whereNull('job_order_id')
+                    ->whereBetween('created_at', [$previousStart, $previousEnd])
+                    ->sum('total')
+                : 0;
 
             $previousSales = (float) $previousOrderSales + (float) $previousStandaloneInvoiceSales;
                 
@@ -548,38 +576,48 @@ class ManagerController extends Controller
                 : 0;
             
             // Retail KPIs
-            $retailCompletedInRange = DB::table('orders')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', $retailCompletedStatuses)
-                ->whereBetween('created_at', [$rangeStart, $rangeEnd])
-                ->count();
+            $retailCompletedInRange = $canRetail
+                ? DB::table('orders')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', $retailCompletedStatuses)
+                    ->whereBetween('created_at', [$rangeStart, $rangeEnd])
+                    ->count()
+                : 0;
 
-            $retailPendingNow = DB::table('orders')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', $retailPendingStatuses)
-                ->count();
+            $retailPendingNow = $canRetail
+                ? DB::table('orders')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', $retailPendingStatuses)
+                    ->count()
+                : 0;
 
             // Repair KPIs
-            $repairCompletedInRange = DB::table('repair_requests')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', $repairCompletedStatuses)
-                ->whereBetween(DB::raw('COALESCE(picked_up_at, completed_at, updated_at, created_at)'), [$rangeStart, $rangeEnd])
-                ->count();
+            $repairCompletedInRange = $canRepair
+                ? DB::table('repair_requests')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', $repairCompletedStatuses)
+                    ->whereBetween(DB::raw('COALESCE(picked_up_at, completed_at, updated_at, created_at)'), [$rangeStart, $rangeEnd])
+                    ->count()
+                : 0;
 
-            $repairPendingNow = DB::table('repair_requests')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', $repairPendingStatuses)
-                ->count();
+            $repairPendingNow = $canRepair
+                ? DB::table('repair_requests')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', $repairPendingStatuses)
+                    ->count()
+                : 0;
 
-            $repairClosedRejectedInRange = DB::table('repair_requests')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', $repairClosedRejectedStatuses)
-                ->whereBetween(DB::raw('COALESCE(manager_reviewed_at, updated_at, created_at)'), [$rangeStart, $rangeEnd])
-                ->count();
+            $repairClosedRejectedInRange = $canRepair
+                ? DB::table('repair_requests')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', $repairClosedRejectedStatuses)
+                    ->whereBetween(DB::raw('COALESCE(manager_reviewed_at, updated_at, created_at)'), [$rangeStart, $rangeEnd])
+                    ->count()
+                : 0;
 
             // Legacy fields kept for dashboard compatibility
             $totalRepairs = $repairCompletedInRange;
-            $pendingJobOrders = $retailPendingNow + $repairPendingNow;
+            $pendingJobOrders = ($canRetail ? $retailPendingNow : 0) + ($canRepair ? $repairPendingNow : 0);
             
             // Get active staff count
             $activeStaff = DB::table('employees')
@@ -588,31 +626,35 @@ class ManagerController extends Controller
                 ->count();
                 
             // Get monthly revenue trend from paid fulfilled orders + standalone posted invoices
-            $monthlyOrderRevenue = DB::table('orders')
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', ['completed', 'delivered', 'shipped'])
-                ->where('payment_status', 'paid')
-                ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart->copy()->startOfMonth(), $rangeEnd])
-                ->select(
-                    DB::raw('DATE_FORMAT(COALESCE(paid_at, created_at), "%Y-%m") as month'),
-                    DB::raw('SUM(total_amount) as revenue')
-                )
-                ->groupBy('month')
-                ->orderBy('month', 'asc')
-                ->get();
+            $monthlyOrderRevenue = $canRetail
+                ? DB::table('orders')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', ['completed', 'delivered', 'shipped'])
+                    ->where('payment_status', 'paid')
+                    ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart->copy()->startOfMonth(), $rangeEnd])
+                    ->select(
+                        DB::raw('DATE_FORMAT(COALESCE(paid_at, created_at), "%Y-%m") as month'),
+                        DB::raw('SUM(total_amount) as revenue')
+                    )
+                    ->groupBy('month')
+                    ->orderBy('month', 'asc')
+                    ->get()
+                : collect();
 
-            $monthlyStandaloneInvoiceRevenue = DB::table('finance_invoices')
-                ->where('shop_id', $shopOwnerId)
-                ->where('status', 'posted')
-                ->whereNull('job_order_id')
-                ->whereBetween('created_at', [$rangeStart->copy()->startOfMonth(), $rangeEnd])
-                ->select(
-                    DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
-                    DB::raw('SUM(total) as revenue')
-                )
-                ->groupBy('month')
-                ->orderBy('month', 'asc')
-                ->get();
+            $monthlyStandaloneInvoiceRevenue = $canRetail
+                ? DB::table('finance_invoices')
+                    ->where('shop_id', $shopOwnerId)
+                    ->where('status', 'posted')
+                    ->whereNull('job_order_id')
+                    ->whereBetween('created_at', [$rangeStart->copy()->startOfMonth(), $rangeEnd])
+                    ->select(
+                        DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                        DB::raw('SUM(total) as revenue')
+                    )
+                    ->groupBy('month')
+                    ->orderBy('month', 'asc')
+                    ->get()
+                : collect();
 
             $monthlyRevenueMap = [];
             foreach ($monthlyOrderRevenue as $entry) {
@@ -760,6 +802,11 @@ class ManagerController extends Controller
                     'totalSales' => "Paid fulfilled orders + standalone posted invoices for {$dateRange['label']}",
                     'totalRepairs' => "Completed repair jobs for {$dateRange['label']}",
                     'pendingJobOrders' => 'Current open queue: pending retail orders + pending repair jobs',
+                ],
+                'businessCapabilities' => [
+                    'businessType' => $normalizedBusinessType,
+                    'canRetail' => $canRetail,
+                    'canRepair' => $canRepair,
                 ],
                 'activeStaff' => $activeStaff,
                 'pendingApprovals' => $pendingApprovals,

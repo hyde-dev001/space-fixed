@@ -41,6 +41,11 @@ interface ManagerDashboardStats {
         totalRepairs: string;
         pendingJobOrders: string;
     };
+    businessCapabilities?: {
+        businessType: string;
+        canRetail: boolean;
+        canRepair: boolean;
+    };
     salesChange?: number;
     activeStaff?: number;
     pendingApprovals?: number;
@@ -985,8 +990,40 @@ export default function ManagerDashboard() {
         pendingApprovals: statsData.pendingApprovals,
     };
 
-    const metrics: MetricCardProps[] = [
-        {
+    const capabilities = statsData.businessCapabilities || {
+        businessType: 'both',
+        canRetail: true,
+        canRepair: true,
+    };
+    const canRetail = capabilities.canRetail;
+    const canRepair = capabilities.canRepair;
+    const retailCompleted = Number(statsData.kpiBreakdown?.retail?.completed_orders || 0);
+    const retailPending = Number(statsData.kpiBreakdown?.retail?.pending_orders || 0);
+    const repairCompleted = Number(statsData.kpiBreakdown?.repair?.completed_jobs || stats.totalRepairs || 0);
+    const repairPending = Number(statsData.kpiBreakdown?.repair?.pending_jobs || 0);
+
+    const pendingMetricTitle = canRetail && canRepair
+        ? 'Pending Job Orders'
+        : canRetail
+            ? 'Pending Retail Orders'
+            : 'Pending Repair Jobs';
+
+    const pendingMetricValue = canRetail && canRepair
+        ? stats.pendingJobOrders
+        : canRetail
+            ? retailPending
+            : repairPending;
+
+    const pendingMetricDescription = canRetail && canRepair
+        ? (statsData.kpiSemantics?.pendingJobOrders || 'Current open retail + repair queue')
+        : canRetail
+            ? 'Current open retail orders queue'
+            : 'Current open repair jobs queue';
+
+    const metrics: MetricCardProps[] = [];
+
+    if (canRetail) {
+        metrics.push({
             title: 'Total Sales',
             value: `₱${stats.totalSales.toLocaleString()}`,
             change: stats.salesChange || 0,
@@ -994,8 +1031,11 @@ export default function ManagerDashboard() {
             icon: DollarIconSvg,
             color: 'success',
             description: statsData.kpiSemantics?.totalSales || 'Posted invoice revenue for selected period',
-        },
-        {
+        });
+    }
+
+    if (canRepair) {
+        metrics.push({
             title: 'Total Repairs',
             value: stats.totalRepairs,
             change: 8,
@@ -1003,21 +1043,42 @@ export default function ManagerDashboard() {
             icon: TaskIconSvg,
             color: 'info',
             description: statsData.kpiSemantics?.totalRepairs || 'Completed repair jobs in selected period',
-        },
-        {
-            title: 'Pending Job Orders',
-            value: stats.pendingJobOrders,
-            change: 5,
-            changeType: stats.pendingJobOrders > 50 ? 'increase' : 'decrease',
-            icon: AlertIconSvg,
-            color: 'warning',
-            description: statsData.kpiSemantics?.pendingJobOrders || 'Current open retail + repair queue',
-        },
-    ];
+        });
+    }
 
-    const completionRate = stats.totalRepairs > 0
-        ? `${((stats.totalRepairs / (stats.totalRepairs + stats.pendingJobOrders)) * 100).toFixed(1)}%`
+    metrics.push({
+        title: pendingMetricTitle,
+        value: pendingMetricValue,
+        change: 5,
+        changeType: pendingMetricValue > 50 ? 'increase' : 'decrease',
+        icon: AlertIconSvg,
+        color: 'warning',
+        description: pendingMetricDescription,
+    });
+
+    const completedForRate = canRetail && canRepair
+        ? Number(statsData.kpiBreakdown?.combined?.completed_work_items_in_period || (retailCompleted + repairCompleted))
+        : canRetail
+            ? retailCompleted
+            : repairCompleted;
+
+    const pendingForRate = canRetail && canRepair
+        ? Number(statsData.kpiBreakdown?.combined?.pending_work_queue || (retailPending + repairPending))
+        : canRetail
+            ? retailPending
+            : repairPending;
+
+    const completionRate = completedForRate > 0
+        ? `${((completedForRate / (completedForRate + pendingForRate)) * 100).toFixed(1)}%`
         : '0%';
+
+    const totalOrdersLabel = canRetail && !canRepair
+        ? 'Total Retail Orders'
+        : !canRetail && canRepair
+            ? 'Total Repair Jobs'
+            : 'Total Orders';
+
+    const totalOrdersValue = completedForRate + pendingForRate;
 
     return (
         <AppLayoutERP>
@@ -1161,9 +1222,9 @@ export default function ManagerDashboard() {
                             </>
                         )}
                         <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Total Orders</span>
+                            <span className="text-gray-600 dark:text-gray-400">{totalOrdersLabel}</span>
                             <span className="text-lg font-bold text-gray-900 dark:text-white">
-                                {stats.totalRepairs + stats.pendingJobOrders}
+                                {totalOrdersValue}
                             </span>
                         </div>
                         <div className="h-px bg-gray-200 dark:bg-gray-700" />

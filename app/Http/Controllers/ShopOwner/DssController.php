@@ -49,6 +49,16 @@ class DssController extends Controller
     private const RETAIL_COMPLETED_STATUSES = ['completed', 'delivered'];
     private const RETAIL_ACTIVE_STATUSES    = ['pending', 'processing', 'shipped'];
 
+    private function applyRetailRevenueEligibility($query)
+    {
+        return $query
+            ->whereNull('refunded_at')
+            ->where(function ($q) {
+                $q->whereNull('payment_status')
+                    ->orWhere('payment_status', '!=', 'refunded');
+            });
+    }
+
     // ─── helpers ────────────────────────────────────────────────────────────────
 
     /**
@@ -485,34 +495,38 @@ class DssController extends Controller
             ->where('created_at', '>=', $periodStart)
             ->count();
 
-        $completedOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
-            ->where('created_at', '>=', $periodStart)
-            ->count();
+        $completedOrders = $this->applyRetailRevenueEligibility(
+            Order::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
+                ->where('created_at', '>=', $periodStart)
+        )->count();
 
         $activeOrders = Order::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', self::RETAIL_ACTIVE_STATUSES)
             ->count();
 
-        $periodRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
-            ->where('created_at', '>=', $periodStart)
-            ->sum('total_amount');
+        $periodRevenue = $this->applyRetailRevenueEligibility(
+            Order::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
+                ->where('created_at', '>=', $periodStart)
+        )->sum('total_amount');
 
         // Month-over-month
         $thisMonthStart = $now->copy()->startOfMonth();
         $lastMonthStart = $now->copy()->subMonth()->startOfMonth();
         $lastMonthEnd   = $now->copy()->subMonth()->endOfMonth();
 
-        $thisMonthRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
-            ->where('created_at', '>=', $thisMonthStart)
-            ->sum('total_amount');
+        $thisMonthRevenue = $this->applyRetailRevenueEligibility(
+            Order::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
+                ->where('created_at', '>=', $thisMonthStart)
+        )->sum('total_amount');
 
-        $lastMonthRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
-            ->whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])
-            ->sum('total_amount');
+        $lastMonthRevenue = $this->applyRetailRevenueEligibility(
+            Order::where('shop_owner_id', $shopOwnerId)
+                ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
+                ->whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])
+        )->sum('total_amount');
 
         $revMomChange = ($lastMonthRevenue > 0)
             ? round((($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100, 1)
@@ -554,6 +568,11 @@ class DssController extends Controller
             ->join('orders as o', 'oi.order_id', '=', 'o.id')
             ->where('o.shop_owner_id', $shopOwnerId)
             ->whereIn('o.status', self::RETAIL_COMPLETED_STATUSES)
+            ->whereNull('o.refunded_at')
+            ->where(function ($q) {
+                $q->whereNull('o.payment_status')
+                    ->orWhere('o.payment_status', '!=', 'refunded');
+            })
             ->where('o.created_at', '>=', $periodStart)
             ->select(
                 'oi.product_name',
@@ -605,6 +624,11 @@ class DssController extends Controller
             ->join('orders as o', 'oi.order_id', '=', 'o.id')
             ->where('o.shop_owner_id', $shopOwnerId)
             ->whereIn('o.status', self::RETAIL_COMPLETED_STATUSES)
+            ->whereNull('o.refunded_at')
+            ->where(function ($q) {
+                $q->whereNull('o.payment_status')
+                    ->orWhere('o.payment_status', '!=', 'refunded');
+            })
             ->where('o.created_at', '>=', $periodStart)
             ->distinct('oi.product_name')
             ->count('oi.product_name');
@@ -638,15 +662,17 @@ class DssController extends Controller
                 ->whereBetween('created_at', [$start, $end])
                 ->count();
 
-            $completed = Order::where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
-                ->whereBetween('created_at', [$start, $end])
-                ->count();
+            $completed = $this->applyRetailRevenueEligibility(
+                Order::where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
+                    ->whereBetween('created_at', [$start, $end])
+            )->count();
 
-            $revenue = Order::where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
-                ->whereBetween('created_at', [$start, $end])
-                ->sum('total_amount');
+            $revenue = $this->applyRetailRevenueEligibility(
+                Order::where('shop_owner_id', $shopOwnerId)
+                    ->whereIn('status', self::RETAIL_COMPLETED_STATUSES)
+                    ->whereBetween('created_at', [$start, $end])
+            )->sum('total_amount');
 
             $months[] = [
                 'month'     => $month->format('M Y'),

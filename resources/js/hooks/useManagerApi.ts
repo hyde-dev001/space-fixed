@@ -38,6 +38,11 @@ interface ManagerDashboardStats {
     totalRepairs: string;
     pendingJobOrders: string;
   };
+  businessCapabilities?: {
+    businessType: string;
+    canRetail: boolean;
+    canRepair: boolean;
+  };
   activeStaff: number;
   pendingApprovals: number;
   monthlyRevenue: Array<{
