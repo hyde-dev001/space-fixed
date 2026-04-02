@@ -395,6 +395,15 @@ class ProductController extends Controller
                 ->defaultSort('-created_at')
                 ->get();
 
+            Log::info('myProducts context', [
+                'resolved_shop_owner_id' => $shopOwnerId,
+                'user_guard_id' => Auth::guard('user')->id(),
+                'user_guard_shop_owner_id' => Auth::guard('user')->user()?->shop_owner_id,
+                'shop_owner_guard_id' => Auth::guard('shop_owner')->id(),
+                'include_inactive' => $request->get('include_inactive'),
+                'products_count' => $products->count(),
+            ]);
+
             // Transform products to include full image URLs
             $products->transform(function ($product) {
                 $product->main_image = $product->main_image_url;
@@ -646,6 +655,9 @@ class ProductController extends Controller
                 Log::info('Product created with variants', [
                     'product_id' => $product->id,
                     'shop_owner_id' => $validated['shop_owner_id'],
+                    'user_guard_id' => Auth::guard('user')->id(),
+                    'user_guard_shop_owner_id' => Auth::guard('user')->user()?->shop_owner_id,
+                    'shop_owner_guard_id' => Auth::guard('shop_owner')->id(),
                     'name' => $product->name,
                     'variants_count' => count($validated['variants'] ?? []),
                 ]);
