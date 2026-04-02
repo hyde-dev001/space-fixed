@@ -142,8 +142,36 @@ const fmtPct = (val: unknown) => {
 	return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 };
 
+const toDisplayName = (value: unknown): string => {
+	if (typeof value !== "string") return "";
+	return value.trim();
+};
+
+const buildEmployeeName = (employeeLike: any): string => {
+	const explicitName = toDisplayName(employeeLike?.name);
+	if (explicitName) return explicitName;
+
+	const firstName = toDisplayName(employeeLike?.first_name);
+	const lastName = toDisplayName(employeeLike?.last_name);
+	const fullName = `${firstName} ${lastName}`.trim();
+	if (fullName) return fullName;
+
+	const topLevelFirstName = toDisplayName(employeeLike?.employee_first_name);
+	const topLevelLastName = toDisplayName(employeeLike?.employee_last_name);
+	return `${topLevelFirstName} ${topLevelLastName}`.trim();
+};
+
 const normalizeAdjustment = (item: SalaryAdjustment): SalaryAdjustment => ({
 	...item,
+	employee: item.employee
+		? {
+			...item.employee,
+			name: buildEmployeeName(item.employee) || buildEmployeeName(item),
+		}
+		: {
+			id: toNumber(item.employee_id),
+			name: buildEmployeeName(item),
+		},
 	previous_salary: toNumber(item.previous_salary),
 	new_salary: toNumber(item.new_salary),
 	change_percent: toNumber(item.change_percent),
