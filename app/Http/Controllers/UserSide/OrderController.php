@@ -30,6 +30,7 @@ class OrderController extends Controller
     protected PaymongoRefundService $paymongoRefundService;
     protected PaymentSettlementService $paymentSettlementService;
     private ?array $orderRefundColumns = null;
+    private bool $orderRefundColumnIntrospectionFailed = false;
 
     public function __construct(
         NotificationService $notificationService,
@@ -427,7 +428,15 @@ class OrderController extends Controller
                 ], 422);
             }
 
-            $existing = $this->buildActiveRefundRequestQuery((int) $order->id)->first();
+            $existing = null;
+            try {
+                $existing = $this->buildActiveRefundRequestQuery((int) $order->id)->first();
+            } catch (QueryException $queryException) {
+                Log::warning('Skipping strict active refund duplicate-check due to schema/query mismatch', [
+                    'order_id' => $order->id,
+                    'error' => $queryException->getMessage(),
+                ]);
+            }
 
             if ($existing) {
                 return response()->json([
@@ -565,11 +574,17 @@ class OrderController extends Controller
             ->where('order_id', $orderId)
             ->latest('id');
 
-        if ($this->hasOrderRefundColumn('flow_type')) {
+        if (!$this->orderRefundColumnIntrospectionFailed
+            && $this->hasOrderRefundColumn('flow_type')
+            && !$this->orderRefundColumnIntrospectionFailed
+        ) {
             $query->where('flow_type', 'request_approval');
         }
 
-        if ($this->hasOrderRefundColumn('status')) {
+        if (!$this->orderRefundColumnIntrospectionFailed
+            && $this->hasOrderRefundColumn('status')
+            && !$this->orderRefundColumnIntrospectionFailed
+        ) {
             $query->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded']);
         }
 
@@ -588,6 +603,18 @@ class OrderController extends Controller
             // Older production schemas may reject newer status enum values.
             if (($fallbackPayload['status'] ?? null) === 'pending_approval') {
                 $fallbackPayload['status'] = 'requested';
+            }
+
+            // If schema introspection fails in prod, remove optional modern fields on retry.
+            if ($this->looksLikeUnknownColumnError($e)) {
+                unset(
+                    $fallbackPayload['flow_type'],
+                    $fallbackPayload['requested_refund_method'],
+                    $fallbackPayload['evidence_media'],
+                    $fallbackPayload['other_reason_note']
+                );
+
+                $fallbackPayload = $this->filterOrderRefundPayload($fallbackPayload);
             }
 
             Log::warning('Refund create retry with compatibility fallback after query exception', [
@@ -615,12 +642,19 @@ class OrderController extends Controller
                 $columns = Schema::getColumnListing('order_refunds');
                 $this->orderRefundColumns = array_fill_keys($columns, true);
             } catch (\Throwable $e) {
-                // If schema introspection fails in prod, fall back to original payload keys.
+                // Preserve payload behavior, but mark failure so query filters do not assume columns exist.
+                $this->orderRefundColumnIntrospectionFailed = true;
                 return true;
             }
         }
 
         return isset($this->orderRefundColumns[$column]);
+    }
+
+    private function looksLikeUnknownColumnError(QueryException $exception): bool
+    {
+        $message = (string) $exception->getMessage();
+        return str_contains($message, 'Unknown column') || str_contains($message, 'SQLSTATE[42S22]');
     }
     
     /**
