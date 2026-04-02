@@ -555,23 +555,43 @@ const DssInsights: React.FC = () => {
   const isRetail = !!data && (data.business_type === "retail" || data.business_type === "both");
 
   const apiUrl = isErpUser
-    ? `/api/manager/dss-insights`
-    : `/api/shop-owner/dashboard/dss-insights`;
+    ? ((route as any)?.has?.("api.manager.dss-insights")
+      ? route("api.manager.dss-insights")
+      : "/api/manager/dss-insights")
+    : ((route as any)?.has?.("api.shop_owner.dashboard.dss-insights")
+      ? route("api.shop_owner.dashboard.dss-insights")
+      : "/api/shop-owner/dashboard/dss-insights");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await axios.get(apiUrl, { params: { period } });
-      setData(res.data);
+      const res = await axios.get(apiUrl, {
+        params: { period },
+        headers: { Accept: "application/json" },
+      });
+
+      const payload = res.data;
+      if (!payload || typeof payload !== "object" || !("business_type" in payload)) {
+        throw new Error("Invalid DSS response. Please sign in again and refresh the page.");
+      }
+
+      setData(payload as DssData);
       // If the shop is retail-only, default to the retail tab
-      if (res.data.business_type === "retail") {
+      if (payload.business_type === "retail") {
         setTab("retail");
       } else {
         setTab("workload");
       }
     } catch (e: any) {
-      setError(e?.response?.data?.error || "Failed to load DSS data.");
+      const apiError = e?.response?.data?.error;
+      const status = e?.response?.status;
+      setError(
+        apiError
+          || (status === 401
+            ? "Your session expired. Please sign in again."
+            : e?.message || "Failed to load DSS data.")
+      );
     } finally {
       setLoading(false);
     }

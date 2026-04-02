@@ -27,6 +27,7 @@ class OrderController extends Controller
     protected OrderRefundService $orderRefundService;
     protected PaymongoRefundService $paymongoRefundService;
     protected PaymentSettlementService $paymentSettlementService;
+    private ?array $orderRefundColumns = null;
 
     public function __construct(
         NotificationService $notificationService,
@@ -367,137 +368,205 @@ class OrderController extends Controller
 
     public function requestRefund(Request $request)
     {
-        $validated = $request->validate([
-            'order_id' => 'required|integer',
-            'reason' => 'required|string|max:255',
-            'refund_method' => 'nullable|string|max:100',
-            'note' => 'nullable|string|max:1000',
-            'media' => 'required|array|size:6',
-            'media.*' => 'required|file|max:20480|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
-        ]);
+        try {
+            $validated = $request->validate([
+                'order_id' => 'required|integer',
+                'reason' => 'required|string|max:255',
+                'refund_method' => 'nullable|string|max:100',
+                'note' => 'nullable|string|max:1000',
+                'other_reason_note' => 'nullable|string|max:1000',
+                'media' => 'required|array|size:6',
+                'media.*' => 'required|file|max:20480|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
+            ]);
 
-        $resolvedRefundMethod = trim((string) ($validated['refund_method'] ?? ''));
-        if ($resolvedRefundMethod === '') {
-            $resolvedRefundMethod = 'original_payment_method';
-        }
+            $resolvedRefundMethod = trim((string) ($validated['refund_method'] ?? ''));
+            if ($resolvedRefundMethod === '') {
+                $resolvedRefundMethod = 'original_payment_method';
+            }
 
-        $user = Auth::guard('user')->user();
+            $user = Auth::guard('user')->user();
 
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
-        }
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+            }
 
-        $order = Order::query()
-            ->where('id', (int) $validated['order_id'])
-            ->where('customer_id', (int) $user->id)
-            ->first();
+            $order = Order::query()
+                ->where('id', (int) $validated['order_id'])
+                ->where('customer_id', (int) $user->id)
+                ->first();
 
-        if (!$order) {
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found.',
+                ], 404);
+            }
+
+            if (!in_array((string) $order->status, [OrderStatus::DELIVERED, OrderStatus::COMPLETED], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only delivered or completed orders can request a refund.',
+                ], 422);
+            }
+
+            $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
+            $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+            if (!$isOnlinePayment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only online-paid orders are eligible for gateway refund requests.',
+                ], 422);
+            }
+
+            if (!in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order payment is not eligible for refund processing.',
+                ], 422);
+            }
+
+            $existing = OrderRefund::query()
+                ->where('order_id', $order->id)
+                ->where('flow_type', 'request_approval')
+                ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
+                ->latest('id')
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A refund request for this order is already in progress.',
+                ], 422);
+            }
+
+            $mediaFiles = $request->file('media', []);
+            $imageCount = 0;
+            $videoCount = 0;
+            $storedMedia = [];
+
+            foreach ($mediaFiles as $mediaFile) {
+                $mime = strtolower((string) $mediaFile->getMimeType());
+                if (str_starts_with($mime, 'video/')) {
+                    $videoCount++;
+                } else {
+                    $imageCount++;
+                }
+            }
+
+            if ($imageCount !== 5 || $videoCount !== 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You must upload exactly 5 images and 1 video.',
+                ], 422);
+            }
+
+            foreach ($mediaFiles as $mediaFile) {
+                $path = $mediaFile->store('refund-evidence/order-' . $order->id, 'public');
+                $storedMedia[] = Storage::url($path);
+            }
+
+            $amount = (float) ($order->total_amount ?? 0) + max(0, (float) ($order->shipping_fee ?? 0));
+            if ($amount <= 0) {
+                $amount = max((float) ($order->total ?? 0), (float) ($order->total_amount ?? 0));
+            }
+
+            if ($amount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Refund amount could not be determined for this order.',
+                ], 422);
+            }
+
+            $reasonCode = Str::slug((string) $validated['reason'], '_');
+            $reasonNote = trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : '')));
+
+            $refundPayload = [
+                'order_id' => $order->id,
+                'customer_id' => $order->customer_id,
+                'shop_owner_id' => $order->shop_owner_id,
+                'flow_type' => 'request_approval',
+                'status' => 'pending_approval',
+                'payment_gateway' => 'paymongo',
+                'paymongo_payment_id' => $order->paymongo_payment_id,
+                'amount' => round($amount, 2),
+                'currency' => 'PHP',
+                'requested_refund_method' => $resolvedRefundMethod,
+                'reason_code' => $reasonCode,
+                'reason_note' => $reasonNote,
+                'other_reason_note' => trim((string) ($validated['other_reason_note'] ?? '')) ?: null,
+                'evidence_media' => $storedMedia,
+                'idempotency_key' => 'request-approval-order-' . $order->id . '-' . Str::uuid()->toString(),
+                'requested_at' => now(),
+            ];
+
+            $refundRequest = OrderRefund::create($this->filterOrderRefundPayload($refundPayload));
+
+            try {
+                $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
+            } catch (\Throwable $notifyError) {
+                Log::warning('Refund request created but notification failed', [
+                    'order_id' => $order->id,
+                    'refund_id' => $refundRequest->id,
+                    'error' => $notifyError->getMessage(),
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Refund request submitted successfully and is pending approval.',
+                'refund' => $refundRequest->fresh(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to submit refund request', [
+                'order_id' => $request->input('order_id'),
+                'user_id' => Auth::guard('user')->id(),
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Order not found.',
-            ], 404);
+                'message' => 'Unable to submit refund request right now. Please try again in a moment.',
+            ], 500);
+        }
+    }
+
+    private function filterOrderRefundPayload(array $payload): array
+    {
+        if (!$this->hasOrderRefundTable()) {
+            return $payload;
         }
 
-        if (!in_array((string) $order->status, [OrderStatus::DELIVERED, OrderStatus::COMPLETED], true)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only delivered or completed orders can request a refund.',
-            ], 422);
-        }
-
-        $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
-        if (!$isOnlinePayment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only online-paid orders are eligible for gateway refund requests.',
-            ], 422);
-        }
-
-        if (!in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Order payment is not eligible for refund processing.',
-            ], 422);
-        }
-
-        $existing = OrderRefund::query()
-            ->where('order_id', $order->id)
-            ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
-            ->latest('id')
-            ->first();
-
-        if ($existing) {
-            return response()->json([
-                'success' => false,
-                'message' => 'A refund request for this order is already in progress.',
-            ], 422);
-        }
-
-        $mediaFiles = $request->file('media', []);
-        $imageCount = 0;
-        $videoCount = 0;
-        $storedMedia = [];
-
-        foreach ($mediaFiles as $mediaFile) {
-            $mime = strtolower((string) $mediaFile->getMimeType());
-            if (str_starts_with($mime, 'video/')) {
-                $videoCount++;
-            } else {
-                $imageCount++;
+        $filtered = [];
+        foreach ($payload as $column => $value) {
+            if ($this->hasOrderRefundColumn((string) $column)) {
+                $filtered[$column] = $value;
             }
         }
 
-        if ($imageCount !== 5 || $videoCount !== 1) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You must upload exactly 5 images and 1 video.',
-            ], 422);
+        return $filtered;
+    }
+
+    private function hasOrderRefundTable(): bool
+    {
+        try {
+            return Schema::hasTable('order_refunds');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function hasOrderRefundColumn(string $column): bool
+    {
+        if ($this->orderRefundColumns === null) {
+            try {
+                $columns = Schema::getColumnListing('order_refunds');
+                $this->orderRefundColumns = array_fill_keys($columns, true);
+            } catch (\Throwable $e) {
+                $this->orderRefundColumns = [];
+            }
         }
 
-        foreach ($mediaFiles as $mediaFile) {
-            $path = $mediaFile->store('refund-evidence/order-' . $order->id, 'public');
-            $storedMedia[] = Storage::url($path);
-        }
-
-        $amount = (float) ($order->total_amount ?? 0) + max(0, (float) ($order->shipping_fee ?? 0));
-        if ($amount <= 0) {
-            $amount = max((float) ($order->total ?? 0), (float) ($order->total_amount ?? 0));
-        }
-
-        if ($amount <= 0) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Refund amount could not be determined for this order.',
-            ], 422);
-        }
-
-        $refundRequest = OrderRefund::create([
-            'order_id' => $order->id,
-            'customer_id' => $order->customer_id,
-            'shop_owner_id' => $order->shop_owner_id,
-            'flow_type' => 'request_approval',
-            'status' => 'pending_approval',
-            'payment_gateway' => 'paymongo',
-            'paymongo_payment_id' => $order->paymongo_payment_id,
-            'amount' => round($amount, 2),
-            'currency' => 'PHP',
-            'requested_refund_method' => $resolvedRefundMethod,
-            'reason_code' => Str::slug((string) $validated['reason'], '_'),
-            'reason_note' => trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : ''))),
-            'evidence_media' => $storedMedia,
-            'idempotency_key' => 'request-approval-order-' . $order->id . '-' . Str::uuid()->toString(),
-            'requested_at' => now(),
-        ]);
-
-        $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Refund request submitted successfully and is pending approval.',
-        ]);
+        return isset($this->orderRefundColumns[$column]);
     }
     
     /**
