@@ -48,4 +48,7 @@ export default defineConfig({
             '@': '/resources/js',
         },
     },
+    build: {
+        emptyOutDir: true,
+    },
 });
