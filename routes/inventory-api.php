@@ -1,12 +1,12 @@
 <?php
 
-use App\Http\Controllers\ERP\InventoryDashboardController;
-use App\Http\Controllers\ERP\ProductInventoryController;
-use App\Http\Controllers\ERP\StockMovementController;
-use App\Http\Controllers\ERP\SupplierOrderMonitoringController;
-use App\Http\Controllers\ERP\UploadInventoryController;
+use App\Http\Controllers\Erp\InventoryDashboardController;
+use App\Http\Controllers\Erp\ProductInventoryController;
+use App\Http\Controllers\Erp\StockMovementController;
+use App\Http\Controllers\Erp\SupplierOrderMonitoringController;
+use App\Http\Controllers\Erp\UploadInventoryController;
 use App\Http\Controllers\Erp\SupplierController;
-use App\Http\Controllers\ERP\SupplierOrderController;
+use App\Http\Controllers\Erp\SupplierOrderController;
 use App\Http\Controllers\Erp\StockRequestApprovalController;
 use Illuminate\Support\Facades\Route;
 

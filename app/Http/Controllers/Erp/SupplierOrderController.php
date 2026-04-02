@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\ERP;
+namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Models\SupplierOrder;
