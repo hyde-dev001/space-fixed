@@ -2174,9 +2174,9 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
 
     // Suspension Approval Routes
     Route::prefix('suspension-requests')->group(function () {
-        Route::get('/', [\App\Http\Controllers\ERP\Manager\SuspensionApprovalController::class, 'index'])->name('suspension_requests.index');
-        Route::get('/{id}', [\App\Http\Controllers\ERP\Manager\SuspensionApprovalController::class, 'show'])->name('suspension_requests.show');
-        Route::post('/{id}/review', [\App\Http\Controllers\ERP\Manager\SuspensionApprovalController::class, 'review'])->name('suspension_requests.review');
+        Route::get('/', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'index'])->name('suspension_requests.index');
+        Route::get('/{id}', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'show'])->name('suspension_requests.show');
+        Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'review'])->name('suspension_requests.review');
     });
 });
 
