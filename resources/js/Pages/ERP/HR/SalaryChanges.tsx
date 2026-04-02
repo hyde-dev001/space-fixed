@@ -400,6 +400,12 @@ const SalaryChanges: React.FC = () => {
 
       setIsNewChangeOpen(false);
       resetNewChangeForm();
+      await Swal.fire({
+        title: "Created Successfully",
+        text: data.message ?? "Salary change request submitted successfully.",
+        icon: "success",
+        confirmButtonColor: "#2563eb",
+      });
       fetchChanges();
     } catch {
       setNewChangeError("A network error occurred. Please try again.");
