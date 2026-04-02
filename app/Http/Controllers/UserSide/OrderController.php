@@ -405,7 +405,11 @@ class OrderController extends Controller
                 ], 404);
             }
 
-            if (!in_array((string) $order->status, [OrderStatus::DELIVERED, OrderStatus::COMPLETED], true)) {
+            $orderStatus = $order->status instanceof OrderStatus
+                ? $order->status->value
+                : (string) ($order->status ?? '');
+
+            if (!in_array($orderStatus, [OrderStatus::DELIVERED->value, OrderStatus::COMPLETED->value], true)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Only delivered or completed orders can request a refund.',
