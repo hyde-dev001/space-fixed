@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Database\QueryException;
 use Carbon\Carbon;
 
 /**
@@ -71,12 +72,26 @@ class PayrollController extends Controller
 
     private function canDisbursePayroll($user): bool
     {
-        return $user
-            && (
-                $user->hasRole('Shop Owner')
+        if (! $user) {
+            return false;
+        }
+
+        try {
+            return $user->hasRole('Shop Owner')
                 || $user->can('access-payslip-approval')
-                || $user->can('access-approval-workflow')
-            );
+                || $user->can('access-approval-workflow');
+        } catch (\Throwable $e) {
+            // Defensive fallback: if role metadata is stale/missing in production,
+            // still allow explicit permission checks to decide disbursement access.
+            \Log::warning('Payroll disbursement role check fallback applied', [
+                'user_id' => $user->id ?? null,
+                'shop_owner_id' => $user->shop_owner_id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $user->can('access-payslip-approval')
+                || $user->can('access-approval-workflow');
+        }
     }
 
     // ============================================================
@@ -486,138 +501,164 @@ class PayrollController extends Controller
      */
     public function process(Request $request): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-        if (! $user) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        if (! $this->canDisbursePayroll($user)) {
-            return response()->json([
-                'error' => 'Unauthorized. Payroll disbursement requires payroll or approval workflow access.',
-            ], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'payrollIds' => 'required|array',
-            'payrollIds.*' => 'exists:payrolls,id',
-            'paymentDate' => 'nullable|date',
-            'paymentMethod' => 'nullable|in:bank_transfer,check,cash',
-            'payoutReference' => 'nullable|string|max:255',
-            'payoutProofType' => 'nullable|in:bank_reference,receipt_number,check_number,other',
-            'payoutProofReference' => 'nullable|string|max:255',
-            'payoutProofNotes' => 'nullable|string|max:1000',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $payrollIds = array_values(array_unique(array_map('intval', (array) $request->payrollIds)));
-        if (count($payrollIds) !== count((array) $request->payrollIds)) {
-            return response()->json([
-                'errors' => [
-                    'payrollIds' => ['Duplicate payroll IDs are not allowed in a single disbursement request.'],
-                ],
-            ], 422);
-        }
-
-        $processedCount = 0;
-        $errors = [];
-        $idempotencyConflicts = 0;
-        $paymentDate = (string) ($request->input('paymentDate') ?: now()->toDateString());
-
-        foreach ($payrollIds as $payrollId) {
-            try {
-                DB::transaction(function () use ($user, $payrollId, $request, $paymentDate) {
-                    $payroll = Payroll::forShopOwner($user->shop_owner_id)
-                        ->with('employee')
-                        ->whereKey($payrollId)
-                        ->lockForUpdate()
-                        ->firstOrFail();
-
-                    if ($payroll->status === 'paid') {
-                        throw new \RuntimeException("Payroll ID {$payrollId} is already marked as paid");
-                    }
-
-                    if ($payroll->approval_status !== 'approved' || empty($payroll->approved_by)) {
-                        throw new \RuntimeException("Payroll ID {$payrollId} requires Finance checker approval before disbursement");
-                    }
-
-                    if ($payroll->status !== 'approved' || empty($payroll->final_approved_by)) {
-                        throw new \RuntimeException("Payroll ID {$payrollId} requires final owner approval before disbursement");
-                    }
-
-                    if ((int) $payroll->approved_by === (int) $payroll->final_approved_by) {
-                        throw new \RuntimeException("Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.");
-                    }
-
-                    $disbursementDetails = [
-                        'disbursed_by' => (int) $user->id,
-                    ];
-
-                    if ($request->filled('paymentMethod')) {
-                        $disbursementDetails['payment_method'] = (string) $request->input('paymentMethod');
-                    }
-
-                    if ($request->filled('payoutReference')) {
-                        $disbursementDetails['payout_reference'] = (string) $request->input('payoutReference');
-                    }
-
-                    if ($request->filled('payoutProofType')) {
-                        $disbursementDetails['payout_proof_type'] = (string) $request->input('payoutProofType');
-                    }
-
-                    if ($request->filled('payoutProofReference')) {
-                        $disbursementDetails['payout_proof_reference'] = (string) $request->input('payoutProofReference');
-                    }
-
-                    if ($request->filled('payoutProofNotes')) {
-                        $disbursementDetails['payout_proof_notes'] = (string) $request->input('payoutProofNotes');
-                    }
-
-                    $payroll->markAsPaid($paymentDate, $disbursementDetails);
-
-                    // Expense sync is best-effort only. Do not block disbursement if
-                    // finance expense schema/config differs in production.
-                    try {
-                        $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, $paymentDate);
-                    } catch (\Throwable $expenseError) {
-                        \Log::warning('Payroll disbursement expense sync skipped', [
-                            'payroll_id' => $payroll->id,
-                            'shop_owner_id' => $payroll->shop_owner_id,
-                            'error' => $expenseError->getMessage(),
-                        ]);
-                    }
-                });
-
-                $processedCount++;
-            } catch (\RuntimeException $e) {
-                if (str_contains($e->getMessage(), 'already marked as paid')) {
-                    $idempotencyConflicts++;
-                }
-                $errors[] = $e->getMessage();
-            } catch (\Throwable $e) {
-                $errors[] = "Error processing payroll ID {$payrollId}: " . $e->getMessage();
+        try {
+            $user = Auth::guard('user')->user();
+            if (! $user) {
+                return response()->json(['error' => 'Unauthorized'], 403);
             }
-        }
 
-        if ($processedCount === 0 && ! empty($errors)) {
-            $allErrorsAreIdempotencyConflicts = $idempotencyConflicts === count($errors);
+            if (! $this->canDisbursePayroll($user)) {
+                return response()->json([
+                    'error' => 'Unauthorized. Payroll disbursement requires payroll or approval workflow access.',
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'payrollIds' => 'required|array',
+                'payrollIds.*' => 'exists:payrolls,id',
+                'paymentDate' => 'nullable|date',
+                'paymentMethod' => 'nullable|in:bank_transfer,check,cash',
+                'payoutReference' => 'nullable|string|max:255',
+                'payoutProofType' => 'nullable|in:bank_reference,receipt_number,check_number,other',
+                'payoutProofReference' => 'nullable|string|max:255',
+                'payoutProofNotes' => 'nullable|string|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
+            $payrollIds = array_values(array_unique(array_map('intval', (array) $request->payrollIds)));
+            if (count($payrollIds) !== count((array) $request->payrollIds)) {
+                return response()->json([
+                    'errors' => [
+                        'payrollIds' => ['Duplicate payroll IDs are not allowed in a single disbursement request.'],
+                    ],
+                ], 422);
+            }
+
+            $processedCount = 0;
+            $errors = [];
+            $idempotencyConflicts = 0;
+            $paymentDate = (string) ($request->input('paymentDate') ?: now()->toDateString());
+
+            foreach ($payrollIds as $payrollId) {
+                try {
+                    DB::transaction(function () use ($user, $payrollId, $request, $paymentDate) {
+                        $payroll = Payroll::forShopOwner($user->shop_owner_id)
+                            ->with('employee')
+                            ->whereKey($payrollId)
+                            ->lockForUpdate()
+                            ->firstOrFail();
+
+                        if ($payroll->status === 'paid') {
+                            throw new \RuntimeException("Payroll ID {$payrollId} is already marked as paid");
+                        }
+
+                        if ($payroll->approval_status !== 'approved' || empty($payroll->approved_by)) {
+                            throw new \RuntimeException("Payroll ID {$payrollId} requires Finance checker approval before disbursement");
+                        }
+
+                        if ($payroll->status !== 'approved' || empty($payroll->final_approved_by)) {
+                            throw new \RuntimeException("Payroll ID {$payrollId} requires final owner approval before disbursement");
+                        }
+
+                        if ((int) $payroll->approved_by === (int) $payroll->final_approved_by) {
+                            throw new \RuntimeException("Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.");
+                        }
+
+                        $disbursementDetails = [
+                            'disbursed_by' => (int) $user->id,
+                        ];
+
+                        if ($request->filled('paymentMethod')) {
+                            $disbursementDetails['payment_method'] = (string) $request->input('paymentMethod');
+                        }
+
+                        if ($request->filled('payoutReference')) {
+                            $disbursementDetails['payout_reference'] = (string) $request->input('payoutReference');
+                        }
+
+                        if ($request->filled('payoutProofType')) {
+                            $disbursementDetails['payout_proof_type'] = (string) $request->input('payoutProofType');
+                        }
+
+                        if ($request->filled('payoutProofReference')) {
+                            $disbursementDetails['payout_proof_reference'] = (string) $request->input('payoutProofReference');
+                        }
+
+                        if ($request->filled('payoutProofNotes')) {
+                            $disbursementDetails['payout_proof_notes'] = (string) $request->input('payoutProofNotes');
+                        }
+
+                        $payroll->markAsPaid($paymentDate, $disbursementDetails);
+
+                        // Expense sync is best-effort only. Do not block disbursement if
+                        // finance expense schema/config differs in production.
+                        try {
+                            $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, $paymentDate);
+                        } catch (\Throwable $expenseError) {
+                            \Log::warning('Payroll disbursement expense sync skipped', [
+                                'payroll_id' => $payroll->id,
+                                'shop_owner_id' => $payroll->shop_owner_id,
+                                'error' => $expenseError->getMessage(),
+                            ]);
+                        }
+                    });
+
+                    $processedCount++;
+                } catch (\RuntimeException $e) {
+                    if (str_contains($e->getMessage(), 'already marked as paid')) {
+                        $idempotencyConflicts++;
+                    }
+                    $errors[] = $e->getMessage();
+                } catch (\Throwable $e) {
+                    $errors[] = "Error processing payroll ID {$payrollId}: " . $e->getMessage();
+                }
+            }
+
+            if ($processedCount === 0 && ! empty($errors)) {
+                $allErrorsAreIdempotencyConflicts = $idempotencyConflicts === count($errors);
+
+                return response()->json([
+                    'message' => $allErrorsAreIdempotencyConflicts
+                        ? 'Disbursement conflict: payroll is already marked as paid'
+                        : 'Payroll disbursement failed',
+                    'processed' => $processedCount,
+                    'errors' => $errors,
+                ], $allErrorsAreIdempotencyConflicts ? 409 : 422);
+            }
 
             return response()->json([
-                'message' => $allErrorsAreIdempotencyConflicts
-                    ? 'Disbursement conflict: payroll is already marked as paid'
-                    : 'Payroll disbursement failed',
+                'message' => 'Payroll disbursement completed',
                 'processed' => $processedCount,
                 'errors' => $errors,
-            ], $allErrorsAreIdempotencyConflicts ? 409 : 422);
-        }
+            ]);
+        } catch (QueryException $e) {
+            \Log::error('Payroll disbursement query failure', [
+                'user_id' => Auth::guard('user')->id(),
+                'shop_owner_id' => Auth::guard('user')->user()?->shop_owner_id,
+                'sql_state' => $e->errorInfo[0] ?? null,
+                'db_code' => $e->errorInfo[1] ?? null,
+                'message' => $e->getMessage(),
+            ]);
 
-        return response()->json([
-            'message' => 'Payroll disbursement completed',
-            'processed' => $processedCount,
-            'errors' => $errors,
-        ]);
+            return response()->json([
+                'message' => 'Payroll disbursement failed due to a database schema mismatch. Please contact support.',
+                'error' => 'DISBURSEMENT_SCHEMA_MISMATCH',
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Payroll disbursement unexpected failure', [
+                'user_id' => Auth::guard('user')->id(),
+                'shop_owner_id' => Auth::guard('user')->user()?->shop_owner_id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Unexpected error during payroll disbursement. Please try again.',
+                'error' => 'DISBURSEMENT_UNEXPECTED_ERROR',
+            ], 500);
+        }
     }
 
     /**
