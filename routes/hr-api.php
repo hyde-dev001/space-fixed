@@ -21,24 +21,24 @@
  */
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ERP\HR\EmployeeController;
+use App\Http\Controllers\Erp\HR\EmployeeController;
 use App\Http\Controllers\InvitationController;
-use App\Http\Controllers\ERP\HR\AttendanceController;
-use App\Http\Controllers\ERP\HR\LeaveController;
-use App\Http\Controllers\ERP\HR\PayrollController;
-use App\Http\Controllers\ERP\HR\PayrollBatchController;
-use App\Http\Controllers\ERP\HR\PayrollComponentController;
+use App\Http\Controllers\Erp\HR\AttendanceController;
+use App\Http\Controllers\Erp\HR\LeaveController;
+use App\Http\Controllers\Erp\HR\PayrollController;
+use App\Http\Controllers\Erp\HR\PayrollBatchController;
+use App\Http\Controllers\Erp\HR\PayrollComponentController;
 // Payslip approval moved to Finance module (finance-api.php + App\Http\Controllers\Api\Finance\PayslipApprovalController)
 // use App\Http\Controllers\ERP\HR\PayslipApprovalController;
 // use App\Http\Controllers\ERP\HR\PerformanceController; // TODO: Implement this controller
-use App\Http\Controllers\ERP\HR\DepartmentController;
-use App\Http\Controllers\ERP\HR\DocumentController;
-use App\Http\Controllers\ERP\HR\AuditLogController as HRAuditLogController;
+use App\Http\Controllers\Erp\HR\DepartmentController;
+use App\Http\Controllers\Erp\HR\DocumentController;
+use App\Http\Controllers\Erp\HR\AuditLogController as HRAuditLogController;
 use App\Http\Controllers\Erp\HR\NotificationController;
-use App\Http\Controllers\ERP\HR\HRAnalyticsController;
-use App\Http\Controllers\ERP\HR\SuspensionRequestController;
-use App\Http\Controllers\ERP\HR\SalaryChangeController;
-use App\Http\Controllers\ERP\HR\HolidayCalendarController;
+use App\Http\Controllers\Erp\HR\HRAnalyticsController;
+use App\Http\Controllers\Erp\HR\SuspensionRequestController;
+use App\Http\Controllers\Erp\HR\SalaryChangeController;
+use App\Http\Controllers\Erp\HR\HolidayCalendarController;
 
 /**
  * ERP Notification Routes (All ERP users)
@@ -164,11 +164,11 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
     // OVERTIME MANAGEMENT
     // ============================================
     Route::prefix('overtime-requests')->group(function () {
-        Route::get('/', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'index'])->name('hr.overtime.index');
-        Route::post('/{id}/approve', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'approve'])->name('hr.overtime.approve');
-        Route::post('/{id}/reject', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'reject'])->name('hr.overtime.reject');
-        Route::post('/{id}/confirm-hours', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'confirmHours'])->name('hr.overtime.confirm_hours');
-        Route::post('/assign', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'assignOvertime'])->name('hr.overtime.assign');
+        Route::get('/', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'index'])->name('hr.overtime.index');
+        Route::post('/{id}/approve', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'approve'])->name('hr.overtime.approve');
+        Route::post('/{id}/reject', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'reject'])->name('hr.overtime.reject');
+        Route::post('/{id}/confirm-hours', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'confirmHours'])->name('hr.overtime.confirm_hours');
+        Route::post('/assign', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'assignOvertime'])->name('hr.overtime.assign');
     });
 
     // ============================================
@@ -335,12 +335,12 @@ Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
     // SELF-SERVICE OVERTIME
     // ============================================
     Route::prefix('overtime')->group(function () {
-        Route::post('/request', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'staffRequest'])->name('staff.overtime.request');
-        Route::get('/my-requests', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'staffMyRequests'])->name('staff.overtime.my_requests');
-        Route::get('/today-approved', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'getTodayApprovedOvertime'])->name('staff.overtime.today_approved');
-        Route::post('/{id}/check-in', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'overtimeCheckIn'])->name('staff.overtime.check_in');
-        Route::post('/{id}/check-out', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'overtimeCheckOut'])->name('staff.overtime.check_out');
-        Route::post('/{id}/cancel', [\App\Http\Controllers\ERP\HR\OvertimeController::class, 'cancel'])->name('staff.overtime.cancel');
+        Route::post('/request', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'staffRequest'])->name('staff.overtime.request');
+        Route::get('/my-requests', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'staffMyRequests'])->name('staff.overtime.my_requests');
+        Route::get('/today-approved', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'getTodayApprovedOvertime'])->name('staff.overtime.today_approved');
+        Route::post('/{id}/check-in', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'overtimeCheckIn'])->name('staff.overtime.check_in');
+        Route::post('/{id}/check-out', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'overtimeCheckOut'])->name('staff.overtime.check_out');
+        Route::post('/{id}/cancel', [\App\Http\Controllers\Erp\HR\OvertimeController::class, 'cancel'])->name('staff.overtime.cancel');
     });
 
     // ============================================
