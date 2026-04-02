@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -342,37 +343,52 @@ class Payroll extends Model
     public function markAsPaid(?string $paymentDate = null, array $details = []): bool
     {
         $this->status = 'paid';
-        $this->payment_date = $paymentDate
-            ? \Carbon\Carbon::parse($paymentDate)
-            : now();
+        if ($this->hasPayrollColumn('payment_date')) {
+            $this->payment_date = $paymentDate
+                ? \Carbon\Carbon::parse($paymentDate)
+                : now();
+        }
 
-        if (array_key_exists('payment_method', $details)) {
+        if ($this->hasPayrollColumn('payment_method') && array_key_exists('payment_method', $details)) {
             $this->payment_method = $details['payment_method'];
         }
 
-        if (array_key_exists('payout_reference', $details)) {
+        if ($this->hasPayrollColumn('payout_reference') && array_key_exists('payout_reference', $details)) {
             $this->payout_reference = $details['payout_reference'];
         }
 
-        if (array_key_exists('payout_proof_type', $details)) {
+        if ($this->hasPayrollColumn('payout_proof_type') && array_key_exists('payout_proof_type', $details)) {
             $this->payout_proof_type = $details['payout_proof_type'];
         }
 
-        if (array_key_exists('payout_proof_reference', $details)) {
+        if ($this->hasPayrollColumn('payout_proof_reference') && array_key_exists('payout_proof_reference', $details)) {
             $this->payout_proof_reference = $details['payout_proof_reference'];
         }
 
-        if (array_key_exists('payout_proof_notes', $details)) {
+        if ($this->hasPayrollColumn('payout_proof_notes') && array_key_exists('payout_proof_notes', $details)) {
             $this->payout_proof_notes = $details['payout_proof_notes'];
         }
 
-        if (array_key_exists('disbursed_by', $details)) {
+        if ($this->hasPayrollColumn('disbursed_by') && array_key_exists('disbursed_by', $details)) {
             $this->disbursed_by = $details['disbursed_by'];
         }
 
-        $this->disbursed_at = now();
+        if ($this->hasPayrollColumn('disbursed_at')) {
+            $this->disbursed_at = now();
+        }
 
         return $this->save();
+    }
+
+    private function hasPayrollColumn(string $column): bool
+    {
+        static $cache = [];
+
+        if (!array_key_exists($column, $cache)) {
+            $cache[$column] = Schema::hasColumn($this->getTable(), $column);
+        }
+
+        return $cache[$column];
     }
 
     /**
