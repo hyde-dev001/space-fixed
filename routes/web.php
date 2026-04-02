@@ -1391,7 +1391,7 @@ Route::prefix('training')->name('training.')->middleware('auth:user')->group(fun
 // ERP notifications page
 Route::get('/erp/notifications', function () {
     return Inertia::render('Notifications/ERPNotifications');
-})->middleware(['auth:user', 'check.suspension'])->name('erp.notifications.index');
+})->middleware(['auth:user', 'check.suspension'])->name('erp.notifications.page');
 
 // ERP notification preferences
 Route::get('/erp/notifications/settings', function () {
