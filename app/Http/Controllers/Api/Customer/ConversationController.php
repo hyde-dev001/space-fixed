@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API\Customer;
+namespace App\Http\Controllers\Api\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;

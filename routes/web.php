@@ -250,11 +250,11 @@ Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth
 
 // Customer Conversation Routes - Customer-side chat with shops
 Route::prefix('api/customer/conversations')->middleware(['auth:user', 'customer.account'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\Customer\ConversationController::class, 'index']);
-    Route::get('/shops', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getContactedShops']);
-    Route::post('/get-or-create', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getOrCreate']);
-    Route::get('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'getMessages']);
-    Route::post('/{conversation}/messages', [\App\Http\Controllers\API\Customer\ConversationController::class, 'sendMessage']);
+    Route::get('/', [\App\Http\Controllers\Api\Customer\ConversationController::class, 'index']);
+    Route::get('/shops', [\App\Http\Controllers\Api\Customer\ConversationController::class, 'getContactedShops']);
+    Route::post('/get-or-create', [\App\Http\Controllers\Api\Customer\ConversationController::class, 'getOrCreate']);
+    Route::get('/{conversation}/messages', [\App\Http\Controllers\Api\Customer\ConversationController::class, 'getMessages']);
+    Route::post('/{conversation}/messages', [\App\Http\Controllers\Api\Customer\ConversationController::class, 'sendMessage']);
 });
 
 // Customer Badge Counts - Real-time counts for navigation header icons
