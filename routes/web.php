@@ -2205,11 +2205,4 @@ Route::prefix('api/leave')->name('api.leave.')->middleware(['auth:user'])->group
 Route::post('/api/shop/register', [ShopRegistrationController::class, 'store']);
 Route::post('/api/shop/register-full', [ShopRegistrationController::class, 'storeFull']);
 
-/**
- * Load Module-Specific API Routes
- * Following best practice: separate API files for better organization
- */
-require __DIR__ . '/hr-api.php';
-require __DIR__ . '/finance-api.php';
-require __DIR__ . '/shop-owner-api.php';
-require __DIR__ . '/permission-audit-api.php';
+// Module-specific API routes are registered in bootstrap/app.php via withRouting(... then: ...)
