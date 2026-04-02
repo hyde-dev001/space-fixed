@@ -7,6 +7,7 @@ use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ProductInventoryController extends Controller
 {
@@ -61,6 +62,12 @@ class ProductInventoryController extends Controller
         }
         
         $products = $query->paginate($request->per_page ?? 20)->withQueryString();
+
+        $products->setCollection(
+            $products->getCollection()->map(function (InventoryItem $item) {
+                return $this->sanitizeItemImagePaths($item);
+            })
+        );
         
         return response()->json($products);
     }
@@ -82,6 +89,8 @@ class ProductInventoryController extends Controller
             ])
             ->where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $product = $this->sanitizeItemImagePaths($product);
         
         return response()->json($product);
     }
@@ -187,5 +196,41 @@ class ProductInventoryController extends Controller
             'message' => 'Quantities updated successfully',
             'updated_count' => count($validated['items'])
         ]);
+    }
+
+    private function sanitizeItemImagePaths(InventoryItem $item): InventoryItem
+    {
+        if ($item->main_image && !$this->publicFileExists($item->main_image)) {
+            $item->main_image = null;
+        }
+
+        if ($item->relationLoaded('images')) {
+            $item->setRelation(
+                'images',
+                $item->images
+                    ->filter(fn ($image) => $image->image_path && $this->publicFileExists($image->image_path))
+                    ->values()
+            );
+        }
+
+        if ($item->relationLoaded('colorVariants')) {
+            $item->colorVariants->each(function ($variant) {
+                if ($variant->relationLoaded('images')) {
+                    $variant->setRelation(
+                        'images',
+                        $variant->images
+                            ->filter(fn ($image) => $image->image_path && $this->publicFileExists($image->image_path))
+                            ->values()
+                    );
+                }
+            });
+        }
+
+        return $item;
+    }
+
+    private function publicFileExists(string $path): bool
+    {
+        return Storage::disk('public')->exists(ltrim($path, '/'));
     }
 }

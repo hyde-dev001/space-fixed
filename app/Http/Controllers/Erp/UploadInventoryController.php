@@ -58,6 +58,38 @@ class UploadInventoryController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->per_page ?? 20)
             ->withQueryString();
+
+        $items->setCollection(
+            $items->getCollection()->map(function (InventoryItem $item) {
+                if ($item->main_image && !Storage::disk('public')->exists(ltrim($item->main_image, '/'))) {
+                    $item->main_image = null;
+                }
+
+                if ($item->relationLoaded('images')) {
+                    $item->setRelation(
+                        'images',
+                        $item->images
+                            ->filter(fn ($image) => $image->image_path && Storage::disk('public')->exists(ltrim($image->image_path, '/')))
+                            ->values()
+                    );
+                }
+
+                if ($item->relationLoaded('colorVariants')) {
+                    $item->colorVariants->each(function ($variant) {
+                        if ($variant->relationLoaded('images')) {
+                            $variant->setRelation(
+                                'images',
+                                $variant->images
+                                    ->filter(fn ($image) => $image->image_path && Storage::disk('public')->exists(ltrim($image->image_path, '/')))
+                                    ->values()
+                            );
+                        }
+                    });
+                }
+
+                return $item;
+            })
+        );
         
         return response()->json($items);
     }
