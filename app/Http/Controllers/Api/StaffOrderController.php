@@ -15,6 +15,21 @@ use Illuminate\Support\Facades\Log;
 
 class StaffOrderController extends Controller
 {
+    private function canAccessStaffOrders($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Primary gate: explicit permission used by route middleware.
+        if (method_exists($user, 'can') && $user->can('access-staff-job-orders')) {
+            return true;
+        }
+
+        // Fallback for legacy role-column based records.
+        return in_array(strtoupper((string) ($user->role ?? '')), ['STAFF', 'MANAGER'], true);
+    }
+
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
     ) {
@@ -28,8 +43,8 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        // Check if user has STAFF or MANAGER role
-        if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+        // Check if user can access staff job orders.
+        if (!$this->canAccessStaffOrders($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -148,8 +163,8 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        // Check if user has STAFF or MANAGER role
-        if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+        // Check if user can access staff job orders.
+        if (!$this->canAccessStaffOrders($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -292,8 +307,8 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        // Check if user has STAFF or MANAGER role
-        if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+        // Check if user can access staff job orders.
+        if (!$this->canAccessStaffOrders($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -392,7 +407,7 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+        if (!$this->canAccessStaffOrders($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -462,7 +477,7 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+        if (!$this->canAccessStaffOrders($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -520,8 +535,8 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        // Check if user has STAFF or MANAGER role
-        if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+        // Check if user can access staff job orders.
+        if (!$this->canAccessStaffOrders($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -586,8 +601,8 @@ class StaffOrderController extends Controller
                 ], 401);
             }
 
-            // Check if user has STAFF or MANAGER role
-            if (!in_array($user->role, ['STAFF', 'MANAGER'])) {
+            // Check if user can access staff job orders.
+            if (!$this->canAccessStaffOrders($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
