@@ -304,6 +304,11 @@ const formatDate = (value?: string) => {
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
 
+const parseLinkedUserId = (linkedUser?: string) => {
+  const numericValue = Number(linkedUser ?? 0);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+};
+
 const isRepairerRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'repairer';
 
 // Transform snake_case API response to camelCase for frontend
@@ -625,6 +630,7 @@ export const EmployeeManagement: React.FC<{
   const [invitationModal, setInvitationModal] = useState<{
     isOpen: boolean;
     employeeId: number | null;
+    employeeUserId: number | null;
     employeeName: string;
     workEmail: string;
     inviteUrl: string;
@@ -636,6 +642,7 @@ export const EmployeeManagement: React.FC<{
   }>({
     isOpen: false,
     employeeId: null,
+    employeeUserId: null,
     employeeName: "",
     workEmail: "",
     inviteUrl: "",
@@ -648,6 +655,7 @@ export const EmployeeManagement: React.FC<{
 
   const openInvitationModal = (payload: {
     employeeId?: number | null;
+    employeeUserId?: number | null;
     employeeName: string;
     workEmail: string;
     inviteUrl: string;
@@ -657,6 +665,7 @@ export const EmployeeManagement: React.FC<{
     setInvitationModal({
       isOpen: true,
       employeeId: payload.employeeId ?? null,
+      employeeUserId: payload.employeeUserId ?? null,
       employeeName: payload.employeeName,
       workEmail: payload.workEmail,
       inviteUrl: payload.inviteUrl,
@@ -687,8 +696,8 @@ export const EmployeeManagement: React.FC<{
   };
 
   const sendInvitationToPersonalEmail = async () => {
-    if (!invitationModal.employeeId) {
-      Swal.fire({ icon: 'error', title: 'Missing Employee', text: 'Employee id is not available.' });
+    if (!invitationModal.employeeId && !invitationModal.employeeUserId) {
+      Swal.fire({ icon: 'error', title: 'Missing Employee', text: 'Employee identifier is not available.' });
       return;
     }
 
@@ -712,18 +721,31 @@ export const EmployeeManagement: React.FC<{
     try {
       setInvitationModal((prev) => ({ ...prev, isSendingEmail: true }));
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const emailResponse = await fetch(`/api/hr/employees/${invitationModal.employeeId}/send-invitation-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': csrf || ''
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          personal_email: personalEmail,
-        })
+      const requestBody = JSON.stringify({
+        personal_email: personalEmail,
       });
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-TOKEN': csrf || ''
+      };
+
+      let emailResponse = await fetch(`/api/hr/employees/${invitationModal.employeeId}/send-invitation-email`, {
+        method: 'POST',
+        headers: requestHeaders,
+        credentials: 'include',
+        body: requestBody,
+      });
+
+      if (!emailResponse.ok && [404, 405].includes(emailResponse.status) && invitationModal.employeeUserId) {
+        emailResponse = await fetch(`/api/shop-owner/employees/${invitationModal.employeeUserId}/send-invitation-email`, {
+          method: 'POST',
+          headers: requestHeaders,
+          credentials: 'include',
+          body: requestBody,
+        });
+      }
 
       if (!emailResponse.ok) {
         const errorData = await emailResponse.json().catch(() => ({}));
@@ -866,6 +888,7 @@ export const EmployeeManagement: React.FC<{
     if (!success || !invite_url) return;
     openInvitationModal({
       employeeId: employee?.id ?? null,
+      employeeUserId: parseLinkedUserId(employee?.linked_user || employee?.linkedUser),
       employeeName: employee?.name || 'Employee',
       workEmail: employee?.email || 'N/A',
       inviteUrl: invite_url,
@@ -1461,6 +1484,7 @@ export const EmployeeManagement: React.FC<{
       const data = await response.json();
       openInvitationModal({
         employeeId: employee.id,
+        employeeUserId: parseLinkedUserId(employee.linkedUser),
         employeeName: buildName(employee),
         workEmail: employee.email,
         inviteUrl: data.invite_url,
@@ -1848,6 +1872,7 @@ export const EmployeeManagement: React.FC<{
           if (data.invite_url) {
             openInvitationModal({
               employeeId: newEmployee.id,
+              employeeUserId: parseLinkedUserId(newEmployee.linkedUser),
               employeeName: `${newEmployee.firstName} ${newEmployee.lastName}`,
               workEmail: newEmployee.email,
               inviteUrl: data.invite_url,
@@ -3068,7 +3093,7 @@ export const EmployeeManagement: React.FC<{
                   </button>
                   <button
                     onClick={sendInvitationToPersonalEmail}
-                    disabled={invitationModal.isSendingEmail || !invitationModal.employeeId}
+                    disabled={invitationModal.isSendingEmail || (!invitationModal.employeeId && !invitationModal.employeeUserId)}
                     className={`px-5 py-2.5 rounded-md text-base font-medium text-white ${invitationModal.isSendingEmail ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                   >
                     {invitationModal.isSendingEmail ? 'Sending...' : 'Email to Personal Address'}
