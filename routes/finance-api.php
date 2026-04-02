@@ -128,7 +128,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Separated from the HR module intentionally: Finance approves, HR generates.
  * Access: Shop Owner role OR Finance approval permissions
  */
-Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'role_or_permission:Shop Owner|approve-payroll|access-payslip-approval|access-approval-workflow', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
     Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
     Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->whereNumber('id')->name('finance.payslip_approval.show');
     Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->whereNumber('id')->name('finance.payslip_approval.approve');
