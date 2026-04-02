@@ -588,10 +588,10 @@ export default function UploadInventory() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number, productName: string) => {
     const confirmation = await Swal.fire({
-      title: 'Delete Stock Entry?',
-      text: 'This stock item will be removed permanently. This action cannot be undone.',
+      title: 'Delete Product?',
+      html: `You are about to delete <strong>${productName}</strong>.<br/>This action cannot be undone.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#dc2626',
@@ -605,9 +605,20 @@ export default function UploadInventory() {
     try {
       await inventoryItemAPI.delete(id);
       setStocks((previous) => previous.filter((item) => item.id !== id));
+      await Swal.fire({
+        icon: 'success',
+        title: 'Deleted',
+        text: `${productName} was deleted successfully.`,
+        timer: 1500,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error('Failed to delete stock item', err);
-      alert('Could not delete item. Please try again.');
+      await Swal.fire({
+        icon: 'error',
+        title: 'Delete Failed',
+        text: 'Could not delete item. Please try again.',
+      });
     }
   };
 
@@ -927,7 +938,7 @@ export default function UploadInventory() {
                             </svg>
                           </button>
                           <button
-                            onClick={() => handleDelete(stock.id)}
+                            onClick={() => handleDelete(stock.id, stock.name)}
                             className="p-2 text-red-600 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                             title="Delete stock"
                           >

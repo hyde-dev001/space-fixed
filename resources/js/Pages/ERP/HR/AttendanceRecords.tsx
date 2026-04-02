@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import Swal from "sweetalert2";
 
 // Icon Components
 const UsersIcon = ({ className }: { className?: string }) => (
@@ -489,8 +490,19 @@ const ViewAttendance: React.FC = () => {
       );
       setIsEditModalOpen(false);
       setEditRecord(null);
+      Swal.fire({
+        icon: "success",
+        title: "Updated",
+        text: "Attendance record updated successfully.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
     } catch (error: any) {
-      alert(error.message || 'Failed to save attendance correction.');
+      Swal.fire({
+        icon: "error",
+        title: "Update Failed",
+        text: error.message || "Failed to save attendance correction.",
+      });
     } finally {
       setIsSavingEdit(false);
     }
