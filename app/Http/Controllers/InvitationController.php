@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Inertia\Inertia;
@@ -177,8 +178,19 @@ class InvitationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $employee = Employee::findOrFail($employeeId);
-        $user = User::where('email', $employee->email)->first();
+        $employee = Employee::query()
+            ->where('id', $employeeId)
+            ->where('shop_owner_id', $authUser->shop_owner_id)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['error' => 'Employee not found'], 404);
+        }
+
+        $user = User::query()
+            ->where('email', $employee->email)
+            ->where('shop_owner_id', $authUser->shop_owner_id)
+            ->first();
         
         if (!$user) {
             return response()->json(['error' => 'User account not found'], 404);
@@ -215,12 +227,28 @@ class InvitationController extends Controller
      */
     public function sendInvitationEmail(Request $request, $employeeId)
     {
+        $authUser = Auth::guard('user')->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'personal_email' => 'required|email',
         ]);
 
-        $employee = Employee::findOrFail($employeeId);
-        $user = User::where('email', $employee->email)->first();
+        $employee = Employee::query()
+            ->where('id', $employeeId)
+            ->where('shop_owner_id', $authUser->shop_owner_id)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['error' => 'Employee not found'], 404);
+        }
+
+        $user = User::query()
+            ->where('email', $employee->email)
+            ->where('shop_owner_id', $authUser->shop_owner_id)
+            ->first();
 
         if (!$user) {
             return response()->json(['error' => 'User account not found'], 404);
@@ -242,7 +270,7 @@ class InvitationController extends Controller
         $workEmail = $user->email;
 
         try {
-            \Mail::send([], [], function ($message) use ($employeeName, $inviteUrl, $shopName, $expiresAt, $personalEmail, $workEmail) {
+            Mail::send([], [], function ($message) use ($employeeName, $inviteUrl, $shopName, $expiresAt, $personalEmail, $workEmail) {
                 $message->to($personalEmail)
                     ->subject("Your {$shopName} Account Invitation")
                     ->html("
@@ -289,10 +317,12 @@ class InvitationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "Invitation email sent successfully to {$personalEmail}",
+                'invite_url' => $inviteUrl,
+                'invite_expires_at' => $user->invite_expires_at->toIso8601String(),
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Failed to send invitation email: ' . $e->getMessage());
+            Log::error('Failed to send invitation email: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to send email: ' . $e->getMessage()], 500);
         }
     }
@@ -324,7 +354,7 @@ class InvitationController extends Controller
                 'message' => 'Invitation email resent successfully'
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to resend invitation email: ' . $e->getMessage());
+            Log::error('Failed to resend invitation email: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to send email'], 500);
         }
     }
