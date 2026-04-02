@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -516,6 +517,8 @@ class OrderController extends Controller
                 'message' => 'Refund request submitted successfully and is pending approval.',
                 'refund' => $refundRequest->fresh(),
             ]);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('Failed to submit refund request', [
                 'order_id' => $request->input('order_id'),
@@ -562,7 +565,8 @@ class OrderController extends Controller
                 $columns = Schema::getColumnListing('order_refunds');
                 $this->orderRefundColumns = array_fill_keys($columns, true);
             } catch (\Throwable $e) {
-                $this->orderRefundColumns = [];
+                // If schema introspection fails in prod, fall back to original payload keys.
+                return true;
             }
         }
 
