@@ -6,6 +6,7 @@ import { ApexOptions } from "apexcharts";
 
 interface FinanceDashboardStats {
     totalRevenue: number;
+    refundedRevenue: number;
     totalExpenses: number;
     pendingInvoices: number;
     netProfit: number;
@@ -118,9 +119,16 @@ const MetricCard = ({
 };
 
 export default function FinanceDashboard() {
-    const { auth, invoices = [], expenses = [] } = usePage().props as any;
+    const { auth, invoices = [], expenses = [], refunds = [], refundedRevenue: refundedRevenueProp = 0 } = usePage().props as any;
 
     // Calculate stats from real data - only count PAID invoices for revenue
+    const refundedRevenue = typeof refundedRevenueProp === 'number'
+        ? refundedRevenueProp
+        : refunds.reduce((sum: number, refund: any) => {
+            const amount = typeof refund.amount === 'string' ? parseFloat(refund.amount) : refund.amount;
+            return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
     const stats: FinanceDashboardStats = {
         totalRevenue: invoices
             .filter(inv => inv.status === 'paid')
@@ -128,6 +136,7 @@ export default function FinanceDashboard() {
                 const total = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total;
                 return sum + (isNaN(total) ? 0 : total);
             }, 0),
+        refundedRevenue,
         totalExpenses: expenses.reduce((sum, exp) => {
             const amount = typeof exp.amount === 'string' ? parseFloat(exp.amount) : exp.amount;
             return sum + (isNaN(amount) ? 0 : amount);
@@ -136,17 +145,26 @@ export default function FinanceDashboard() {
         netProfit: 0,
     };
     
-    stats.netProfit = stats.totalRevenue - stats.totalExpenses;
+    stats.netProfit = stats.totalRevenue - stats.refundedRevenue - stats.totalExpenses;
 
     const metrics: MetricCardProps[] = [
         {
-            title: 'Total Revenue',
+            title: 'Gross Revenue',
             value: `₱${stats.totalRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
             change: 15,
             changeType: 'increase',
             icon: DollarIconSvg,
             color: 'success',
             description: `From ${invoices.filter(inv => inv.status === 'paid').length} paid invoices`,
+        },
+        {
+            title: 'Refunded Revenue',
+            value: `₱${stats.refundedRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            change: 4,
+            changeType: stats.refundedRevenue > 0 ? 'decrease' : 'increase',
+            icon: AlertIconSvg,
+            color: 'warning',
+            description: `${refunds.length} refunded transactions settled this year`,
         },
         {
             title: 'Total Expenses',
@@ -173,7 +191,7 @@ export default function FinanceDashboard() {
             changeType: stats.netProfit >= 0 ? 'increase' : 'decrease',
             icon: DollarIconSvg,
             color: stats.netProfit >= 0 ? 'success' : 'error',
-            description: 'Revenue minus expenses',
+            description: 'Revenue minus refunds and expenses',
         },
     ];
 
@@ -182,6 +200,7 @@ export default function FinanceDashboard() {
     const now = new Date();
     const chartMonths: string[] = [];
     const chartRevenue: number[] = [];
+    const chartRefunds: number[] = [];
     for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         chartMonths.push(MONTH_NAMES[d.getMonth()]);
@@ -194,6 +213,14 @@ export default function FinanceDashboard() {
             })
             .reduce((sum: number, inv: any) => sum + (parseFloat(String(inv.total)) || 0), 0);
         chartRevenue.push(monthTotal);
+
+        const monthRefundTotal = refunds
+            .filter((refund: any) => {
+                const refundDate = new Date(refund.refunded_at);
+                return refundDate.getFullYear() === d.getFullYear() && refundDate.getMonth() === d.getMonth();
+            })
+            .reduce((sum: number, refund: any) => sum + (parseFloat(String(refund.amount)) || 0), 0);
+        chartRefunds.push(monthRefundTotal);
     }
 
     const revenueChartOptions: ApexOptions = {
@@ -216,17 +243,29 @@ export default function FinanceDashboard() {
         xaxis: {
             categories: chartMonths,
         },
+        yaxis: {
+            labels: {
+                formatter: (val) => `₱${val.toLocaleString()}`,
+            },
+        },
         tooltip: {
             y: {
                 formatter: (val) => `₱${val.toLocaleString()}`,
             },
         },
+        legend: {
+            position: 'top',
+        },
     };
 
     const revenueChartSeries = [
         {
-            name: 'Revenue',
+            name: 'Gross Revenue',
             data: chartRevenue,
+        },
+        {
+            name: 'Refunded Revenue',
+            data: chartRefunds,
         },
     ];
 

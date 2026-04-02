@@ -1482,9 +1482,23 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             ->orderBy('date', 'desc')
             ->get();
 
+        $refunds = \App\Models\OrderRefund::query()
+            ->where('shop_owner_id', $shopId)
+            ->whereYear('refunded_at', $year)
+            ->whereNotNull('refunded_at')
+            ->select(['id', 'order_id', 'amount', 'status', 'refunded_at', 'requested_at'])
+            ->orderByDesc('refunded_at')
+            ->get();
+
+        $refundedRevenue = $refunds->sum(function ($refund) {
+            return (float) ($refund->amount ?? 0);
+        });
+
         return Inertia::render('ERP/Finance/Dashboard', [
             'invoices' => $invoices,
             'expenses' => $expenses,
+            'refunds' => $refunds,
+            'refundedRevenue' => $refundedRevenue,
         ]);
     })->name('dashboard');
 
