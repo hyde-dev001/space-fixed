@@ -1378,7 +1378,7 @@ export default function ProductManagement() {
 
       const url = editingProduct
         ? `/api/products/${editingProduct.id}`
-        : '/api/products/';
+        : '/api/products';
 
       const method = editingProduct ? 'PUT' : 'POST';
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
