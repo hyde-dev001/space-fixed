@@ -413,9 +413,14 @@ export default function ProductManagement() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const productsResponse = await fetch('/api/products/my/products', {
+      const productsResponse = await fetch(`/api/products/my/products?ts=${Date.now()}`, {
         credentials: 'include',
-        headers: { 'Accept': 'application/json' }
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        }
       });
 
       if (!productsResponse.ok) {
@@ -1396,6 +1401,19 @@ export default function ProductManagement() {
 
       const result = await response.json();
       createdProductId = result.product?.id || editingProduct?.id;
+
+      // Reflect the saved record immediately in UI even if a stale GET cache is served.
+      if (result?.product) {
+        const saved = result.product as Product;
+        setProducts((prev) => {
+          if (editingProduct) {
+            return prev.map((p) => (p.id === saved.id ? { ...p, ...saved } : p));
+          }
+
+          const exists = prev.some((p) => p.id === saved.id);
+          return exists ? prev : [saved, ...prev];
+        });
+      }
 
       // Upload color variants with images
       let colorVariantUploadResult: ColorVariantUploadResult | null = null;

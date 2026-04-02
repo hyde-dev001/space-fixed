@@ -313,10 +313,12 @@ class ProductController extends Controller
                 return $product;
             });
 
-            return response()->json([
+                        return response()->json([
                 'success' => true,
                 'products' => $products,
-            ]);
+                        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                            ->header('Pragma', 'no-cache')
+                            ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Error fetching products', [
                 'error' => $e->getMessage(),
@@ -648,11 +650,14 @@ class ProductController extends Controller
                     'variants_count' => count($validated['variants'] ?? []),
                 ]);
 
-                return response()->json([
+                                return response()->json([
                     'success' => true,
                     'message' => 'Product created successfully',
                     'product' => $product->load('variants'),
-                ], 201);
+                                ], 201)
+                                    ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                                    ->header('Pragma', 'no-cache')
+                                    ->header('Expires', '0');
             } catch (\Exception $e) {
                 DB::rollBack();
                 throw $e;
