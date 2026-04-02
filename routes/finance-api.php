@@ -19,7 +19,7 @@ use App\Http\Controllers\Api\Finance\ExpenseController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\ERP\HR\PayrollController;
-use App\Http\Controllers\ERP\PurchaseRequestController as ErpPurchaseRequestController;
+use App\Http\Controllers\Erp\PurchaseRequestController as ErpPurchaseRequestController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\Api\RefundApprovalController;

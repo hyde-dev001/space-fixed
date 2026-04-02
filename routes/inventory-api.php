@@ -5,9 +5,9 @@ use App\Http\Controllers\ERP\ProductInventoryController;
 use App\Http\Controllers\ERP\StockMovementController;
 use App\Http\Controllers\ERP\SupplierOrderMonitoringController;
 use App\Http\Controllers\ERP\UploadInventoryController;
-use App\Http\Controllers\ERP\SupplierController;
+use App\Http\Controllers\Erp\SupplierController;
 use App\Http\Controllers\ERP\SupplierOrderController;
-use App\Http\Controllers\ERP\StockRequestApprovalController;
+use App\Http\Controllers\Erp\StockRequestApprovalController;
 use Illuminate\Support\Facades\Route;
 
 /*

@@ -1,10 +1,10 @@
 <?php
 
-use App\Http\Controllers\ERP\PurchaseRequestController;
-use App\Http\Controllers\ERP\PurchaseOrderController;
-use App\Http\Controllers\ERP\StockRequestApprovalController;
-use App\Http\Controllers\ERP\SupplierController;
-use App\Http\Controllers\ERP\ProcurementSettingsController;
+use App\Http\Controllers\Erp\PurchaseRequestController;
+use App\Http\Controllers\Erp\PurchaseOrderController;
+use App\Http\Controllers\Erp\StockRequestApprovalController;
+use App\Http\Controllers\Erp\SupplierController;
+use App\Http\Controllers\Erp\ProcurementSettingsController;
 use Illuminate\Support\Facades\Route;
 
 /*
