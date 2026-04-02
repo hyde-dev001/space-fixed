@@ -581,6 +581,18 @@ class ProductController extends Controller
                 }
 
                 if (!empty($linkedInventoryItem->product_id)) {
+                    $linkedProduct = Product::withTrashed()
+                        ->select('id', 'deleted_at')
+                        ->find((int) $linkedInventoryItem->product_id);
+
+                    // Allow re-linking when inventory still points to a deleted/missing product.
+                    if (!$linkedProduct || $linkedProduct->trashed()) {
+                        $linkedInventoryItem->update(['product_id' => null]);
+                        $linkedInventoryItem->refresh();
+                    }
+                }
+
+                if (!empty($linkedInventoryItem->product_id)) {
                     return response()->json([
                         'success' => false,
                         'message' => 'This inventory item is already linked to a product.',

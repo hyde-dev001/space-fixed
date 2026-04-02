@@ -1395,8 +1395,8 @@ export default function ProductManagement() {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save product');
+        const message = await readApiErrorMessage(response, 'Failed to save product');
+        throw new Error(message);
       }
 
       const result = await response.json();

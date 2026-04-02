@@ -53,7 +53,10 @@ class UploadInventoryController extends Controller
                 $query->whereRaw('1 = 0');
             })
             ->when($request->boolean('available_for_product'), function ($query) {
-                $query->whereNull('product_id');
+                $query->where(function ($availabilityQuery) {
+                    $availabilityQuery->whereNull('product_id')
+                        ->orWhereDoesntHave('product');
+                });
             })
             ->orderBy('created_at', 'desc')
             ->paginate($request->per_page ?? 20)
