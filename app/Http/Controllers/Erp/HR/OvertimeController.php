@@ -665,15 +665,6 @@ class OvertimeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        if (
-            ! $user->hasRole('Manager')
-            && ! $user->can('manage-attendance')
-            && ! $user->can('access-overtime-approvals')
-            && ! $user->can('access-attendance-records')
-        ) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
         $overtimeRequest = OvertimeRequest::forShopOwner($user->shop_owner_id)
             ->findOrFail($id);
 
@@ -729,15 +720,6 @@ class OvertimeController extends Controller
         $user = Auth::guard('user')->user();
 
         if (! $user) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        if (
-            ! $user->hasRole('Manager')
-            && ! $user->can('manage-attendance')
-            && ! $user->can('access-overtime-approvals')
-            && ! $user->can('access-attendance-records')
-        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
