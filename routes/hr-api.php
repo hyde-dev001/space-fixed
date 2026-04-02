@@ -141,6 +141,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/lateness/trends', [AttendanceController::class, 'getLatenessTrends'])->name('hr.attendance.lateness.trends');
         
         Route::get('/{id}', [AttendanceController::class, 'show'])->name('hr.attendance.show');
+        Route::patch('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.patch');
         Route::put('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.update');
         Route::delete('/{id}', [AttendanceController::class, 'destroy'])->name('hr.attendance.destroy');
     });
