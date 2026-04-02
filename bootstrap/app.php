@@ -17,15 +17,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/inventory-api.php'));
             
             Route::middleware('api')
-                ->prefix('api')
                 ->group(base_path('routes/hr-api.php'));
             
             Route::middleware('api')
-                ->prefix('api')
                 ->group(base_path('routes/finance-api.php'));
             
             Route::middleware('api')
-                ->prefix('api')
                 ->group(base_path('routes/permission-audit-api.php'));
             
             Route::middleware('api')
