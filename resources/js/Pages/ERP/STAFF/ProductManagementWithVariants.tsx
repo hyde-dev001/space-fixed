@@ -1855,11 +1855,10 @@ export default function ProductManagement() {
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-1 overflow-y-auto flex flex-col gap-6 p-6 pr-2">
               
-              {/* Hide variant/image management in staff edit mode (details-only edit). */}
-              {!isStaffDetailOnlyEdit && (
-                <div className="order-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
-                  {selectedInventoryItem && !editingProduct ? (
-                    <div>
+              {/* Variant/image section remains visible in staff edit, but controls are read-only when locked. */}
+              <div className="order-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
+                {selectedInventoryItem && !editingProduct ? (
+                  <div>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-base font-semibold text-gray-900 dark:text-white">Color Variants &amp; Sizes</h3>
                     </div>
@@ -1900,17 +1899,16 @@ export default function ProductManagement() {
                         ))}
                       </div>
                     )}
-                    </div>
-                  ) : (
-                    <ColorVariantManager
-                      colorVariants={colorVariants}
-                      onColorVariantsChange={setColorVariants}
-                      isEditing={!!editingProduct}
-                      lockStockEditing={!!editingProduct && isCompanyStaff}
-                    />
-                  )}
-                </div>
-              )}
+                  </div>
+                ) : (
+                  <ColorVariantManager
+                    colorVariants={colorVariants}
+                    onColorVariantsChange={setColorVariants}
+                    isEditing={!!editingProduct}
+                    lockStockEditing={!!editingProduct && isCompanyStaff}
+                  />
+                )}
+              </div>
 
               {!isStaffDetailOnlyEdit && show3DShoeModels && (canUse360Uploader || hasExistingShowroomFrames) && (
                 <div className="order-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
