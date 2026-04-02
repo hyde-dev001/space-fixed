@@ -1008,14 +1008,28 @@ export default function JobOrdersPage() {
 
   const handleConfirmReturnReceived = async (order: Order) => {
     const latestRefund = order.latest_refund;
-    const returnCarrier = latestRefund?.customer_return_carrier || '-';
-    const returnRiderName = latestRefund?.customer_return_rider_name || '-';
-    const returnRiderPhone = latestRefund?.customer_return_rider_phone || '-';
-    const returnTrackingNumber = latestRefund?.customer_return_tracking_number || '-';
-    const returnTrackingLink = latestRefund?.customer_return_tracking_link || '-';
-    const returnShippedAt = latestRefund?.customer_return_shipped_at
-      ? new Date(latestRefund.customer_return_shipped_at).toLocaleString()
-      : '-';
+    const isStaffArrangedReturn = String(latestRefund?.return_source || '').toLowerCase() === 'staff'
+      || String(latestRefund?.return_status || '').toLowerCase() === 'pending_staff_pickup';
+
+    const returnCarrier = (isStaffArrangedReturn
+      ? latestRefund?.staff_return_carrier
+      : latestRefund?.customer_return_carrier) || '-';
+    const returnRiderName = (isStaffArrangedReturn
+      ? latestRefund?.staff_return_rider_name
+      : latestRefund?.customer_return_rider_name) || '-';
+    const returnRiderPhone = (isStaffArrangedReturn
+      ? latestRefund?.staff_return_rider_phone
+      : latestRefund?.customer_return_rider_phone) || '-';
+    const returnTrackingNumber = (isStaffArrangedReturn
+      ? latestRefund?.staff_return_tracking_number
+      : latestRefund?.customer_return_tracking_number) || '-';
+    const returnTrackingLink = (isStaffArrangedReturn
+      ? latestRefund?.staff_return_tracking_link
+      : latestRefund?.customer_return_tracking_link) || '-';
+    const shippedAt = isStaffArrangedReturn
+      ? latestRefund?.staff_return_shipped_at
+      : latestRefund?.customer_return_shipped_at;
+    const returnShippedAt = shippedAt ? new Date(shippedAt).toLocaleString() : '-';
 
     const result = await Swal.fire({
       title: 'Confirm Returned Item Received?',

@@ -395,6 +395,35 @@ class ProductController extends Controller
                 ->defaultSort('-created_at')
                 ->get();
 
+            // Compute latest sold quantity from real order items so sales metrics remain accurate
+            // even when products.sales_count is stale in long-lived deployments.
+            $salesByProductId = DB::table('order_items')
+                ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->where('orders.shop_owner_id', $shopOwnerId)
+                ->whereIn('orders.status', ['processing', 'shipped', 'delivered', 'completed'])
+                ->where(function ($paymentQuery) {
+                    $paymentQuery->whereNull('orders.payment_status')
+                        ->orWhere('orders.payment_status', '!=', 'refunded');
+                })
+                ->whereNotNull('order_items.product_id')
+                ->groupBy('order_items.product_id')
+                ->select('order_items.product_id', DB::raw('SUM(order_items.quantity) as sold_qty'))
+                ->pluck('sold_qty', 'order_items.product_id');
+
+            $salesByProductName = DB::table('order_items')
+                ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->where('orders.shop_owner_id', $shopOwnerId)
+                ->whereIn('orders.status', ['processing', 'shipped', 'delivered', 'completed'])
+                ->where(function ($paymentQuery) {
+                    $paymentQuery->whereNull('orders.payment_status')
+                        ->orWhere('orders.payment_status', '!=', 'refunded');
+                })
+                ->whereNull('order_items.product_id')
+                ->whereNotNull('order_items.product_name')
+                ->groupBy(DB::raw('LOWER(TRIM(order_items.product_name))'))
+                ->select(DB::raw('LOWER(TRIM(order_items.product_name)) as product_key'), DB::raw('SUM(order_items.quantity) as sold_qty'))
+                ->pluck('sold_qty', 'product_key');
+
             Log::info('myProducts context', [
                 'resolved_shop_owner_id' => $shopOwnerId,
                 'user_guard_id' => Auth::guard('user')->id(),
@@ -405,8 +434,16 @@ class ProductController extends Controller
             ]);
 
             // Transform products to include full image URLs
-            $products->transform(function ($product) {
+            $products->transform(function ($product) use ($salesByProductId, $salesByProductName) {
                 $product->main_image = $product->main_image_url;
+
+                $productIdSales = (int) ($salesByProductId->get($product->id) ?? 0);
+                $productNameKey = strtolower(trim((string) ($product->name ?? '')));
+                $nameMatchedSales = $productNameKey !== ''
+                    ? (int) ($salesByProductName->get($productNameKey) ?? 0)
+                    : 0;
+
+                $product->sales_count = max((int) ($product->sales_count ?? 0), $productIdSales, $nameMatchedSales);
                 return $product;
             });
 
@@ -828,9 +865,34 @@ class ProductController extends Controller
             $isStaffUpdate = Auth::guard('user')->check();
 
             if ($isStaffUpdate) {
+                $linkedInventoryItem = InventoryItem::where('shop_owner_id', $shopOwnerId)
+                    ->where('product_id', $product->id)
+                    ->with(['colorVariants.sizes'])
+                    ->first();
+
+                $authoritativeStockQuantity = 0;
+
+                if ($linkedInventoryItem) {
+                    $authoritativeStockQuantity = (int) collect($linkedInventoryItem->colorVariants ?? [])
+                        ->flatMap(static function ($colorVariant) {
+                            return collect($colorVariant->sizes ?? []);
+                        })
+                        ->sum(static function ($sizeRow) {
+                            return max(0, (int) ($sizeRow->quantity ?? 0));
+                        });
+                }
+
+                if ($authoritativeStockQuantity <= 0) {
+                    $authoritativeStockQuantity = (int) $product->variants()->sum('quantity');
+                }
+
+                if ($authoritativeStockQuantity <= 0) {
+                    $authoritativeStockQuantity = (int) $product->stock_quantity;
+                }
+
                 if (
                     array_key_exists('stock_quantity', $validated)
-                    && (int) $validated['stock_quantity'] !== (int) $product->stock_quantity
+                    && !in_array((int) $validated['stock_quantity'], [(int) $product->stock_quantity, $authoritativeStockQuantity], true)
                 ) {
                     return response()->json([
                         'success' => false,
@@ -839,42 +901,12 @@ class ProductController extends Controller
                 }
 
                 if (isset($validated['variants']) && is_array($validated['variants'])) {
-                    $buildVariantQuantityMap = static function (array $variants): array {
-                        $map = [];
+                    $incomingVariantTotal = (int) collect($validated['variants'])
+                        ->sum(static function ($variant) {
+                            return max(0, (int) ($variant['quantity'] ?? 0));
+                        });
 
-                        foreach ($variants as $variant) {
-                            $size = strtolower(trim((string) ($variant['size'] ?? '')));
-                            $color = strtolower(trim((string) ($variant['color'] ?? '')));
-
-                            if ($size === '' && $color === '') {
-                                continue;
-                            }
-
-                            $quantity = (int) ($variant['quantity'] ?? 0);
-                            $key = $size . '|' . $color;
-
-                            $map[$key] = ($map[$key] ?? 0) + $quantity;
-                        }
-
-                        ksort($map);
-
-                        return $map;
-                    };
-
-                    $existingVariantQuantities = $buildVariantQuantityMap(
-                        $product->variants()
-                            ->get(['size', 'color', 'quantity'])
-                            ->map(static fn ($variant) => [
-                                'size' => $variant->size,
-                                'color' => $variant->color,
-                                'quantity' => $variant->quantity,
-                            ])
-                            ->all()
-                    );
-
-                    $incomingVariantQuantities = $buildVariantQuantityMap($validated['variants']);
-
-                    if ($existingVariantQuantities !== $incomingVariantQuantities) {
+                    if ($incomingVariantTotal !== $authoritativeStockQuantity) {
                         return response()->json([
                             'success' => false,
                             'message' => 'Staff cannot edit stock quantities in product edit.',

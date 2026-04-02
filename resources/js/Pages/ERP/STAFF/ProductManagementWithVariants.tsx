@@ -494,7 +494,7 @@ export default function ProductManagement() {
     setExistingShowroomFrames([]);
     setRemovedShowroomFrameKeys([]);
     setCustomCategoryInput(''); // Reset custom input
-    await fetchShowroomEntitlement(product?.id);
+    void fetchShowroomEntitlement(product?.id);
 
     if (product) {
       setEditingProduct(product);
@@ -527,6 +527,7 @@ export default function ProductManagement() {
       });
       setSelectedCategories(parsedCategories.length > 0 ? parsedCategories : ['shoes']);
       setCustomCategoryInput(customText);
+      setIsModalOpen(true);
       
       // Load color variants for this product
       try {
@@ -624,8 +625,6 @@ export default function ProductManagement() {
       setIsStockPickerOpen(true);
       return; // stock picker opens; isModalOpen stays false until a stock is chosen
     }
-
-    setIsModalOpen(true);
   };
 
   const handleSelectStock = (stock: any) => {
