@@ -632,6 +632,19 @@ const MyOrders: React.FC = () => {
       return false;
     }
 
+    const refundStatus = String(order.refund_status || '').toLowerCase();
+    const refundStageStatus = String(order.refund_stage?.status || '').toLowerCase();
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+
+    const hasExistingRefundFlow = Boolean(order.refund_stage)
+      || ['processing', 'refunded'].includes(refundStatus)
+      || ['requested', 'pending_approval', 'processing', 'succeeded', 'rejected'].includes(refundStageStatus)
+      || paymentStatus === 'refunded';
+
+    if (hasExistingRefundFlow) {
+      return false;
+    }
+
     // Always honor local status+deadline so the button enables immediately after delivery confirmation.
     return !isDeadlinePassed(order);
   };

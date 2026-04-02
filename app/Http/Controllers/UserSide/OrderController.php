@@ -82,13 +82,15 @@ class OrderController extends Controller
             ->map(function (Order $order) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
+                $vatAmount = $order->vat_amount !== null ? max(0.0, (float) $order->vat_amount) : null;
+                $vatRate = $order->vat_rate !== null ? max(0.0, (float) $order->vat_rate) : null;
                 $legacyGrandTotal = (float) ($order->total ?? 0);
 
                 if ($shippingFee <= 0 && $legacyGrandTotal > $itemSubtotal) {
                     $shippingFee = round($legacyGrandTotal - $itemSubtotal, 2);
                 }
 
-                $grandTotal = $itemSubtotal + $shippingFee;
+                $grandTotal = $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0);
                 if ($grandTotal <= 0 && $legacyGrandTotal > 0) {
                     $grandTotal = $legacyGrandTotal;
                 }
@@ -153,6 +155,8 @@ class OrderController extends Controller
                     'payment_method' => $order->payment_method ?? 'paymongo',
                     'total_amount' => $itemSubtotal,
                     'shipping_fee' => $shippingFee,
+                    'vat_amount' => $vatAmount,
+                    'vat_rate' => $vatRate,
                     'grand_total' => $grandTotal,
                     'total_paid' => $totalPaid,
                     'created_at' => $order->created_at->format('Y-m-d H:i:s'),
