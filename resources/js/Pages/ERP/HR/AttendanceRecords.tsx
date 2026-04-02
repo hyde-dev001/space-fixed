@@ -458,15 +458,18 @@ const ViewAttendance: React.FC = () => {
         },
         credentials: 'include',
         body: JSON.stringify({
-          check_in_time:  editForm.checkIn  ? `${editForm.checkIn}:00`  : null,
-          check_out_time: editForm.checkOut ? `${editForm.checkOut}:00` : null,
+          check_in_time: editForm.checkIn || null,
+          check_out_time: editForm.checkOut || null,
           status: editForm.status,
           notes:  editForm.notes || null,
         }),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        throw new Error(errorData.message || `Failed to update attendance (${response.status})`);
+        const validationMessage = errorData?.errors
+          ? Object.values(errorData.errors).flat().join(', ')
+          : '';
+        throw new Error(validationMessage || errorData.message || `Failed to update attendance (${response.status})`);
       }
       // Optimistically update the row without a full re-fetch
       setAttendanceData(prev =>
