@@ -1,6 +1,7 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
+import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
 
@@ -59,6 +60,21 @@ export default function SuppliersManagement() {
 	const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
 	const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
+	const getApiErrorMessage = (error: unknown, fallback: string) => {
+		if (!axios.isAxiosError(error)) return fallback;
+
+		const responseData = error.response?.data as {
+			message?: string;
+			errors?: Record<string, string[]>;
+		} | undefined;
+
+		const firstValidationError = responseData?.errors
+			? Object.values(responseData.errors).flat()[0]
+			: undefined;
+
+		return firstValidationError || responseData?.message || fallback;
+	};
+
 	const fetchSuppliers = async () => {
 		setLoading(true);
 		try {
@@ -83,7 +99,8 @@ export default function SuppliersManagement() {
 
 		return suppliers.filter((supplier) =>
 			supplier.name.toLowerCase().includes(query) ||
-			supplier.contact_email?.toLowerCase().includes(query) ||
+			supplier.email?.toLowerCase().includes(query) ||
+			supplier.contact_person?.toLowerCase().includes(query) ||
 			supplier.phone?.toLowerCase().includes(query) ||
 			supplier.notes?.toLowerCase().includes(query)
 		);
@@ -140,8 +157,13 @@ export default function SuppliersManagement() {
 	};
 
 	const handleSaveEdit = async () => {
-		if (!formData.name.trim() || !formData.email.trim()) {
-			await Swal.fire("Warning", "Please fill required fields (Name, Email)", "warning");
+		if (!formData.name.trim()) {
+			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
+			return;
+		}
+
+		if (formData.email.trim() && !/^\S+@\S+\.\S+$/.test(formData.email.trim())) {
+			await Swal.fire("Warning", "Please enter a valid email address", "warning");
 			return;
 		}
 
@@ -163,7 +185,7 @@ export default function SuppliersManagement() {
 			fetchSuppliers();
 		} catch (error) {
 			console.error("Failed to update supplier:", error);
-			await Swal.fire("Error", "Failed to update supplier", "error");
+			await Swal.fire("Error", getApiErrorMessage(error, "Failed to update supplier"), "error");
 		}
 	};
 
@@ -186,8 +208,13 @@ export default function SuppliersManagement() {
 	};
 
 	const handleAddSupplier = async () => {
-		if (!formData.name.trim() || !formData.email.trim()) {
-			await Swal.fire("Warning", "Please fill required fields (Name, Email)", "warning");
+		if (!formData.name.trim()) {
+			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
+			return;
+		}
+
+		if (formData.email.trim() && !/^\S+@\S+\.\S+$/.test(formData.email.trim())) {
+			await Swal.fire("Warning", "Please enter a valid email address", "warning");
 			return;
 		}
 
@@ -206,7 +233,7 @@ export default function SuppliersManagement() {
 			fetchSuppliers();
 		} catch (error) {
 			console.error("Failed to create supplier:", error);
-			await Swal.fire("Error", "Failed to create supplier", "error");
+			await Swal.fire("Error", getApiErrorMessage(error, "Failed to create supplier"), "error");
 		}
 	};
 
@@ -385,14 +412,42 @@ export default function SuppliersManagement() {
 
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Contact Info *
+									Contact Person
 								</label>
 								<input
 									type="text"
+									name="contact_person"
+									value={formData.contact_person}
+									onChange={handleFormChange}
+									placeholder="e.g., Juan Dela Cruz"
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+									Email
+								</label>
+								<input
+									type="email"
 									name="email"
 									value={formData.email}
 									onChange={handleFormChange}
-									placeholder="e.g., 0917-456-1188 | contact@email.com"
+									placeholder="e.g., contact@email.com"
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+									Phone
+								</label>
+								<input
+									type="text"
+									name="phone"
+									value={formData.phone}
+									onChange={handleFormChange}
+									placeholder="e.g., 0917-456-1188"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
@@ -549,14 +604,42 @@ export default function SuppliersManagement() {
 
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Contact Info *
+									Contact Person
 								</label>
 								<input
 									type="text"
+									name="contact_person"
+									value={formData.contact_person}
+									onChange={handleFormChange}
+									placeholder="e.g., Juan Dela Cruz"
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+									Email
+								</label>
+								<input
+									type="email"
 									name="email"
 									value={formData.email}
 									onChange={handleFormChange}
-									placeholder="e.g., 0917-456-1188 | contact@email.com"
+									placeholder="e.g., contact@email.com"
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+									Phone
+								</label>
+								<input
+									type="text"
+									name="phone"
+									value={formData.phone}
+									onChange={handleFormChange}
+									placeholder="e.g., 0917-456-1188"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
