@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Database\QueryException;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -377,7 +378,7 @@ class OrderController extends Controller
                 'note' => 'nullable|string|max:1000',
                 'other_reason_note' => 'nullable|string|max:1000',
                 'media' => 'required|array|size:6',
-                'media.*' => 'required|file|max:20480|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
+                'media.*' => 'required|file|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
             ]);
 
             $resolvedRefundMethod = trim((string) ($validated['refund_method'] ?? ''));
@@ -426,12 +427,7 @@ class OrderController extends Controller
                 ], 422);
             }
 
-            $existing = OrderRefund::query()
-                ->where('order_id', $order->id)
-                ->where('flow_type', 'request_approval')
-                ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
-                ->latest('id')
-                ->first();
+            $existing = $this->buildActiveRefundRequestQuery((int) $order->id)->first();
 
             if ($existing) {
                 return response()->json([
@@ -444,12 +440,26 @@ class OrderController extends Controller
             $imageCount = 0;
             $videoCount = 0;
             $storedMedia = [];
+            $maxImageBytes = 20 * 1024 * 1024; // 20MB
+            $maxVideoBytes = 256 * 1024 * 1024; // 256MB
 
             foreach ($mediaFiles as $mediaFile) {
                 $mime = strtolower((string) $mediaFile->getMimeType());
                 if (str_starts_with($mime, 'video/')) {
+                    if ((int) $mediaFile->getSize() > $maxVideoBytes) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Refund video must be 256MB or smaller.',
+                        ], 422);
+                    }
                     $videoCount++;
                 } else {
+                    if ((int) $mediaFile->getSize() > $maxImageBytes) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Each refund image must be 20MB or smaller.',
+                        ], 422);
+                    }
                     $imageCount++;
                 }
             }
@@ -500,7 +510,7 @@ class OrderController extends Controller
                 'requested_at' => now(),
             ];
 
-            $refundRequest = OrderRefund::create($this->filterOrderRefundPayload($refundPayload));
+            $refundRequest = $this->createRefundRequestWithCompatibilityFallback($refundPayload, (int) $order->id);
 
             try {
                 $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
@@ -547,6 +557,46 @@ class OrderController extends Controller
         }
 
         return $filtered;
+    }
+
+    private function buildActiveRefundRequestQuery(int $orderId): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = OrderRefund::query()
+            ->where('order_id', $orderId)
+            ->latest('id');
+
+        if ($this->hasOrderRefundColumn('flow_type')) {
+            $query->where('flow_type', 'request_approval');
+        }
+
+        if ($this->hasOrderRefundColumn('status')) {
+            $query->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded']);
+        }
+
+        return $query;
+    }
+
+    private function createRefundRequestWithCompatibilityFallback(array $refundPayload, int $orderId): OrderRefund
+    {
+        $filteredPayload = $this->filterOrderRefundPayload($refundPayload);
+
+        try {
+            return OrderRefund::create($filteredPayload);
+        } catch (QueryException $e) {
+            $fallbackPayload = $filteredPayload;
+
+            // Older production schemas may reject newer status enum values.
+            if (($fallbackPayload['status'] ?? null) === 'pending_approval') {
+                $fallbackPayload['status'] = 'requested';
+            }
+
+            Log::warning('Refund create retry with compatibility fallback after query exception', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return OrderRefund::create($fallbackPayload);
+        }
     }
 
     private function hasOrderRefundTable(): bool
