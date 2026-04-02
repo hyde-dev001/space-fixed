@@ -74,6 +74,15 @@ class OrderRefundService
         }
 
         $amount = $this->resolveRefundAmount($order, $secretKey);
+
+        // PayMongo may reject same-day partial refunds for captured payments, so
+        // ensure full-order cancellation uses at least the captured gateway amount.
+        $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos($secretKey, $paymentId);
+        if ($capturedAmountInCentavos !== null && $capturedAmountInCentavos > 0) {
+            $capturedAmount = round($capturedAmountInCentavos / 100, 2);
+            $amount = max($amount, $capturedAmount);
+        }
+
         if ($amount <= 0) {
             return [
                 'result' => 'failed',

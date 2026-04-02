@@ -370,11 +370,16 @@ class OrderController extends Controller
         $validated = $request->validate([
             'order_id' => 'required|integer',
             'reason' => 'required|string|max:255',
-            'refund_method' => 'required|string|max:100',
+            'refund_method' => 'nullable|string|max:100',
             'note' => 'nullable|string|max:1000',
             'media' => 'required|array|size:6',
             'media.*' => 'required|file|max:20480|mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm',
         ]);
+
+        $resolvedRefundMethod = trim((string) ($validated['refund_method'] ?? ''));
+        if ($resolvedRefundMethod === '') {
+            $resolvedRefundMethod = 'original_payment_method';
+        }
 
         $user = Auth::guard('user')->user();
 
@@ -479,7 +484,7 @@ class OrderController extends Controller
             'paymongo_payment_id' => $order->paymongo_payment_id,
             'amount' => round($amount, 2),
             'currency' => 'PHP',
-            'requested_refund_method' => (string) $validated['refund_method'],
+            'requested_refund_method' => $resolvedRefundMethod,
             'reason_code' => Str::slug((string) $validated['reason'], '_'),
             'reason_note' => trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : ''))),
             'evidence_media' => $storedMedia,

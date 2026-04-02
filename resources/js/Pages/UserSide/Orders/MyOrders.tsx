@@ -747,6 +747,7 @@ const MyOrders: React.FC = () => {
       const formData = new FormData();
       formData.append('order_id', refundOrderId.toString());
       formData.append('reason', refundReason);
+      formData.append('refund_method', refundMethod || 'original_payment_method');
       formData.append('note', refundNote);
       formData.append('other_reason_note', refundOtherReasonNote);
       

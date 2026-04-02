@@ -120,4 +120,34 @@ class PaymongoRefundService
             ];
         }
     }
+
+    public function getPaymentAmountInCentavos(string $secretKey, string $paymentId): ?int
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($secretKey . ':'),
+                'Accept' => 'application/json',
+            ])->get('https://api.paymongo.com/v1/payments/' . $paymentId);
+
+            if ($response->failed()) {
+                Log::warning('PayMongo payment amount lookup failed', [
+                    'status' => $response->status(),
+                    'payment_id' => $paymentId,
+                    'body' => $response->json(),
+                ]);
+
+                return null;
+            }
+
+            $amount = (int) ($response->json('data.attributes.amount') ?? 0);
+            return $amount > 0 ? $amount : null;
+        } catch (\Throwable $e) {
+            Log::warning('PayMongo payment amount lookup exception', [
+                'payment_id' => $paymentId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
 }

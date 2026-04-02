@@ -338,7 +338,7 @@ export default function ProductManagement() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const productsResponse = await fetch('/api/shop-owner/products/', {
+      const productsResponse = await fetch('/api/shop-owner/products', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
@@ -1213,7 +1213,7 @@ export default function ProductManagement() {
 
       const url = editingProduct
         ? `/api/shop-owner/products/${editingProduct.id}`
-        : '/api/shop-owner/products/';
+        : '/api/shop-owner/products';
 
       const method = editingProduct ? 'PUT' : 'POST';
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
