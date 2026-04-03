@@ -201,7 +201,7 @@ interface Invoice {
   due_date: string | null;
   customer_name: string;
   total: number | string;
-  status: "draft" | "sent" | "paid" | "overdue" | "cancelled";
+  status: "draft" | "sent" | "paid" | "overdue" | "cancelled" | "refunded";
   payment_date?: string | null;
   payment_method?: string | null;
   job_order_id?: number | null;
@@ -220,6 +220,7 @@ interface Invoice {
     customer: string;
     product: string;
     status: string;
+    payment_status?: string | null;
     total: string;
     total_amount?: number | string | null;
     shipping_fee?: number | string | null;
@@ -238,7 +239,7 @@ interface InvoiceLineItem {
   tax_rate?: number | string | null;
 }
 
-type TabFilter = "all" | "draft" | "sent" | "paid" | "overdue";
+type TabFilter = "all" | "draft" | "sent" | "paid" | "overdue" | "refunded";
 
 const parseAmount = (value: unknown): number => {
   const numericValue = Number(value);
@@ -251,6 +252,14 @@ const isShippingItem = (item: InvoiceLineItem): boolean => {
 
 const formatPeso = (value: number): string => {
   return `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const getEffectiveInvoiceStatus = (invoice: Invoice): Invoice['status'] => {
+  if ((invoice.job_order?.payment_status || '').toLowerCase() === 'refunded') {
+    return 'refunded';
+  }
+
+  return invoice.status;
 };
 
 const Invoice: React.FC = () => {
@@ -372,9 +381,10 @@ const Invoice: React.FC = () => {
   // Filter invoices based on tab and search
   const filteredInvoices = useMemo(() => {
     return invoices.filter((invoice) => {
+      const effectiveStatus = getEffectiveInvoiceStatus(invoice);
       const matchesTab =
         selectedTab === "all" ||
-        invoice.status === selectedTab;
+        effectiveStatus === selectedTab;
 
       const matchesSearch =
         (invoice.reference || "").toLowerCase().includes((searchTerm || "").toLowerCase()) ||
@@ -409,17 +419,20 @@ const Invoice: React.FC = () => {
   // Calculate statistics from invoice data
   const stats = useMemo(() => {
     const total = invoices.length;
-    const sent = invoices.filter((inv) => inv.status === "sent").length;
-    const paid = invoices.filter((inv) => inv.status === "paid").length;
+    const sent = invoices.filter((inv) => getEffectiveInvoiceStatus(inv) === "sent").length;
+    const paid = invoices.filter((inv) => getEffectiveInvoiceStatus(inv) === "paid").length;
     const draft = invoices.filter((inv) => inv.status === "draft").length;
-    const overdue = invoices.filter((inv) => inv.status === "overdue").length;
+    const overdue = invoices.filter((inv) => getEffectiveInvoiceStatus(inv) === "overdue").length;
     
     const totalRevenue = invoices
-      .filter((inv) => inv.status === "paid")
+      .filter((inv) => getEffectiveInvoiceStatus(inv) === "paid")
       .reduce((sum, inv) => sum + (typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total), 0);
       
     const pendingRevenue = invoices
-      .filter((inv) => inv.status === "sent" || inv.status === "overdue")
+      .filter((inv) => {
+        const effectiveStatus = getEffectiveInvoiceStatus(inv);
+        return effectiveStatus === "sent" || effectiveStatus === "overdue";
+      })
       .reduce((sum, inv) => sum + (typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total), 0);
 
     return {
@@ -486,6 +499,7 @@ const Invoice: React.FC = () => {
       sent: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       posted: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       paid: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+      refunded: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
       overdue: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       cancelled: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
     };
@@ -686,6 +700,16 @@ const Invoice: React.FC = () => {
               >
                 Draft
               </button>
+              <button
+                onClick={() => setSelectedTab("refunded")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  selectedTab === "refunded"
+                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                }`}
+              >
+                Refunded
+              </button>
             </div>
 
             {/* Search and Actions */}
@@ -787,6 +811,9 @@ const Invoice: React.FC = () => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {paginatedInvoices.length > 0 ? (
                 paginatedInvoices.map((invoice) => (
+                  (() => {
+                    const effectiveStatus = getEffectiveInvoiceStatus(invoice);
+                    return (
                   <tr
                     key={invoice.id}
                     className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
@@ -846,11 +873,11 @@ const Invoice: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        ₱{invoice.total}
+                        {formatPeso(resolveInvoiceGrandTotal(invoice))}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {getApprovalStatusBadge(false, invoice.status)}
+                      {getApprovalStatusBadge(false, effectiveStatus)}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center gap-2">
@@ -864,7 +891,7 @@ const Invoice: React.FC = () => {
                         >
                           <EyeIcon className="size-5 text-blue-600 dark:text-blue-400" />
                         </button>
-                        {invoice.status === 'draft' && (
+                        {effectiveStatus === 'draft' && (
                           <button 
                             onClick={() => handleSendInvoice(invoice.id)}
                             disabled={sendingInvoiceId === invoice.id}
@@ -883,7 +910,7 @@ const Invoice: React.FC = () => {
                             )}
                           </button>
                         )}
-                        {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                        {(effectiveStatus === 'sent' || effectiveStatus === 'overdue') && (
                           <button 
                             onClick={() => handleMarkAsPaid(invoice.id)}
                             disabled={markingPaidId === invoice.id}
@@ -900,7 +927,7 @@ const Invoice: React.FC = () => {
                             )}
                           </button>
                         )}
-                        {invoice.status === 'draft' && (
+                        {effectiveStatus === 'draft' && (
                           <button 
                             className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                             title="Delete Invoice"
@@ -911,6 +938,8 @@ const Invoice: React.FC = () => {
                       </div>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))
               ) : (
                 <tr>
@@ -1012,10 +1041,15 @@ const Invoice: React.FC = () => {
                 <div className="flex justify-center mb-5">
                   <span
                     className={`inline-flex px-4 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                      selectedInvoice?.status || "draft"
+                      getEffectiveInvoiceStatus(selectedInvoice) || "draft"
                     )}`}
                   >
-                    {selectedInvoice ? (selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)) : "Unknown"}
+                    {selectedInvoice
+                      ? (() => {
+                          const status = getEffectiveInvoiceStatus(selectedInvoice);
+                          return status.charAt(0).toUpperCase() + status.slice(1);
+                        })()
+                      : "Unknown"}
                   </span>
                 </div>
 

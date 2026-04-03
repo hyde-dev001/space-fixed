@@ -121,6 +121,10 @@ const MetricCard = ({
 export default function FinanceDashboard() {
     const { auth, invoices = [], expenses = [], refunds = [], refundedRevenue: refundedRevenueProp = 0 } = usePage().props as any;
 
+    const getInvoiceStatus = (invoice: any): string => {
+        return String(invoice.effective_status || invoice.status || '').toLowerCase();
+    };
+
     // Calculate stats from real data - only count PAID invoices for revenue
     const refundedRevenue = typeof refundedRevenueProp === 'number'
         ? refundedRevenueProp
@@ -131,17 +135,20 @@ export default function FinanceDashboard() {
 
     const stats: FinanceDashboardStats = {
         totalRevenue: invoices
-            .filter(inv => inv.status === 'paid')
-            .reduce((sum, inv) => {
+            .filter((inv: any) => getInvoiceStatus(inv) === 'paid')
+            .reduce((sum: number, inv: any) => {
                 const total = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total;
                 return sum + (isNaN(total) ? 0 : total);
             }, 0),
         refundedRevenue,
-        totalExpenses: expenses.reduce((sum, exp) => {
+        totalExpenses: expenses.reduce((sum: number, exp: any) => {
             const amount = typeof exp.amount === 'string' ? parseFloat(exp.amount) : exp.amount;
             return sum + (isNaN(amount) ? 0 : amount);
         }, 0),
-        pendingInvoices: invoices.filter((inv) => inv.status === 'draft' || inv.status === 'sent').length,
+        pendingInvoices: invoices.filter((inv: any) => {
+            const status = getInvoiceStatus(inv);
+            return status === 'draft' || status === 'sent';
+        }).length,
         netProfit: 0,
     };
     
@@ -155,7 +162,7 @@ export default function FinanceDashboard() {
             changeType: 'increase',
             icon: DollarIconSvg,
             color: 'success',
-            description: `From ${invoices.filter(inv => inv.status === 'paid').length} paid invoices`,
+            description: `From ${invoices.filter((inv: any) => getInvoiceStatus(inv) === 'paid').length} paid invoices`,
         },
         {
             title: 'Refunded Revenue',
@@ -207,7 +214,7 @@ export default function FinanceDashboard() {
         const monthTotal = invoices
             .filter((inv: any) => {
                 const invDate = new Date(inv.date);
-                return inv.status === 'paid' &&
+                return getInvoiceStatus(inv) === 'paid' &&
                     invDate.getFullYear() === d.getFullYear() &&
                     invDate.getMonth() === d.getMonth();
             })

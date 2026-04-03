@@ -160,6 +160,16 @@ class PaymentSettlementService
     public function settleOrderRefunded(Order $order, ?string $refundId = null, ?string $reason = null, ?string $note = null): array
     {
         if ((string) ($order->payment_status ?? 'pending') === 'refunded') {
+            if ($order->invoice_id) {
+                $invoice = Invoice::find($order->invoice_id);
+                if ($invoice && (string) $invoice->status !== 'cancelled') {
+                    $invoice->update([
+                        'status' => 'cancelled',
+                        'payment_method' => $invoice->payment_method ?? 'paymongo_refund',
+                    ]);
+                }
+            }
+
             return [
                 'result' => 'already_refunded',
                 'model' => $order,
@@ -188,6 +198,16 @@ class PaymentSettlementService
         }
 
         $order->update($payload);
+
+        if ($order->invoice_id) {
+            $invoice = Invoice::find($order->invoice_id);
+            if ($invoice) {
+                $invoice->update([
+                    'status' => 'cancelled',
+                    'payment_method' => $invoice->payment_method ?? 'paymongo_refund',
+                ]);
+            }
+        }
 
         try {
             if ((int) ($order->customer_id ?? 0) > 0) {

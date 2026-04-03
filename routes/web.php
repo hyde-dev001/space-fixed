@@ -1472,9 +1472,28 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
 
         $invoices = \App\Models\Finance\Invoice::where('shop_id', $shopId)
             ->whereYear('date', $year)
-            ->select(['id', 'reference', 'status', 'total', 'date'])
+            ->with(['jobOrder' => function ($query) {
+                $query->select(['id', 'payment_status']);
+            }])
+            ->select(['id', 'reference', 'status', 'total', 'date', 'job_order_id'])
             ->orderBy('date', 'desc')
             ->get();
+
+        $invoicePayload = $invoices->map(function ($invoice) {
+            $paymentStatus = strtolower((string) ($invoice->jobOrder->payment_status ?? ''));
+            $effectiveStatus = $paymentStatus === 'refunded'
+                ? 'refunded'
+                : (string) $invoice->status;
+
+            return [
+                'id' => $invoice->id,
+                'reference' => $invoice->reference,
+                'status' => $invoice->status,
+                'effective_status' => $effectiveStatus,
+                'total' => $invoice->total,
+                'date' => optional($invoice->date)->toDateString(),
+            ];
+        })->values();
 
         $expenses = \App\Models\Finance\Expense::where('shop_id', $shopId)
             ->whereYear('date', $year)
@@ -1495,7 +1514,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
         });
 
         return Inertia::render('ERP/Finance/Dashboard', [
-            'invoices' => $invoices,
+            'invoices' => $invoicePayload,
             'expenses' => $expenses,
             'refunds' => $refunds,
             'refundedRevenue' => $refundedRevenue,

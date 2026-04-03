@@ -25,7 +25,7 @@ export interface Invoice {
   due_date?: string;
   total: number;
   tax_amount: number;
-  status: 'draft' | 'sent' | 'paid' | 'void' | 'overdue';
+  status: 'draft' | 'sent' | 'paid' | 'void' | 'overdue' | 'posted' | 'cancelled' | 'refunded';
   journal_entry_id?: string;
   notes?: string;
   items?: InvoiceItem[];
