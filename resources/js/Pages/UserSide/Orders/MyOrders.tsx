@@ -931,11 +931,11 @@ const MyOrders: React.FC = () => {
   };
 
   const tabButtonBaseClass =
-    'relative inline-flex min-w-[132px] shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 lg:min-w-0 lg:flex-1';
+    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] lg:min-w-0 lg:flex-1';
   const tabBadgeClass =
-    'absolute right-1 top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center';
+    'absolute -right-1 -top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center';
   const actionButtonBaseClass =
-    'inline-flex items-center justify-center gap-2 rounded-full border px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+    'inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.16em]';
   const actionButtonPrimaryClass =
     'border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/45';
   const actionButtonSecondaryClass =
@@ -944,29 +944,69 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
+  const purchaseShortcutBaseClass =
+    'flex min-h-[82px] flex-col items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-2 text-center text-[11px] font-semibold text-gray-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/30';
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-[#f3f4f6]">
       <Head title="My Purchases" />
       <Navigation />
 
       <main className="flex-1">
-        <div className="w-full px-6 pb-16 pt-28 lg:pt-32 xl:px-10 2xl:px-14">
-          <div className="mx-auto mb-10 max-w-6xl select-none text-center">
-            <h1 className="text-4xl font-bold tracking-tight text-[#16233b] sm:text-5xl">My Purchases</h1>
-            <p className="mx-auto mt-2 max-w-2xl text-sm text-black/55 sm:text-base">
+        <div className="w-full px-4 pb-16 pt-24 sm:px-6 lg:pt-32 xl:px-10 2xl:px-14">
+          <div className="mx-auto mb-5 max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl">My Purchases</h1>
+              <Link
+                href="/user/orders"
+                className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 transition-colors hover:text-[#16233b] sm:text-sm"
+              >
+                View History
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m7 4 6 6-6 6" />
+                </svg>
+              </Link>
+            </div>
+            <p className="max-w-2xl text-xs text-black/55 sm:text-base">
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
+
+            <div className="mt-4 grid grid-cols-4 gap-2.5 sm:hidden">
+              <button onClick={() => setSelectedTab('pending')} className={purchaseShortcutBaseClass}>
+                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18l-1.6 11H4.6L3 7Zm3-3h12l1 3H5l1-3Z" />
+                </svg>
+                <span>To Pay</span>
+              </button>
+              <button onClick={() => setSelectedTab('processing')} className={purchaseShortcutBaseClass}>
+                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16v10H4V8Zm4-3h8v3H8V5Zm2 6h4m-6 3h8" />
+                </svg>
+                <span>To Ship</span>
+              </button>
+              <button onClick={() => setSelectedTab('shipped')} className={purchaseShortcutBaseClass}>
+                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h11v9H3V7Zm11 3h4l3 3v3h-7v-6Zm-7 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm12 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+                </svg>
+                <span>To Receive</span>
+              </button>
+              <button onClick={() => setSelectedTab('completed')} className={purchaseShortcutBaseClass}>
+                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.5 14.6 8l4.9.7-3.6 3.5.8 4.8L12 14.9 7.3 17l.8-4.8L4.5 8.7 9.4 8l2.6-4.5Z" />
+                </svg>
+                <span>To Rate</span>
+              </button>
+            </div>
           </div>
 
           {/* Tabs */}
-          <div className="mb-12 flex w-full gap-3 overflow-x-auto pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mb-6 flex w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mb-10 sm:gap-3 sm:pt-2">
             <button
               onClick={() => setSelectedTab('all')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'all'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               ALL ORDERS
@@ -981,7 +1021,7 @@ const MyOrders: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'pending'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               PENDING
@@ -996,7 +1036,7 @@ const MyOrders: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'processing'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               PROCESSING
@@ -1011,7 +1051,7 @@ const MyOrders: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'shipped'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               SHIPPED
@@ -1026,7 +1066,7 @@ const MyOrders: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'completed'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               COMPLETED
@@ -1041,7 +1081,7 @@ const MyOrders: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'return_refund'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               RETURN/REFUND
@@ -1057,7 +1097,7 @@ const MyOrders: React.FC = () => {
 
           {/* Orders Display */}
           {filteredOrders.length === 0 ? (
-            <div className="text-center py-20 bg-gray-50 rounded">
+            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] sm:py-20">
               <div className="mb-6">
                 <svg className="w-24 h-24 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -1073,7 +1113,7 @@ const MyOrders: React.FC = () => {
               </Link>
             </div>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-4 sm:space-y-7">
               {filteredOrders.map((order) => {
                   const orderItems = order.items || [];
                   const primaryItem = orderItems[0];
@@ -1096,17 +1136,17 @@ const MyOrders: React.FC = () => {
                   <div
                     key={order.id}
                     data-order-id={order.id}
-                    className={`border overflow-hidden hover:shadow-lg transition-shadow duration-300 ${
-                      highlightOrderId === order.id ? 'border-black bg-gray-50/30' : 'border-gray-200'
+                    className={`overflow-hidden rounded-3xl border bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] transition-all duration-300 hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] ${
+                      highlightOrderId === order.id ? 'border-black bg-gray-50/40' : 'border-gray-200'
                     }`}
                   >
                     {/* Order Header */}
-                    <div className="bg-white px-8 py-5 border-b border-gray-200">
-                      <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div className="flex items-center gap-8">
+                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-4 py-4 sm:px-8 sm:py-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3 sm:items-center sm:gap-4">
+                        <div className="flex flex-wrap items-center gap-4 sm:gap-8">
                           <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
-                            <p className="text-sm text-black">
+                            <p className="text-sm font-medium text-black">
                               {new Date(order.created_at).toLocaleDateString('en-US', {
                                 year: 'numeric',
                                 month: 'short',
@@ -1117,15 +1157,15 @@ const MyOrders: React.FC = () => {
                           {['delivered', 'completed'].includes(order.status) && (
                             <div>
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Refund Deadline</p>
-                              <p className={`text-sm ${deadlinePassed ? 'text-red-600 font-medium' : 'text-black'}`}>
+                              <p className={`text-xs sm:text-sm ${deadlinePassed ? 'text-red-600 font-medium' : 'text-black'}`}>
                                 {formatDeadline(order.cancellation_refund_deadline_at)}
                               </p>
                             </div>
                           )}
                         </div>
-                        <div>
+                        <div className="ml-auto">
                           <span
-                            className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusBadge(
+                            className={`inline-flex items-center px-3 py-1.5 text-[10px] font-semibold tracking-[0.14em] uppercase sm:px-4 sm:text-xs ${getStatusBadge(
                               displayStatus
                             )}`}
                           >
@@ -1141,7 +1181,7 @@ const MyOrders: React.FC = () => {
                     </div>
 
                     {/* Order Item */}
-                    <div className="p-8">
+                    <div className="p-4 sm:p-8">
                       {orderItems.length === 0 ? (
                         <p className="text-sm text-gray-500">No items found for this order.</p>
                       ) : (
@@ -1152,9 +1192,9 @@ const MyOrders: React.FC = () => {
                             return (
                               <div
                                 key={item.id ?? idx}
-                                className={`flex items-start gap-4 ${idx > 0 ? 'pt-3 border-t border-gray-200' : ''}`}
+                                className={`flex items-start gap-3 sm:gap-4 ${idx > 0 ? 'pt-3 border-t border-gray-200' : ''}`}
                               >
-                                <div className="w-20 h-20 bg-white border border-gray-200 overflow-hidden shrink-0">
+                                <div className="h-16 w-16 overflow-hidden rounded-xl border border-gray-200 bg-white shrink-0 sm:h-20 sm:w-20 sm:rounded-none">
                                   {itemImage ? (
                                     <img
                                       src={itemImage}
@@ -1170,7 +1210,7 @@ const MyOrders: React.FC = () => {
                                   )}
                                 </div>
                                 <div className="grow">
-                                  <h3 className="font-semibold text-black text-base mb-1">
+                                  <h3 className="mb-1 text-sm font-semibold text-black sm:text-base">
                                     {item.product_slug ? (
                                       <Link href={`/products/${item.product_slug}`} className="hover:underline">
                                         {item.product_name}
@@ -1179,9 +1219,9 @@ const MyOrders: React.FC = () => {
                                       item.product_name
                                     )}
                                   </h3>
-                                  {item.size && <p className="text-sm text-gray-500">Size: {item.size}</p>}
-                                  <p className="text-sm text-gray-500 mt-1">Color: {resolveOrderItemColor(order, item) || '-'}</p>
-                                  <p className="text-sm text-gray-500 mt-1">Qty: {item.quantity}</p>
+                                  {item.size && <p className="text-xs text-gray-500 sm:text-sm">Size: {item.size}</p>}
+                                  <p className="mt-1 text-xs text-gray-500 sm:text-sm">Color: {resolveOrderItemColor(order, item) || '-'}</p>
+                                  <p className="mt-1 text-xs text-gray-500 sm:text-sm">Qty: {item.quantity}</p>
                                 </div>
                               </div>
                             );
@@ -1190,8 +1230,8 @@ const MyOrders: React.FC = () => {
                       )}
 
                       {/* Order Total */}
-                      <div className="mt-8 pt-6 border-t border-gray-200">
-                        <div className="flex justify-between items-center">
+                      <div className="mt-6 border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
                             {order.shop_id ? (
@@ -1205,11 +1245,11 @@ const MyOrders: React.FC = () => {
                               <p className="font-semibold text-black">{order.shop_name}</p>
                             )}
                             {order.shop_address && (
-                              <p className="text-sm text-gray-500">{order.shop_address}</p>
+                              <p className="max-w-md text-sm text-gray-500">{order.shop_address}</p>
                             )}
                           </div>
-                          <div className="text-right">
-                            <div className="space-y-1 mb-2 text-xs text-gray-500">
+                          <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-right sm:bg-transparent sm:p-0">
+                            <div className="mb-2 space-y-1 text-xs text-gray-500">
                               <div className="flex items-center justify-end gap-3">
                                 <span>Subtotal</span>
                                 <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
@@ -1223,9 +1263,9 @@ const MyOrders: React.FC = () => {
                                 <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
                               </div>
                             </div>
-                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-2">Total Paid</p>
+                            <p className="mb-2 text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
                             <div className="flex items-center justify-end text-black">
-                              <span className="font-semibold text-lg">
+                              <span className="text-xl font-extrabold">
                                 {formatPeso(orderTotalPaid)}
                               </span>
                             </div>
@@ -1234,7 +1274,7 @@ const MyOrders: React.FC = () => {
                       </div>
 
                       {['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && (
-                        <div className="mt-6 pt-6 border-t border-gray-200">
+                        <div className="mt-6 border-t border-gray-200 pt-6">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1283,7 +1323,7 @@ const MyOrders: React.FC = () => {
                         if (!hasStaffPickupDetails) return null;
 
                         return (
-                          <div className="mt-6 pt-6 border-t border-gray-200">
+                          <div className="mt-6 border-t border-gray-200 pt-6">
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
@@ -1331,7 +1371,7 @@ const MyOrders: React.FC = () => {
                       })()}
 
                       {/* Order Actions */}
-                      <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end gap-4">
+                      <div className="mt-6 flex flex-col gap-2 border-t border-gray-200 pt-6 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
                         {order.status === 'pending' && (
                           <>
                             <button
@@ -1433,13 +1473,13 @@ const MyOrders: React.FC = () => {
 
                       {/* Status Guidance */}
                       {order.status === 'pending' && (
-                        <p className="mt-3 text-xs text-gray-500 text-right">
+                        <p className="mt-3 text-xs text-gray-500 sm:text-right">
                           You can't cancel the order once it gets processed.
                         </p>
                       )}
 
                       {['delivered', 'completed'].includes(order.status) && (
-                        <p className={`mt-3 text-xs text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
+                        <p className={`mt-3 text-xs sm:text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
                           {canRefund
                             ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
                             : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
