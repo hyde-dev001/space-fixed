@@ -13,6 +13,9 @@ type RepairOrderOption = {
 	customer: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
+	paymentStatus?: string;
+	status?: string;
+	dueTypeToCollect?: PosDueType | null;
 	service: string;
 	amount: number;
 	requestedServices: string[];
@@ -85,6 +88,27 @@ const normalizePaymentPolicy = (value: unknown): "deposit_50" | "full_upfront" =
 const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requestedDueType: PosDueType): PosDueType => {
 	if (policy === "full_upfront") return "full";
 	if (requestedDueType === "deposit" || requestedDueType === "balance") return requestedDueType;
+	return "deposit";
+};
+
+const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy" | "paymentStatus" | "status">): PosDueType | null => {
+	const policy = order.paymentPolicy ?? "deposit_50";
+	const paymentStatus = String(order.paymentStatus ?? "").toLowerCase();
+	const workflowStatus = String(order.status ?? "").toLowerCase();
+
+	if (policy === "full_upfront") {
+		return paymentStatus === "paid" || paymentStatus === "completed" ? null : "full";
+	}
+
+	if (paymentStatus === "completed") return null;
+	if (paymentStatus === "paid") {
+		if (workflowStatus === "ready-for-pickup" || workflowStatus === "ready_for_pickup") {
+			return "balance";
+		}
+
+		return null;
+	}
+
 	return "deposit";
 };
 
@@ -166,6 +190,7 @@ const PointOfSalePage = () => {
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
+	const hasRequestedDueType = urlParams.has("due_type");
 
 	const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
 	const [orderSearch, setOrderSearch] = useState<string>("");
@@ -285,12 +310,18 @@ const PointOfSalePage = () => {
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
 								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
+								paymentStatus: String(entry?.payment_status ?? "pending"),
+								status: String(entry?.status ?? ""),
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
 							};
 						})
-						.filter((entry: RepairOrderOption) => entry.amount > 0);
+						.filter((entry: RepairOrderOption) => entry.amount > 0)
+						.map((entry: RepairOrderOption) => ({
+							...entry,
+							dueTypeToCollect: resolveOutstandingDueType(entry),
+						}));
 
 					if (mappedOrders.length > 0) {
 						setRepairOrders(mappedOrders);
@@ -455,7 +486,7 @@ const PointOfSalePage = () => {
 	};
 
 	const addFromRepairOrder = (order: RepairOrderOption) => {
-		const resolvedDueType = resolveDueTypeForPolicy(order.paymentPolicy ?? "deposit_50", requestedDueType);
+		const resolvedDueType = order.dueTypeToCollect ?? resolveDueTypeForPolicy(order.paymentPolicy ?? "deposit_50", requestedDueType);
 		const dueAmount = computeDueAmountForOrder(order, resolvedDueType);
 		setItems([
 			{
@@ -518,14 +549,18 @@ const PointOfSalePage = () => {
 
 	const filteredRepairOrders = useMemo(() => {
 		const query = orderSearch.trim().toLowerCase();
-		if (!query) return repairOrders;
-		return repairOrders.filter((order) => {
+		const attachableOrders = repairOrders
+			.filter((order) => order.dueTypeToCollect !== null)
+			.filter((order) => !hasRequestedDueType || order.dueTypeToCollect === requestedDueType);
+
+		if (!query) return attachableOrders;
+		return attachableOrders.filter((order) => {
 			return (
 				order.customer.toLowerCase().includes(query) ||
 				order.service.toLowerCase().includes(query)
 			);
 		});
-	}, [orderSearch, repairOrders]);
+	}, [hasRequestedDueType, orderSearch, repairOrders, requestedDueType]);
 
 	const filteredServiceCatalog = useMemo(() => {
 		const query = serviceSearch.trim().toLowerCase();
@@ -696,6 +731,7 @@ const PointOfSalePage = () => {
 
 			setReceiptSnapshot(snapshot);
 			setReceiptHistory((prev) => [snapshot, ...prev]);
+			setRepairOrders((prev) => prev.filter((entry) => entry.id !== String(repairRequestId)));
 			resetOrderInputs();
 
 			await Swal.fire({
