@@ -284,7 +284,7 @@ const PointOfSalePage = () => {
 								id: String(entry?.id ?? `R-${index}`),
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
 								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
-								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy),
+								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
@@ -816,8 +816,9 @@ const PointOfSalePage = () => {
 										title="Customer name"
 										value={customerName}
 										onChange={(event) => setCustomerName(event.target.value)}
+										disabled={!!selectedRepairOrder}
 										placeholder="Customer name"
-										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 									<input
 										title="Customer phone number"
@@ -835,6 +836,9 @@ const PointOfSalePage = () => {
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
+								{selectedRepairOrder && (
+									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+								)}
 							</div>
 						</div>
 

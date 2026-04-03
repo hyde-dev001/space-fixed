@@ -440,4 +440,86 @@ class RepairPosPaymentFlowTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['due_type']);
     }
+
+    #[Test]
+    public function deposit_checkout_updates_payment_status_to_paid(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-010',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000027',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Payment status sync (deposit)',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 560],
+            ],
+        ])->assertOk();
+
+        $repair->refresh();
+        $this->assertSame('paid', (string) $repair->payment_status);
+    }
+
+    #[Test]
+    public function full_checkout_updates_payment_status_to_paid_for_full_upfront_policy(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-011',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000028',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Payment status sync (full upfront)',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'pending',
+        ]);
+
+        $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'full',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 1120],
+            ],
+        ])->assertOk();
+
+        $repair->refresh();
+        $this->assertSame('paid', (string) $repair->payment_status);
+    }
 }

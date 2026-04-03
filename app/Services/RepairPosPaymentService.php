@@ -45,7 +45,7 @@ class RepairPosPaymentService
             ]);
         }
 
-        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount) {
+        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy) {
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'shop_owner_id' => $repair->shop_owner_id,
@@ -87,12 +87,36 @@ class RepairPosPaymentService
                 ->where('status', 'paid')
                 ->sum('paid_amount');
 
+            $paidDueTypes = PosTransaction::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->where('status', 'paid')
+                ->pluck('due_type')
+                ->map(fn ($value) => strtolower((string) $value))
+                ->all();
+
+            $hasDepositPayment = in_array('deposit', $paidDueTypes, true);
+            $hasBalancePayment = in_array('balance', $paidDueTypes, true);
+            $hasFullPayment = in_array('full', $paidDueTypes, true);
+
+            $paymentStatus = 'pending';
+            if ($normalizedPolicy === 'deposit_50') {
+                if ($hasBalancePayment) {
+                    $paymentStatus = 'completed';
+                } elseif ($hasDepositPayment) {
+                    $paymentStatus = 'paid';
+                }
+            } elseif ($hasFullPayment) {
+                $paymentStatus = 'paid';
+            }
+
             $overallTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
             $derivedStatus = $totalPaid <= 0
                 ? 'unpaid'
                 : ($totalPaid < $overallTotal ? 'partially_paid' : 'paid');
 
             $repair->update([
+                'payment_status' => $paymentStatus,
                 'total_paid_amount' => $totalPaid,
                 'payment_status_derived' => $derivedStatus,
                 'latest_pos_transaction_id' => $transaction->id,
