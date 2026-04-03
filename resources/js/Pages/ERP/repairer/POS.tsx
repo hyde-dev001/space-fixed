@@ -12,6 +12,7 @@ type RepairOrderOption = {
 	id: string;
 	customer: string;
 	customerId?: number | null;
+	paymentPolicy?: "deposit_50" | "full_upfront";
 	service: string;
 	amount: number;
 	requestedServices: string[];
@@ -75,6 +76,16 @@ const normalizeDueType = (value: string | null): PosDueType => {
 	}
 
 	return "full";
+};
+
+const normalizePaymentPolicy = (value: unknown): "deposit_50" | "full_upfront" => {
+	return value === "full_upfront" ? "full_upfront" : "deposit_50";
+};
+
+const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requestedDueType: PosDueType): PosDueType => {
+	if (policy === "full_upfront") return "full";
+	if (requestedDueType === "deposit" || requestedDueType === "balance") return requestedDueType;
+	return "deposit";
 };
 
 const computeDueAmountForOrder = (order: RepairOrderOption, dueType: PosDueType): number => {
@@ -154,7 +165,7 @@ const PointOfSalePage = () => {
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
-	const dueType = normalizeDueType(urlParams.get("due_type"));
+	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
 
 	const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
 	const [orderSearch, setOrderSearch] = useState<string>("");
@@ -272,6 +283,7 @@ const PointOfSalePage = () => {
 								id: String(entry?.id ?? `R-${index}`),
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
 								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
+								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy),
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
@@ -337,19 +349,20 @@ const PointOfSalePage = () => {
 		const targetOrder = repairOrders.find((entry) => entry.id === requestedRepairRequestId);
 		if (!targetOrder) return;
 
-		const dueAmount = computeDueAmountForOrder(targetOrder, dueType);
+		const resolvedDueType = resolveDueTypeForPolicy(targetOrder.paymentPolicy ?? "deposit_50", requestedDueType);
+		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
 		setSelectedRepairOrder(targetOrder);
 		setCustomerName(targetOrder.customer);
 		setItems([
 			{
-				id: `order-${targetOrder.id}-${dueType}`,
-				label: `${targetOrder.service} (${dueType})`,
+				id: `order-${targetOrder.id}-${resolvedDueType}`,
+				label: `${targetOrder.service} (${resolvedDueType})`,
 				qty: 1,
 				unitPrice: dueAmount,
 				source: "repair-order",
 			},
 		]);
-	}, [dueType, repairOrders, requestedRepairRequestId, selectedRepairOrder]);
+	}, [requestedDueType, repairOrders, requestedRepairRequestId, selectedRepairOrder]);
 
 	const subtotal = useMemo(() => {
 		return items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
@@ -381,12 +394,23 @@ const PointOfSalePage = () => {
 		proofReference,
 	});
 	const canPrint = isPaid;
+	const effectiveDueType = useMemo(() => {
+		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
+		return resolveDueTypeForPolicy(policy, requestedDueType);
+	}, [requestedDueType, selectedRepairOrder]);
+	const hasRepairOrderItem = useMemo(() => items.some((item) => item.source === "repair-order"), [items]);
 
 	useEffect(() => {
 		if (paymentMethod === "cash" && proofReference.length > 0) {
 			setProofReference("");
 		}
 	}, [paymentMethod, proofReference]);
+
+	useEffect(() => {
+		if (selectedRepairOrder && !hasRepairOrderItem) {
+			setSelectedRepairOrder(null);
+		}
+	}, [hasRepairOrderItem, selectedRepairOrder]);
 
 	const selectedOrderServiceSet = useMemo(() => {
 		if (!selectedRepairOrder) return null;
@@ -418,11 +442,12 @@ const PointOfSalePage = () => {
 	};
 
 	const addFromRepairOrder = (order: RepairOrderOption) => {
-		const dueAmount = computeDueAmountForOrder(order, dueType);
+		const resolvedDueType = resolveDueTypeForPolicy(order.paymentPolicy ?? "deposit_50", requestedDueType);
+		const dueAmount = computeDueAmountForOrder(order, resolvedDueType);
 		setItems([
 			{
-				id: `order-${order.id}-${dueType}`,
-				label: `${order.service} (${dueType})`,
+				id: `order-${order.id}-${resolvedDueType}`,
+				label: `${order.service} (${resolvedDueType})`,
 				qty: 1,
 				unitPrice: dueAmount,
 				source: "repair-order",
@@ -588,7 +613,7 @@ const PointOfSalePage = () => {
 				"/api/repair-pos/checkout",
 				{
 					repair_request_id: repairRequestId,
-					due_type: dueType,
+					due_type: effectiveDueType,
 					customer_type: customerType,
 					customer_id: selectedRepairOrder?.customerId ?? null,
 					walk_in_name: customerName.trim() || null,

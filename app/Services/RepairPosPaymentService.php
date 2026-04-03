@@ -16,9 +16,21 @@ class RepairPosPaymentService
     {
         $dueType = (string) $payload['due_type'];
         $policy = (string) ($repair->payment_policy_snapshot ?: $repair->payment_policy ?: 'deposit_50');
+        $normalizedPolicy = $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
+
+        $allowedDueTypes = $normalizedPolicy === 'full_upfront'
+            ? ['full']
+            : ['deposit', 'balance'];
+
+        if (!in_array($dueType, $allowedDueTypes, true)) {
+            throw ValidationException::withMessages([
+                'due_type' => ['Selected due type is not allowed for the current payment policy.'],
+            ]);
+        }
+
         $total = (float) ($repair->final_total ?? $repair->total ?? 0);
 
-        $dueSubtotal = $policy === 'full_upfront'
+        $dueSubtotal = $normalizedPolicy === 'full_upfront'
             ? $total
             : round($total * 0.5, 2);
 

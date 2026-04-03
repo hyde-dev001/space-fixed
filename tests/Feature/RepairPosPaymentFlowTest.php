@@ -358,4 +358,86 @@ class RepairPosPaymentFlowTest extends TestCase
             'status' => 'paid',
         ]);
     }
+
+    #[Test]
+    public function full_upfront_policy_rejects_non_full_due_type(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-008',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000025',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Policy/due type guard test (full_upfront)',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 1120],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['due_type']);
+    }
+
+    #[Test]
+    public function deposit_policy_rejects_full_due_type(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-009',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000026',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Policy/due type guard test (deposit_50)',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'full',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 560],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['due_type']);
+    }
 }
