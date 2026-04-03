@@ -17,6 +17,7 @@ class PosRefund extends Model
         'source_transaction_id',
         'module_type',
         'module_reference_id',
+        'workflow_source',
         'request_type',
         'requested_amount',
         'approved_amount',

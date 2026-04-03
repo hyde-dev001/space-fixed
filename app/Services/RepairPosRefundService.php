@@ -71,6 +71,7 @@ class RepairPosRefundService
             'source_transaction_id' => $source->id,
             'module_type' => 'repair',
             'module_reference_id' => $source->module_reference_id,
+            'workflow_source' => (string) ($payload['workflow_source'] ?? 'pos'),
             'request_type' => $payload['request_type'],
             'requested_amount' => $requested,
             'reason_code' => $payload['reason_code'],
@@ -131,7 +132,10 @@ class RepairPosRefundService
         }
 
         if ($stage === 'finance') {
-            if ((string) ($refund->repairer_status ?? 'pending') !== 'approved') {
+            $workflowSource = strtolower((string) ($refund->workflow_source ?? 'pos'));
+            $requiresRepairerGate = $workflowSource === 'online_myrepair';
+
+            if ($requiresRepairerGate && (string) ($refund->repairer_status ?? 'pending') !== 'approved') {
                 throw ValidationException::withMessages([
                     'repairer_status' => ['Finance approval requires repairer endorsement first.'],
                 ]);

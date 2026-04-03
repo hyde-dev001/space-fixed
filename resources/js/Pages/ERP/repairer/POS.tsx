@@ -508,6 +508,7 @@ const PointOfSalePage = () => {
 				requested_amount: receipt.totalDue,
 				reason_code: "repairer_requested_refund",
 				reason_notes: "Requested from Repairer POS receipt history.",
+				receipt_no: receipt.receiptNo,
 			});
 
 			await Swal.fire({

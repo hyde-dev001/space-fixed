@@ -6,6 +6,7 @@ export type RepairPosRefundRequestPayload = {
   requested_amount: number;
   reason_code: string;
   reason_notes?: string;
+  receipt_no?: string;
 };
 
 export const repairPosHistoryApi = {

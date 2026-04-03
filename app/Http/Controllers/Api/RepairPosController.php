@@ -84,6 +84,7 @@ class RepairPosController extends Controller
             'requested_amount' => ['required', 'numeric', 'min:0.01'],
             'reason_code' => ['required', 'string', 'max:100'],
             'reason_notes' => ['nullable', 'string', 'max:2000'],
+            'receipt_no' => ['nullable', 'string', 'max:120'],
         ]);
 
         $source = PosTransaction::findOrFail((int) $validated['source_transaction_id']);
@@ -114,6 +115,30 @@ class RepairPosController extends Controller
                 'success' => false,
                 'message' => 'You are not authorized to request a refund for this transaction.',
             ], 403);
+        }
+
+        if ((string) $source->customer_type === 'walk_in' && $isShopActor) {
+            $presentedReceiptNo = trim((string) ($validated['receipt_no'] ?? ''));
+            if ($presentedReceiptNo === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Receipt number is required for walk-in refund requests.',
+                    'errors' => [
+                        'receipt_no' => ['Receipt number is required for walk-in refund requests.'],
+                    ],
+                ], 422);
+            }
+
+            $expectedReceiptNo = trim((string) ($source->receipt?->receipt_no ?? $source->transaction_no ?? ''));
+            if ($expectedReceiptNo === '' || strcasecmp($presentedReceiptNo, $expectedReceiptNo) !== 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Presented receipt does not match the selected transaction.',
+                    'errors' => [
+                        'receipt_no' => ['Presented receipt does not match the selected transaction.'],
+                    ],
+                ], 422);
+            }
         }
 
         $refund = $service->requestRefund($source, $validated, $actorId);

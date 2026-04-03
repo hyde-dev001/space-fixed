@@ -137,6 +137,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'source_transaction_id' => $source->id,
             'module_type' => 'repair',
             'module_reference_id' => 3,
+            'workflow_source' => 'online_myrepair',
             'request_type' => 'full',
             'requested_amount' => 500,
             'reason_code' => 'service_defect',
@@ -156,6 +157,60 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             approvalNote: 'Finance approval',
             stage: 'finance'
         );
+    }
+
+    #[Test]
+    public function finance_can_approve_pos_refund_without_repairer_endorsement(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+        $financeActor = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-WALKIN-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 31,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk In Customer',
+            'walk_in_phone' => '09170000011',
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-TDD-WALKIN-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 31,
+            'workflow_source' => 'pos',
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'walk_in_refund',
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $updated = app(\App\Services\RepairPosRefundService::class)->approve(
+            refund: $refund,
+            actorId: (int) $financeActor->id,
+            approvedAmount: 500,
+            approvalNote: 'POS walk-in finance approval',
+            stage: 'finance'
+        );
+
+        $this->assertSame('approved', (string) $updated->finance_status);
+        $this->assertSame('approved', (string) $updated->status);
     }
 
     #[Test]
@@ -190,6 +245,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'source_transaction_id' => $source->id,
             'module_type' => 'repair',
             'module_reference_id' => 4,
+            'workflow_source' => 'online_myrepair',
             'request_type' => 'full',
             'requested_amount' => 500,
             'reason_code' => 'service_defect',

@@ -204,6 +204,7 @@ class RepairPosRefundFlowTest extends TestCase
             'request_type' => 'partial',
             'requested_amount' => 800,
             'reason_code' => 'over_refund_attempt',
+            'receipt_no' => $source->transaction_no,
         ]);
 
         $response->assertStatus(422)
@@ -264,6 +265,71 @@ class RepairPosRefundFlowTest extends TestCase
                 'id' => $refund->id,
                 'status' => 'requested',
             ]);
+    }
+
+    #[Test]
+    public function walk_in_refund_request_requires_receipt_number_proof(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $repair = $this->createRepairRequest($shopOwner, null, [
+            'shop_owner_id' => $shopOwner->id,
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status_derived' => 'paid',
+            'total_paid_amount' => 500,
+        ]);
+
+        $source = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-WALKIN-RECEIPT-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Customer',
+            'walk_in_phone' => '09170000044',
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $this->actingAs($actor, 'user')
+            ->postJson('/api/repair-pos/refunds', [
+                'source_transaction_id' => $source->id,
+                'request_type' => 'full',
+                'requested_amount' => 500,
+                'reason_code' => 'walk_in_refund',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['receipt_no']);
+
+        $this->actingAs($actor, 'user')
+            ->postJson('/api/repair-pos/refunds', [
+                'source_transaction_id' => $source->id,
+                'request_type' => 'full',
+                'requested_amount' => 500,
+                'reason_code' => 'walk_in_refund',
+                'receipt_no' => 'WRONG-RECEIPT',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['receipt_no']);
+
+        $this->actingAs($actor, 'user')
+            ->postJson('/api/repair-pos/refunds', [
+                'source_transaction_id' => $source->id,
+                'request_type' => 'full',
+                'requested_amount' => 500,
+                'reason_code' => 'walk_in_refund',
+                'receipt_no' => $source->transaction_no,
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
     }
 
     #[Test]

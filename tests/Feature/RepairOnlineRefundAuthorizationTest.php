@@ -67,7 +67,13 @@ class RepairOnlineRefundAuthorizationTest extends TestCase
                 'evidence' => [['type' => 'photo', 'url' => 'https://cdn/app/proof-1.jpg']],
             ])
             ->assertOk()
-            ->assertJsonPath('data.repairer_status', 'pending');
+            ->assertJsonPath('data.repairer_status', 'pending')
+            ->assertJsonPath('data.workflow_source', 'online_myrepair');
+
+        $this->assertDatabaseHas('pos_refunds', [
+            'source_transaction_id' => $source->id,
+            'workflow_source' => 'online_myrepair',
+        ]);
     }
 
     #[Test]

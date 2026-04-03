@@ -812,6 +812,7 @@ class RepairRequestController extends Controller
 
         $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user) {
             $refund = $refundService->requestRefund($sourceTransaction, [
+                'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
                 'requested_amount' => (float) $validated['requested_amount'],
                 'reason_code' => $validated['reason_code'],
@@ -834,6 +835,7 @@ class RepairRequestController extends Controller
                 'repairer_status' => $refund->repairer_status,
                 'finance_status' => $refund->finance_status,
                 'shop_owner_status' => $refund->shop_owner_status,
+                'workflow_source' => $refund->workflow_source,
                 'requested_amount' => (float) $refund->requested_amount,
                 'reason_code' => $refund->reason_code,
                 'evidence_snapshot' => $refund->evidence_snapshot,

@@ -1498,7 +1498,7 @@ const MyOrders: React.FC = () => {
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:justify-end sm:pt-6 sm:gap-3">
                         {order.status === 'pending' && (
-                          <>
+                          <div className="w-full flex justify-end">
                             <button
                               disabled={!canCancel}
                               onClick={() => {
@@ -1517,7 +1517,7 @@ const MyOrders: React.FC = () => {
                             >
                               CANCEL ORDER
                             </button>
-                          </>
+                          </div>
                         )}
                         {hasReasonDetails(order) && (
                           <button
@@ -1598,7 +1598,7 @@ const MyOrders: React.FC = () => {
 
                       {/* Status Guidance */}
                       {order.status === 'pending' && (
-                        <p className="mt-3 text-xs text-gray-500 sm:text-right">
+                        <p className="mt-3 text-center text-xs text-gray-500 sm:text-right">
                           You can't cancel the order once it gets processed.
                         </p>
                       )}

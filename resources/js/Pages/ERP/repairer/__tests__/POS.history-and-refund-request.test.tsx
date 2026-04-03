@@ -38,6 +38,7 @@ describe("repairPosHistoryApi", () => {
       requested_amount: 560,
       reason_code: "repairer_requested_refund",
       reason_notes: "Requested from test",
+      receipt_no: "RCPT-TEST-001",
     });
 
     expect(postMock).toHaveBeenCalledWith(
@@ -48,6 +49,7 @@ describe("repairPosHistoryApi", () => {
         requested_amount: 560,
         reason_code: "repairer_requested_refund",
         reason_notes: "Requested from test",
+        receipt_no: "RCPT-TEST-001",
       },
       { withCredentials: true },
     );
