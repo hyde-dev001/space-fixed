@@ -73,6 +73,9 @@ type RepairOrder = {
   add_ons_total?: number | null;
   materials_total?: number | null;
   final_total?: number | null;
+  total_paid_amount?: number | null;
+  total_refunded_amount?: number | null;
+  latest_pos_transaction_id?: number | null;
   included_services_snapshot?: Array<{
     id: number;
     name: string;
@@ -882,6 +885,26 @@ const MyRepairs: React.FC = () => {
 
   const handleSubmitRefund = async () => {
     if (!refundOrderId) return;
+
+    const targetOrder = orders.find((entry) => entry.id === refundOrderId);
+    if (!targetOrder) {
+      Swal.fire({ icon: 'error', title: 'Repair Not Found', text: 'Unable to locate the selected repair request.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    if (!targetOrder.latest_pos_transaction_id) {
+      Swal.fire({ icon: 'warning', title: 'Refund Unavailable', text: 'This repair has no paid POS transaction yet.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    const paidAmount = Number(targetOrder.total_paid_amount ?? 0);
+    const refundedAmount = Number(targetOrder.total_refunded_amount ?? 0);
+    const refundableAmount = Math.max(0, paidAmount - refundedAmount);
+
+    if (refundableAmount <= 0) {
+      Swal.fire({ icon: 'warning', title: 'Refund Unavailable', text: 'No refundable balance is available for this repair.', confirmButtonColor: '#000000' });
+      return;
+    }
     
     if (!refundReason) {
       Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
@@ -910,24 +933,27 @@ const MyRepairs: React.FC = () => {
 
     setIsSubmittingRefund(true);
     try {
-      const formData = new FormData();
-      formData.append('repair_id', refundOrderId.toString());
-      formData.append('reason', refundReason);
-      formData.append('note', refundNote);
-      
-      // Append all media files
-      refundMedia.forEach((file, index) => {
-        formData.append(`media[${index}]`, file);
-      });
+      const reasonCode = refundReason.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'customer_refund_request';
+      const mediaSummary = refundMedia.length > 0
+        ? `Uploaded media references: ${refundMedia.map((file) => file.name).join(', ')}`
+        : '';
+      const reasonNotes = [refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
 
-      const response = await fetch('/repairs/request-refund', {
+      const response = await fetch('/api/repair-pos/refunds', {
         method: 'POST',
         credentials: 'include',
         headers: {
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
-        body: formData,
+        body: JSON.stringify({
+          source_transaction_id: targetOrder.latest_pos_transaction_id,
+          request_type: 'full',
+          requested_amount: refundableAmount,
+          reason_code: reasonCode,
+          reason_notes: reasonNotes,
+        }),
       });
 
       const raw = await response.text();
@@ -964,6 +990,8 @@ const MyRepairs: React.FC = () => {
         text: 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.',
         confirmButtonColor: '#000000',
       });
+
+      fetchRepairs();
     } catch (error) {
       console.error('Error submitting refund request:', error);
       Swal.fire({

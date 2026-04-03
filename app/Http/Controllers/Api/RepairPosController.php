@@ -60,7 +60,34 @@ class RepairPosController extends Controller
         ]);
 
         $source = PosTransaction::findOrFail((int) $validated['source_transaction_id']);
-        $actorId = (int) (Auth::guard('user')->id() ?? 0);
+        if ($source->module_type !== 'repair') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only repair transactions can be refunded from this endpoint.',
+            ], 422);
+        }
+
+        $actor = Auth::guard('user')->user();
+        $actorId = (int) ($actor?->id ?? 0);
+
+        $repair = RepairRequest::query()->find((int) $source->module_reference_id);
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found for this transaction.',
+            ], 404);
+        }
+
+        $isCustomerOwner = (int) $repair->user_id === $actorId;
+        $isShopActor = $actor && (int) ($actor->shop_owner_id ?? 0) > 0
+            && (int) $actor->shop_owner_id === (int) $source->shop_owner_id;
+
+        if (!$isCustomerOwner && !$isShopActor) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are not authorized to request a refund for this transaction.',
+            ], 403);
+        }
 
         $refund = $service->requestRefund($source, $validated, $actorId);
 

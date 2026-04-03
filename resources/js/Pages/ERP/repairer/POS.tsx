@@ -66,7 +66,6 @@ type ReceiptSnapshot = {
 
 const SERVICES_PER_PAGE = 6;
 const VAT_RATE = 0;
-const staticPackages: ServicePackageOption[] = [];
 
 const normalizeDueType = (value: string | null): PosDueType => {
 	if (value === "deposit" || value === "balance" || value === "full") {
@@ -176,6 +175,7 @@ const PointOfSalePage = () => {
 
 	const [repairOrders, setRepairOrders] = useState<RepairOrderOption[]>([]);
 	const [serviceCatalog, setServiceCatalog] = useState<RepairServiceOption[]>([]);
+	const [servicePackages, setServicePackages] = useState<ServicePackageOption[]>([]);
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 
 	useEffect(() => {
@@ -184,9 +184,10 @@ const PointOfSalePage = () => {
 		const loadData = async () => {
 			setIsLoadingData(true);
 			try {
-				const [servicesResult, ordersResult] = await Promise.allSettled([
+				const [servicesResult, ordersResult, packagesResult] = await Promise.allSettled([
 					axios.get("/api/repair-services"),
 					axios.get("/api/repairer/repairs"),
+					axios.get("/api/repair-packages"),
 				]);
 
 				if (isMounted && servicesResult.status === "fulfilled") {
@@ -223,8 +224,22 @@ const PointOfSalePage = () => {
 
 					const mappedOrders: RepairOrderOption[] = rawOrders
 						.map((entry: any, index: number) => {
-							const amount = Number(entry?.total ?? entry?.finalPrice ?? entry?.amount ?? 0);
-							const selectedServicesRaw = Array.isArray(entry?.selectedServices)
+							const amount = Number(
+								entry?.final_total
+								?? entry?.pricing_breakdown?.final_total
+								?? entry?.total
+								?? entry?.finalPrice
+								?? entry?.amount
+								?? 0,
+							);
+
+							const selectedServicesRaw = Array.isArray(entry?.included_services_snapshot)
+								? entry.included_services_snapshot
+								: Array.isArray(entry?.add_on_services_snapshot)
+									? entry.add_on_services_snapshot
+									: Array.isArray(entry?.services)
+										? entry.services
+										: Array.isArray(entry?.selectedServices)
 								? entry.selectedServices
 								: typeof entry?.service === "string"
 									? [entry.service]
@@ -240,7 +255,15 @@ const PointOfSalePage = () => {
 								.map((serviceName: string) => serviceName.trim())
 								.filter((serviceName: string) => serviceName.length > 0);
 
-							const primaryService = String(entry?.service ?? entry?.item ?? entry?.service_name ?? requestedServices[0] ?? "Repair Service");
+							const packageName = String(entry?.pricing_breakdown?.package_name ?? "").trim();
+							const primaryService = String(
+								entry?.service
+								?? entry?.item
+								?? entry?.service_name
+								?? packageName
+								?? requestedServices[0]
+								?? "Repair Service"
+							);
 							return {
 								id: String(entry?.id ?? `R-${index}`),
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
@@ -255,6 +278,38 @@ const PointOfSalePage = () => {
 					if (mappedOrders.length > 0) {
 						setRepairOrders(mappedOrders);
 					}
+				}
+
+				if (isMounted && packagesResult.status === "fulfilled") {
+					const rawPackages = Array.isArray((packagesResult.value.data as any)?.data)
+						? (packagesResult.value.data as any).data
+						: Array.isArray(packagesResult.value.data)
+							? packagesResult.value.data
+							: [];
+
+					const mappedPackages: ServicePackageOption[] = rawPackages
+						.map((entry: any, index: number) => {
+							const packagePrice = Number(entry?.effective_package_price ?? entry?.package_price ?? entry?.price ?? 0);
+							const serviceNames = Array.isArray(entry?.services)
+								? entry.services
+									.map((service: any) => String(service?.name ?? "").trim())
+									.filter((name: string) => name.length > 0)
+								: [];
+							const servicesTotal = Number(entry?.services_total_price ?? 0);
+							const savings = Number(entry?.savings_amount ?? Math.max(servicesTotal - packagePrice, 0));
+
+							return {
+								id: String(entry?.id ?? `P-${index}`),
+								name: String(entry?.name ?? "Repair Package"),
+								description: String(entry?.description ?? ""),
+								includedServices: serviceNames,
+								price: Number.isFinite(packagePrice) ? packagePrice : 0,
+								saveText: savings > 0 ? `Save P${savings.toFixed(2)}` : "",
+							};
+						})
+						.filter((entry: ServicePackageOption) => entry.price > 0);
+
+					setServicePackages(mappedPackages);
 				}
 			} catch {
 				// Use fallback data when endpoints are unavailable.
@@ -323,15 +378,15 @@ const PointOfSalePage = () => {
 
 	const visiblePackages = useMemo(() => {
 		const query = serviceSearch.trim().toLowerCase();
-		if (!query) return staticPackages;
-		return staticPackages.filter((pkg) => {
+		if (!query) return servicePackages;
+		return servicePackages.filter((pkg) => {
 			return (
 				pkg.name.toLowerCase().includes(query) ||
 				pkg.description.toLowerCase().includes(query) ||
 				pkg.includedServices.some((serviceName) => serviceName.toLowerCase().includes(query))
 			);
 		});
-	}, [serviceSearch]);
+	}, [servicePackages, serviceSearch]);
 
 	const resetOrderInputs = () => {
 		setItems([]);
@@ -363,6 +418,7 @@ const PointOfSalePage = () => {
 
 	const addFromServiceCatalog = (service: RepairServiceOption) => {
 		if (selectedRepairOrder) return;
+		if (isServiceSelected(service)) return;
 
 		setItems((prev) => [
 			...prev,
@@ -378,6 +434,7 @@ const PointOfSalePage = () => {
 
 	const addPackageToOrder = (pkg: ServicePackageOption) => {
 		if (selectedRepairOrder) return;
+		if (isPackageSelected(pkg)) return;
 
 		setItems((prev) => [
 			...prev,
