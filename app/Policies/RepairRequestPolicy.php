@@ -16,7 +16,7 @@ class RepairRequestPolicy
             return false;
         }
 
-        $allowedStatuses = ['pending', 'ready_for_pickup', 'in_progress', 'completed'];
+        $allowedStatuses = ['pending', 'ready_for_pickup', 'in_progress', 'completed', 'picked_up'];
 
         return in_array((string) $repair->status, $allowedStatuses, true);
     }

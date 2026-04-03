@@ -137,26 +137,22 @@ class RepairPosPaymentService
             $hasBalancePayment = in_array('balance', $paidDueTypes, true);
             $hasFullPayment = in_array('full', $paidDueTypes, true);
 
-            $paymentStatus = 'pending';
-            if ($normalizedPolicy === 'deposit_50') {
-                if ($hasBalancePayment) {
-                    $paymentStatus = 'completed';
-                } elseif ($hasDepositPayment) {
-                    $paymentStatus = 'paid';
-                }
-            } elseif ($hasFullPayment) {
-                $paymentStatus = 'paid';
-            }
-
             $overallTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
             $derivedStatus = $totalPaid <= 0
                 ? 'unpaid'
                 : ($totalPaid < $overallTotal ? 'partially_paid' : 'paid');
 
+            $canonicalStatus = $derivedStatus;
+            if ($normalizedPolicy === 'deposit_50' && !$hasDepositPayment && !$hasBalancePayment && $totalPaid <= 0) {
+                $canonicalStatus = 'unpaid';
+            } elseif ($normalizedPolicy === 'full_upfront' && !$hasFullPayment && $totalPaid <= 0) {
+                $canonicalStatus = 'unpaid';
+            }
+
             $repair->update([
-                'payment_status' => $paymentStatus,
+                'payment_status' => $canonicalStatus,
                 'total_paid_amount' => $totalPaid,
-                'payment_status_derived' => $derivedStatus,
+                'payment_status_derived' => $canonicalStatus,
                 'latest_pos_transaction_id' => $transaction->id,
                 'payment_policy_snapshot' => $repair->payment_policy_snapshot ?: $repair->payment_policy,
             ]);
