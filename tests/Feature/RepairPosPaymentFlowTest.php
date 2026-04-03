@@ -88,7 +88,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 500],
+                ['tender_type' => 'cash', 'amount' => 560],
             ],
         ]);
 
@@ -96,7 +96,7 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $repair->refresh();
         $this->assertSame('partially_paid', (string) $repair->payment_status_derived);
-        $this->assertSame('500.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('560.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
     #[Test]
@@ -165,7 +165,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 500],
+                ['tender_type' => 'cash', 'amount' => 560],
             ],
         ]);
 
@@ -211,7 +211,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 500],
+                ['tender_type' => 'cash', 'amount' => 560],
             ],
         ])->assertOk();
 
@@ -221,13 +221,13 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 500],
+                ['tender_type' => 'cash', 'amount' => 560],
             ],
         ])->assertOk();
 
         $repair->refresh();
         $this->assertSame('paid', (string) $repair->payment_status_derived);
-        $this->assertSame('1000.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('1120.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
     #[Test]
@@ -263,12 +263,12 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 1200],
+                ['tender_type' => 'cash', 'amount' => 1344],
             ],
         ])->assertOk();
 
         $repair->refresh();
         $this->assertSame('paid', (string) $repair->payment_status_derived);
-        $this->assertSame('1200.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('1344.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 }

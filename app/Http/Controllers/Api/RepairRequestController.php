@@ -24,6 +24,8 @@ use App\Services\ShopOwnerApprovalPolicyService;
 
 class RepairRequestController extends Controller
 {
+    private const REPAIR_VAT_RATE_PERCENT = 12.0;
+
     public function __construct(
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
     ) {}
@@ -597,6 +599,9 @@ class RepairRequestController extends Controller
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
+                $vatRate = self::REPAIR_VAT_RATE_PERCENT;
+                $vatAmount = round(max(0.0, (float) $pricingSnapshot['final_total']) * ($vatRate / 100), 2);
+                $grandTotal = round(max(0.0, (float) $pricingSnapshot['final_total']) + $vatAmount, 2);
 
                 return [
                     'id' => $repair->id,
@@ -645,6 +650,9 @@ class RepairRequestController extends Controller
                     'total_paid_amount' => (float) $repair->total_paid_amount,
                     'total_refunded_amount' => (float) $repair->total_refunded_amount,
                     'latest_pos_transaction_id' => $repair->latest_pos_transaction_id,
+                    'vat_rate' => $vatRate,
+                    'vat_amount' => $vatAmount,
+                    'grand_total' => $grandTotal,
                     'materials_total' => $pricingSnapshot['materials_total'],
                     'final_total' => $pricingSnapshot['final_total'],
                     'included_services_snapshot' => $repair->included_services_snapshot,
@@ -1383,19 +1391,22 @@ class RepairRequestController extends Controller
                 ], 503);
             }
 
-            $chargeTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
-            if ($chargeTotal <= 0) {
-                $chargeTotal = (float) (($repair->package_price ?? 0) + ($repair->add_ons_total ?? 0));
+            $chargeSubtotal = (float) ($repair->final_total ?? $repair->total ?? 0);
+            if ($chargeSubtotal <= 0) {
+                $chargeSubtotal = (float) (($repair->package_price ?? 0) + ($repair->add_ons_total ?? 0));
             }
 
             $isRemainingBalancePhase = $this->isRepairRemainingBalancePhase($repair);
             if ($policy === 'full_upfront') {
-                $amount = $chargeTotal;
+                $dueSubtotal = $chargeSubtotal;
                 $phase = 'full payment';
             } else {
-                $amount = max(1.0, round($chargeTotal / 2, 2));
+                $dueSubtotal = max(1.0, round($chargeSubtotal / 2, 2));
                 $phase = $isRemainingBalancePhase ? 'remaining balance' : 'down payment';
             }
+
+            $vatAmount = round($dueSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
+            $amount = round($dueSubtotal + $vatAmount, 2);
 
             if ($amount <= 0) {
                 return response()->json([
@@ -1484,6 +1495,10 @@ class RepairRequestController extends Controller
                 'checkout_url' => $checkoutUrl,
                 'link_id' => $linkId,
                 'repair_id' => $repair->id,
+                'subtotal_amount' => $dueSubtotal,
+                'vat_amount' => $vatAmount,
+                'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
+                'total_amount' => $amount,
             ]);
         } catch (\Exception $e) {
             \Log::error('Retry payment session failed for repair', [

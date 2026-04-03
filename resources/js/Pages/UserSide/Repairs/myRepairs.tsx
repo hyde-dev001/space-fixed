@@ -6,6 +6,7 @@ import axios from 'axios';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
+const REPAIR_VAT_RATE_PERCENT = 12;
 
 type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
 type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected';
@@ -73,6 +74,9 @@ type RepairOrder = {
   add_ons_total?: number | null;
   materials_total?: number | null;
   final_total?: number | null;
+  vat_amount?: number | null;
+  vat_rate?: number | null;
+  grand_total?: number | null;
   total_paid_amount?: number | null;
   total_refunded_amount?: number | null;
   latest_pos_transaction_id?: number | null;
@@ -131,7 +135,27 @@ const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walk_in' 
 };
 
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
-const getOrderGrandTotal = (order: RepairOrder) => Number(order.final_total ?? order.total_amount ?? 0);
+const getOrderSubtotal = (order: RepairOrder) => Number(order.final_total ?? order.total_amount ?? 0);
+const getOrderVatRate = (order: RepairOrder) => {
+  const parsed = Number(order.vat_rate);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : REPAIR_VAT_RATE_PERCENT;
+};
+const getOrderVatAmount = (order: RepairOrder) => {
+  const parsed = Number(order.vat_amount);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+
+  return Number((getOrderSubtotal(order) * (getOrderVatRate(order) / 100)).toFixed(2));
+};
+const getOrderGrandTotal = (order: RepairOrder) => {
+  const parsedGrandTotal = Number(order.grand_total);
+  if (Number.isFinite(parsedGrandTotal) && parsedGrandTotal > 0) {
+    return parsedGrandTotal;
+  }
+
+  return Number((getOrderSubtotal(order) + getOrderVatAmount(order)).toFixed(2));
+};
 const getOrderMaterialsTotal = (order: RepairOrder) => Number(order.materials_total ?? order.pricing_breakdown?.materials_total ?? 0);
 const escapeSwalText = (value?: string | null): string => {
   return (value ?? '')
@@ -831,7 +855,8 @@ const MyRepairs: React.FC = () => {
   };
 
   const handlePayNow = async (orderId: number) => {
-    if (!orders.find(o => o.id === orderId)) return;
+    const selectedOrder = orders.find(o => o.id === orderId);
+    if (!selectedOrder) return;
 
     setProcessingPayment(true);
 
@@ -862,6 +887,33 @@ const MyRepairs: React.FC = () => {
 
       if (!checkoutUrl) {
         throw new Error('Incomplete payment data received from PayMongo');
+      }
+
+      const subtotalAmount = Number(paymentData?.subtotal_amount ?? getOrderSubtotal(selectedOrder));
+      const vatAmount = Number(paymentData?.vat_amount ?? (subtotalAmount * (REPAIR_VAT_RATE_PERCENT / 100)));
+      const vatRate = Number(paymentData?.vat_rate ?? REPAIR_VAT_RATE_PERCENT);
+      const totalAmount = Number(paymentData?.total_amount ?? (subtotalAmount + vatAmount));
+
+      const confirmResult = await Swal.fire({
+        title: 'Confirm Repair Payment',
+        html: `
+          <div style="text-align:left; font-size:14px; line-height:1.7;">
+            <div style="display:flex; justify-content:space-between;"><span>Subtotal</span><strong>${formatCurrency(subtotalAmount)}</strong></div>
+            <div style="display:flex; justify-content:space-between;"><span>VAT (${vatRate}%)</span><strong>${formatCurrency(vatAmount)}</strong></div>
+            <div style="margin-top:10px; border-top:1px solid #e5e7eb; padding-top:10px; display:flex; justify-content:space-between;"><span>Total</span><strong>${formatCurrency(totalAmount)}</strong></div>
+          </div>
+        `,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: 'Proceed to PayMongo',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#000000',
+        cancelButtonColor: '#6b7280',
+      });
+
+      if (!confirmResult.isConfirmed) {
+        setProcessingPayment(false);
+        return;
       }
 
       // Store repair info so we can verify on return
@@ -2050,8 +2102,18 @@ const MyRepairs: React.FC = () => {
                           )}
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Repair Total</p>
-                          <p className="font-bold text-black text-2xl">{formatCurrency(getOrderGrandTotal(order))}</p>
+                          <div className="space-y-1 mb-2 text-xs text-gray-500">
+                            <div className="flex items-center justify-end gap-3">
+                              <span>Subtotal</span>
+                              <span className="text-gray-700">{formatCurrency(getOrderSubtotal(order))}</span>
+                            </div>
+                            <div className="flex items-center justify-end gap-3">
+                              <span>{`VAT (${getOrderVatRate(order)}%)`}</span>
+                              <span className="text-gray-700">{formatCurrency(getOrderVatAmount(order))}</span>
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Total Paid</p>
+                          <p className="font-bold text-black text-2xl">{formatCurrency(order.total_paid_amount && Number(order.total_paid_amount) > 0 ? order.total_paid_amount : getOrderGrandTotal(order))}</p>
                           {(order.repair_package_id || getOrderMaterialsTotal(order) > 0) && (
                             <p className="mt-1 text-xs text-gray-500">
                               {order.repair_package_id

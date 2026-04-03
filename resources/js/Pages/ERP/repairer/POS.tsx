@@ -65,7 +65,7 @@ type ReceiptSnapshot = {
 };
 
 const SERVICES_PER_PAGE = 6;
-const VAT_RATE = 0;
+const VAT_RATE = 12;
 
 const normalizeDueType = (value: string | null): PosDueType => {
 	if (value === "deposit" || value === "balance" || value === "full") {

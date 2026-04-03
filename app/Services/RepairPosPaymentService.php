@@ -10,15 +10,20 @@ use Illuminate\Validation\ValidationException;
 
 class RepairPosPaymentService
 {
+    private const VAT_RATE_PERCENT = 12.0;
+
     public function checkout(RepairRequest $repair, array $payload, int $actorId): PosTransaction
     {
         $dueType = (string) $payload['due_type'];
         $policy = (string) ($repair->payment_policy_snapshot ?: $repair->payment_policy ?: 'deposit_50');
         $total = (float) ($repair->final_total ?? $repair->total ?? 0);
 
-        $dueAmount = $policy === 'full_upfront'
+        $dueSubtotal = $policy === 'full_upfront'
             ? $total
             : round($total * 0.5, 2);
+
+        $vatAmount = round($dueSubtotal * (self::VAT_RATE_PERCENT / 100), 2);
+        $dueAmount = round($dueSubtotal + $vatAmount, 2);
 
         $paidAmount = collect($payload['payment_lines'])->sum(fn ($line) => (float) $line['amount']);
 
@@ -28,7 +33,7 @@ class RepairPosPaymentService
             ]);
         }
 
-        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType) {
+        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount) {
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'shop_owner_id' => $repair->shop_owner_id,
@@ -40,14 +45,17 @@ class RepairPosPaymentService
                 'walk_in_phone' => $payload['walk_in_phone'] ?? null,
                 'walk_in_email' => $payload['walk_in_email'] ?? null,
                 'due_type' => $dueType,
-                'subtotal' => $dueAmount,
-                'tax_amount' => 0,
+                'subtotal' => $dueSubtotal,
+                'tax_amount' => $vatAmount,
                 'discount_amount' => 0,
                 'total_amount' => $dueAmount,
                 'paid_amount' => $paidAmount,
                 'status' => 'paid',
                 'paid_at' => now(),
                 'created_by' => $actorId,
+                'metadata' => [
+                    'vat_rate' => self::VAT_RATE_PERCENT,
+                ],
             ]);
 
             foreach ($payload['payment_lines'] as $line) {
