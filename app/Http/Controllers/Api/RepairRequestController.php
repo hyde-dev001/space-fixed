@@ -811,7 +811,7 @@ class RepairRequestController extends Controller
                 return;
             }
 
-            $requestedAmount = min((float) $repair->total_paid_amount, (float) $sourceTransaction->paid_amount);
+            $requestedAmount = $refundService->computeRepairRefundableAmount((int) $repair->id);
             if ($requestedAmount <= 0) {
                 return;
             }

@@ -10,6 +10,70 @@ class RepairPosRefundFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    #[Test]
+    public function cancel_refund_uses_aggregate_paid_amount_not_latest_transaction_only(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'for_release',
+            'payment_status' => 'paid',
+            'payment_policy_snapshot' => 'deposit_50',
+            'total_paid_amount' => 1120,
+        ]);
+
+        \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-RFD-AGG-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'deposit',
+            'subtotal' => 500,
+            'tax_amount' => 60,
+            'discount_amount' => 0,
+            'total_amount' => 560,
+            'paid_amount' => 560,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $latest = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-RFD-AGG-002',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'balance',
+            'subtotal' => 500,
+            'tax_amount' => 60,
+            'discount_amount' => 0,
+            'total_amount' => 560,
+            'paid_amount' => 560,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $repair->update(['latest_pos_transaction_id' => $latest->id]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/customer/repairs/' . $repair->id . '/cancel')
+            ->assertOk();
+
+        $this->assertDatabaseHas('pos_refunds', [
+            'source_transaction_id' => $latest->id,
+            'module_reference_id' => $repair->id,
+            'requested_amount' => 1120,
+            'status' => 'requested',
+        ]);
+    }
+
     private function createRepairRequest(
         \App\Models\ShopOwner $shopOwner,
         ?\App\Models\User $customer = null,
