@@ -63,6 +63,62 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function receipt_includes_registered_customer_identity_fields(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create([
+            'first_name' => 'Jamie',
+            'last_name' => 'Santos',
+            'email' => 'jamie@example.com',
+            'shop_owner_id' => null,
+        ]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-RCPT-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09175555555',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Receipt customer identity test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'ready_for_pickup',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $transaction = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-RCPT-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'deposit',
+            'subtotal' => 500,
+            'tax_amount' => 60,
+            'discount_amount' => 0,
+            'total_amount' => 560,
+            'paid_amount' => 560,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        app(\App\Services\RepairPosReceiptService::class)->issue($transaction->fresh('paymentLines'));
+
+        $receipt = \App\Models\PosReceipt::query()->where('pos_transaction_id', $transaction->id)->firstOrFail();
+        $payload = $receipt->print_payload;
+
+        $this->assertSame('Jamie Santos', data_get($payload, 'customer.name'));
+        $this->assertSame('jamie@example.com', data_get($payload, 'customer.email'));
+    }
+
+    #[Test]
     public function pos_ledger_tables_exist_for_repair_module(): void
     {
         $this->assertTrue(Schema::hasTable('pos_transactions'));

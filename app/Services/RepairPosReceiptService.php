@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PosReceipt;
 use App\Models\PosTransaction;
+use App\Models\User;
 
 class RepairPosReceiptService
 {
@@ -11,15 +12,29 @@ class RepairPosReceiptService
     {
         $receiptNo = 'RCPT-' . now()->format('Ymd') . '-' . str_pad((string) $transaction->id, 6, '0', STR_PAD_LEFT);
 
+        $registeredCustomer = null;
+        if ((string) $transaction->customer_type === 'registered' && (int) ($transaction->customer_id ?? 0) > 0) {
+            $registeredCustomer = User::query()->find((int) $transaction->customer_id);
+        }
+
+        $registeredName = trim((string) (($registeredCustomer->first_name ?? '') . ' ' . ($registeredCustomer->last_name ?? '')));
+        $customerName = $registeredName !== ''
+            ? $registeredName
+            : (string) ($registeredCustomer?->name ?? $transaction->walk_in_name ?? 'Walk-in Customer');
+
+        $customerEmail = (string) ($registeredCustomer?->email ?? $transaction->walk_in_email ?? '');
+        $customerPhone = (string) ($transaction->walk_in_phone ?? '');
+
         $payload = [
             'receipt_no' => $receiptNo,
             'transaction_no' => $transaction->transaction_no,
             'issued_at' => now()->toIso8601String(),
             'customer' => [
                 'type' => $transaction->customer_type,
-                'name' => $transaction->walk_in_name,
-                'phone' => $transaction->walk_in_phone,
-                'email' => $transaction->walk_in_email,
+                'name' => $customerName,
+                'phone' => $customerPhone,
+                'email' => $customerEmail,
+                'customer_id' => (int) ($transaction->customer_id ?? 0),
             ],
             'totals' => [
                 'subtotal' => (float) $transaction->subtotal,
