@@ -984,7 +984,7 @@ const MyOrders: React.FC = () => {
   };
 
   const tabButtonBaseClass =
-    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] lg:min-w-0 lg:flex-1 lg:rounded-full lg:px-4 lg:text-[11px] lg:tracking-[0.16em]';
+    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] xl:min-w-0 xl:flex-1 xl:rounded-full xl:px-4 xl:text-[11px] xl:tracking-[0.16em]';
   const tabBadgeClass =
     'pointer-events-none absolute -right-1 top-1 z-10 min-w-[20px] h-[20px] rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold leading-none text-white';
   const actionButtonBaseClass =
@@ -1001,27 +1001,27 @@ const MyOrders: React.FC = () => {
     'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f3f4f6] lg:bg-white">
+    <div className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
       <Head title="My Purchases" />
       <Navigation />
 
       <main className="flex-1">
-        <div className="w-full pb-16 pt-24 sm:px-6 lg:pt-32 xl:px-10 2xl:px-14">
-          <div className="mb-5 hidden max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 lg:mb-10 mx-auto lg:rounded-none lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none lg:block">
-            <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl lg:text-center lg:text-6xl lg:font-bold">My Purchases</h1>
-            <p className="max-w-2xl text-xs text-black/55 sm:text-base lg:mx-auto lg:mt-2 lg:text-center">
+        <div className="w-full pb-16 pt-24 sm:px-6 xl:pt-32 xl:px-10 2xl:px-14">
+          <div className="mb-5 hidden max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 xl:mb-10 mx-auto xl:rounded-none xl:border-0 xl:bg-transparent xl:px-0 xl:py-0 xl:shadow-none xl:block">
+            <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl xl:text-center xl:text-6xl xl:font-bold">My Purchases</h1>
+            <p className="max-w-2xl text-xs text-black/55 sm:text-base xl:mx-auto xl:mt-2 xl:text-center">
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
           </div>
 
-          <div className="lg:hidden px-4 pb-2">
+          <div className="xl:hidden px-4 pb-2">
             <h1 className="mb-1 text-xl font-extrabold tracking-tight text-[#16233b]">My Purchases</h1>
             <p className="text-xs text-black/55">
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
           </div>
 
-          <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+          <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
               {(['all', 'pending', 'processing', 'shipped', 'completed', 'return_refund'] as const).map((tab) => (
                 <button
                   key={tab}
@@ -1039,9 +1039,9 @@ const MyOrders: React.FC = () => {
               ))}
             </div>
 
-          <div className="mx-auto max-w-6xl px-4 lg:px-0 mt-6">
+          <div className="mx-auto max-w-6xl px-4 xl:px-0 mt-6">
           {/* Tabs */}
-          <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mb-12 lg:flex lg:gap-3 lg:pt-2">
+          <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
             <button
               onClick={() => setSelectedTab('all')}
               className={`${tabButtonBaseClass} ${
@@ -1136,7 +1136,7 @@ const MyOrders: React.FC = () => {
 
           {/* Orders Display */}
           {filteredOrders.length === 0 ? (
-            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] lg:rounded-none lg:border-0 lg:bg-gray-50 lg:py-20 lg:shadow-none">
+            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] xl:rounded-none xl:border-0 xl:bg-gray-50 xl:py-20 xl:shadow-none">
               <div className="mb-6">
                 <svg className="w-24 h-24 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -1176,12 +1176,12 @@ const MyOrders: React.FC = () => {
                   <div
                     key={order.id}
                     data-order-id={order.id}
-                    className={`border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] lg:rounded-none lg:shadow-none lg:hover:shadow-lg ${
-                      highlightOrderId === order.id ? 'border-black bg-gray-50/40 lg:bg-gray-50/30' : 'border-gray-200'
+                    className={`border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] xl:rounded-none xl:shadow-none xl:hover:shadow-lg ${
+                      highlightOrderId === order.id ? 'border-black bg-gray-50/40 xl:bg-gray-50/30' : 'border-gray-200'
                     }`}
                   >
                     {/* Order Header */}
-                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 lg:border-gray-200 lg:bg-white">
+                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 xl:border-gray-200 xl:bg-white">
                       <div className="flex flex-wrap items-start justify-between gap-3 sm:items-center sm:gap-4">
                         <div className="flex flex-wrap items-center gap-3 sm:gap-8">
                           <div>
@@ -1226,7 +1226,7 @@ const MyOrders: React.FC = () => {
                         <p className="text-sm text-gray-500">No items found for this order.</p>
                       ) : (
                         <>
-                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 lg:hidden">
+                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 xl:hidden">
                             {primaryItem && (
                               <div className="flex items-start gap-3">
                                 <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -1274,7 +1274,7 @@ const MyOrders: React.FC = () => {
                             )}
                           </div>
 
-                          <div className="hidden space-y-3 lg:block">
+                          <div className="hidden space-y-3 xl:block">
                             {orderItems.map((item, idx) => {
                               const itemImage = item.product_image || primaryItem?.product_image || '';
 
@@ -1341,49 +1341,53 @@ const MyOrders: React.FC = () => {
                           
                           {/* Mobile: Breakdown on right */}
                           <div className="sm:hidden flex-1 text-right">
-                            <div className="mb-2 space-y-1 text-xs text-gray-500">
-                              <div className="flex items-center justify-end gap-3">
-                                <span>Subtotal</span>
-                                <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
+                            <div className="ml-auto w-29.5">
+                              <div className="mb-2 space-y-1 text-xs text-gray-500">
+                                <div className="grid grid-cols-[56px_54px] items-center gap-x-0">
+                                  <span className="text-left">Subtotal</span>
+                                  <span className="text-right text-gray-700">{formatPeso(orderSubtotal)}</span>
+                                </div>
+                                <div className="grid grid-cols-[56px_54px] items-center gap-x-0">
+                                  <span className="text-left">Shipping</span>
+                                  <span className="text-right text-gray-700">{formatPeso(orderShipping)}</span>
+                                </div>
+                                <div className="grid grid-cols-[56px_54px] items-center gap-x-0">
+                                  <span className="text-left">{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
+                                  <span className="text-right text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-end gap-3">
-                                <span>Shipping</span>
-                                <span className="text-gray-700">{formatPeso(orderShipping)}</span>
+                              <p className="mb-2 text-center text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
+                              <div className="flex items-center justify-center text-black">
+                                <span className="text-xl font-extrabold">
+                                  {formatPeso(orderTotalPaid)}
+                                </span>
                               </div>
-                              <div className="flex items-center justify-end gap-3">
-                                <span>{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
-                                <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
-                              </div>
-                            </div>
-                            <p className="mb-2 text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
-                            <div className="flex items-center justify-end text-black">
-                              <span className="text-xl font-extrabold">
-                                {formatPeso(orderTotalPaid)}
-                              </span>
                             </div>
                           </div>
                           
                           {/* Desktop: Full breakdown on right */}
                           <div className="hidden sm:block sm:flex-1 sm:text-right">
-                            <div className="mb-2 space-y-1 text-xs text-gray-500">
-                              <div className="flex items-center justify-end gap-3">
-                                <span>Subtotal</span>
-                                <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
+                            <div className="ml-auto w-29.5">
+                              <div className="mb-2 space-y-1 text-xs text-gray-500">
+                                <div className="grid grid-cols-[56px_54px] items-center gap-x-0">
+                                  <span className="text-left">Subtotal</span>
+                                  <span className="text-right text-gray-700">{formatPeso(orderSubtotal)}</span>
+                                </div>
+                                <div className="grid grid-cols-[56px_54px] items-center gap-x-0">
+                                  <span className="text-left">Shipping</span>
+                                  <span className="text-right text-gray-700">{formatPeso(orderShipping)}</span>
+                                </div>
+                                <div className="grid grid-cols-[56px_54px] items-center gap-x-0">
+                                  <span className="text-left">{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
+                                  <span className="text-right text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-end gap-3">
-                                <span>Shipping</span>
-                                <span className="text-gray-700">{formatPeso(orderShipping)}</span>
+                              <p className="mb-2 text-center text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
+                              <div className="flex items-center justify-center text-black">
+                                <span className="text-xl font-extrabold">
+                                  {formatPeso(orderTotalPaid)}
+                                </span>
                               </div>
-                              <div className="flex items-center justify-end gap-3">
-                                <span>{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
-                                <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
-                              </div>
-                            </div>
-                            <p className="mb-2 text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
-                            <div className="flex items-center justify-end text-black">
-                              <span className="text-xl font-extrabold">
-                                {formatPeso(orderTotalPaid)}
-                              </span>
                             </div>
                           </div>
                         </div>
@@ -1404,10 +1408,10 @@ const MyOrders: React.FC = () => {
 
                         return (
                           <div className="mt-6 border-t border-gray-200 pt-6">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                               {/* Shipping Information */}
                               {hasShippingInfo && (
-                                <div className={hasBothDetailSections ? '' : 'lg:col-span-2'}>
+                                <div className={hasBothDetailSections ? '' : 'xl:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                                   <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
                                     <div className="flex items-start justify-between gap-3 sm:block">
@@ -1449,7 +1453,7 @@ const MyOrders: React.FC = () => {
 
                               {/* Staff-Arranged Return Pickup */}
                               {hasStaffPickup && (
-                                <div className={hasBothDetailSections ? '' : 'lg:col-span-2'}>
+                                <div className={hasBothDetailSections ? '' : 'xl:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
                                   <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
                                     <div className="flex items-start justify-between gap-3 sm:block">

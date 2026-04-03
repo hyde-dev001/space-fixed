@@ -8,6 +8,7 @@ import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
+type ManualPaymentPolicy = "deposit_50" | "full_upfront";
 
 type RepairOrderOption = {
 	id: string;
@@ -114,6 +115,10 @@ const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy
 	const workflowStatus = String(order.status ?? "").toLowerCase();
 	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
 
+	if (paymentStatus === "refunded" || paymentStatus === "partially_refunded") {
+		return null;
+	}
+
 	if (policy === "full_upfront") {
 		return paymentStatus === "paid" || paymentStatus === "completed" ? null : "full";
 	}
@@ -207,6 +212,14 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 const PointOfSalePage = () => {
 	const { props } = usePage();
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
+	const shopRepairPaymentPolicy: ManualPaymentPolicy =
+		String(
+			(props as any)?.auth?.shop_owner?.repair_payment_policy
+			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
+			?? (props as any)?.shop_settings?.repair_payment_policy
+		) === "full_upfront"
+			? "full_upfront"
+			: "deposit_50";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -620,11 +633,27 @@ const PointOfSalePage = () => {
 		return items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
 	}, [items]);
 
+	const isManualStandaloneCheckout = useMemo(() => {
+		return !selectedRepairOrder && !requestedRepairRequestId;
+	}, [requestedRepairRequestId, selectedRepairOrder]);
+
+	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+
+	const chargeableSubtotal = useMemo(() => {
+		if (!isManualStandaloneCheckout) {
+			return subtotal;
+		}
+
+		return dueTypeForManualCheckout === "deposit"
+			? Math.round(subtotal * 0.5 * 100) / 100
+			: subtotal;
+	}, [dueTypeForManualCheckout, isManualStandaloneCheckout, subtotal]);
+
 	const discount = useMemo(() => {
 		return 0;
 	}, [subtotal]);
 
-	const taxableBase = useMemo(() => Math.max(subtotal - discount, 0), [subtotal, discount]);
+	const taxableBase = useMemo(() => Math.max(chargeableSubtotal - discount, 0), [chargeableSubtotal, discount]);
 	const vatAmount = useMemo(() => taxableBase * (VAT_RATE / 100), [taxableBase]);
 	const totalDue = useMemo(() => taxableBase + vatAmount, [taxableBase, vatAmount]);
 
@@ -870,7 +899,7 @@ const PointOfSalePage = () => {
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 		const customerType = hasRepairReference && selectedRepairOrder?.customerId ? "registered" : "walk_in";
-		const dueTypeForCheckout = hasRepairReference ? effectiveDueType : "full";
+		const dueTypeForCheckout = hasRepairReference ? effectiveDueType : dueTypeForManualCheckout;
 		const idempotencyKey = hasRepairReference
 			? `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`
 			: `repair-manual-${Date.now()}`;
@@ -891,6 +920,7 @@ const PointOfSalePage = () => {
 					walk_in_email: null,
 					manual_repair_subtotal: hasRepairReference ? null : Number(subtotal.toFixed(2)),
 					manual_service_summary: hasRepairReference ? null : (manualServiceSummary || "Walk-in POS service"),
+					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),
@@ -1283,6 +1313,11 @@ const PointOfSalePage = () => {
 							/>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
+							{isManualStandaloneCheckout && (
+								<p className="text-[11px] text-slate-500">
+									Manual policy from Shop Settings: {shopRepairPaymentPolicy === "deposit_50" ? "50/50 deposit" : "Full upfront"}
+								</p>
+							)}
 							<select
 								title="Payment method"
 								value={paymentMethod}
@@ -1323,7 +1358,13 @@ const PointOfSalePage = () => {
 
 							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<div className="space-y-2 text-sm">
-									<div className="flex items-center justify-between text-slate-600"><span>Subtotal</span><span>{formatPeso(subtotal)}</span></div>
+									<div className="flex items-center justify-between text-slate-600"><span>Service Subtotal</span><span>{formatPeso(subtotal)}</span></div>
+									{isManualStandaloneCheckout && dueTypeForManualCheckout === "deposit" && (
+										<div className="flex items-center justify-between text-slate-600"><span>Deposit Base (50%)</span><span>{formatPeso(chargeableSubtotal)}</span></div>
+									)}
+									{(!isManualStandaloneCheckout || dueTypeForManualCheckout !== "deposit") && (
+										<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
+									)}
 									<div className="flex items-center justify-between text-slate-600"><span>Discount</span><span>- {formatPeso(discount)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(vatAmount)}</span></div>
 									<div className="my-2 border-t border-dashed border-slate-300" />

@@ -7,6 +7,7 @@ use App\Models\PosPaymentLine;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
+use App\Models\ShopOwner;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
@@ -28,6 +29,7 @@ class RepairPosController extends Controller
             'walk_in_email' => ['nullable', 'email', 'max:255'],
             'manual_repair_subtotal' => ['nullable', 'numeric', 'min:0.01'],
             'manual_service_summary' => ['nullable', 'string', 'max:2000'],
+            'manual_payment_policy' => ['nullable', 'string', 'in:deposit_50,full_upfront'],
             'payment_lines' => ['required', 'array', 'min:1'],
             'payment_lines.*.tender_type' => ['required', 'string', 'in:cash,paymongo_card,paymongo_wallet'],
             'payment_lines.*.amount' => ['required', 'numeric', 'min:0.01'],
@@ -87,7 +89,6 @@ class RepairPosController extends Controller
                 ], 422);
             }
 
-            $validated['due_type'] = 'full';
             $repair = $this->createManualRepairRequestFromPos($validated, $actor);
         }
 
@@ -131,6 +132,9 @@ class RepairPosController extends Controller
         $walkInEmail = trim((string) ($payload['walk_in_email'] ?? ''));
 
         $snapshotServiceName = $summary !== '' ? $summary : 'Walk-in POS Service';
+        $shopPolicy = (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('repair_payment_policy') ?? 'deposit_50');
+        $manualPolicy = (string) ($payload['manual_payment_policy'] ?? $shopPolicy);
+        $resolvedPolicy = $manualPolicy === 'deposit_50' ? 'deposit_50' : 'full_upfront';
 
         return RepairRequest::create([
             'request_id' => $requestId,
@@ -166,8 +170,8 @@ class RepairPosController extends Controller
                 'materials_total' => 0,
                 'final_total' => $subtotal,
             ],
-            'payment_policy' => 'full_upfront',
-            'payment_policy_snapshot' => 'full_upfront',
+            'payment_policy' => $resolvedPolicy,
+            'payment_policy_snapshot' => $resolvedPolicy,
             'payment_status' => 'unpaid',
             'payment_status_derived' => 'unpaid',
             'total_paid_amount' => 0,

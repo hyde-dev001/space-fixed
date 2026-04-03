@@ -20,15 +20,15 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
-            'due_type' => 'full',
+            'due_type' => 'deposit',
             'customer_type' => 'walk_in',
             'walk_in_name' => 'Manual Walk-in Customer',
             'walk_in_phone' => '09171234567',
-            'idempotency_key' => 'manual-walkin-full-001',
+            'idempotency_key' => 'manual-walkin-deposit-001',
             'manual_repair_subtotal' => 599,
             'manual_service_summary' => 'Starter Clean Package (2 services)',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 670.88],
+                ['tender_type' => 'cash', 'amount' => 335.44],
             ],
         ]);
 
@@ -40,14 +40,14 @@ class RepairPosPaymentFlowTest extends TestCase
         $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
         $this->assertSame('repair', (string) $transaction->module_type);
         $this->assertSame('walk_in', (string) $transaction->customer_type);
-        $this->assertSame('full', (string) $transaction->due_type);
-        $this->assertSame('670.88', number_format((float) $transaction->total_amount, 2, '.', ''));
+        $this->assertSame('deposit', (string) $transaction->due_type);
+        $this->assertSame('335.44', number_format((float) $transaction->total_amount, 2, '.', ''));
 
         $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
         $this->assertSame((int) $shopOwner->id, (int) $repair->shop_owner_id);
         $this->assertSame('Manual Walk-in Customer', (string) $repair->customer_name);
-        $this->assertSame('full_upfront', (string) $repair->payment_policy_snapshot);
-        $this->assertSame('paid', (string) $repair->payment_status_derived);
+        $this->assertSame('deposit_50', (string) $repair->payment_policy_snapshot);
+        $this->assertSame('partially_paid', (string) $repair->payment_status_derived);
 
         $receipt = \App\Models\PosReceipt::query()->where('pos_transaction_id', $transaction->id)->first();
         $this->assertNotNull($receipt);
