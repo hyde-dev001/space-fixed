@@ -931,9 +931,9 @@ const MyOrders: React.FC = () => {
   };
 
   const tabButtonBaseClass =
-    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] lg:min-w-0 lg:flex-1';
+    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] lg:min-w-0 lg:flex-1 lg:rounded-full lg:px-4 lg:text-[11px] lg:tracking-[0.16em]';
   const tabBadgeClass =
-    'absolute -right-1 -top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center';
+    'absolute -right-1 -top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center lg:right-1 lg:top-1';
   const actionButtonBaseClass =
     'inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.16em]';
   const actionButtonPrimaryClass =
@@ -944,63 +944,106 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
-  const purchaseShortcutBaseClass =
-    'flex min-h-[82px] flex-col items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-2 text-center text-[11px] font-semibold text-gray-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/30';
+  const mobileHeroFilterButtonBaseClass =
+    'relative inline-flex min-w-[120px] shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f3f4f6]">
+    <div className="min-h-screen flex flex-col bg-[#f3f4f6] lg:bg-white">
       <Head title="My Purchases" />
       <Navigation />
 
       <main className="flex-1">
         <div className="w-full px-4 pb-16 pt-24 sm:px-6 lg:pt-32 xl:px-10 2xl:px-14">
-          <div className="mx-auto mb-5 max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl">My Purchases</h1>
-              <Link
-                href="/user/orders"
-                className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 transition-colors hover:text-[#16233b] sm:text-sm"
-              >
-                View History
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m7 4 6 6-6 6" />
-                </svg>
-              </Link>
-            </div>
-            <p className="max-w-2xl text-xs text-black/55 sm:text-base">
+          <div className="mx-auto mb-5 max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 lg:mb-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none">
+            <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl lg:text-center lg:text-6xl lg:font-bold">My Purchases</h1>
+            <p className="max-w-2xl text-xs text-black/55 sm:text-base lg:mx-auto lg:mt-2 lg:text-center">
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
 
-            <div className="mt-4 grid grid-cols-4 gap-2.5 sm:hidden">
-              <button onClick={() => setSelectedTab('pending')} className={purchaseShortcutBaseClass}>
-                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18l-1.6 11H4.6L3 7Zm3-3h12l1 3H5l1-3Z" />
-                </svg>
-                <span>To Pay</span>
+            <div className="mt-4 flex w-full gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+              <button
+                onClick={() => setSelectedTab('all')}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === 'all'
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                ALL ORDERS
+                {getCountByStatus('all') > 0 && (
+                  <span className={tabBadgeClass}>{getCountByStatus('all')}</span>
+                )}
               </button>
-              <button onClick={() => setSelectedTab('processing')} className={purchaseShortcutBaseClass}>
-                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16v10H4V8Zm4-3h8v3H8V5Zm2 6h4m-6 3h8" />
-                </svg>
-                <span>To Ship</span>
+              <button
+                onClick={() => setSelectedTab('pending')}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === 'pending'
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                PENDING
+                {getCountByStatus('pending') > 0 && (
+                  <span className={tabBadgeClass}>{getCountByStatus('pending')}</span>
+                )}
               </button>
-              <button onClick={() => setSelectedTab('shipped')} className={purchaseShortcutBaseClass}>
-                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h11v9H3V7Zm11 3h4l3 3v3h-7v-6Zm-7 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm12 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
-                </svg>
-                <span>To Receive</span>
+              <button
+                onClick={() => setSelectedTab('processing')}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === 'processing'
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                PROCESSING
+                {getCountByStatus('processing') > 0 && (
+                  <span className={tabBadgeClass}>{getCountByStatus('processing')}</span>
+                )}
               </button>
-              <button onClick={() => setSelectedTab('completed')} className={purchaseShortcutBaseClass}>
-                <svg className="h-6 w-6 text-[#16233b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.5 14.6 8l4.9.7-3.6 3.5.8 4.8L12 14.9 7.3 17l.8-4.8L4.5 8.7 9.4 8l2.6-4.5Z" />
-                </svg>
-                <span>To Rate</span>
+              <button
+                onClick={() => setSelectedTab('shipped')}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === 'shipped'
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                SHIPPED
+                {getCountByStatus('shipped') > 0 && (
+                  <span className={tabBadgeClass}>{getCountByStatus('shipped')}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setSelectedTab('completed')}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === 'completed'
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                COMPLETED
+                {getCountByStatus('completed') > 0 && (
+                  <span className={tabBadgeClass}>{getCountByStatus('completed')}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setSelectedTab('return_refund')}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === 'return_refund'
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                RETURN/REFUND
+                {getCountByStatus('return_refund') > 0 && (
+                  <span className={tabBadgeClass}>{getCountByStatus('return_refund')}</span>
+                )}
               </button>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="mb-6 flex w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mb-10 sm:gap-3 sm:pt-2">
+          <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mb-12 lg:flex lg:gap-3 lg:pt-2">
             <button
               onClick={() => setSelectedTab('all')}
               className={`${tabButtonBaseClass} ${
@@ -1097,7 +1140,7 @@ const MyOrders: React.FC = () => {
 
           {/* Orders Display */}
           {filteredOrders.length === 0 ? (
-            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] sm:py-20">
+            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] lg:rounded-none lg:border-0 lg:bg-gray-50 lg:py-20 lg:shadow-none">
               <div className="mb-6">
                 <svg className="w-24 h-24 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -1136,12 +1179,12 @@ const MyOrders: React.FC = () => {
                   <div
                     key={order.id}
                     data-order-id={order.id}
-                    className={`overflow-hidden rounded-3xl border bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] transition-all duration-300 hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] ${
-                      highlightOrderId === order.id ? 'border-black bg-gray-50/40' : 'border-gray-200'
+                    className={`border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] lg:rounded-none lg:shadow-none lg:hover:shadow-lg ${
+                      highlightOrderId === order.id ? 'border-black bg-gray-50/40 lg:bg-gray-50/30' : 'border-gray-200'
                     }`}
                   >
                     {/* Order Header */}
-                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-4 py-4 sm:px-8 sm:py-5">
+                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-4 py-4 sm:px-8 sm:py-5 lg:border-gray-200 lg:bg-white">
                       <div className="flex flex-wrap items-start justify-between gap-3 sm:items-center sm:gap-4">
                         <div className="flex flex-wrap items-center gap-4 sm:gap-8">
                           <div>
@@ -1248,7 +1291,7 @@ const MyOrders: React.FC = () => {
                               <p className="max-w-md text-sm text-gray-500">{order.shop_address}</p>
                             )}
                           </div>
-                          <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-right sm:bg-transparent sm:p-0">
+                          <div className="text-right">
                             <div className="mb-2 space-y-1 text-xs text-gray-500">
                               <div className="flex items-center justify-end gap-3">
                                 <span>Subtotal</span>
