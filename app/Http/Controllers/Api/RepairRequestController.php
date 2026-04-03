@@ -1731,6 +1731,17 @@ class RepairRequestController extends Controller
             'payment_lines.*.provider_reference' => ['nullable', 'string', 'max:255'],
         ]);
 
+        foreach ($validated['payment_lines'] as $index => $line) {
+            $isNonCash = in_array($line['tender_type'] ?? '', ['paymongo_card', 'paymongo_wallet'], true);
+            $reference = trim((string) ($line['provider_reference'] ?? ''));
+
+            if ($isNonCash && $reference === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "payment_lines.{$index}.provider_reference" => ['Reference is required for GCash/Card payments.'],
+                ]);
+            }
+        }
+
         $repair = RepairRequest::findOrFail((int) $validated['repair_request_id']);
         $actorId = (int) (Auth::guard('user')->id() ?? 0);
 

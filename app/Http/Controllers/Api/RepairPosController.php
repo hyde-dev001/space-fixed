@@ -10,6 +10,7 @@ use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class RepairPosController extends Controller
 {
@@ -28,6 +29,17 @@ class RepairPosController extends Controller
             'payment_lines.*.amount' => ['required', 'numeric', 'min:0.01'],
             'payment_lines.*.provider_reference' => ['nullable', 'string', 'max:255'],
         ]);
+
+        foreach ($validated['payment_lines'] as $index => $line) {
+            $isNonCash = in_array($line['tender_type'] ?? '', ['paymongo_card', 'paymongo_wallet'], true);
+            $reference = trim((string) ($line['provider_reference'] ?? ''));
+
+            if ($isNonCash && $reference === '') {
+                throw ValidationException::withMessages([
+                    "payment_lines.{$index}.provider_reference" => ['Reference is required for GCash/Card payments.'],
+                ]);
+            }
+        }
 
         $repair = RepairRequest::findOrFail((int) $validated['repair_request_id']);
         $actorId = (int) (Auth::guard('user')->id() ?? 0);
