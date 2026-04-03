@@ -191,7 +191,11 @@ class RepairPosController extends Controller
             ->where('module_type', 'repair')
             ->when($shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
             ->when($repairRequestId > 0, fn ($query) => $query->where('module_reference_id', $repairRequestId))
-            ->with(['paymentLines', 'receipt'])
+            ->with([
+                'paymentLines',
+                'receipt',
+                'refunds' => fn ($query) => $query->orderByDesc('id'),
+            ])
             ->orderByDesc('id')
             ->paginate(20);
 
@@ -208,7 +212,8 @@ class RepairPosController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
         }
 
-        if (!$this->canManageRefund($actor, $refund)) {
+        $approvalStage = $this->resolveApprovalStage($actor, $refund);
+        if ($approvalStage === null) {
             return response()->json(['success' => false, 'message' => 'You are not authorized to approve this refund.'], 403);
         }
 
@@ -222,6 +227,7 @@ class RepairPosController extends Controller
             actorId: (int) $actor->id,
             approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
             approvalNote: $validated['approval_note'] ?? null,
+            stage: $approvalStage,
         );
 
         return response()->json([
@@ -237,7 +243,8 @@ class RepairPosController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
         }
 
-        if (!$this->canManageRefund($actor, $refund)) {
+        $approvalStage = $this->resolveApprovalStage($actor, $refund);
+        if ($approvalStage === null) {
             return response()->json(['success' => false, 'message' => 'You are not authorized to reject this refund.'], 403);
         }
 
@@ -249,6 +256,7 @@ class RepairPosController extends Controller
             refund: $refund,
             actorId: (int) $actor->id,
             rejectionReason: $validated['rejection_reason'],
+            stage: $approvalStage,
         );
 
         return response()->json([
@@ -264,7 +272,7 @@ class RepairPosController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
         }
 
-        if (!$this->canManageRefund($actor, $refund)) {
+        if (!$this->canRepairerExecuteRefund($actor, $refund)) {
             return response()->json(['success' => false, 'message' => 'You are not authorized to execute this refund.'], 403);
         }
 
@@ -317,7 +325,76 @@ class RepairPosController extends Controller
         return response()->json(['success' => true, 'data' => $data]);
     }
 
-    private function canManageRefund(object $actor, PosRefund $refund): bool
+    private function canFinanceApproveRefund(object $actor, PosRefund $refund): bool
+    {
+        if ((string) $refund->module_type !== 'repair') {
+            return false;
+        }
+
+        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        if (!($shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id)) {
+            return false;
+        }
+
+        if (method_exists($actor, 'can') && $actor->can('access-refund-approval')) {
+            return true;
+        }
+
+        if (method_exists($actor, 'hasRole')) {
+            if ($actor->hasRole('Staff') || $actor->hasRole('staff') || $actor->hasRole('Repairer') || $actor->hasRole('repairer')) {
+                return false;
+            }
+
+            return $actor->hasRole('Finance')
+                || $actor->hasRole('finance')
+                || $actor->hasRole('Manager')
+                || $actor->hasRole('manager')
+                || $actor->hasRole('Shop Owner')
+                || $actor->hasRole('shop owner');
+        }
+
+        return true;
+    }
+
+    private function canShopOwnerApproveRefund(object $actor, PosRefund $refund): bool
+    {
+        if ((string) $refund->module_type !== 'repair') {
+            return false;
+        }
+
+        if ((string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+            return false;
+        }
+
+        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        if (!($shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id)) {
+            return false;
+        }
+
+        if (method_exists($actor, 'hasRole')) {
+            return $actor->hasRole('Shop Owner')
+                || $actor->hasRole('shop owner')
+                || $actor->hasRole('Manager')
+                || $actor->hasRole('manager');
+        }
+
+        return true;
+    }
+
+    private function resolveApprovalStage(object $actor, PosRefund $refund): ?string
+    {
+        if ($this->canShopOwnerApproveRefund($actor, $refund)) {
+            return 'shop_owner';
+        }
+
+        if ($this->canFinanceApproveRefund($actor, $refund)) {
+            return 'finance';
+        }
+
+        return null;
+    }
+
+    private function canRepairerExecuteRefund(object $actor, PosRefund $refund): bool
     {
         if ((string) $refund->module_type !== 'repair') {
             return false;
@@ -329,7 +406,12 @@ class RepairPosController extends Controller
         }
 
         if (method_exists($actor, 'hasRole')) {
-            return $actor->hasRole('Shop Owner') || $actor->hasRole('Manager');
+            return $actor->hasRole('Staff')
+                || $actor->hasRole('staff')
+                || $actor->hasRole('Repairer')
+                || $actor->hasRole('repairer')
+                || $actor->hasRole('Manager')
+                || $actor->hasRole('manager');
         }
 
         return false;

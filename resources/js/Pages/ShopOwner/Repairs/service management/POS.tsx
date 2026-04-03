@@ -74,6 +74,8 @@ type ReceiptSnapshot = {
 type RefundQueueItem = {
 	id: number;
 	status: string;
+	finance_status?: string;
+	shop_owner_status?: string;
 	requested_amount: number;
 	approved_amount?: number | null;
 	requested_at?: string | null;
@@ -1261,8 +1263,10 @@ const PointOfSalePage = () => {
 								) : (
 									<div className="space-y-3">
 										{refundQueue.map((refund) => {
-											const canApprove = refund.status === 'requested';
-											const canExecute = refund.status === 'approved' || refund.status === 'requested';
+											const financeStatus = String(refund.finance_status || 'pending').toLowerCase();
+											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
+											const canApprove = refund.status === 'requested' && financeStatus === 'approved_initial' && ownerStatus === 'pending';
+											const canExecute = false;
 											return (
 												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 													<div className="flex flex-wrap items-start justify-between gap-3">
@@ -1274,30 +1278,42 @@ const PointOfSalePage = () => {
 														</div>
 														<div className="flex items-center gap-2">
 															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
-															<button
-																type="button"
-																onClick={() => performRefundAction(refund.id, 'approve', {})}
-																disabled={!canApprove || processingRefundId === refund.id}
-																className="rounded-lg border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-															>
-																Approve
-															</button>
-															<button
-																type="button"
-																onClick={() => performRefundAction(refund.id, 'reject', { rejection_reason: 'Rejected from POS queue' })}
-																disabled={!canApprove || processingRefundId === refund.id}
-																className="rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
-															>
-																Reject
-															</button>
-															<button
-																type="button"
-																onClick={() => performRefundAction(refund.id, 'execute', { execution_mode: 'manual' })}
-																disabled={!canExecute || processingRefundId === refund.id}
-																className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-															>
-																Execute
-															</button>
+															{financeStatus && (
+																<span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">F:{financeStatus}</span>
+															)}
+															{ownerStatus && (
+																<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">O:{ownerStatus}</span>
+															)}
+															{canApprove && (
+																<button
+																	type="button"
+																	onClick={() => performRefundAction(refund.id, 'approve', {})}
+																	disabled={processingRefundId === refund.id}
+																	className="rounded-lg border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+																>
+																	Approve
+																</button>
+															)}
+															{canApprove && (
+																<button
+																	type="button"
+																	onClick={() => performRefundAction(refund.id, 'reject', { rejection_reason: 'Rejected by Shop Owner from POS queue' })}
+																	disabled={processingRefundId === refund.id}
+																	className="rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+																>
+																	Reject
+																</button>
+															)}
+															{canExecute && (
+																<button
+																	type="button"
+																	onClick={() => performRefundAction(refund.id, 'execute', { execution_mode: 'manual' })}
+																	disabled={processingRefundId === refund.id}
+																	className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+																>
+																	Execute
+																</button>
+															)}
 														</div>
 													</div>
 												</div>

@@ -499,6 +499,13 @@ const MyOrders: React.FC = () => {
     return orders.filter(o => !isReturnRefundOrder(o) && o.status === status).length;
   };
 
+  const getMobileShortcutCount = (shortcut: 'to_pay' | 'to_ship' | 'to_receive' | 'to_rate') => {
+    if (shortcut === 'to_pay') return getCountByStatus('pending');
+    if (shortcut === 'to_ship') return getCountByStatus('processing');
+    if (shortcut === 'to_receive') return getCountByStatus('shipped');
+    return getCountByStatus('completed');
+  };
+
   const isOnlinePaymentOrder = (order: Order): boolean => {
     const paymentMethod = String(order.payment_method || '').toLowerCase();
     return !['cod', 'cash_on_delivery', 'cash on delivery'].includes(paymentMethod);
@@ -933,9 +940,9 @@ const MyOrders: React.FC = () => {
   const tabButtonBaseClass =
     'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] lg:min-w-0 lg:flex-1 lg:rounded-full lg:px-4 lg:text-[11px] lg:tracking-[0.16em]';
   const tabBadgeClass =
-    'absolute -right-1 -top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center lg:right-1 lg:top-1';
+    'pointer-events-none absolute right-1 top-0 z-10 min-w-[18px] h-[18px] -translate-y-1/2 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-[18px] text-white';
   const actionButtonBaseClass =
-    'inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.16em]';
+    'inline-flex items-center justify-center gap-2 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-6 sm:py-2.5 sm:text-xs sm:tracking-[0.16em]';
   const actionButtonPrimaryClass =
     'border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/45';
   const actionButtonSecondaryClass =
@@ -945,7 +952,7 @@ const MyOrders: React.FC = () => {
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
   const mobileHeroFilterButtonBaseClass =
-    'relative inline-flex min-w-[120px] shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+    'relative inline-flex min-w-[120px] shrink-0 items-center justify-center gap-2 overflow-visible rounded-full border px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f3f4f6] lg:bg-white">
@@ -1038,6 +1045,49 @@ const MyOrders: React.FC = () => {
                 {getCountByStatus('return_refund') > 0 && (
                   <span className={tabBadgeClass}>{getCountByStatus('return_refund')}</span>
                 )}
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 gap-2 lg:hidden">
+              <button
+                onClick={() => setSelectedTab('pending')}
+                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
+              >
+                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="leading-none">To Pay</span>
+                {getMobileShortcutCount('to_pay') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_pay')}</span>}
+              </button>
+              <button
+                onClick={() => setSelectedTab('processing')}
+                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
+              >
+                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h13l4 4v6a2 2 0 01-2 2h-1m-10 0h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0z" />
+                </svg>
+                <span className="leading-none">To Ship</span>
+                {getMobileShortcutCount('to_ship') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_ship')}</span>}
+              </button>
+              <button
+                onClick={() => setSelectedTab('shipped')}
+                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
+              >
+                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h2l2 5h10l2-8H7m0 0L5.5 5H3" />
+                </svg>
+                <span className="leading-none">To Receive</span>
+                {getMobileShortcutCount('to_receive') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_receive')}</span>}
+              </button>
+              <button
+                onClick={() => setSelectedTab('completed')}
+                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
+              >
+                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.02 3.138a1 1 0 00.95.69h3.3c.969 0 1.371 1.24.588 1.81l-2.67 1.94a1 1 0 00-.364 1.118l1.02 3.138c.3.922-.755 1.688-1.54 1.118l-2.67-1.94a1 1 0 00-1.176 0l-2.67 1.94c-.784.57-1.838-.196-1.539-1.118l1.02-3.138a1 1 0 00-.364-1.118l-2.67-1.94c-.784-.57-.38-1.81.588-1.81h3.3a1 1 0 00.95-.69l1.02-3.138z" />
+                </svg>
+                <span className="leading-none">To Rate</span>
+                {getMobileShortcutCount('to_rate') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_rate')}</span>}
               </button>
             </div>
           </div>
@@ -1160,6 +1210,7 @@ const MyOrders: React.FC = () => {
               {filteredOrders.map((order) => {
                   const orderItems = order.items || [];
                   const primaryItem = orderItems[0];
+                  const mobileExtraItemsCount = Math.max(orderItems.length - 1, 0);
                   const orderSubtotal = parseAmount(order.total_amount);
                   const orderShipping = parseAmount(order.shipping_fee);
                   const orderVatAmount = resolveOrderVatAmount(order);
@@ -1184,9 +1235,9 @@ const MyOrders: React.FC = () => {
                     }`}
                   >
                     {/* Order Header */}
-                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-4 py-4 sm:px-8 sm:py-5 lg:border-gray-200 lg:bg-white">
+                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 lg:border-gray-200 lg:bg-white">
                       <div className="flex flex-wrap items-start justify-between gap-3 sm:items-center sm:gap-4">
-                        <div className="flex flex-wrap items-center gap-4 sm:gap-8">
+                        <div className="flex flex-wrap items-center gap-3 sm:gap-8">
                           <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
                             <p className="text-sm font-medium text-black">
@@ -1198,7 +1249,7 @@ const MyOrders: React.FC = () => {
                             </p>
                           </div>
                           {['delivered', 'completed'].includes(order.status) && (
-                            <div>
+                            <div className="hidden lg:block">
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Refund Deadline</p>
                               <p className={`text-xs sm:text-sm ${deadlinePassed ? 'text-red-600 font-medium' : 'text-black'}`}>
                                 {formatDeadline(order.cancellation_refund_deadline_at)}
@@ -1208,7 +1259,7 @@ const MyOrders: React.FC = () => {
                         </div>
                         <div className="ml-auto">
                           <span
-                            className={`inline-flex items-center px-3 py-1.5 text-[10px] font-semibold tracking-[0.14em] uppercase sm:px-4 sm:text-xs ${getStatusBadge(
+                            className={`inline-flex items-center px-3 py-1 text-[9px] font-semibold tracking-[0.12em] uppercase sm:px-4 sm:py-1.5 sm:text-xs ${getStatusBadge(
                               displayStatus
                             )}`}
                           >
@@ -1224,56 +1275,125 @@ const MyOrders: React.FC = () => {
                     </div>
 
                     {/* Order Item */}
-                    <div className="p-4 sm:p-8">
+                    <div className="p-3 sm:p-8">
                       {orderItems.length === 0 ? (
                         <p className="text-sm text-gray-500">No items found for this order.</p>
                       ) : (
-                        <div className="space-y-3">
-                          {orderItems.map((item, idx) => {
-                            const itemImage = item.product_image || primaryItem?.product_image || '';
-
-                            return (
-                              <div
-                                key={item.id ?? idx}
-                                className={`flex items-start gap-3 sm:gap-4 ${idx > 0 ? 'pt-3 border-t border-gray-200' : ''}`}
-                              >
-                                <div className="h-16 w-16 overflow-hidden rounded-xl border border-gray-200 bg-white shrink-0 sm:h-20 sm:w-20 sm:rounded-none">
-                                  {itemImage ? (
+                        <>
+                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 lg:hidden">
+                            {primaryItem && (
+                              <div className="flex items-start gap-3">
+                                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
+                                  {primaryItem.product_image ? (
                                     <img
-                                      src={itemImage}
-                                      alt={item.product_name}
-                                      className="w-full h-full object-cover"
+                                      src={primaryItem.product_image}
+                                      alt={primaryItem.product_name}
+                                      className="h-full w-full object-cover"
                                     />
                                   ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <div className="flex h-full w-full items-center justify-center text-gray-300">
+                                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                       </svg>
                                     </div>
                                   )}
                                 </div>
-                                <div className="grow">
-                                  <h3 className="mb-1 text-sm font-semibold text-black sm:text-base">
-                                    {item.product_slug ? (
-                                      <Link href={`/products/${item.product_slug}`} className="hover:underline">
-                                        {item.product_name}
+                                <div className="min-w-0 grow">
+                                  <h3 className="truncate text-sm font-semibold text-black">
+                                    {primaryItem.product_slug ? (
+                                      <Link href={`/products/${primaryItem.product_slug}`} className="hover:underline">
+                                        {primaryItem.product_name}
                                       </Link>
                                     ) : (
-                                      item.product_name
+                                      primaryItem.product_name
                                     )}
                                   </h3>
-                                  {item.size && <p className="text-xs text-gray-500 sm:text-sm">Size: {item.size}</p>}
-                                  <p className="mt-1 text-xs text-gray-500 sm:text-sm">Color: {resolveOrderItemColor(order, item) || '-'}</p>
-                                  <p className="mt-1 text-xs text-gray-500 sm:text-sm">Qty: {item.quantity}</p>
+                                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                                    {primaryItem.size ? `Size: ${primaryItem.size}` : 'Size: -'}
+                                    {' • '}
+                                    {`Color: ${resolveOrderItemColor(order, primaryItem) || '-'}`}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-gray-500">Qty: {primaryItem.quantity}</p>
+                                </div>
+                                <div className="shrink-0 pl-2 text-right">
+                                  <p className="text-xs text-gray-400">Item Total</p>
+                                  <p className="text-sm font-semibold text-black">{formatPeso(primaryItem.subtotal)}</p>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
+                            )}
+                            {mobileExtraItemsCount > 0 && (
+                              <p className="mt-2 border-t border-gray-200 pt-2 text-xs text-gray-500">
+                                +{mobileExtraItemsCount} more item{mobileExtraItemsCount > 1 ? 's' : ''}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="hidden space-y-3 lg:block">
+                            {orderItems.map((item, idx) => {
+                              const itemImage = item.product_image || primaryItem?.product_image || '';
+
+                              return (
+                                <div
+                                  key={item.id ?? idx}
+                                  className={`flex items-start gap-3 sm:gap-4 ${idx > 0 ? 'pt-3 border-t border-gray-200' : ''}`}
+                                >
+                                  <div className="h-16 w-16 overflow-hidden rounded-xl border border-gray-200 bg-white shrink-0 sm:h-20 sm:w-20 sm:rounded-none">
+                                    {itemImage ? (
+                                      <img
+                                        src={itemImage}
+                                        alt={item.product_name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="grow">
+                                    <h3 className="mb-1 text-sm font-semibold text-black sm:text-base">
+                                      {item.product_slug ? (
+                                        <Link href={`/products/${item.product_slug}`} className="hover:underline">
+                                          {item.product_name}
+                                        </Link>
+                                      ) : (
+                                        item.product_name
+                                      )}
+                                    </h3>
+                                    {item.size && <p className="text-xs text-gray-500 sm:text-sm">Size: {item.size}</p>}
+                                    <p className="mt-1 text-xs text-gray-500 sm:text-sm">Color: {resolveOrderItemColor(order, item) || '-'}</p>
+                                    <p className="mt-1 text-xs text-gray-500 sm:text-sm">Qty: {item.quantity}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
                       )}
 
                       {/* Order Total */}
-                      <div className="mt-6 border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6">
+                      <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-3 lg:hidden">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Shop</p>
+                            {order.shop_id ? (
+                              <Link href={`/shop-profile/${order.shop_id}`} className="truncate text-sm font-semibold text-black underline">
+                                {order.shop_name}
+                              </Link>
+                            ) : (
+                              <p className="truncate text-sm font-semibold text-black">{order.shop_name}</p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Total</p>
+                            <p className="text-lg font-extrabold text-black">{formatPeso(orderTotalPaid)}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 hidden border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6 lg:block">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
@@ -1317,7 +1437,7 @@ const MyOrders: React.FC = () => {
                       </div>
 
                       {['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && (
-                        <div className="mt-6 border-t border-gray-200 pt-6">
+                        <div className="mt-6 hidden border-t border-gray-200 pt-6 lg:block">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1366,7 +1486,7 @@ const MyOrders: React.FC = () => {
                         if (!hasStaffPickupDetails) return null;
 
                         return (
-                          <div className="mt-6 border-t border-gray-200 pt-6">
+                          <div className="mt-6 hidden border-t border-gray-200 pt-6 lg:block">
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
@@ -1414,7 +1534,7 @@ const MyOrders: React.FC = () => {
                       })()}
 
                       {/* Order Actions */}
-                      <div className="mt-6 flex flex-col gap-2 border-t border-gray-200 pt-6 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:justify-end sm:pt-6 sm:gap-3">
                         {order.status === 'pending' && (
                           <>
                             <button

@@ -54,6 +54,11 @@ type POSItem = {
 
 type ReceiptSnapshot = {
 	transactionId?: number;
+	customerType?: "registered" | "walk_in";
+	latestRefund?: {
+		id: number;
+		status: string;
+	};
 	receiptNo: string;
 	createdAtISO: string;
 	dateLabel: string;
@@ -404,6 +409,10 @@ const PointOfSalePage = () => {
 						? receiptPayload.items
 						: [];
 
+					const latestRefund = Array.isArray(row?.refunds) && row.refunds.length > 0
+						? row.refunds[0]
+						: null;
+
 					const methodRaw = String(
 						row?.payment_lines?.[0]?.tender_type
 						?? receiptPayload?.payment_lines?.[0]?.tender_type
@@ -417,6 +426,11 @@ const PointOfSalePage = () => {
 
 					return {
 						transactionId: Number(row?.id || 0),
+						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
+						latestRefund: latestRefund ? {
+							id: Number(latestRefund?.id || 0),
+							status: String(latestRefund?.status || "requested"),
+						} : undefined,
 						receiptNo: String(row?.receipt?.receipt_no ?? row?.transaction_no ?? `POS-${index + 1}`),
 						createdAtISO: issuedAt,
 						dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
@@ -466,6 +480,16 @@ const PointOfSalePage = () => {
 	}, [cashierName, isHistoryModalOpen, selectedRepairOrder]);
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (receipt.latestRefund && ["requested", "approved", "processing", "succeeded"].includes(String(receipt.latestRefund.status || '').toLowerCase())) {
+			await Swal.fire({
+				icon: "info",
+				title: "Refund Already Exists",
+				text: "This receipt already has a refund flow in progress or completed.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
 		const transactionId = Number(receipt.transactionId ?? 0);
 		if (transactionId <= 0) {
 			await Swal.fire({
@@ -489,7 +513,7 @@ const PointOfSalePage = () => {
 			await Swal.fire({
 				icon: "success",
 				title: "Refund Requested",
-				text: "Refund request submitted for Shop Owner approval.",
+				text: "Refund request submitted for Finance approval.",
 				confirmButtonColor: "#10b981",
 			});
 		} catch (error: any) {
@@ -497,6 +521,51 @@ const PointOfSalePage = () => {
 			await Swal.fire({
 				icon: "error",
 				title: "Request Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		}
+	};
+
+	const handleExecuteRefund = async (receipt: ReceiptSnapshot) => {
+		const refundId = Number(receipt.latestRefund?.id ?? 0);
+		if (refundId <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Not Found",
+				text: "No approved refund request is linked to this receipt.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
+
+		try {
+			await axios.post(
+				`/api/repair-pos/refunds/${refundId}/execute`,
+				{
+					execution_mode: "manual",
+					execution_note: "Executed from Repairer POS receipt history.",
+				},
+				{ withCredentials: true },
+			);
+
+			await Swal.fire({
+				icon: "success",
+				title: "Refund Executed",
+				text: "Refund payout execution has been submitted.",
+				confirmButtonColor: "#10b981",
+			});
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				entry.receiptNo === receipt.receiptNo
+					? { ...entry, latestRefund: entry.latestRefund ? { ...entry.latestRefund, status: "succeeded" } : entry.latestRefund }
+					: entry
+			)));
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Unable to execute refund payout.";
+			await Swal.fire({
+				icon: "error",
+				title: "Execution Failed",
 				text: message,
 				confirmButtonColor: "#dc2626",
 			});
@@ -1386,13 +1455,28 @@ const PointOfSalePage = () => {
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
+														{receipt.latestRefund?.status && (
+															<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
+																{receipt.latestRefund.status}
+															</span>
+														)}
 														<button
 															type="button"
 															onClick={() => handleRequestRefund(receipt)}
+															disabled={Boolean(receipt.latestRefund && ["requested", "approved", "processing", "succeeded"].includes(String(receipt.latestRefund.status || '').toLowerCase()))}
 															className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
 														>
 															Request Refund
 														</button>
+														{receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || '').toLowerCase() === "approved" && (
+															<button
+																type="button"
+																onClick={() => handleExecuteRefund(receipt)}
+																className="rounded-lg border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
+															>
+																Execute Refund
+															</button>
+														)}
 														<button
 															type="button"
 															onClick={() => {

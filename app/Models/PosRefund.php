@@ -23,6 +23,8 @@ class PosRefund extends Model
         'reason_code',
         'reason_notes',
         'status',
+        'finance_status',
+        'shop_owner_status',
         'execution_mode',
         'execution_notes',
         'paymongo_payment_id',

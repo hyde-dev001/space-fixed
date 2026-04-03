@@ -159,6 +159,10 @@ class OrderController extends Controller
                     }
                 }
 
+                $cancellationRefundDeadlineAt = $order->cancellation_refund_deadline_at;
+                $cancellationRefundWindowMinutes = $order->resolveCancellationRefundWindowMinutes();
+                $cancellationRefundDeadlinePassed = !$order->isCancellationRefundWindowOpen();
+
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
@@ -172,6 +176,9 @@ class OrderController extends Controller
                     'grand_total' => $grandTotal,
                     'total_paid' => $totalPaid,
                     'created_at' => $order->created_at->format('Y-m-d H:i:s'),
+                    'cancellation_refund_deadline_at' => $cancellationRefundDeadlineAt?->toIso8601String(),
+                    'cancellation_refund_deadline_passed' => $cancellationRefundDeadlinePassed,
+                    'cancellation_refund_window_minutes' => $cancellationRefundWindowMinutes,
                     'shop_id' => $order->shopOwner ? $order->shopOwner->id : null,
                     'shop_name' => $order->shopOwner->business_name ?? 'Unknown Shop',
                     'shop_address' => $order->shopOwner->business_address ?? $order->shopOwner->city_state,
