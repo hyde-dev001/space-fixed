@@ -15,6 +15,7 @@ type RepairOrderOption = {
 	paymentPolicy?: "deposit_50" | "full_upfront";
 	paymentStatus?: string;
 	status?: string;
+	returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery" | string;
 	dueTypeToCollect?: PosDueType | null;
 	service: string;
 	amount: number;
@@ -91,10 +92,11 @@ const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requeste
 	return "deposit";
 };
 
-const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy" | "paymentStatus" | "status">): PosDueType | null => {
+const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy" | "paymentStatus" | "status" | "returnDeliveryMethod">): PosDueType | null => {
 	const policy = order.paymentPolicy ?? "deposit_50";
 	const paymentStatus = String(order.paymentStatus ?? "").toLowerCase();
 	const workflowStatus = String(order.status ?? "").toLowerCase();
+	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
 
 	if (policy === "full_upfront") {
 		return paymentStatus === "paid" || paymentStatus === "completed" ? null : "full";
@@ -102,6 +104,8 @@ const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy
 
 	if (paymentStatus === "completed") return null;
 	if (paymentStatus === "paid") {
+		if (returnMethod === "shop_delivery") return null;
+
 		if (workflowStatus === "ready-for-pickup" || workflowStatus === "ready_for_pickup") {
 			return "balance";
 		}
@@ -312,6 +316,7 @@ const PointOfSalePage = () => {
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
+								returnDeliveryMethod: String(entry?.return_delivery_method ?? (entry?.delivery_method === "walk_in" ? "walk_in" : "customer_pickup")),
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
