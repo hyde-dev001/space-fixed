@@ -1209,7 +1209,7 @@ const Payment: React.FC = () => {
       {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
 
       <main className={`flex-1 ${!isPremiumPayment ? 'xl:pt-28' : ''}`}>
-        <div className="max-w-7xl mx-auto py-0 xl:py-12 px-0 xl:px-6 text-black">
+        <div className="max-w-7xl mx-auto py-0 xl:py-16 px-0 xl:px-6 text-black">
           {paymentRecovery && (
             <div className="mx-4 xl:mx-0 mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-medium text-amber-900 mb-2">
@@ -1647,47 +1647,47 @@ const Payment: React.FC = () => {
             {/* Left: Payment Form (span 2 on md) */}
             <div className="md:col-span-2">
               {/* Contact Section */}
-              <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-black">Contact</h2>
+              <div className="mb-12">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-black">Contact</h2>
                 </div>
                 <input
                   type="email"
                   placeholder="Email"
                   value={customerEmail}
                   onChange={e => setCustomerEmail(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                  className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                 />
-                <label className="mt-4 flex items-center gap-3">
+                <label className="mt-6 flex items-center gap-3">
                   <input type="checkbox" defaultChecked className="w-4 h-4" />
                   <span className="text-sm text-black">Email me with news and offers</span>
                 </label>
               </div>
 
               {/* Delivery Section */}
-              <div className="mb-8">
-                {!isPremiumPayment && <h2 className="text-lg font-semibold text-black mb-4">Delivery</h2>}
-                <div className="space-y-4">
+              <div className="mb-12">
+                {!isPremiumPayment && <h2 className="text-2xl font-bold text-black mb-6">Delivery</h2>}
+                <div className="space-y-6">
                   {/* First Name & Last Name */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">First name</label>
+                      <label className="block text-sm font-medium text-black mb-3">First name</label>
                       <input
                         type="text"
                         placeholder="First name"
                         value={customerName.split(' ')[0]}
                         onChange={e => setCustomerName(e.target.value + (customerName.split(' ').slice(1).join(' ') ? ' ' + customerName.split(' ').slice(1).join(' ') : ''))}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">Last name</label>
+                      <label className="block text-sm font-medium text-black mb-3">Last name</label>
                       <input
                         type="text"
                         placeholder="Last name"
                         value={customerName.split(' ').slice(1).join(' ')}
                         onChange={e => setCustomerName(customerName.split(' ')[0] + (e.target.value ? ' ' + e.target.value : ''))}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                       />
                     </div>
                   </div>
@@ -1695,13 +1695,13 @@ const Payment: React.FC = () => {
                   {/* Address Line */}
                   {!isPremiumPayment && (
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">House No., Street, Subdivision / Building</label>
+                      <label className="block text-sm font-medium text-black mb-3">House No., Street, Subdivision / Building</label>
                       <input
                         type="text"
                         placeholder="House No., Street, Subdivision / Building"
                         value={shippingAddressLine}
                         onChange={e => setShippingAddressLine(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                       />
                     </div>
                   )}
@@ -1709,13 +1709,13 @@ const Payment: React.FC = () => {
                   {/* Barangay */}
                   {!isPremiumPayment && (
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">Barangay, Landmarks, Optional (LBC Branch)</label>
+                      <label className="block text-sm font-medium text-black mb-3">Barangay, Landmarks, Optional (LBC Branch)</label>
                       <input
                         type="text"
                         placeholder="Barangay, Landmarks, Optional (LBC Branch)"
                         value={shippingBarangay}
                         onChange={e => setShippingBarangay(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                       />
                     </div>
                   )}
@@ -1723,33 +1723,33 @@ const Payment: React.FC = () => {
                   {/* Postal Code, City, and Region */}
                   {!isPremiumPayment && (
                     <>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-6">
                         <div>
-                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                          <label className="block text-sm font-medium text-black mb-3">Postal code</label>
                           <input
                             type="text"
                             placeholder="Postal code"
                             inputMode="numeric"
                             value={shippingPostalCode}
                             onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-black mb-2">City</label>
+                          <label className="block text-sm font-medium text-black mb-3">City</label>
                           <input
                             type="text"
                             placeholder="City"
                             value={shippingCity}
                             onChange={e => setShippingCity(e.target.value)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                           />
                         </div>
                       </div>
 
                       <div>
-                        <label className="block text-sm text-black mb-2">Region</label>
-                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white" title="Region" aria-label="Region" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
+                        <label className="block text-sm text-black mb-3">Region</label>
+                        <select className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg" title="Region" aria-label="Region" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
                           <option value="">Select Region</option>
                           {PH_REGION_OPTIONS.map((region) => (
                             <option key={region} value={region}>{region}</option>
@@ -1761,55 +1761,55 @@ const Payment: React.FC = () => {
 
                   {/* Phone */}
                   <div>
-                    <label className="block text-sm font-medium text-black mb-2">Phone</label>
+                    <label className="block text-sm font-medium text-black mb-3">Phone</label>
                     <input
                       type="tel"
                       placeholder="Phone"
                       value={customerPhone}
                       onChange={e => setCustomerPhone(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                      className="w-full px-4 py-4 border border-gray-300 rounded text-black bg-white text-lg"
                     />
                   </div>
 
                   {/* Save info */}
-                  <label className="flex items-center gap-3">
+                  <label className="flex items-center gap-3 pt-2">
                     <input 
                       type="checkbox" 
                       title="Save my information for faster checkout"
                       aria-label="Save my information for faster checkout"
                       checked={saveAddressForLater}
                       onChange={e => setSaveAddressForLater(e.target.checked)}
-                      className="w-4 h-4" 
+                      className="w-5 h-5" 
                     />
-                    <span className="text-sm text-black">Save my information for a faster checkout</span>
+                    <span className="text-base text-black">Save my information for a faster checkout</span>
                   </label>
 
                   {/* Text notification */}
-                  <label className="flex items-center gap-3">
-                    <input type="checkbox" title="Text me with news and offers" aria-label="Text me with news and offers" className="w-4 h-4" />
-                    <span className="text-sm text-black">Text me with news and offers</span>
+                  <label className="flex items-center gap-3 pt-1">
+                    <input type="checkbox" title="Text me with news and offers" aria-label="Text me with news and offers" className="w-5 h-5" />
+                    <span className="text-base text-black">Text me with news and offers</span>
                   </label>
                 </div>
               </div>
 
               {/* Payment Section */}
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-black mb-3">Payment</h3>
-                <p className="text-sm text-gray-600 mb-4">All transactions are secure and encrypted.</p>
+              <div className="mb-12">
+                <h3 className="text-2xl font-bold text-black mb-6">Payment</h3>
+                <p className="text-base text-gray-700 mb-8">All transactions are secure and encrypted.</p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 w-full">
-                  <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 w-full">
+                  <label className="flex items-start gap-4 p-6 border-2 rounded-lg cursor-pointer h-full transition-all hover:border-gray-400" style={{borderColor: selectedPaymentMethod === 'paymongo' ? '#1f2937' : '#d1d5db', backgroundColor: selectedPaymentMethod === 'paymongo' ? '#f9fafb' : '#ffffff'}}>
                     <input
                       type="radio"
                       name="payment-method"
                       value="paymongo"
                       checked={selectedPaymentMethod === 'paymongo'}
                       onChange={() => setSelectedPaymentMethod('paymongo')}
-                      className="w-4 h-4 mt-1"
+                      className="w-6 h-6 mt-1"
                     />
                     <div>
-                      <span className="text-sm font-medium text-black">Online Payment</span>
-                      <p className="text-xs text-gray-600">Pay securely via PayMongo.</p>
+                      <span className="text-lg font-semibold text-black">Online Payment</span>
+                      <p className="text-base text-gray-600 mt-2">Pay securely via PayMongo card, e-wallet or installment.</p>
                     </div>
                   </label>
 
@@ -1817,26 +1817,26 @@ const Payment: React.FC = () => {
 
                 <div className="w-full">
                   <>
-                    <div className="border border-gray-400 border-b-0 rounded-t p-3 mb-0">
+                    <div className="border-2 border-gray-300 border-b-0 rounded-t-xl p-6 mb-0 bg-white">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-black">Secure Payments via PayMongo</span>
-                        <div className="flex items-center gap-2">
+                        <span className="text-lg font-semibold text-black">Secure Payments via PayMongo</span>
+                        <div className="flex items-center gap-3">
                           {/* Visa */}
-                          <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
+                          <span className="inline-flex items-center justify-center w-12 h-8 bg-white rounded border-2 border-gray-200">
                             <img src="/images/payment-logo/visa.png" alt="Visa" className="block h-full w-full object-contain" />
                           </span>
                           {/* GCash */}
-                          <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
+                          <span className="inline-flex items-center justify-center w-12 h-8 bg-white rounded border-2 border-gray-200">
                             <img src="/images/payment-logo/GCASH.png" alt="GCash" className="block h-full w-full object-contain" />
                           </span>
                           {/* Maya */}
-                          <span className="inline-flex items-center justify-center w-9 h-6 bg-white rounded border border-gray-200">
+                          <span className="inline-flex items-center justify-center w-12 h-8 bg-white rounded border-2 border-gray-200">
                             <img src="/images/payment-logo/MAYA.png" alt="Maya" className="block h-full w-full object-contain" />
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="border border-gray-400 border-t-0 rounded-b bg-gray-50 px-2 py-3 text-center text-sm text-black">
+                    <div className="border-2 border-gray-300 border-t-0 rounded-b-xl bg-blue-50 px-6 py-6 text-center text-base text-gray-900 font-medium">
                       You'll be redirected to Secure Payments via PayMongo to complete your purchase.
                     </div>
                   </>
@@ -1847,7 +1847,7 @@ const Payment: React.FC = () => {
               <button
                 onClick={handlePayNow}
                 disabled={isProcessing}
-                className={`w-full py-3 rounded-md font-semibold text-white mb-8 transition-colors ${
+                className={`w-full py-5 rounded-lg font-bold text-white mb-10 transition-colors text-xl ${
                   isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >

@@ -293,7 +293,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 	}, [isAnyModalOpen, onModalStateChange]);
 
 	return (
-		<AppLayout_shopOwner>
+		<AppLayout_shopOwner hideHeader={isAnyModalOpen}>
 			<Head title="Expense Approvals - Solespace ERP" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 

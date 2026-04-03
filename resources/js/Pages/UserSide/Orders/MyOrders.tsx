@@ -1507,17 +1507,6 @@ const MyOrders: React.FC = () => {
                       />
                     </div>
                   )}
-
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">Note (optional)</label>
-                    <textarea
-                      value={cancelNote}
-                      onChange={(e) => setCancelNote(e.target.value)}
-                      className="w-full border border-gray-200 rounded p-2 text-sm"
-                      rows={3}
-                      placeholder="Add a note about the reason..."
-                    />
-                  </div>
                 </div>
               </div>
               <div className="px-6 py-4 border-t flex justify-end gap-3">
