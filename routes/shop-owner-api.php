@@ -77,6 +77,13 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'shopOwnerExecuteGatewayRefund'])->name('shop_owner.refunds.execute');
     });
 
+    Route::prefix('repair-refunds')->group(function () {
+        Route::post('/{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerApprove'])
+            ->name('shop_owner.repair-refunds.approve');
+        Route::post('/{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerReject'])
+            ->name('shop_owner.repair-refunds.reject');
+    });
+
     // ============================================
     // AUDIT LOGS (Shop Owner View)
     // ============================================

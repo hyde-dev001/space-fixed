@@ -764,6 +764,83 @@ class RepairRequestController extends Controller
         ]);
     }
 
+    public function requestRefundFromMyRepair(Request $request, int $id, RepairPosRefundService $refundService)
+    {
+        $user = Auth::guard('user')->user();
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated',
+            ], 401);
+        }
+
+        $repair = RepairRequest::query()
+            ->where('id', $id)
+            ->forCustomer($user->id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
+            'request_type' => ['required', 'in:full,partial'],
+            'requested_amount' => ['required', 'numeric', 'min:0.01'],
+            'reason_code' => ['required', 'string', 'max:80'],
+            'reason_notes' => ['nullable', 'string', 'max:2000'],
+            'evidence' => ['required', 'array', 'min:1'],
+            'evidence.*.type' => ['required', 'in:photo,video'],
+            'evidence.*.url' => ['required', 'url'],
+        ]);
+
+        $sourceTransaction = PosTransaction::query()
+            ->where('id', (int) $validated['source_transaction_id'])
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->first();
+
+        if (!$sourceTransaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Source transaction not found for this repair request.',
+            ], 422);
+        }
+
+        $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user) {
+            $refund = $refundService->requestRefund($sourceTransaction, [
+                'request_type' => $validated['request_type'],
+                'requested_amount' => (float) $validated['requested_amount'],
+                'reason_code' => $validated['reason_code'],
+                'reason_notes' => $validated['reason_notes'] ?? null,
+            ], (int) $user->id);
+
+            $refund->update([
+                'repairer_status' => 'pending',
+                'evidence_snapshot' => $validated['evidence'],
+            ]);
+
+            return $refund->fresh();
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $refund->id,
+                'status' => $refund->status,
+                'repairer_status' => $refund->repairer_status,
+                'finance_status' => $refund->finance_status,
+                'shop_owner_status' => $refund->shop_owner_status,
+                'requested_amount' => (float) $refund->requested_amount,
+                'reason_code' => $refund->reason_code,
+                'evidence_snapshot' => $refund->evidence_snapshot,
+            ],
+        ]);
+    }
+
     /**
      * Cancel repair request
      */

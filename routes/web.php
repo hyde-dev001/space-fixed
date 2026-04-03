@@ -1005,6 +1005,9 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     Route::post('{id}/retry-payment-session', [\App\Http\Controllers\Api\RepairRequestController::class, 'retryPaymentSession'])
         ->middleware('throttle:20,1');
 
+    // Customer-initiated online refund request for myRepairs flow
+    Route::post('{id}/refunds', [\App\Http\Controllers\Api\RepairRequestController::class, 'requestRefundFromMyRepair']);
+
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
     Route::get('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'getRepairReview']);
@@ -1015,6 +1018,18 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
 
     // Change pickup/delivery method before final receipt confirmation
     Route::patch('{id}/delivery-method', [\App\Http\Controllers\Api\RepairRequestController::class, 'changeDeliveryMethod']);
+});
+
+Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/refunds')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'repairerQueue']);
+    Route::post('{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'repairerApprove']);
+    Route::post('{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'repairerReject']);
+});
+
+Route::middleware(['auth:user', 'permission:access-refund-approval'])->prefix('api/finance/repair-refunds')->group(function () {
+    Route::post('{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeApprove']);
+    Route::post('{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeReject']);
+    Route::post('{refund}/execute', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeExecute']);
 });
 
 // Shop repair capacity check — publicly accessible per shop (no auth needed; returns counts only)
