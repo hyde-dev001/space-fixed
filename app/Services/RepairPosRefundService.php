@@ -131,6 +131,12 @@ class RepairPosRefundService
         }
 
         if ($stage === 'finance') {
+            if ((string) ($refund->repairer_status ?? 'pending') !== 'approved') {
+                throw ValidationException::withMessages([
+                    'repairer_status' => ['Finance approval requires repairer endorsement first.'],
+                ]);
+            }
+
             if ((string) ($refund->finance_status ?? 'pending') !== 'pending') {
                 throw ValidationException::withMessages([
                     'finance_status' => ['Finance approval already recorded for this refund request.'],

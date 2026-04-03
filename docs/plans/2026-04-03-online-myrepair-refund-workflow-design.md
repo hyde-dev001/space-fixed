@@ -209,3 +209,29 @@ Phase 3 (optional):
 - Optional owner stage obeys settings policy
 - Full stage-by-stage audit trail available for each refund request
 - No duplicate payout incidents from repeated execution requests
+
+## 14. Implementation Status
+
+Status: Implemented
+
+Completed endpoints:
+
+- POST /api/customer/repairs/{id}/refunds -> requestRefundFromMyRepair
+- GET /api/repairer/refunds -> repairerQueue
+- POST /api/repairer/refunds/{refund}/approve -> repairerApprove
+- POST /api/repairer/refunds/{refund}/reject -> repairerReject
+- POST /api/finance/repair-refunds/{refund}/approve -> financeApprove
+- POST /api/finance/repair-refunds/{refund}/reject -> financeReject
+- POST /api/finance/repair-refunds/{refund}/execute -> financeExecute
+- POST /api/shop-owner/repair-refunds/{refund}/approve -> ownerApprove
+- POST /api/shop-owner/repair-refunds/{refund}/reject -> ownerReject
+
+Test command log:
+
+- php artisan test tests/Feature/RepairOnlineRefundWorkflowTest.php --filter=online_repair_refund_defaults_to_repairer_review_stage
+- php artisan test tests/Feature/RepairOnlineRefundWorkflowTest.php --filter=repairer_can_endorse_refund_to_finance_with_assessment_note
+- php artisan test tests/Feature/RepairOnlineRefundAuthorizationTest.php --filter=customer_refund_submission_enters_repairer_pending_stage
+- php artisan test tests/Feature/RepairOnlineRefundWorkflowTest.php --filter=finance_cannot_approve_before_repairer_endorsement
+- php artisan test tests/Feature/RepairOnlineRefundWorkflowTest.php --filter=full_online_refund_flow_repairer_finance_owner_optional_then_finance_execute
+- php artisan test tests/Feature/RepairOnlineRefundWorkflowTest.php tests/Feature/RepairOnlineRefundAuthorizationTest.php
+- pnpm vitest run resources/js/Pages/UserSide/Repairs/__tests__/myRepairs.refund-workflow.test.tsx

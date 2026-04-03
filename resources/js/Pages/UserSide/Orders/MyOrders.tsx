@@ -1006,14 +1006,22 @@ const MyOrders: React.FC = () => {
       <Navigation />
 
       <main className="flex-1">
-        <div className="w-full px-4 pb-16 pt-24 sm:px-6 lg:pt-32 xl:px-10 2xl:px-14">
-          <div className="mx-auto mb-5 max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 lg:mb-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none">
+        <div className="w-full pb-16 pt-24 sm:px-6 lg:pt-32 xl:px-10 2xl:px-14">
+          <div className="mb-5 hidden max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 lg:mb-10 mx-auto lg:rounded-none lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none lg:block">
             <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl lg:text-center lg:text-6xl lg:font-bold">My Purchases</h1>
             <p className="max-w-2xl text-xs text-black/55 sm:text-base lg:mx-auto lg:mt-2 lg:text-center">
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
+          </div>
 
-            <div className="mt-4 flex w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+          <div className="lg:hidden px-4">
+            <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-[#16233b]">My Purchases</h1>
+            <p className="mb-4 text-xs text-black/55">
+              Manage deliveries, returns, and refunds with clear real-time order progress.
+            </p>
+          </div>
+
+          <div className="mt-0 flex w-full gap-2 overflow-x-auto px-4 pb-4 pt-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:px-0 lg:hidden">
               {(['all', 'pending', 'processing', 'shipped', 'completed', 'return_refund'] as const).map((tab) => (
                 <button
                   key={tab}
@@ -1032,6 +1040,7 @@ const MyOrders: React.FC = () => {
             </div>
           </div>
 
+          <div className="mx-auto max-w-6xl px-4 lg:px-0">
           {/* Tabs */}
           <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mb-12 lg:flex lg:gap-3 lg:pt-2">
             <button
@@ -1125,8 +1134,6 @@ const MyOrders: React.FC = () => {
               )}
             </button>
           </div>
-
-          <div className="mx-auto max-w-6xl">
 
           {/* Orders Display */}
           {filteredOrders.length === 0 ? (

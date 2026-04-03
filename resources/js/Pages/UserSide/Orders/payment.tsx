@@ -1209,7 +1209,7 @@ const Payment: React.FC = () => {
       {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
 
       <main className={`flex-1 ${!isPremiumPayment ? 'xl:pt-28' : ''}`}>
-        <div className="max-w-full mx-auto py-0 xl:py-12 px-0 xl:px-8 text-black">
+        <div className="max-w-6xl mx-auto py-0 xl:py-10 px-4 xl:px-4 text-black">
           {paymentRecovery && (
             <div className="mx-4 xl:mx-0 mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-medium text-amber-900 mb-2">
@@ -1643,11 +1643,12 @@ const Payment: React.FC = () => {
             )}
           </div>
 
-          <div className="xl:grid grid-cols-5 gap-12 items-start">
-            {/* Left: Payment Form (span 3 on xl) */}
-            <div className="xl:col-span-3">
+          <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+            {/* Left: Payment Form (span 2 on md) */}
+            <div className="md:col-span-2">
+              {/* Contact Section */}
               <div className="mb-10">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-bold text-black">Contact</h2>
                 </div>
                 <input
@@ -1655,9 +1656,9 @@ const Payment: React.FC = () => {
                   placeholder="Email"
                   value={customerEmail}
                   onChange={e => setCustomerEmail(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                  className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                 />
-                <label className="mt-4 flex items-center gap-3">
+                <label className="mt-6 flex items-center gap-3">
                   <input type="checkbox" defaultChecked className="w-4 h-4" />
                   <span className="text-sm text-black">Email me with news and offers</span>
                 </label>
@@ -1665,28 +1666,28 @@ const Payment: React.FC = () => {
 
               {/* Delivery Section */}
               <div className="mb-10">
-                {!isPremiumPayment && <h2 className="text-xl font-bold text-black mb-4">Delivery</h2>}
-                <div className="space-y-4">
+                {!isPremiumPayment && <h2 className="text-xl font-bold text-black mb-5">Delivery</h2>}
+                <div className="space-y-5">
                   {/* First Name & Last Name */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-5">
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">First name</label>
+                      <label className="block text-sm font-medium text-black mb-2.5">First name</label>
                       <input
                         type="text"
                         placeholder="First name"
                         value={customerName.split(' ')[0]}
                         onChange={e => setCustomerName(e.target.value + (customerName.split(' ').slice(1).join(' ') ? ' ' + customerName.split(' ').slice(1).join(' ') : ''))}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">Last name</label>
+                      <label className="block text-sm font-medium text-black mb-2.5">Last name</label>
                       <input
                         type="text"
                         placeholder="Last name"
                         value={customerName.split(' ').slice(1).join(' ')}
                         onChange={e => setCustomerName(customerName.split(' ')[0] + (e.target.value ? ' ' + e.target.value : ''))}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                       />
                     </div>
                   </div>
@@ -1694,13 +1695,13 @@ const Payment: React.FC = () => {
                   {/* Address Line */}
                   {!isPremiumPayment && (
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">House No., Street, Subdivision / Building</label>
+                      <label className="block text-sm font-medium text-black mb-2.5">House No., Street, Subdivision / Building</label>
                       <input
                         type="text"
                         placeholder="House No., Street, Subdivision / Building"
                         value={shippingAddressLine}
                         onChange={e => setShippingAddressLine(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                       />
                     </div>
                   )}
@@ -1708,13 +1709,13 @@ const Payment: React.FC = () => {
                   {/* Barangay */}
                   {!isPremiumPayment && (
                     <div>
-                      <label className="block text-sm font-medium text-black mb-2">Barangay, Landmarks, Optional (LBC Branch)</label>
+                      <label className="block text-sm font-medium text-black mb-2.5">Barangay, Landmarks, Optional (LBC Branch)</label>
                       <input
                         type="text"
                         placeholder="Barangay, Landmarks, Optional (LBC Branch)"
                         value={shippingBarangay}
                         onChange={e => setShippingBarangay(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                       />
                     </div>
                   )}
@@ -1722,33 +1723,33 @@ const Payment: React.FC = () => {
                   {/* Postal Code, City, and Region */}
                   {!isPremiumPayment && (
                     <>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-5">
                         <div>
-                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                          <label className="block text-sm font-medium text-black mb-2.5">Postal code</label>
                           <input
                             type="text"
                             placeholder="Postal code"
                             inputMode="numeric"
                             value={shippingPostalCode}
                             onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-black mb-2">City</label>
+                          <label className="block text-sm font-medium text-black mb-2.5">City</label>
                           <input
                             type="text"
                             placeholder="City"
                             value={shippingCity}
                             onChange={e => setShippingCity(e.target.value)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                           />
                         </div>
                       </div>
 
                       <div>
-                        <label className="block text-sm text-black mb-2">Region</label>
-                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white" title="Region" aria-label="Region" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
+                        <label className="block text-sm text-black mb-2.5">Region</label>
+                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base" title="Region" aria-label="Region" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
                           <option value="">Select Region</option>
                           {PH_REGION_OPTIONS.map((region) => (
                             <option key={region} value={region}>{region}</option>
@@ -1760,82 +1761,84 @@ const Payment: React.FC = () => {
 
                   {/* Phone */}
                   <div>
-                    <label className="block text-sm font-medium text-black mb-2">Phone</label>
+                    <label className="block text-sm font-medium text-black mb-2.5">Phone</label>
                     <input
                       type="tel"
                       placeholder="Phone"
                       value={customerPhone}
                       onChange={e => setCustomerPhone(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                      className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                     />
                   </div>
 
                   {/* Save info */}
-                  <label className="flex items-center gap-3 pt-1">
+                  <label className="flex items-center gap-3 pt-2">
                     <input 
                       type="checkbox" 
                       title="Save my information for faster checkout"
                       aria-label="Save my information for faster checkout"
                       checked={saveAddressForLater}
                       onChange={e => setSaveAddressForLater(e.target.checked)}
-                      className="w-4 h-4" 
+                      className="w-5 h-5" 
                     />
-                    <span className="text-sm text-black">Save my information for a faster checkout</span>
+                    <span className="text-base text-black">Save my information for a faster checkout</span>
                   </label>
 
                   {/* Text notification */}
                   <label className="flex items-center gap-3 pt-1">
-                    <input type="checkbox" title="Text me with news and offers" aria-label="Text me with news and offers" className="w-4 h-4" />
-                    <span className="text-sm text-black">Text me with news and offers</span>
+                    <input type="checkbox" title="Text me with news and offers" aria-label="Text me with news and offers" className="w-5 h-5" />
+                    <span className="text-base text-black">Text me with news and offers</span>
                   </label>
                 </div>
               </div>
 
               {/* Payment Section */}
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-black mb-3">Payment</h3>
-                <p className="text-sm text-gray-700 mb-5">All transactions are secure and encrypted.</p>
-                <div className="grid grid-cols-1 gap-3 mb-6 w-full">
-                  <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all" style={{borderColor: selectedPaymentMethod === 'paymongo' ? '#1f2937' : '#d1d5db', backgroundColor: selectedPaymentMethod === 'paymongo' ? '#f9fafb' : '#ffffff'}}>
-                    <input
-                      type="radio"
-                      name="payment-method"
-                      value="paymongo"
-                      checked={selectedPaymentMethod === 'paymongo'}
-                      onChange={() => setSelectedPaymentMethod('paymongo')}
-                      className="w-5 h-5 mt-1"
-                    />
-                    <div>
-                      <span className="text-base font-semibold text-black">Online Payment</span>
-                      <p className="text-sm text-gray-600 mt-1">Pay securely via PayMongo card, e-wallet or installment.</p>
-                    </div>
-                  </label>
-                </div>
-                <div className="w-full">
-                  <>
-                    <div className="border-2 border-gray-300 border-b-0 rounded-t-lg p-4 mb-0 bg-white">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-black">Secure Payments via PayMongo</span>
-                        <div className="flex items-center gap-2">
-                          {/* Visa */}
-                          <span className="inline-flex items-center justify-center w-10 h-7 bg-white rounded border border-gray-200">
-                            <img src="/images/payment-logo/visa.png" alt="Visa" className="block h-full w-full object-contain" />
-                          </span>
-                          {/* GCash */}
-                          <span className="inline-flex items-center justify-center w-10 h-7 bg-white rounded border border-gray-200">
-                            <img src="/images/payment-logo/GCASH.png" alt="GCash" className="block h-full w-full object-contain" />
-                          </span>
-                          {/* Maya */}
-                          <span className="inline-flex items-center justify-center w-10 h-7 bg-white rounded border border-gray-200">
-                            <img src="/images/payment-logo/MAYA.png" alt="Maya" className="block h-full w-full object-contain" />
-                          </span>
-                        </div>
+              <div className="mb-12">
+                <h3 className="text-xl font-bold text-black mb-5">Payment</h3>
+                <p className="text-sm text-gray-700 mb-6">All transactions are secure and encrypted.</p>
+
+                {/* Online Payment Option Box */}
+                <label className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-lg cursor-pointer mb-4 bg-white">
+                  <input
+                    type="radio"
+                    name="payment-method"
+                    value="paymongo"
+                    checked={selectedPaymentMethod === 'paymongo'}
+                    onChange={() => setSelectedPaymentMethod('paymongo')}
+                    className="w-5 h-5 flex-shrink-0"
+                  />
+                  <div className="flex-1">
+                    <span className="text-base font-semibold text-black block">Online Payment</span>
+                    <p className="text-sm text-gray-600">Pay securely via PayMongo card, e-wallet or installment.</p>
+                  </div>
+                </label>
+
+                {/* Secure Payments Box */}
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                  <div className="bg-white px-4 py-3 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-black">Secure Payments via PayMongo</span>
+                      <div className="flex items-center gap-2">
+                        {/* Visa */}
+                        <span className="inline-flex items-center justify-center w-10 h-6 rounded border border-gray-300 bg-white">
+                          <img src="/images/payment-logo/visa.png" alt="Visa" className="block h-full w-full object-contain" />
+                        </span>
+                        {/* GCash */}
+                        <span className="inline-flex items-center justify-center w-10 h-6 rounded border border-gray-300 bg-white">
+                          <img src="/images/payment-logo/GCASH.png" alt="GCash" className="block h-full w-full object-contain" />
+                        </span>
+                        {/* Maya */}
+                        <span className="inline-flex items-center justify-center w-10 h-6 rounded border border-gray-300 bg-white">
+                          <img src="/images/payment-logo/MAYA.png" alt="Maya" className="block h-full w-full object-contain" />
+                        </span>
                       </div>
                     </div>
-                    <div className="border-2 border-gray-300 border-t-0 rounded-b-lg bg-blue-50 px-4 py-4 text-center text-sm text-gray-900 font-medium">
-                      You'll be redirected to Secure Payments via PayMongo to complete your purchase.
-                    </div>
-                  </>
+                  </div>
+
+                  {/* Redirection Message */}
+                  <div className="bg-blue-50 px-4 py-3 text-center">
+                    <p className="text-sm text-gray-900">You'll be redirected to Secure Payments via PayMongo to complete your purchase.</p>
+                  </div>
                 </div>
               </div>
 
@@ -1843,7 +1846,7 @@ const Payment: React.FC = () => {
               <button
                 onClick={handlePayNow}
                 disabled={isProcessing}
-                className={`w-full py-4 rounded-lg font-bold text-white mb-6 transition-colors text-lg ${
+                className={`w-full py-3 rounded-xl font-bold text-white mb-8 transition-colors text-base ${
                   isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
@@ -1866,14 +1869,14 @@ const Payment: React.FC = () => {
               </div>
             </div>
 
-            {/* Right: Order Summary (sticky on xl) */}
-            <aside className="xl:col-span-2 xl:sticky xl:top-4">
-              <div className="border border-gray-300 rounded-lg p-6 bg-white">
+            {/* Right: Order Summary (sticky on md) */}
+            <aside className="md:col-span-1 md:sticky md:top-4">
+              <div className="border border-gray-300 rounded-lg p-4 bg-white">
                 {/* Product Items */}
                 <div className="border-b border-gray-200 pb-4 mb-4">
                   {checkoutData.items.map((item) => (
                     <div key={item.id} className="flex gap-4 mb-4 last:mb-0">
-                      <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden shrink-0">
+                      <div className="w-14 h-14 bg-gray-100 rounded overflow-hidden shrink-0">
                         {item.image ? (
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                         ) : isPremiumPayment ? (
@@ -1933,7 +1936,7 @@ const Payment: React.FC = () => {
                     <span className="text-black">Total</span>
                     <div className="flex items-baseline gap-1">
                       <span className="text-xs text-gray-600">PHP</span>
-                      <span className="text-2xl font-bold text-black">₱{total.toLocaleString()}</span>
+                      <span className="text-xl font-bold text-black">₱{total.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -1965,7 +1968,7 @@ const Payment: React.FC = () => {
       <footer className="hidden xl:block mt-12 bg-gray-100 text-slate-900">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="border-t border-gray-300 pt-6 text-xs text-slate-700 flex items-center justify-between">
-            <div>© 2024 SOLESPACE. All rights reserved.</div>
+            <div>© 2026 SOLESPACE. All rights reserved.</div>
             <div className="flex gap-6">
               <a href="#" className="hover:underline">Privacy</a>
               <a href="#" className="hover:underline">Terms</a>

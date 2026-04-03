@@ -3,6 +3,7 @@ import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
+import { refundStageLabel } from './refundWorkflow';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -110,6 +111,10 @@ type RepairOrder = {
 type RepairRefundStatus = {
   id: number;
   status: string;
+  repairer_status?: string | null;
+  finance_status?: string | null;
+  owner_status?: string | null;
+  shop_owner_status?: string | null;
   requested_amount?: number;
   approved_amount?: number | null;
   requested_at?: string | null;
@@ -473,15 +478,28 @@ const MyRepairs: React.FC = () => {
     return conversationUnreadCounts[conversationId] ?? 0;
   };
 
-  const getRefundStatusLabel = (status: string): string => {
-    switch ((status || '').toLowerCase()) {
+  const getRefundStatusLabel = (refund: RepairRefundStatus): string => {
+    const stageLabel = refundStageLabel({
+      overall_status: refund.status,
+      status: refund.status,
+      repairer_status: refund.repairer_status,
+      finance_status: refund.finance_status,
+      owner_status: refund.owner_status,
+      shop_owner_status: refund.shop_owner_status,
+    });
+
+    if (stageLabel !== 'In Review') {
+      return stageLabel;
+    }
+
+    switch ((refund.status || '').toLowerCase()) {
       case 'requested': return 'Refund Requested';
       case 'approved': return 'Refund Approved';
       case 'processing': return 'Refund Processing';
       case 'succeeded': return 'Refund Completed';
       case 'rejected': return 'Refund Rejected';
       case 'failed': return 'Refund Failed';
-      default: return `Refund ${status}`;
+      default: return `Refund ${refund.status}`;
     }
   };
 
@@ -758,6 +776,10 @@ const MyRepairs: React.FC = () => {
             nextMap[repairId] = {
               id: Number(refund?.id || 0),
               status: String(refund?.status || 'requested'),
+              repairer_status: refund?.repairer_status ? String(refund.repairer_status) : null,
+              finance_status: refund?.finance_status ? String(refund.finance_status) : null,
+              owner_status: refund?.owner_status ? String(refund.owner_status) : null,
+              shop_owner_status: refund?.shop_owner_status ? String(refund.shop_owner_status) : null,
               requested_amount: Number(refund?.requested_amount || 0),
               approved_amount: refund?.approved_amount == null ? null : Number(refund.approved_amount),
               requested_at: refund?.requested_at || null,
@@ -1049,7 +1071,12 @@ const MyRepairs: React.FC = () => {
         : '';
       const reasonNotes = [refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
 
-      const response = await fetch('/api/repair-pos/refunds', {
+      const evidence = refundMedia.map((file) => ({
+        type: file.type.startsWith('video/') ? 'video' : 'photo',
+        url: `https://evidence.local/${encodeURIComponent(file.name)}`,
+      }));
+
+      const response = await fetch(`/api/customer/repairs/${targetOrder.id}/refunds`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -1063,6 +1090,7 @@ const MyRepairs: React.FC = () => {
           requested_amount: refundableAmount,
           reason_code: reasonCode,
           reason_notes: reasonNotes,
+          evidence,
         }),
       });
 
@@ -2187,7 +2215,7 @@ const MyRepairs: React.FC = () => {
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
                       {latestRefundByRepairId[order.id] && (
                         <div className="mr-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-                          <p className="font-semibold">{getRefundStatusLabel(latestRefundByRepairId[order.id].status)}</p>
+                          <p className="font-semibold">{getRefundStatusLabel(latestRefundByRepairId[order.id])}</p>
                           <p>
                             {formatCurrency((latestRefundByRepairId[order.id].approved_amount ?? latestRefundByRepairId[order.id].requested_amount) || 0)}
                             {latestRefundByRepairId[order.id].failure_reason ? ` • ${latestRefundByRepairId[order.id].failure_reason}` : ''}

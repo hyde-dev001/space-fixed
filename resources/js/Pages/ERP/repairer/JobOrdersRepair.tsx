@@ -1970,6 +1970,13 @@ export default function JobOrdersRepair() {
     }
   };
 
+  const endorseRefundForFinance = async (refundId: number, assessmentNote: string, requestedAmount: number) => {
+    return axios.post(`/api/repairer/refunds/${refundId}/approve`, {
+      assessment_note: assessmentNote,
+      approved_amount: requestedAmount,
+    });
+  };
+
   return (
     <AppLayoutERP>
       <Head title="Repair Services - Solespace ERP" />

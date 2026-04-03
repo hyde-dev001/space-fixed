@@ -69,4 +69,14 @@ class RepairOnlineRefundAuthorizationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.repairer_status', 'pending');
     }
+
+    #[Test]
+    public function customer_cannot_access_repairer_refund_queue(): void
+    {
+        $customer = User::factory()->create();
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/repairer/refunds')
+            ->assertForbidden();
+    }
 }
