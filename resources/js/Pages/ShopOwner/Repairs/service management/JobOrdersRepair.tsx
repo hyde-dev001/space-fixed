@@ -51,6 +51,9 @@ type RepairOrder = {
   packagePrice?: string | null;
   addOnsSubtotal?: string | null;
   finalPrice?: string | null;
+  vatRate?: number | null;
+  vatAmount?: string | null;
+  grandTotal?: string | null;
   pricingBreakdown?: {
     package_name?: string;
     package_price?: number | string;
@@ -70,6 +73,7 @@ type MetricCardProps = {
 };
 
 const useStaticData = false;
+const REPAIR_VAT_RATE_PERCENT = 12;
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
 const REPAIR_REQUEST_LIMIT_KEY = 'repair_request_limit';
 const DEFAULT_REPAIR_REQUEST_LIMIT = 20;
@@ -514,7 +518,23 @@ export default function JobOrdersRepair() {
 
       if (response.data.success) {
         // Map the API response to match the RepairOrder type
-        const mappedOrders = response.data.data.map((repair: any) => ({
+        const mappedOrders = response.data.data.map((repair: any) => {
+          const subtotalAmount =
+            toNumber(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total) ?? 0;
+          const rawVatRate = Number(repair.vat_rate);
+          const vatRate = Number.isFinite(rawVatRate) && rawVatRate > 0 ? rawVatRate : REPAIR_VAT_RATE_PERCENT;
+          const parsedVatAmount = toNumber(repair.vat_amount);
+          const vatAmount =
+            parsedVatAmount !== null
+              ? Math.max(parsedVatAmount, 0)
+              : Number((subtotalAmount * (vatRate / 100)).toFixed(2));
+          const parsedGrandTotal = toNumber(repair.grand_total);
+          const grandTotal =
+            parsedGrandTotal !== null
+              ? Math.max(parsedGrandTotal, 0)
+              : Number((subtotalAmount + vatAmount).toFixed(2));
+
+          return {
           id: repair.request_id || `REP-${repair.id}`,
           database_id: repair.id,
           customer: repair.customer_name || repair.user?.first_name + ' ' + repair.user?.last_name || 'N/A',
@@ -522,12 +542,15 @@ export default function JobOrdersRepair() {
           phone: repair.phone || 'N/A',
           item: repair.shoe_type || 'N/A',
           service: repair.services?.map((s: any) => s.name).join(', ') || 'N/A',
-          total: `₱${parseFloat(repair.total || 0).toFixed(2)}`,
+          total: formatPesoAmount(subtotalAmount) || '₱0.00',
           repairPackageId: repair.repair_package_id ?? null,
           packageName: repair.pricing_breakdown?.package_name || repair.repair_package?.name || null,
           packagePrice: formatPesoAmount(repair.package_price ?? repair.pricing_breakdown?.package_price),
           addOnsSubtotal: formatPesoAmount(repair.add_ons_total ?? repair.pricing_breakdown?.add_ons_total),
           finalPrice: formatPesoAmount(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total),
+          vatRate,
+          vatAmount: formatPesoAmount(vatAmount),
+          grandTotal: formatPesoAmount(grandTotal),
           pricingBreakdown: repair.pricing_breakdown || null,
           status: normalizeRepairStatus(repair.status),
           createdAt: new Date(repair.created_at).toLocaleString('en-US', {
@@ -591,7 +614,8 @@ export default function JobOrdersRepair() {
           payment_status: repair.payment_status || 'pending',
           paymongo_payment_id: repair.paymongo_payment_id || null,
           payment_policy: repair.payment_policy || 'deposit_50'
-        }));
+        };
+      });
         setOrders(mappedOrders);
         setError(null);
         pollingDelayRef.current = POLL_INTERVAL_MS;
@@ -2021,14 +2045,14 @@ export default function JobOrdersRepair() {
                         {formatServiceType(order.serviceType)}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium">
-                        {order.total}
+                        {order.grandTotal || order.total}
                       </td>
                       <td className={`px-4 py-4 text-sm font-semibold ${
                         isRemainingBalancePaid(order.payment_status)
                           ? 'text-green-600 dark:text-green-400'
                           : 'text-red-600 dark:text-red-400'
                       }`}>
-                        {getHalfPriceText(order.total)}
+                        {getHalfPriceText(order.grandTotal || order.total)}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 wrap-break-word">
                         {order.createdAt}
@@ -2421,8 +2445,8 @@ export default function JobOrdersRepair() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Service Fee</span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.total}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Subtotal</span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.finalPrice || viewOrder.total}</span>
                     </div>
                     {(viewOrder.packagePrice || viewOrder.addOnsSubtotal || viewOrder.finalPrice) && (
                       <>
@@ -2435,8 +2459,20 @@ export default function JobOrdersRepair() {
                           <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.addOnsSubtotal || '₱0.00'}</span>
                         </div>
                         <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
-                          <span className="text-sm text-gray-700 dark:text-gray-300">Final Total</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Subtotal (Before VAT)</span>
                           <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.finalPrice || viewOrder.total}</span>
+                        </div>
+                      </>
+                    )}
+                    {(viewOrder.vatAmount || viewOrder.grandTotal) && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">VAT ({viewOrder.vatRate ?? REPAIR_VAT_RATE_PERCENT}%)</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vatAmount || '₱0.00'}</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Grand Total</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.grandTotal || viewOrder.total}</span>
                         </div>
                       </>
                     )}
