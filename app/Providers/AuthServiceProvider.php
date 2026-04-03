@@ -4,10 +4,12 @@ namespace App\Providers;
 
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Gate;
+use App\Models\RepairRequest;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseOrder;
 use App\Models\ReplenishmentRequest;
 use App\Models\StockRequestApproval;
+use App\Policies\RepairRequestPolicy;
 use App\Policies\PurchaseRequestPolicy;
 use App\Policies\PurchaseOrderPolicy;
 use App\Policies\ReplenishmentRequestPolicy;
@@ -21,6 +23,7 @@ class AuthServiceProvider extends ServiceProvider
      * @var array<class-string, class-string>
      */
     protected $policies = [
+        RepairRequest::class => RepairRequestPolicy::class,
         PurchaseRequest::class => PurchaseRequestPolicy::class,
         PurchaseOrder::class => PurchaseOrderPolicy::class,
         ReplenishmentRequest::class => ReplenishmentRequestPolicy::class,

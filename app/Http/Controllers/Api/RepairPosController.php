@@ -19,6 +19,7 @@ class RepairPosController extends Controller
         $validated = $request->validate([
             'repair_request_id' => ['required', 'integer', 'exists:repair_requests,id'],
             'due_type' => ['required', 'string', 'in:deposit,balance,full'],
+            'idempotency_key' => ['required', 'string', 'min:8', 'max:100'],
             'customer_type' => ['required', 'string', 'in:registered,walk_in'],
             'customer_id' => ['nullable', 'integer', 'exists:users,id'],
             'walk_in_name' => ['nullable', 'string', 'max:255'],
@@ -42,6 +43,16 @@ class RepairPosController extends Controller
         }
 
         $repair = RepairRequest::findOrFail((int) $validated['repair_request_id']);
+        $actor = Auth::guard('user')->user();
+
+        if (!$actor || !$actor->can('posCheckout', $repair)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'AUTH_FORBIDDEN_SHOP_SCOPE',
+                'message' => 'You are not allowed to process checkout for this repair request.',
+            ], 403);
+        }
+
         $actorId = (int) (Auth::guard('user')->id() ?? 0);
 
         $transaction = $service->checkout($repair, $validated, $actorId);
@@ -113,13 +124,19 @@ class RepairPosController extends Controller
     {
         $user = Auth::guard('user')->user();
         $shopOwnerId = (int) ($user?->shop_owner_id ?? 0);
+        $includeHistory = filter_var($request->query('include_history', false), FILTER_VALIDATE_BOOLEAN);
+
+        $statuses = $includeHistory
+            ? ['requested', 'approved', 'processing', 'succeeded', 'failed', 'rejected']
+            : ['requested', 'approved', 'processing'];
 
         $refunds = PosRefund::query()
             ->where('module_type', 'repair')
-            ->whereIn('status', ['requested', 'approved', 'processing'])
+            ->whereIn('status', $statuses)
             ->when($shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
             ->with([
                 'sourceTransaction:id,transaction_no,module_reference_id,paid_amount,paid_at',
+                'repairRequest:id,request_id,customer_name,status,user_id',
             ])
             ->orderByDesc('requested_at')
             ->orderByDesc('id')
@@ -128,6 +145,122 @@ class RepairPosController extends Controller
         return response()->json([
             'success' => true,
             'data' => $refunds,
+        ]);
+    }
+
+    public function listMyRefunds(Request $request)
+    {
+        $actorId = (int) (Auth::guard('user')->id() ?? 0);
+        if ($actorId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 401);
+        }
+
+        $repairRequestId = (int) $request->query('repair_request_id', 0);
+        $customerRepairIds = RepairRequest::query()
+            ->where('user_id', $actorId)
+            ->pluck('id');
+
+        $refunds = PosRefund::query()
+            ->where('module_type', 'repair')
+            ->whereIn('module_reference_id', $customerRepairIds)
+            ->when($repairRequestId > 0, fn ($query) => $query->where('module_reference_id', $repairRequestId))
+            ->with(['sourceTransaction:id,transaction_no,module_reference_id,paid_amount,paid_at'])
+            ->orderByDesc('requested_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $refunds,
+        ]);
+    }
+
+    public function approveRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
+    {
+        $actor = Auth::guard('user')->user();
+        if (!$actor) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+
+        if (!$this->canManageRefund($actor, $refund)) {
+            return response()->json(['success' => false, 'message' => 'You are not authorized to approve this refund.'], 403);
+        }
+
+        $validated = $request->validate([
+            'approved_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'approval_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $updated = $service->approve(
+            refund: $refund,
+            actorId: (int) $actor->id,
+            approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
+            approvalNote: $validated['approval_note'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $updated,
+        ]);
+    }
+
+    public function rejectRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
+    {
+        $actor = Auth::guard('user')->user();
+        if (!$actor) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+
+        if (!$this->canManageRefund($actor, $refund)) {
+            return response()->json(['success' => false, 'message' => 'You are not authorized to reject this refund.'], 403);
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        $updated = $service->reject(
+            refund: $refund,
+            actorId: (int) $actor->id,
+            rejectionReason: $validated['rejection_reason'],
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $updated,
+        ]);
+    }
+
+    public function executeRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
+    {
+        $actor = Auth::guard('user')->user();
+        if (!$actor) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+
+        if (!$this->canManageRefund($actor, $refund)) {
+            return response()->json(['success' => false, 'message' => 'You are not authorized to execute this refund.'], 403);
+        }
+
+        $validated = $request->validate([
+            'execution_mode' => ['nullable', 'string', 'in:manual,gateway'],
+            'execution_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $executionMode = strtolower((string) ($validated['execution_mode'] ?? 'manual'));
+        $updated = $service->execute(
+            refund: $refund,
+            actorId: (int) $actor->id,
+            executionMode: in_array($executionMode, ['manual', 'gateway'], true) ? $executionMode : 'manual',
+            executionNote: $validated['execution_note'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $updated,
         ]);
     }
 
@@ -146,5 +279,15 @@ class RepairPosController extends Controller
             'success' => true,
             'data' => $transaction->receipt,
         ]);
+    }
+
+    private function canManageRefund(object $actor, PosRefund $refund): bool
+    {
+        if ((string) $refund->module_type !== 'repair') {
+            return false;
+        }
+
+        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        return $shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id;
     }
 }
