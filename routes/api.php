@@ -281,6 +281,7 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     Route::get('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'show']);
     Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
     Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
+    Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
     Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
     Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
 

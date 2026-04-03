@@ -78,6 +78,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::post('/from-job', [InvoiceController::class, 'createFromJob'])->name('finance.invoices.from_job');
         Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.invoices.update');
         Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.invoices.destroy');
+        Route::post('/{id}/restore', [InvoiceController::class, 'restore'])->name('finance.invoices.restore');
         Route::post('/{id}/send', [InvoiceController::class, 'send'])->name('finance.invoices.send');
         Route::post('/{id}/void', [InvoiceController::class, 'void'])->name('finance.invoices.void');
         Route::post('/{id}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('finance.invoices.mark_paid');

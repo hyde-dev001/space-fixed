@@ -6,7 +6,7 @@ import React from 'react';
  */
 export const getApprovalStatusBadge = (
   isInline: boolean = false,
-  status: 'draft' | 'submitted' | 'approved' | 'posted' | 'rejected' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'refunded'
+  status: 'draft' | 'submitted' | 'approved' | 'posted' | 'rejected' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'refunded' | 'archived'
 ): React.ReactNode => {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -20,6 +20,7 @@ export const getApprovalStatusBadge = (
       refunded: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
       overdue: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       cancelled: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+      archived: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
@@ -38,6 +39,8 @@ export const getApprovalStatusBadge = (
         return '→';
       case 'overdue':
         return '!';
+      case 'archived':
+        return '⧉';
       default:
         return '○';
     }

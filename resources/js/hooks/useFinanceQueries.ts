@@ -29,6 +29,7 @@ export interface Invoice {
   journal_entry_id?: string;
   notes?: string;
   items?: InvoiceItem[];
+  deleted_at?: string | null;
 }
 
 export interface InvoiceItem {
@@ -173,13 +174,20 @@ export function useCreateAccount() {
 /**
  * Fetch all invoices with caching
  */
-export function useInvoices() {
+export function useInvoices(filters?: { archived?: boolean }) {
   const api = useFinanceApi();
   
   return useQuery({
-    queryKey: queryKeys.invoices,
+    queryKey: filters ? [...queryKeys.invoices, filters] : queryKeys.invoices,
     queryFn: async () => {
-      const response = await api.get('/api/finance/invoices');
+      const params = new URLSearchParams();
+
+      if (filters?.archived !== undefined) {
+        params.append('archived', filters.archived ? '1' : '0');
+      }
+
+      const queryString = params.toString();
+      const response = await api.get(queryString ? `/api/finance/invoices?${queryString}` : '/api/finance/invoices');
       if (!response.ok) {
         throw new Error(response.error || 'Failed to load invoices');
       }

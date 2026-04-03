@@ -40,6 +40,10 @@ class InvoiceController extends Controller
             
             $q = Invoice::where('shop_id', $shopOwnerId);
 
+            if ($request->boolean('archived')) {
+                $q->onlyTrashed();
+            }
+
             if ($request->filled('status')) {
                 $q->where('status', $request->status);
             }
@@ -100,7 +104,8 @@ class InvoiceController extends Controller
         $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
         
         // Include job order data when fetching single invoice
-        $invoice = Invoice::where('shop_id', $shopOwnerId)
+        $invoice = Invoice::withTrashed()
+            ->where('shop_id', $shopOwnerId)
             ->with([
                 'items', 
                 'journalEntry.lines',
@@ -360,7 +365,7 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Delete invoice (draft only)
+     * Archive invoice (draft only)
      */
     public function destroy($id)
     {
@@ -373,7 +378,7 @@ class InvoiceController extends Controller
         $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
         if ($invoice->status !== 'draft') {
-            return response()->json(['message' => 'Only draft invoices can be deleted'], 422);
+            return response()->json(['message' => 'Only draft invoices can be archived'], 422);
         }
 
         // Audit log
@@ -381,14 +386,47 @@ class InvoiceController extends Controller
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,
-            'action' => 'delete_invoice',
+            'action' => 'archive_invoice',
             'target_type' => 'invoice',
             'target_id' => $invoice->id,
         ]);
 
         $invoice->delete();
 
-        return response()->json(['message' => 'Invoice deleted']);
+        return response()->json(['message' => 'Invoice archived']);
+    }
+
+    /**
+     * Restore archived invoice
+     */
+    public function restore($id)
+    {
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        if (! $shopOwnerId) {
+            return response()->json(['error' => 'No shop association found'], 403);
+        }
+
+        $invoice = Invoice::withTrashed()
+            ->where('shop_id', $shopOwnerId)
+            ->whereNotNull('deleted_at')
+            ->findOrFail($id);
+
+        $invoice->restore();
+
+        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+        AuditLog::create([
+            'shop_owner_id' => $shopOwnerId,
+            'actor_user_id' => $actorUserId,
+            'action' => 'restore_invoice',
+            'target_type' => 'invoice',
+            'target_id' => $invoice->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Invoice restored',
+            'invoice' => $invoice->fresh('items'),
+        ]);
     }
 
     /**

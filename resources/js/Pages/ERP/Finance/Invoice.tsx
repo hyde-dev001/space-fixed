@@ -131,6 +131,23 @@ const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const ArchiveBoxIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v1A2.5 2.5 0 0117.5 11h-11A2.5 2.5 0 014 8.5v-1z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11v6.5A2.5 2.5 0 009.5 20h5a2.5 2.5 0 002.5-2.5V11" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 15h4" />
+  </svg>
+);
+
+const ArchiveRestoreIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v1A2.5 2.5 0 0117.5 11h-11A2.5 2.5 0 014 8.5v-1z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11v6.5A2.5 2.5 0 009.5 20h5a2.5 2.5 0 002.5-2.5V11" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 14l-2-2-2 2" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 12v4" />
+  </svg>
+);
+
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -229,6 +246,7 @@ interface Invoice {
     grand_total?: number | string | null;
     created_at: string;
   } | null;
+  deleted_at?: string | null;
 }
 
 interface InvoiceLineItem {
@@ -254,7 +272,13 @@ const formatPeso = (value: number): string => {
   return `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-const getEffectiveInvoiceStatus = (invoice: Invoice): Invoice['status'] => {
+type InvoiceDisplayStatus = Invoice['status'] | 'archived';
+
+const getEffectiveInvoiceStatus = (invoice: Invoice): InvoiceDisplayStatus => {
+  if (invoice.deleted_at) {
+    return 'archived';
+  }
+
   if ((invoice.job_order?.payment_status || '').toLowerCase() === 'refunded') {
     return 'refunded';
   }
@@ -274,6 +298,7 @@ const Invoice: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const [jobStatusFilter, setJobStatusFilter] = useState<string>("");
@@ -375,7 +400,7 @@ const Invoice: React.FC = () => {
   };
 
   // React Query hooks - automatically handle loading, caching, refetching
-  const { data: invoices = [], isLoading: loading, refetch: refetchInvoices } = useInvoices();
+  const { data: invoices = [], isLoading: loading, refetch: refetchInvoices } = useInvoices({ archived: showArchived });
   const postInvoiceMutation = usePostInvoice();
 
   // Filter invoices based on tab and search
@@ -414,7 +439,12 @@ const Invoice: React.FC = () => {
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTab, searchTerm]);
+  }, [selectedTab, searchTerm, jobStatusFilter, hasJobFilter]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+    setSelectedInvoices([]);
+  }, [showArchived]);
 
   // Calculate statistics from invoice data
   const stats = useMemo(() => {
@@ -502,6 +532,7 @@ const Invoice: React.FC = () => {
       refunded: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
       overdue: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       cancelled: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+      archived: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
@@ -592,6 +623,220 @@ const Invoice: React.FC = () => {
     const fallbackTotal = subtotal + shipping + vat;
 
     return fallbackTotal > 0 ? fallbackTotal : parseAmount(invoice.total);
+  };
+
+  const hasActiveFilters =
+    selectedTab !== "all" ||
+    searchTerm.trim().length > 0 ||
+    jobStatusFilter !== "" ||
+    hasJobFilter !== "all";
+
+  const handleResetFilters = async () => {
+    if (!hasActiveFilters) {
+      await Swal.fire('No Active Filters', 'Nothing to reset.', 'info');
+      return;
+    }
+
+    setSelectedTab("all");
+    setSearchTerm("");
+    setJobStatusFilter("");
+    setHasJobFilter("all");
+    setCurrentPage(1);
+
+    await Swal.fire('Filters Cleared', 'Showing all invoices again.', 'success');
+  };
+
+  const escapeCsvValue = (value: unknown): string => {
+    const stringValue = String(value ?? '');
+    if (/[",\n]/.test(stringValue)) {
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    return stringValue;
+  };
+
+  const handleExportInvoices = async () => {
+    if (!filteredInvoices.length) {
+      await Swal.fire('No Data', 'There are no invoices to export.', 'info');
+      return;
+    }
+
+    const headers = [
+      'Invoice Reference',
+      'Customer',
+      'Date',
+      'Due Date',
+      'Status',
+      'Subtotal',
+      'Shipping Fee',
+      'VAT',
+      'Grand Total',
+    ];
+
+    const rows = filteredInvoices.map((invoice) => {
+      const subtotal = resolveInvoiceSubtotal(invoice).toFixed(2);
+      const shipping = resolveInvoiceShippingFee(invoice).toFixed(2);
+      const vat = resolveInvoiceVatAmount(invoice).toFixed(2);
+      const grandTotal = resolveInvoiceGrandTotal(invoice).toFixed(2);
+      const status = getEffectiveInvoiceStatus(invoice);
+
+      return [
+        invoice.reference,
+        invoice.customer_name,
+        invoice.date,
+        invoice.due_date || '',
+        status,
+        subtotal,
+        shipping,
+        vat,
+        grandTotal,
+      ].map(escapeCsvValue).join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateSuffix = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.download = `invoices-${dateSuffix}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    await Swal.fire('Export Complete', 'Invoice CSV has been downloaded.', 'success');
+  };
+
+  const handleArchiveInvoice = async (invoice: Invoice) => {
+    const result = await Swal.fire({
+      title: 'Archive Invoice?',
+      text: `This will move ${invoice.reference} to the archived list.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, archive it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#7c3aed',
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await api.delete(`/api/finance/invoices/${invoice.id}`);
+
+      if (!response.ok) {
+        throw new Error(response.error || 'Failed to archive invoice');
+      }
+
+      if (selectedInvoice?.id === invoice.id) {
+        setSelectedInvoice(null);
+        setIsViewModalOpen(false);
+      }
+
+      refetchInvoices();
+      setSelectedInvoices((prev) => prev.filter((id) => id !== invoice.id));
+      await Swal.fire('Archived', 'Invoice moved to archives.', 'success');
+    } catch (error) {
+      await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to archive invoice', 'error');
+    }
+  };
+
+  const handleRestoreInvoice = async (invoice: Invoice) => {
+    const result = await Swal.fire({
+      title: 'Restore Invoice?',
+      text: `This will return ${invoice.reference} to the active list.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, restore it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await api.post(`/api/finance/invoices/${invoice.id}/restore`);
+
+      if (!response.ok) {
+        throw new Error(response.error || 'Failed to restore invoice');
+      }
+
+      refetchInvoices();
+      setSelectedInvoices((prev) => prev.filter((id) => id !== invoice.id));
+      await Swal.fire('Restored', 'Invoice returned to the active list.', 'success');
+    } catch (error) {
+      await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to restore invoice', 'error');
+    }
+  };
+
+  const handleDownloadInvoicePdf = async (invoice: Invoice) => {
+    const lineRows = (invoice.items || []).map((item) => {
+      const qty = parseAmount(item.quantity);
+      const unitPrice = parseAmount(item.unit_price);
+      const amount = parseAmount(item.amount);
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${item.description || '-'}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;">${qty}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatPeso(unitPrice)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatPeso(amount)}</td>
+      </tr>`;
+    }).join('');
+
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      await Swal.fire('Popup Blocked', 'Please allow popups to download/print invoices.', 'warning');
+      return;
+    }
+
+    const subtotal = formatPeso(resolveInvoiceSubtotal(invoice));
+    const shipping = formatPeso(resolveInvoiceShippingFee(invoice));
+    const vat = formatPeso(resolveInvoiceVatAmount(invoice));
+    const grandTotal = formatPeso(resolveInvoiceGrandTotal(invoice));
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${invoice.reference}</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">
+          <h1 style="margin: 0 0 8px;">Invoice ${invoice.reference}</h1>
+          <p style="margin: 0 0 16px;">Customer: ${invoice.customer_name}</p>
+          <p style="margin: 0 0 16px;">Date: ${invoice.date} | Due: ${invoice.due_date || 'N/A'}</p>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:8px; border-bottom:2px solid #111827;">Description</th>
+                <th style="text-align:center; padding:8px; border-bottom:2px solid #111827;">Qty</th>
+                <th style="text-align:right; padding:8px; border-bottom:2px solid #111827;">Unit Price</th>
+                <th style="text-align:right; padding:8px; border-bottom:2px solid #111827;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>${lineRows || '<tr><td colspan="4" style="padding:8px;">No line items</td></tr>'}</tbody>
+          </table>
+          <div style="max-width:320px; margin-left:auto;">
+            <p style="display:flex; justify-content:space-between; margin:6px 0;"><span>Subtotal</span><strong>${subtotal}</strong></p>
+            <p style="display:flex; justify-content:space-between; margin:6px 0;"><span>Shipping</span><strong>${shipping}</strong></p>
+            <p style="display:flex; justify-content:space-between; margin:6px 0;"><span>VAT</span><strong>${vat}</strong></p>
+            <p style="display:flex; justify-content:space-between; margin:10px 0 0; border-top:1px solid #d1d5db; padding-top:10px;"><span>Total</span><strong>${grandTotal}</strong></p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  const handleModalSendEmail = async (invoice: Invoice) => {
+    const status = getEffectiveInvoiceStatus(invoice);
+    if (status !== 'draft') {
+      await Swal.fire('Already Processed', 'This invoice has already been sent or finalized.', 'info');
+      return;
+    }
+
+    await handleSendInvoice(invoice.id);
   };
 
   const handleCreateInvoice = () => {
@@ -755,15 +1000,35 @@ const Invoice: React.FC = () => {
               </select>
 
               {/* Filter Button */}
-              <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+              <button
+                onClick={handleResetFilters}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
                 <FunnelIcon className="size-5" />
                 <span className="hidden sm:inline text-sm font-medium">Filter</span>
               </button>
 
               {/* Export Button */}
-              <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+              <button
+                onClick={handleExportInvoices}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
                 <ArrowDownTrayIcon className="size-5" />
                 <span className="hidden sm:inline text-sm font-medium">Export</span>
+              </button>
+
+              <button
+                onClick={() => setShowArchived((prev) => !prev)}
+                className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
+                  showArchived
+                    ? 'border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
+                    : 'border-gray-300 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <ArchiveBoxIcon className="size-5" />
+                <span className="hidden sm:inline text-sm font-medium">
+                  {showArchived ? 'Show Active' : 'Show Archived'}
+                </span>
               </button>
             </div>
           </div>
@@ -927,13 +1192,24 @@ const Invoice: React.FC = () => {
                             )}
                           </button>
                         )}
-                        {effectiveStatus === 'draft' && (
+                        {showArchived ? (
                           <button 
-                            className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                            title="Delete Invoice"
+                            onClick={() => handleRestoreInvoice(invoice)}
+                            className="p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                            title="Restore Invoice"
                           >
-                            <TrashIcon className="size-5 text-red-600 dark:text-red-400" />
+                            <ArchiveRestoreIcon className="size-5 text-purple-600 dark:text-purple-400" />
                           </button>
+                        ) : (
+                          effectiveStatus === 'draft' && (
+                            <button 
+                              onClick={() => handleArchiveInvoice(invoice)}
+                              className="p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                              title="Archive Invoice"
+                            >
+                              <ArchiveBoxIcon className="size-5 text-purple-600 dark:text-purple-400" />
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -1023,6 +1299,8 @@ const Invoice: React.FC = () => {
               {/* Close Button */}
               <button
                 onClick={() => setIsViewModalOpen(false)}
+                aria-label="Close invoice modal"
+                title="Close"
                 className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors z-10"
               >
                 <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1146,18 +1424,14 @@ const Invoice: React.FC = () => {
                 {/* Action Buttons */}
                 <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700 flex gap-2">
                   <button
-                    onClick={() => {
-                      // TODO: Implement PDF download
-                    }}
+                    onClick={() => handleDownloadInvoicePdf(selectedInvoice)}
                     className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                     title="Download PDF"
                   >
                     <ArrowDownTrayIcon className="size-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      // TODO: Implement email sending
-                    }}
+                    onClick={() => handleModalSendEmail(selectedInvoice)}
                     className="flex-1 px-3 py-2.5 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

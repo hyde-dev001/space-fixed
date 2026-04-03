@@ -1234,6 +1234,7 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
     Route::patch('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
     Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
+    Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
     Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
     Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
     Route::post('invoices/{id}/mark-paid', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'markAsPaid']);
