@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
+import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -52,6 +53,7 @@ type ReceiptSnapshot = {
 	cashierName: string;
 	customerName: string;
 	customerPhone: string;
+	paymentReference?: string | null;
 	paymentMethod: PaymentMethod;
 	notes: string;
 	cashReceived: number;
@@ -126,6 +128,7 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 		`Date: ${snapshot.dateLabel}`,
 		`Customer: ${snapshot.customerName}`,
 		...(snapshot.customerPhone.length > 0 ? [`Phone: ${snapshot.customerPhone}`] : []),
+		...(snapshot.paymentReference ? [`Reference: ${snapshot.paymentReference}`] : []),
 		`Cashier: ${snapshot.cashierName}`,
 		`Method: ${snapshot.paymentMethod.toUpperCase()}`,
 		"",
@@ -164,6 +167,7 @@ const PointOfSalePage = () => {
 	const [discountInput, setDiscountInput] = useState<string>("0");
 	const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
 	const [cashReceivedInput, setCashReceivedInput] = useState<string>("");
+	const [proofReference, setProofReference] = useState<string>("");
 	const [notes, setNotes] = useState<string>("");
 	const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
 	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
@@ -365,11 +369,24 @@ const PointOfSalePage = () => {
 	const shortValue = Math.max(totalDue - tenderedAmount, 0);
 	const hasInsufficientCash = paymentMethod === "cash" && shortValue > 0;
 	const isPaid = receiptSnapshot !== null && items.length > 0;
-	const isCustomerNameValid = customerName.trim().length > 0;
 	const isCustomerPhoneValid = customerPhone.length === 11;
 
-	const canPay = items.length > 0 && isCustomerNameValid && isCustomerPhoneValid && (paymentMethod !== "cash" || cashReceivedInput.trim().length > 0) && !hasInsufficientCash;
+	const canPay = computeCanPay({
+		itemsCount: items.length,
+		customerName,
+		customerPhone,
+		paymentMethod,
+		cashReceivedInput,
+		hasInsufficientCash,
+		proofReference,
+	});
 	const canPrint = isPaid;
+
+	useEffect(() => {
+		if (paymentMethod === "cash" && proofReference.length > 0) {
+			setProofReference("");
+		}
+	}, [paymentMethod, proofReference]);
 
 	const selectedOrderServiceSet = useMemo(() => {
 		if (!selectedRepairOrder) return null;
@@ -393,6 +410,7 @@ const PointOfSalePage = () => {
 		setDiscountInput("0");
 		setPaymentMethod("cash");
 		setCashReceivedInput("");
+		setProofReference("");
 		setNotes("");
 		setCustomerName("");
 		setCustomerPhone("");
@@ -580,7 +598,7 @@ const PointOfSalePage = () => {
 						{
 							tender_type: mapTenderType(paymentMethod),
 							amount: Number(totalDue.toFixed(2)),
-							provider_reference: null,
+							provider_reference: paymentMethod === "cash" ? null : proofReference.trim(),
 						},
 					],
 				},
@@ -623,7 +641,8 @@ const PointOfSalePage = () => {
 				}),
 				cashierName,
 				customerName: customerName.trim(),
-				customerPhone: customerPhone.trim(),
+				customerPhone: getPhoneDisplayForReceipt(paymentMethod, customerPhone),
+				paymentReference: paymentMethod === "cash" ? null : proofReference.trim(),
 				paymentMethod,
 				notes,
 				cashReceived: tenderedAmount,
@@ -976,6 +995,19 @@ const PointOfSalePage = () => {
 								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 							/>
 
+							{paymentMethod !== "cash" && (
+								<div>
+									<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Proof Reference</label>
+									<input
+										title="GCash/Card reference"
+										value={proofReference}
+										onChange={(event) => setProofReference(event.target.value)}
+										placeholder="Enter transaction/auth reference"
+										className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+								</div>
+							)}
+
 							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<div className="space-y-2 text-sm">
 									<div className="flex items-center justify-between text-slate-600"><span>Subtotal</span><span>{formatPeso(subtotal)}</span></div>
@@ -1172,6 +1204,7 @@ const PointOfSalePage = () => {
 										<p>Date: {receiptSnapshot.dateLabel}</p>
 										<p>Customer: {receiptSnapshot.customerName}</p>
 										{receiptSnapshot.customerPhone.length > 0 && <p>Phone: {receiptSnapshot.customerPhone}</p>}
+										{receiptSnapshot.paymentReference && <p>Reference: {receiptSnapshot.paymentReference}</p>}
 										<p>Cashier: {receiptSnapshot.cashierName}</p>
 										<p>Method: {receiptSnapshot.paymentMethod.toUpperCase()}</p>
 									</div>
