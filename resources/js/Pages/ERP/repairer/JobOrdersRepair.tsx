@@ -271,6 +271,13 @@ const getRepairStatusLabel = (status: string) => {
   return status.charAt(0).toUpperCase() + status.slice(1);
 };
 
+const getPaymentStatusBadgeLabel = (paymentStatus?: string): string | null => {
+  const normalized = String(paymentStatus ?? '').toLowerCase();
+  if (normalized === 'refunded') return 'Refunded';
+  if (normalized === 'partially_refunded') return 'Partially Refunded';
+  return null;
+};
+
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -2252,6 +2259,11 @@ export default function JobOrdersRepair() {
                           <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
                             {getRepairStatusLabel(order.status)}
                           </span>
+                          {getPaymentStatusBadgeLabel(order.payment_status) && (
+                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                              {getPaymentStatusBadgeLabel(order.payment_status)}
+                            </span>
+                          )}
                           {isInShopPaymentRecorded(order) && (
                             <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                               In-Shop Payment
@@ -2266,7 +2278,11 @@ export default function JobOrdersRepair() {
                         {order.grandTotal || order.total}
                       </td>
                       <td className="px-4 py-4 text-sm font-semibold">
-                        {order.payment_status === 'completed' ? (
+                        {order.payment_status === 'refunded' ? (
+                          <span className="text-rose-600 dark:text-rose-400">Refunded</span>
+                        ) : order.payment_status === 'partially_refunded' ? (
+                          <span className="text-rose-600 dark:text-rose-400">Partially Refunded</span>
+                        ) : order.payment_status === 'completed' ? (
                           <span className="text-green-600 dark:text-green-400">{order.grandTotal || order.total}</span>
                         ) : order.payment_status === 'paid' ? (
                           <span className="text-amber-600 dark:text-amber-400">{getHalfPriceText(order.grandTotal || order.total)}</span>
@@ -2569,6 +2585,11 @@ export default function JobOrdersRepair() {
                     <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full ${getStatusColor(viewOrder.status)}`}>
                       {getRepairStatusLabel(viewOrder.status)}
                     </span>
+                    {getPaymentStatusBadgeLabel(viewOrder.payment_status) && (
+                      <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                        {getPaymentStatusBadgeLabel(viewOrder.payment_status)}
+                      </span>
+                    )}
                     {isInShopPaymentRecorded(viewOrder) && (
                       <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                         In-Shop Payment

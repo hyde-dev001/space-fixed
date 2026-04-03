@@ -1398,6 +1398,7 @@ const MyOrders: React.FC = () => {
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
                         const hasStaffPickup = !isCancelledRefundOrder && (hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
+                        const hasBothDetailSections = hasShippingInfo && hasStaffPickup;
 
                         if (!hasShippingInfo && !hasStaffPickup) return null;
 
@@ -1406,7 +1407,7 @@ const MyOrders: React.FC = () => {
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                               {/* Shipping Information */}
                               {hasShippingInfo && (
-                                <div>
+                                <div className={hasBothDetailSections ? '' : 'lg:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-10">
                                     <div>
@@ -1446,7 +1447,7 @@ const MyOrders: React.FC = () => {
 
                               {/* Staff-Arranged Return Pickup */}
                               {hasStaffPickup && (
-                                <div>
+                                <div className={hasBothDetailSections ? '' : 'lg:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-10">
                                     <div>
