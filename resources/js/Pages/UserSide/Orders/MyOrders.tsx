@@ -986,7 +986,7 @@ const MyOrders: React.FC = () => {
   const tabButtonBaseClass =
     'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] lg:min-w-0 lg:flex-1 lg:rounded-full lg:px-4 lg:text-[11px] lg:tracking-[0.16em]';
   const tabBadgeClass =
-    'pointer-events-none absolute right-1 top-0 z-10 min-w-[18px] h-[18px] -translate-y-1/2 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-[18px] text-white';
+    'pointer-events-none absolute -right-1 top-1 z-10 min-w-[20px] h-[20px] rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold leading-none text-white';
   const actionButtonBaseClass =
     'inline-flex items-center justify-center gap-2 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-6 sm:py-2.5 sm:text-xs sm:tracking-[0.16em]';
   const actionButtonPrimaryClass =
@@ -998,7 +998,7 @@ const MyOrders: React.FC = () => {
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
   const mobileHeroFilterButtonBaseClass =
-    'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border px-2 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+    'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f3f4f6] lg:bg-white">
@@ -1014,14 +1014,14 @@ const MyOrders: React.FC = () => {
             </p>
           </div>
 
-          <div className="lg:hidden px-4">
-            <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-[#16233b]">My Purchases</h1>
-            <p className="mb-4 text-xs text-black/55">
+          <div className="lg:hidden px-4 pb-2">
+            <h1 className="mb-1 text-xl font-extrabold tracking-tight text-[#16233b]">My Purchases</h1>
+            <p className="text-xs text-black/55">
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
           </div>
 
-          <div className="mt-0 flex w-full gap-2 overflow-x-auto px-4 pb-4 pt-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:px-0 lg:hidden">
+          <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
               {(['all', 'pending', 'processing', 'shipped', 'completed', 'return_refund'] as const).map((tab) => (
                 <button
                   key={tab}
@@ -1038,9 +1038,8 @@ const MyOrders: React.FC = () => {
                 </button>
               ))}
             </div>
-          </div>
 
-          <div className="mx-auto max-w-6xl px-4 lg:px-0">
+          <div className="mx-auto max-w-6xl px-4 lg:px-0 mt-6">
           {/* Tabs */}
           <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mb-12 lg:flex lg:gap-3 lg:pt-2">
             <button
@@ -1322,8 +1321,8 @@ const MyOrders: React.FC = () => {
 
                       {/* Order Total */}
                       <div className="mt-6 border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
+                        <div className="flex flex-col gap-6 sm:gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex-1">
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
                             {order.shop_id ? (
                               <Link
@@ -1339,23 +1338,23 @@ const MyOrders: React.FC = () => {
                               <p className="max-w-md text-sm text-gray-500">{order.shop_address}</p>
                             )}
                           </div>
-                          <div className="text-right">
+                          <div className="flex-1 sm:text-right">
                             <div className="mb-2 space-y-1 text-xs text-gray-500">
-                              <div className="flex items-center justify-end gap-3">
+                              <div className="flex items-center justify-between sm:justify-end gap-3">
                                 <span>Subtotal</span>
                                 <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
                               </div>
-                              <div className="flex items-center justify-end gap-3">
+                              <div className="flex items-center justify-between sm:justify-end gap-3">
                                 <span>Shipping</span>
                                 <span className="text-gray-700">{formatPeso(orderShipping)}</span>
                               </div>
-                              <div className="flex items-center justify-end gap-3">
+                              <div className="flex items-center justify-between sm:justify-end gap-3">
                                 <span>{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
                                 <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
                               </div>
                             </div>
                             <p className="mb-2 text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
-                            <div className="flex items-center justify-end text-black">
+                            <div className="flex items-center justify-between sm:justify-end text-black">
                               <span className="text-xl font-extrabold">
                                 {formatPeso(orderTotalPaid)}
                               </span>
@@ -1364,98 +1363,107 @@ const MyOrders: React.FC = () => {
                         </div>
                       </div>
 
-                      {['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && (
-                        <div className="mt-6 border-t border-gray-200 pt-6">
-                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
-                              <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Business </p>
-                              <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Name </p>
-                              <p className="text-sm text-black font-medium">{order.carrier_name || '-'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number </p>
-                              <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
-                            </div>
-                            <div className="md:col-span-2">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
-                              {order.tracking_link ? (
-                                <a
-                                  href={order.tracking_link}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-sm text-black underline break-all"
-                                >
-                                  {order.tracking_link}
-                                </a>
-                              ) : (
-                                <p className="text-sm text-black font-medium">-</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
                       {(() => {
                         const stage = order.refund_stage;
-                        if (!stage) return null;
-
-                        const returnStatus = String(stage.return_status || '').toLowerCase();
-                        const returnSource = String(stage.return_source || 'customer').toLowerCase();
+                        const hasShippingInfo = ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && displayStatus !== 'refunded';
+                        const returnStatus = String(stage?.return_status || '').toLowerCase();
+                        const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
+                        const isRefundedOrder = displayStatus === 'refunded';
+                        const hasStaffPickup = hasStaffPickupDetails || isRefundedOrder;
 
-                        if (!hasStaffPickupDetails) return null;
+                        if (!hasShippingInfo && !hasStaffPickup) return null;
 
                         return (
                           <div className="mt-6 border-t border-gray-200 pt-6">
-                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
-                                <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Company</p>
-                                <p className="text-sm text-black font-medium">{stage.staff_return_carrier || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Name</p>
-                                <p className="text-sm text-black font-medium">{stage.staff_return_rider_name || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Phone</p>
-                                <p className="text-sm text-black font-medium">{stage.staff_return_rider_phone || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number</p>
-                                <p className="text-sm text-black font-medium">{stage.staff_return_tracking_number || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Arranged At</p>
-                                <p className="text-sm text-black font-medium">{stage.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
-                              </div>
-                              <div className="md:col-span-2">
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
-                                {stage.staff_return_tracking_link ? (
-                                  <a
-                                    href={stage.staff_return_tracking_link}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm text-black underline break-all"
-                                  >
-                                    {stage.staff_return_tracking_link}
-                                  </a>
-                                ) : (
-                                  <p className="text-sm text-black font-medium">-</p>
-                                )}
-                              </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                              {/* Shipping Information */}
+                              {hasShippingInfo && (
+                                <div>
+                                  <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
+                                  <div className="space-y-4">
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
+                                      <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Business </p>
+                                      <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Name </p>
+                                      <p className="text-sm text-black font-medium">{order.carrier_name || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number </p>
+                                      <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
+                                      {order.tracking_link ? (
+                                        <a
+                                          href={order.tracking_link}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-sm text-black underline break-all"
+                                        >
+                                          {order.tracking_link}
+                                        </a>
+                                      ) : (
+                                        <p className="text-sm text-black font-medium">-</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Staff-Arranged Return Pickup */}
+                              {hasStaffPickup && (
+                                <div>
+                                  <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
+                                  <div className="space-y-4">
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
+                                      <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Company</p>
+                                      <p className="text-sm text-black font-medium">{stage?.staff_return_carrier || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Name</p>
+                                      <p className="text-sm text-black font-medium">{stage?.staff_return_rider_name || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Phone</p>
+                                      <p className="text-sm text-black font-medium">{stage?.staff_return_rider_phone || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number</p>
+                                      <p className="text-sm text-black font-medium">{stage?.staff_return_tracking_number || '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Arranged At</p>
+                                      <p className="text-sm text-black font-medium">{stage?.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
+                                      {stage?.staff_return_tracking_link ? (
+                                        <a
+                                          href={stage.staff_return_tracking_link}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-sm text-black underline break-all"
+                                        >
+                                          {stage.staff_return_tracking_link}
+                                        </a>
+                                      ) : (
+                                        <p className="text-sm text-black font-medium">-</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
