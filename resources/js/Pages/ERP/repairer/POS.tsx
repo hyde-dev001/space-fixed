@@ -783,6 +783,7 @@ const PointOfSalePage = () => {
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
+		const idempotencyKey = `repair-${repairRequestId}-${effectiveDueType}-${Date.now()}`;
 
 		setIsProcessingPayment(true);
 		try {
@@ -791,6 +792,7 @@ const PointOfSalePage = () => {
 				{
 					repair_request_id: repairRequestId,
 					due_type: effectiveDueType,
+					idempotency_key: idempotencyKey,
 					customer_type: customerType,
 					customer_id: selectedRepairOrder?.customerId ?? null,
 					walk_in_name: customerName.trim() || null,

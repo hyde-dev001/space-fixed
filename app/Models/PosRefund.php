@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PosRefund extends Model
 {
@@ -21,6 +23,10 @@ class PosRefund extends Model
         'reason_code',
         'reason_notes',
         'status',
+        'execution_mode',
+        'execution_notes',
+        'paymongo_payment_id',
+        'paymongo_refund_id',
         'requested_by',
         'approved_by',
         'executed_by',
@@ -40,13 +46,18 @@ class PosRefund extends Model
         'failed_at' => 'datetime',
     ];
 
-    public function sourceTransaction()
+    public function sourceTransaction(): BelongsTo
     {
         return $this->belongsTo(PosTransaction::class, 'source_transaction_id');
     }
 
-    public function lines()
+    public function lines(): HasMany
     {
         return $this->hasMany(PosRefundLine::class);
+    }
+
+    public function repairRequest(): BelongsTo
+    {
+        return $this->belongsTo(RepairRequest::class, 'module_reference_id');
     }
 }

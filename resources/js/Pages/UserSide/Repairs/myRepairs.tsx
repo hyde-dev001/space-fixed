@@ -107,6 +107,15 @@ type RepairOrder = {
   } | null;
 };
 
+type RepairRefundStatus = {
+  id: number;
+  status: string;
+  requested_amount?: number;
+  approved_amount?: number | null;
+  requested_at?: string | null;
+  failure_reason?: string | null;
+};
+
 type ConversationShop = {
   conversation_id?: number;
   unreadCount?: number;
@@ -350,6 +359,7 @@ const MyRepairs: React.FC = () => {
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
+  const [latestRefundByRepairId, setLatestRefundByRepairId] = useState<Record<number, RepairRefundStatus>>({});
 
   // Review modal states (Phase 10D)
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -461,6 +471,23 @@ const MyRepairs: React.FC = () => {
   const getUnreadCountForConversation = (conversationId?: number | null) => {
     if (!conversationId) return 0;
     return conversationUnreadCounts[conversationId] ?? 0;
+  };
+
+  const getRefundStatusLabel = (status: string): string => {
+    switch ((status || '').toLowerCase()) {
+      case 'requested': return 'Refund Requested';
+      case 'approved': return 'Refund Approved';
+      case 'processing': return 'Refund Processing';
+      case 'succeeded': return 'Refund Completed';
+      case 'rejected': return 'Refund Rejected';
+      case 'failed': return 'Refund Failed';
+      default: return `Refund ${status}`;
+    }
+  };
+
+  const isRefundInProgress = (status?: string | null): boolean => {
+    const normalized = String(status || '').toLowerCase();
+    return normalized === 'requested' || normalized === 'approved' || normalized === 'processing';
   };
 
   const mapRepairStatusToTab = (status: RepairStatus): RepairTab => {
@@ -718,6 +745,31 @@ const MyRepairs: React.FC = () => {
         setOrders(repairList);
         await fetchConversationUnreadCounts();
 
+        try {
+          const refundResponse = await axios.get('/api/repair-pos/refunds/mine', { withCredentials: true });
+          const refundRows = Array.isArray(refundResponse?.data?.data) ? refundResponse.data.data : [];
+          const nextMap: Record<number, RepairRefundStatus> = {};
+
+          refundRows.forEach((refund: any) => {
+            const repairId = Number(refund?.module_reference_id || 0);
+            if (!Number.isFinite(repairId) || repairId <= 0) return;
+            if (nextMap[repairId]) return;
+
+            nextMap[repairId] = {
+              id: Number(refund?.id || 0),
+              status: String(refund?.status || 'requested'),
+              requested_amount: Number(refund?.requested_amount || 0),
+              approved_amount: refund?.approved_amount == null ? null : Number(refund.approved_amount),
+              requested_at: refund?.requested_at || null,
+              failure_reason: refund?.failure_reason || null,
+            };
+          });
+
+          setLatestRefundByRepairId(nextMap);
+        } catch {
+          setLatestRefundByRepairId({});
+        }
+
         // Fetch capacity for shops that have a repair still waiting for acceptance
         const waitingShopIds = [...new Set(
           repairList
@@ -941,6 +993,12 @@ const MyRepairs: React.FC = () => {
     const targetOrder = orders.find((entry) => entry.id === refundOrderId);
     if (!targetOrder) {
       Swal.fire({ icon: 'error', title: 'Repair Not Found', text: 'Unable to locate the selected repair request.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    const activeRefund = latestRefundByRepairId[targetOrder.id];
+    if (activeRefund && isRefundInProgress(activeRefund.status)) {
+      Swal.fire({ icon: 'warning', title: 'Refund Already In Progress', text: 'A refund request is already being processed for this repair.', confirmButtonColor: '#000000' });
       return;
     }
 
@@ -2127,6 +2185,15 @@ const MyRepairs: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
+                      {latestRefundByRepairId[order.id] && (
+                        <div className="mr-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                          <p className="font-semibold">{getRefundStatusLabel(latestRefundByRepairId[order.id].status)}</p>
+                          <p>
+                            {formatCurrency((latestRefundByRepairId[order.id].approved_amount ?? latestRefundByRepairId[order.id].requested_amount) || 0)}
+                            {latestRefundByRepairId[order.id].failure_reason ? ` • ${latestRefundByRepairId[order.id].failure_reason}` : ''}
+                          </p>
+                        </div>
+                      )}
                       {/* Chat with Repairer and Pay Now - For All Delivery Methods */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
@@ -2238,6 +2305,7 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
+                            disabled={isRefundInProgress(latestRefundByRepairId[order.id]?.status)}
                             className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                           >
                             REFUND

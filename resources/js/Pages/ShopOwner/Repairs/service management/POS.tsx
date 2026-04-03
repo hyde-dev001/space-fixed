@@ -71,6 +71,20 @@ type ReceiptSnapshot = {
 	items: POSItem[];
 };
 
+type RefundQueueItem = {
+	id: number;
+	status: string;
+	requested_amount: number;
+	approved_amount?: number | null;
+	requested_at?: string | null;
+	reason_code?: string;
+	failure_reason?: string | null;
+	repairRequest?: {
+		request_id?: string;
+		customer_name?: string;
+	};
+};
+
 const SERVICES_PER_PAGE = 6;
 const VAT_RATE = 12;
 
@@ -222,6 +236,10 @@ const PointOfSalePage = () => {
 	const [serviceCatalog, setServiceCatalog] = useState<RepairServiceOption[]>([]);
 	const [servicePackages, setServicePackages] = useState<ServicePackageOption[]>([]);
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+	const [isRefundQueueOpen, setIsRefundQueueOpen] = useState<boolean>(false);
+	const [isRefundQueueLoading, setIsRefundQueueLoading] = useState<boolean>(false);
+	const [refundQueue, setRefundQueue] = useState<RefundQueueItem[]>([]);
+	const [processingRefundId, setProcessingRefundId] = useState<number | null>(null);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -379,6 +397,24 @@ const PointOfSalePage = () => {
 			isMounted = false;
 		};
 	}, []);
+
+	const fetchRefundQueue = async () => {
+		setIsRefundQueueLoading(true);
+		try {
+			const response = await axios.get('/api/repair-pos/refunds/queue?include_history=1', { withCredentials: true });
+			const data = Array.isArray(response?.data?.data) ? response.data.data : [];
+			setRefundQueue(data);
+		} catch {
+			setRefundQueue([]);
+		} finally {
+			setIsRefundQueueLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		if (!isRefundQueueOpen) return;
+		fetchRefundQueue();
+	}, [isRefundQueueOpen]);
 
 	useEffect(() => {
 		if (!requestedRepairRequestId || selectedRepairOrder) return;
@@ -660,6 +696,7 @@ const PointOfSalePage = () => {
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
+		const idempotencyKey = `repair-${repairRequestId}-${effectiveDueType}-${Date.now()}`;
 
 		setIsProcessingPayment(true);
 		try {
@@ -668,6 +705,7 @@ const PointOfSalePage = () => {
 				{
 					repair_request_id: repairRequestId,
 					due_type: effectiveDueType,
+					idempotency_key: idempotencyKey,
 					customer_type: customerType,
 					customer_id: selectedRepairOrder?.customerId ?? null,
 					walk_in_name: customerName.trim() || null,
@@ -776,8 +814,42 @@ const PointOfSalePage = () => {
 		}, 80);
 	};
 
+	const getRefundStatusClass = (status: string): string => {
+		switch (status) {
+			case 'succeeded': return 'bg-emerald-100 text-emerald-700';
+			case 'failed':
+			case 'rejected': return 'bg-red-100 text-red-700';
+			case 'approved': return 'bg-blue-100 text-blue-700';
+			case 'processing': return 'bg-amber-100 text-amber-700';
+			default: return 'bg-slate-100 text-slate-700';
+		}
+	};
+
+	const performRefundAction = async (refundId: number, action: 'approve' | 'reject' | 'execute', payload: Record<string, unknown>) => {
+		setProcessingRefundId(refundId);
+		try {
+			await axios.post(`/api/repair-pos/refunds/${refundId}/${action}`, payload, { withCredentials: true });
+			await fetchRefundQueue();
+			await Swal.fire({
+				icon: 'success',
+				title: `Refund ${action === 'execute' ? 'executed' : `${action}d`}`,
+				confirmButtonColor: '#2563eb',
+			});
+		} catch (error: any) {
+			const message = error?.response?.data?.message || 'Unable to process refund action.';
+			await Swal.fire({
+				icon: 'error',
+				title: 'Action failed',
+				text: message,
+				confirmButtonColor: '#dc2626',
+			});
+		} finally {
+			setProcessingRefundId(null);
+		}
+	};
+
 	return (
-		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isReceiptModalOpen || isHistoryModalOpen}>
+		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -821,13 +893,20 @@ const PointOfSalePage = () => {
 			`}</style>
 
 			<div className="space-y-6 p-4 md:p-6">
-				{!isOrderModalOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
+				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
 					<div>
 						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
 						<p className="mt-1 text-sm text-slate-500">Manage repair cashier transactions and payment processing.</p>
 					</div>
 					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => setIsRefundQueueOpen(true)}
+							className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+						>
+							Refund Queue
+						</button>
 						<button
 							type="button"
 							onClick={() => setIsHistoryModalOpen(true)}
@@ -1159,6 +1238,77 @@ const PointOfSalePage = () => {
 
 					</section>
 				</div>
+
+				{isRefundQueueOpen && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
+								<button
+									type="button"
+									onClick={() => setIsRefundQueueOpen(false)}
+									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="max-h-[70vh] overflow-y-auto p-5">
+								{isRefundQueueLoading ? (
+									<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">Loading refund queue...</div>
+								) : refundQueue.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No repair refunds found.</div>
+								) : (
+									<div className="space-y-3">
+										{refundQueue.map((refund) => {
+											const canApprove = refund.status === 'requested';
+											const canExecute = refund.status === 'approved' || refund.status === 'requested';
+											return (
+												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+													<div className="flex flex-wrap items-start justify-between gap-3">
+														<div>
+															<p className="text-sm font-semibold text-slate-900">#{refund.id} {refund.repairRequest?.request_id ? `- ${refund.repairRequest.request_id}` : ''}</p>
+															<p className="text-xs text-slate-600">Customer: {refund.repairRequest?.customer_name || 'N/A'}</p>
+															<p className="text-xs text-slate-600">Amount: {formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</p>
+															{refund.failure_reason && <p className="text-xs text-red-600">Reason: {refund.failure_reason}</p>}
+														</div>
+														<div className="flex items-center gap-2">
+															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
+															<button
+																type="button"
+																onClick={() => performRefundAction(refund.id, 'approve', {})}
+																disabled={!canApprove || processingRefundId === refund.id}
+																className="rounded-lg border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+															>
+																Approve
+															</button>
+															<button
+																type="button"
+																onClick={() => performRefundAction(refund.id, 'reject', { rejection_reason: 'Rejected from POS queue' })}
+																disabled={!canApprove || processingRefundId === refund.id}
+																className="rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+															>
+																Reject
+															</button>
+															<button
+																type="button"
+																onClick={() => performRefundAction(refund.id, 'execute', { execution_mode: 'manual' })}
+																disabled={!canExecute || processingRefundId === refund.id}
+																className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+															>
+																Execute
+															</button>
+														</div>
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								)}
+							</div>
+						</div>
+					</div>
+				)}
 
 				{isOrderModalOpen && (
 					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">

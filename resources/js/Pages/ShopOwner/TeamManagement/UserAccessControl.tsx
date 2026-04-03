@@ -1998,21 +1998,6 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      {employeeForm.department && (
-                        <div className={`p-3 rounded-lg border ${getRoleStyle(employeeForm.department)}`}>
-                          <p className="text-sm">
-                            <strong>{getRoleInfo(employeeForm.department).title}</strong>
-                            <br />
-                            <span className="text-xs">{getRoleInfo(employeeForm.department).description}</span>
-                            <br />
-                            <span className="text-xs mt-1 block font-medium">
-                              ✅ {getRoleInfo(employeeForm.department).permissions} base permissions
-                              {employeeForm.department !== 'Manager' && ' + HR can grant additional permissions'}
-                            </span>
-                          </p>
-                        </div>
-                      )}
-
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Hired Date</label>
                         <div className="relative">
