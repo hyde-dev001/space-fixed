@@ -2675,90 +2675,11 @@ class RepairWorkflowController extends Controller
      */
     public function markPaidInShop(Request $request, $id)
     {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            $user = Auth::guard('user')->user();
-
-            if (!$shopOwner && !$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            if ($shopOwner) {
-                $repairRequest = RepairRequest::where('id', $id)
-                    ->where('shop_owner_id', $shopOwner->id)
-                    ->firstOrFail();
-            } else {
-                $repairRequest = RepairRequest::where('id', $id)
-                    ->where(function ($query) use ($user) {
-                        $query->where('assigned_repairer_id', $user->id)
-                              ->orWhere('shop_owner_id', $user->shop_owner_id);
-                    })
-                    ->firstOrFail();
-            }
-
-            $intakeDeliveryMethod = $repairRequest->intake_delivery_method
-                ?? ($repairRequest->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery');
-
-            $effectiveReturnMethod = $repairRequest->return_delivery_method
-                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
-
-            $allowsInShopSettlement = $effectiveReturnMethod !== 'shop_delivery'
-                && (
-                $intakeDeliveryMethod === 'walk_in'
-                || in_array($effectiveReturnMethod, ['walk_in', 'customer_pickup'], true)
-                );
-
-            if (!$allowsInShopSettlement) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'In-shop payment is only available for repairs returned via customer pick-up at shop.'
-                ], 409);
-            }
-
-            $settlement = app(\App\Services\PaymentSettlementService::class)
-                ->settleRepairPaidInShop($repairRequest, 'in_shop_manual_' . now()->timestamp);
-
-            $settlementResult = $settlement['result'] ?? 'settled';
-            $settledRepair = $settlement['model'] ?? $repairRequest;
-
-            if ($settlementResult === 'already_settled') {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Payment is already fully settled for this repair.',
-                    'repair' => $settledRepair->fresh(['user', 'services', 'shopOwner'])
-                ]);
-            }
-
-            if ($settlementResult === 'not_due') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No payable repair phase is currently due for in-shop payment.'
-                ], 409);
-            }
-
-            \Log::info('Repair paid in-shop manually', [
-                'user_id' => $shopOwner ? $shopOwner->id : $user->id,
-                'user_type' => $shopOwner ? 'shop_owner' : 'repairer',
-                'repair_request_id' => $repairRequest->id,
-                'payment_status' => $settledRepair->payment_status,
-                'phase' => $settlement['phase'] ?? null,
-                'policy' => $settlement['policy'] ?? null,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'In-shop payment recorded successfully.',
-                'repair' => $settledRepair->fresh(['user', 'services', 'shopOwner']),
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to record in-shop payment: ' . $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'success' => false,
+            'code' => 'POS_REQUIRED',
+            'message' => 'Direct manual payment is disabled. Use Proceed to POS for all repair payments.',
+        ], 409);
     }
 
     /**

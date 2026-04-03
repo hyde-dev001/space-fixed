@@ -47,14 +47,14 @@ return new class extends Migration
             }
         });
 
-        if (Schema::hasColumn('order_refunds', 'return_status')) {
+        if (Schema::hasColumn('order_refunds', 'return_status') && DB::getDriverName() !== 'sqlite') {
             DB::statement("ALTER TABLE order_refunds MODIFY return_status ENUM('not_required','awaiting_approval','pending_customer_shipment','pending_staff_pickup','in_transit','received') NOT NULL DEFAULT 'awaiting_approval'");
         }
     }
 
     public function down(): void
     {
-        if (Schema::hasColumn('order_refunds', 'return_status')) {
+        if (Schema::hasColumn('order_refunds', 'return_status') && DB::getDriverName() !== 'sqlite') {
             DB::statement("ALTER TABLE order_refunds MODIFY return_status ENUM('not_required','awaiting_approval','pending_customer_shipment','in_transit','received') NOT NULL DEFAULT 'awaiting_approval'");
         }
 

@@ -831,9 +831,18 @@ export default function JobOrdersRepair() {
   const getMarkPaidInShopLabel = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
     if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && status === 'paid') {
-      return 'Mark Remaining Paid (In-Shop)';
+      return 'Proceed to POS (Collect Remaining Balance)';
     }
-    return 'Mark Paid (In-Shop)';
+    return 'Proceed to POS (Collect Payment)';
+  };
+
+  const resolvePosDueType = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>): 'deposit' | 'balance' | 'full' => {
+    const policy = order.payment_policy ?? 'deposit_50';
+    const status = (order.payment_status ?? '').toLowerCase();
+
+    if (policy === 'full_upfront') return 'full';
+    if (status === 'paid') return 'balance';
+    return 'deposit';
   };
 
   const canActivateOnlineRemainingBalance = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType' | 'payment_enabled'>) => {
@@ -1291,63 +1300,23 @@ export default function JobOrdersRepair() {
 
     const result = await Swal.fire({
       title: getMarkPaidInShopLabel(order),
-      text: 'This records the payment directly at the shop (cash/manual).',
+      text: 'Continue to the POS screen to complete and issue a receipt.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Confirm Payment',
+      confirmButtonText: 'Proceed to POS',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
 
     if (!result.isConfirmed) return;
 
-    try {
-      const response = await axios.post(`/api/shop-owner/repairs/${order.database_id}/mark-paid-in-shop`);
+    const dueType = resolvePosDueType(order);
+    const query = new URLSearchParams({
+      repair_request_id: String(order.database_id),
+      due_type: dueType,
+    });
 
-      if (response.data.success) {
-        const nextPaymentStatus = response.data?.repair?.payment_status;
-        const nextStatus = response.data?.repair?.status;
-        const nextPaymentId = response.data?.repair?.paymongo_payment_id;
-
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.database_id === order.database_id
-              ? {
-                  ...o,
-                  payment_status: nextPaymentStatus ?? o.payment_status,
-                  paymongo_payment_id: nextPaymentId ?? o.paymongo_payment_id,
-                  status: (nextStatus ? nextStatus.replace(/_/g, '-') : o.status) as RepairOrder['status'],
-                }
-              : o
-          )
-        );
-
-        setViewOrder((prev) =>
-          prev && prev.database_id === order.database_id
-            ? {
-                ...prev,
-                payment_status: nextPaymentStatus ?? prev.payment_status,
-                paymongo_payment_id: nextPaymentId ?? prev.paymongo_payment_id,
-                status: (nextStatus ? nextStatus.replace(/_/g, '-') : prev.status) as RepairOrder['status'],
-              }
-            : prev
-        );
-
-        await Swal.fire({
-          title: 'Payment Recorded',
-          text: response.data.message || 'In-shop payment recorded successfully.',
-          icon: 'success',
-          confirmButtonColor: '#2563eb',
-        });
-        fetchOrders();
-      }
-    } catch (error: any) {
-      await Swal.fire({
-        title: 'Error',
-        text: error.response?.data?.message || 'Failed to record in-shop payment',
-        icon: 'error',
-      });
-    }
+    window.location.href = `/point-of-sale?${query.toString()}`;
   };
 
   const handleCompleteWork = async (order: RepairOrder) => {
@@ -2117,7 +2086,7 @@ export default function JobOrdersRepair() {
                                       ? getMarkPaidInShopLabel(order)
                                       : 'No payable phase is currently due for in-shop payment'
                                   }
-                                  aria-label="Mark Paid In Shop"
+                                  aria-label="Proceed to POS"
                                 >
                                   <CurrencyDollarIcon className="size-5" />
                                 </button>
@@ -2213,7 +2182,7 @@ export default function JobOrdersRepair() {
                                   ? getMarkPaidInShopLabel(order)
                                   : 'No payable phase is currently due for in-shop payment'
                               }
-                              aria-label="Mark Paid In Shop"
+                              aria-label="Proceed to POS"
                             >
                               <CurrencyDollarIcon className="size-5" />
                             </button>

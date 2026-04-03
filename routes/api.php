@@ -226,6 +226,14 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
     }
 });
 
+Route::middleware(['web', 'auth:user'])->prefix('repair-pos')->group(function () {
+    Route::post('/checkout', [\App\Http\Controllers\Api\RepairPosController::class, 'checkout']);
+    Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund']);
+    Route::get('/refunds/queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listRefundQueue']);
+    Route::get('/transactions/{transaction}', [\App\Http\Controllers\Api\RepairPosController::class, 'showTransaction']);
+    Route::get('/transactions/{transaction}/receipt', [\App\Http\Controllers\Api\RepairPosController::class, 'showReceipt']);
+});
+
 /**
  * Price Change Requests - Staff endpoints
  * MOVED TO web.php for proper session handling

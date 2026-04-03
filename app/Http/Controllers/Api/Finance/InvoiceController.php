@@ -377,10 +377,6 @@ class InvoiceController extends Controller
 
         $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
-        if ($invoice->status !== 'draft') {
-            return response()->json(['message' => 'Only draft invoices can be archived'], 422);
-        }
-
         // Audit log
         $actorUserId = Auth::guard('user')->id() ?? Auth::id();
         AuditLog::create([

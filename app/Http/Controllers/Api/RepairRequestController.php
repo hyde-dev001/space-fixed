@@ -15,8 +15,11 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
+use App\Models\PosTransaction;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
+use App\Services\RepairPosPaymentService;
+use App\Services\RepairPosRefundService;
 use App\Services\ShopOwnerApprovalPolicyService;
 
 class RepairRequestController extends Controller
@@ -753,7 +756,7 @@ class RepairRequestController extends Controller
     /**
      * Cancel repair request
      */
-    public function cancel(Request $request, $id)
+    public function cancel(Request $request, $id, RepairPosRefundService $refundService)
     {
         $user = Auth::guard('user')->user();
         
@@ -783,9 +786,32 @@ class RepairRequestController extends Controller
             ], 400);
         }
 
-        $repair->update([
-            'status' => 'cancelled'
-        ]);
+        DB::transaction(function () use ($repair, $refundService, $user): void {
+            $repair->update([
+                'status' => 'cancelled',
+            ]);
+
+            if ((float) $repair->total_paid_amount <= 0 || !$repair->latest_pos_transaction_id) {
+                return;
+            }
+
+            $sourceTransaction = PosTransaction::query()->find((int) $repair->latest_pos_transaction_id);
+            if (!$sourceTransaction) {
+                return;
+            }
+
+            $requestedAmount = min((float) $repair->total_paid_amount, (float) $sourceTransaction->paid_amount);
+            if ($requestedAmount <= 0) {
+                return;
+            }
+
+            $refundService->requestRefund($sourceTransaction, [
+                'request_type' => 'full',
+                'requested_amount' => $requestedAmount,
+                'reason_code' => 'customer_cancelled_repair',
+                'reason_notes' => 'Auto-created when customer cancelled a paid repair request.',
+            ], (int) $user->id);
+        });
 
         return response()->json([
             'success' => true,
@@ -1668,6 +1694,34 @@ class RepairRequestController extends Controller
             'success' => true,
             'message' => 'Payment simulated successfully',
             'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
+        ]);
+    }
+
+    public function checkoutViaPos(Request $request, RepairPosPaymentService $service)
+    {
+        $validated = $request->validate([
+            'repair_request_id' => ['required', 'integer', 'exists:repair_requests,id'],
+            'due_type' => ['required', 'string', 'in:deposit,balance,full'],
+            'customer_type' => ['required', 'string', 'in:registered,walk_in'],
+            'customer_id' => ['nullable', 'integer', 'exists:users,id'],
+            'walk_in_name' => ['nullable', 'string', 'max:255'],
+            'walk_in_phone' => ['nullable', 'string', 'max:30'],
+            'walk_in_email' => ['nullable', 'email', 'max:255'],
+            'payment_lines' => ['required', 'array', 'min:1'],
+            'payment_lines.*.tender_type' => ['required', 'string', 'in:cash,paymongo_card,paymongo_wallet'],
+            'payment_lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_lines.*.provider_reference' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $repair = RepairRequest::findOrFail((int) $validated['repair_request_id']);
+        $actorId = (int) (Auth::guard('user')->id() ?? 0);
+
+        $transaction = $service->checkout($repair, $validated, $actorId);
+
+        return response()->json([
+            'success' => true,
+            'transaction_id' => $transaction->id,
+            'transaction_no' => $transaction->transaction_no,
         ]);
     }
 

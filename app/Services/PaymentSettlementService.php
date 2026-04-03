@@ -131,6 +131,26 @@ class PaymentSettlementService
         return $this->settleRepairPaid($repair, $paymentReference, true);
     }
 
+    public function syncRepairDerivedPaymentStatusFromPos(RepairRequest $repair): RepairRequest
+    {
+        $total = (float) ($repair->final_total ?? $repair->total ?? 0);
+        $paid = (float) ($repair->total_paid_amount ?? 0);
+        $refunded = (float) ($repair->total_refunded_amount ?? 0);
+
+        $derived = 'unpaid';
+        if ($refunded > 0) {
+            $derived = $refunded >= max($paid, 0.0) ? 'refunded' : 'partially_refunded';
+        } elseif ($paid > 0) {
+            $derived = $paid >= $total ? 'paid' : 'partially_paid';
+        }
+
+        $repair->update([
+            'payment_status_derived' => $derived,
+        ]);
+
+        return $repair->fresh();
+    }
+
     public function recordOrderPaymentFailure(Order $order, string $reason): array
     {
         if ($this->isOrderSettled($order)) {

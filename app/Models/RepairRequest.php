@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use App\Models\Notification;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use App\Models\PosTransaction;
 
 class RepairRequest extends Model
 {
@@ -53,6 +54,11 @@ class RepairRequest extends Model
         'payment_enabled_at',
         'payment_enabled_by',
         'payment_policy',
+        'payment_policy_snapshot',
+        'payment_status_derived',
+        'total_paid_amount',
+        'total_refunded_amount',
+        'latest_pos_transaction_id',
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
@@ -118,6 +124,8 @@ class RepairRequest extends Model
         'payment_enabled_at' => 'datetime',
         'pickup_enabled_at' => 'datetime',
         'total' => 'decimal:2',
+        'total_paid_amount' => 'decimal:2',
+        'total_refunded_amount' => 'decimal:2',
         'package_price' => 'decimal:2',
         'add_ons_total' => 'decimal:2',
         'final_total' => 'decimal:2',
@@ -204,6 +212,17 @@ class RepairRequest extends Model
     public function shopOwner()
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    public function posTransactions()
+    {
+        return $this->hasMany(PosTransaction::class, 'module_reference_id')
+            ->where('module_type', 'repair');
+    }
+
+    public function latestPosTransaction()
+    {
+        return $this->belongsTo(PosTransaction::class, 'latest_pos_transaction_id');
     }
 
     public function materialUsages()

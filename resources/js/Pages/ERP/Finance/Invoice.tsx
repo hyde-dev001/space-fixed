@@ -1201,7 +1201,7 @@ const Invoice: React.FC = () => {
                             <ArchiveRestoreIcon className="size-5 text-purple-600 dark:text-purple-400" />
                           </button>
                         ) : (
-                          effectiveStatus === 'draft' && (
+                          !invoice.deleted_at && (
                             <button 
                               onClick={() => handleArchiveInvoice(invoice)}
                               className="p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
@@ -1430,6 +1430,23 @@ const Invoice: React.FC = () => {
                   >
                     <ArrowDownTrayIcon className="size-4" />
                   </button>
+                  {!selectedInvoice.deleted_at ? (
+                    <button
+                      onClick={() => handleArchiveInvoice(selectedInvoice)}
+                      className="flex-1 px-3 py-2.5 border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <ArchiveBoxIcon className="size-4" />
+                      Archive
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleRestoreInvoice(selectedInvoice)}
+                      className="flex-1 px-3 py-2.5 border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <ArchiveRestoreIcon className="size-4" />
+                      Restore
+                    </button>
+                  )}
                   <button
                     onClick={() => handleModalSendEmail(selectedInvoice)}
                     className="flex-1 px-3 py-2.5 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
