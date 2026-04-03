@@ -499,11 +499,57 @@ const MyOrders: React.FC = () => {
     return orders.filter(o => !isReturnRefundOrder(o) && o.status === status).length;
   };
 
-  const getMobileShortcutCount = (shortcut: 'to_pay' | 'to_ship' | 'to_receive' | 'to_rate') => {
-    if (shortcut === 'to_pay') return getCountByStatus('pending');
-    if (shortcut === 'to_ship') return getCountByStatus('processing');
-    if (shortcut === 'to_receive') return getCountByStatus('shipped');
-    return getCountByStatus('completed');
+  const getTabIcon = (tab: OrderTab) => {
+    switch (tab) {
+      case 'all':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        );
+      case 'pending':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        );
+      case 'processing':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h13l4 4v6a2 2 0 01-2 2h-1m-10 0h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0z" />
+          </svg>
+        );
+      case 'shipped':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h2l2 5h10l2-8H7m0 0L5.5 5H3" />
+          </svg>
+        );
+      case 'completed':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.02 3.138a1 1 0 00.95.69h3.3c.969 0 1.371 1.24.588 1.81l-2.67 1.94a1 1 0 00-.364 1.118l1.02 3.138c.3.922-.755 1.688-1.54 1.118l-2.67-1.94a1 1 0 00-1.176 0l-2.67 1.94c-.784.57-1.838-.196-1.539-1.118l1.02-3.138a1 1 0 00-.364-1.118l-2.67-1.94c-.784-.57-.38-1.81.588-1.81h3.3a1 1 0 00.95-.69l1.02-3.138z" />
+          </svg>
+        );
+      default:
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        );
+    }
+  };
+
+  const getTabLabel = (tab: OrderTab) => {
+    switch (tab) {
+      case 'all': return 'All Orders';
+      case 'pending': return 'Pending';
+      case 'processing': return 'Processing';
+      case 'shipped': return 'Shipped';
+      case 'completed': return 'Completed';
+      case 'return_refund': return 'Return/Refund';
+      default: return 'Status';
+    }
   };
 
   const isOnlinePaymentOrder = (order: Order): boolean => {
@@ -952,7 +998,7 @@ const MyOrders: React.FC = () => {
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
   const mobileHeroFilterButtonBaseClass =
-    'relative inline-flex min-w-[120px] shrink-0 items-center justify-center gap-2 overflow-visible rounded-full border px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+    'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border px-2 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f3f4f6] lg:bg-white">
@@ -967,128 +1013,22 @@ const MyOrders: React.FC = () => {
               Manage deliveries, returns, and refunds with clear real-time order progress.
             </p>
 
-            <div className="mt-4 flex w-full gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
-              <button
-                onClick={() => setSelectedTab('all')}
-                className={`${mobileHeroFilterButtonBaseClass} ${
-                  selectedTab === 'all'
-                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
-                }`}
-              >
-                ALL ORDERS
-                {getCountByStatus('all') > 0 && (
-                  <span className={tabBadgeClass}>{getCountByStatus('all')}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedTab('pending')}
-                className={`${mobileHeroFilterButtonBaseClass} ${
-                  selectedTab === 'pending'
-                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
-                }`}
-              >
-                PENDING
-                {getCountByStatus('pending') > 0 && (
-                  <span className={tabBadgeClass}>{getCountByStatus('pending')}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedTab('processing')}
-                className={`${mobileHeroFilterButtonBaseClass} ${
-                  selectedTab === 'processing'
-                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
-                }`}
-              >
-                PROCESSING
-                {getCountByStatus('processing') > 0 && (
-                  <span className={tabBadgeClass}>{getCountByStatus('processing')}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedTab('shipped')}
-                className={`${mobileHeroFilterButtonBaseClass} ${
-                  selectedTab === 'shipped'
-                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
-                }`}
-              >
-                SHIPPED
-                {getCountByStatus('shipped') > 0 && (
-                  <span className={tabBadgeClass}>{getCountByStatus('shipped')}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedTab('completed')}
-                className={`${mobileHeroFilterButtonBaseClass} ${
-                  selectedTab === 'completed'
-                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
-                }`}
-              >
-                COMPLETED
-                {getCountByStatus('completed') > 0 && (
-                  <span className={tabBadgeClass}>{getCountByStatus('completed')}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedTab('return_refund')}
-                className={`${mobileHeroFilterButtonBaseClass} ${
-                  selectedTab === 'return_refund'
-                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
-                }`}
-              >
-                RETURN/REFUND
-                {getCountByStatus('return_refund') > 0 && (
-                  <span className={tabBadgeClass}>{getCountByStatus('return_refund')}</span>
-                )}
-              </button>
-            </div>
-
-            <div className="mt-4 grid grid-cols-4 gap-2 lg:hidden">
-              <button
-                onClick={() => setSelectedTab('pending')}
-                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
-              >
-                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="leading-none">To Pay</span>
-                {getMobileShortcutCount('to_pay') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_pay')}</span>}
-              </button>
-              <button
-                onClick={() => setSelectedTab('processing')}
-                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
-              >
-                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h13l4 4v6a2 2 0 01-2 2h-1m-10 0h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0z" />
-                </svg>
-                <span className="leading-none">To Ship</span>
-                {getMobileShortcutCount('to_ship') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_ship')}</span>}
-              </button>
-              <button
-                onClick={() => setSelectedTab('shipped')}
-                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
-              >
-                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h2l2 5h10l2-8H7m0 0L5.5 5H3" />
-                </svg>
-                <span className="leading-none">To Receive</span>
-                {getMobileShortcutCount('to_receive') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_receive')}</span>}
-              </button>
-              <button
-                onClick={() => setSelectedTab('completed')}
-                className="relative flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-3 text-[11px] text-gray-700"
-              >
-                <svg className="mb-1 h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.02 3.138a1 1 0 00.95.69h3.3c.969 0 1.371 1.24.588 1.81l-2.67 1.94a1 1 0 00-.364 1.118l1.02 3.138c.3.922-.755 1.688-1.54 1.118l-2.67-1.94a1 1 0 00-1.176 0l-2.67 1.94c-.784.57-1.838-.196-1.539-1.118l1.02-3.138a1 1 0 00-.364-1.118l-2.67-1.94c-.784-.57-.38-1.81.588-1.81h3.3a1 1 0 00.95-.69l1.02-3.138z" />
-                </svg>
-                <span className="leading-none">To Rate</span>
-                {getMobileShortcutCount('to_rate') > 0 && <span className={tabBadgeClass}>{getMobileShortcutCount('to_rate')}</span>}
-              </button>
+            <div className="mt-4 flex w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+              {(['all', 'pending', 'processing', 'shipped', 'completed', 'return_refund'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setSelectedTab(tab)}
+                  className={`${mobileHeroFilterButtonBaseClass} ${
+                    selectedTab === tab
+                      ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                      : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                  }`}
+                >
+                  {getTabIcon(tab)}
+                  <span className="leading-none">{getTabLabel(tab)}</span>
+                  {getCountByStatus(tab) > 0 && <span className={tabBadgeClass}>{getCountByStatus(tab)}</span>}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -1249,7 +1189,7 @@ const MyOrders: React.FC = () => {
                             </p>
                           </div>
                           {['delivered', 'completed'].includes(order.status) && (
-                            <div className="hidden lg:block">
+                            <div>
                               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Refund Deadline</p>
                               <p className={`text-xs sm:text-sm ${deadlinePassed ? 'text-red-600 font-medium' : 'text-black'}`}>
                                 {formatDeadline(order.cancellation_refund_deadline_at)}
@@ -1374,26 +1314,7 @@ const MyOrders: React.FC = () => {
                       )}
 
                       {/* Order Total */}
-                      <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-3 lg:hidden">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Shop</p>
-                            {order.shop_id ? (
-                              <Link href={`/shop-profile/${order.shop_id}`} className="truncate text-sm font-semibold text-black underline">
-                                {order.shop_name}
-                              </Link>
-                            ) : (
-                              <p className="truncate text-sm font-semibold text-black">{order.shop_name}</p>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Total</p>
-                            <p className="text-lg font-extrabold text-black">{formatPeso(orderTotalPaid)}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-6 hidden border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6 lg:block">
+                      <div className="mt-6 border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop Location</p>
@@ -1437,7 +1358,7 @@ const MyOrders: React.FC = () => {
                       </div>
 
                       {['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && (
-                        <div className="mt-6 hidden border-t border-gray-200 pt-6 lg:block">
+                        <div className="mt-6 border-t border-gray-200 pt-6">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1486,7 +1407,7 @@ const MyOrders: React.FC = () => {
                         if (!hasStaffPickupDetails) return null;
 
                         return (
-                          <div className="mt-6 hidden border-t border-gray-200 pt-6 lg:block">
+                          <div className="mt-6 border-t border-gray-200 pt-6">
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
