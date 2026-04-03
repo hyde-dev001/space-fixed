@@ -61,6 +61,9 @@ class RepairPosController extends Controller
             'success' => true,
             'transaction_id' => $transaction->id,
             'transaction_no' => $transaction->transaction_no,
+            'meta' => [
+                'idempotency_replay' => (bool) $transaction->getAttribute('idempotency_replay'),
+            ],
         ]);
     }
 

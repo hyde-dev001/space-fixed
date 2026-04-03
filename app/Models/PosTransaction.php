@@ -11,6 +11,8 @@ class PosTransaction extends Model
 
     protected $fillable = [
         'transaction_no',
+        'idempotency_key',
+        'phase_lock_key',
         'shop_owner_id',
         'module_type',
         'module_reference_id',

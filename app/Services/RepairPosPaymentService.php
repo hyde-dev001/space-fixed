@@ -15,6 +15,8 @@ class RepairPosPaymentService
     public function checkout(RepairRequest $repair, array $payload, int $actorId): PosTransaction
     {
         $dueType = (string) $payload['due_type'];
+        $idempotencyKey = (string) ($payload['idempotency_key'] ?? '');
+        $phaseLockKey = sprintf('repair:%d:%s', (int) $repair->id, strtolower($dueType));
         $policy = (string) ($repair->payment_policy_snapshot ?: $repair->payment_policy ?: 'deposit_50');
         $normalizedPolicy = $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
 
@@ -45,9 +47,39 @@ class RepairPosPaymentService
             ]);
         }
 
+        if ($idempotencyKey !== '') {
+            $replay = PosTransaction::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->where('due_type', $dueType)
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+
+            if ($replay) {
+                $replay->setAttribute('idempotency_replay', true);
+
+                return $replay;
+            }
+        }
+
+        $alreadySettled = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->where('due_type', $dueType)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->exists();
+
+        if ($alreadySettled) {
+            throw ValidationException::withMessages([
+                'due_type' => ['PAYMENT_PHASE_ALREADY_SETTLED'],
+            ]);
+        }
+
         return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy) {
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
+                'idempotency_key' => (string) ($payload['idempotency_key'] ?? ''),
+                'phase_lock_key' => sprintf('repair:%d:%s', (int) $repair->id, strtolower((string) $dueType)),
                 'shop_owner_id' => $repair->shop_owner_id,
                 'module_type' => 'repair',
                 'module_reference_id' => $repair->id,

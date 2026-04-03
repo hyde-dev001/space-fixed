@@ -12,6 +12,57 @@ class RepairPosPaymentFlowTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function checkout_replay_returns_existing_transaction_and_does_not_duplicate_phase_charge(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-IDEM-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000111',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Idempotency replay test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'ready_for_pickup',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $payload = [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Replay Test',
+            'idempotency_key' => 'idem-phase-001',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 560],
+            ],
+        ];
+
+        $first = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', $payload);
+        $second = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', $payload);
+
+        $first->assertStatus(200);
+        $second->assertStatus(200)->assertJsonPath('meta.idempotency_replay', true);
+
+        $this->assertSame(1, \App\Models\PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->where('due_type', 'deposit')
+            ->count());
+    }
+
+    #[Test]
     public function pos_ledger_tables_exist_for_repair_module(): void
     {
         $this->assertTrue(Schema::hasTable('pos_transactions'));
@@ -521,5 +572,162 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $repair->refresh();
         $this->assertSame('paid', (string) $repair->payment_status);
+    }
+
+    #[Test]
+    public function shop_actor_can_approve_and_execute_manual_repair_refund(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $shopActor */
+        $shopActor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-012',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000029',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Refund lifecycle test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'picked_up',
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'paid',
+            'payment_status_derived' => 'paid',
+        ]);
+
+        $checkout = $this->actingAs($shopActor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'full',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 1120],
+            ],
+        ])->assertOk();
+
+        $transactionId = (int) $checkout->json('transaction_id');
+
+        $refundRequest = $this->actingAs($customer, 'user')->postJson('/api/repair-pos/refunds', [
+            'source_transaction_id' => $transactionId,
+            'request_type' => 'full',
+            'requested_amount' => 1120,
+            'reason_code' => 'customer_refund_request',
+            'reason_notes' => 'Refund requested from test',
+        ])->assertOk();
+
+        $refundId = (int) $refundRequest->json('refund_id');
+
+        $this->actingAs($shopActor, 'user')
+            ->postJson("/api/repair-pos/refunds/{$refundId}/approve", [])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'approved');
+
+        $this->actingAs($shopActor, 'user')
+            ->postJson("/api/repair-pos/refunds/{$refundId}/execute", ['execution_mode' => 'manual'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'succeeded');
+
+        $this->assertDatabaseHas('pos_refunds', [
+            'id' => $refundId,
+            'status' => 'succeeded',
+            'execution_mode' => 'manual',
+        ]);
+
+        $repair->refresh();
+        $this->assertSame('1120.00', number_format((float) $repair->total_refunded_amount, 2, '.', ''));
+        $this->assertSame('refunded', (string) $repair->payment_status_derived);
+    }
+
+    #[Test]
+    public function customer_can_view_own_repair_refunds(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $otherCustomer */
+        $otherCustomer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $shopActor */
+        $shopActor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-013',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000030',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Refund visibility test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'picked_up',
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'paid',
+        ]);
+
+        $otherRepair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-014',
+            'customer_name' => $otherCustomer->name,
+            'email' => $otherCustomer->email,
+            'phone' => '09170000031',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Other refund visibility test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $otherCustomer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'picked_up',
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'paid',
+        ]);
+
+        $tx1 = $this->actingAs($shopActor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'full',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 1120]],
+        ])->assertOk();
+
+        $tx2 = $this->actingAs($shopActor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $otherRepair->id,
+            'due_type' => 'full',
+            'customer_type' => 'registered',
+            'customer_id' => $otherCustomer->id,
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 1120]],
+        ])->assertOk();
+
+        $this->actingAs($customer, 'user')->postJson('/api/repair-pos/refunds', [
+            'source_transaction_id' => (int) $tx1->json('transaction_id'),
+            'request_type' => 'full',
+            'requested_amount' => 1120,
+            'reason_code' => 'customer_refund_request',
+        ])->assertOk();
+
+        $this->actingAs($otherCustomer, 'user')->postJson('/api/repair-pos/refunds', [
+            'source_transaction_id' => (int) $tx2->json('transaction_id'),
+            'request_type' => 'full',
+            'requested_amount' => 1120,
+            'reason_code' => 'customer_refund_request',
+        ])->assertOk();
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/repair-pos/refunds/mine');
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $refunds = $response->json('data');
+        $this->assertIsArray($refunds);
+        $this->assertCount(1, $refunds);
+        $this->assertSame((int) $repair->id, (int) ($refunds[0]['module_reference_id'] ?? 0));
     }
 }
