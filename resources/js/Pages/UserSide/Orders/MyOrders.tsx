@@ -1393,11 +1393,11 @@ const MyOrders: React.FC = () => {
                         const stage = order.refund_stage;
                         const isRefundedOrder = isOrderRefunded(order);
                         const isCancelledRefundOrder = order.status === 'cancelled' && isRefundedOrder;
-                        const hasShippingInfo = !isCancelledRefundOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
+                        const hasShippingInfo = !isRefundedOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
-                        const hasStaffPickup = !isCancelledRefundOrder && (hasStaffPickupDetails || Boolean(stage) || isRefundedOrder);
+                        const hasStaffPickup = !isCancelledRefundOrder && (hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
 
                         if (!hasShippingInfo && !hasStaffPickup) return null;
 
@@ -1408,7 +1408,7 @@ const MyOrders: React.FC = () => {
                               {hasShippingInfo && (
                                 <div>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-10">
                                     <div>
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
                                       <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
@@ -1448,7 +1448,7 @@ const MyOrders: React.FC = () => {
                               {hasStaffPickup && (
                                 <div>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-10">
                                     <div>
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
                                       <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>

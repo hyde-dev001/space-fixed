@@ -399,35 +399,38 @@ export default function RefundApproval() {
 				params.append("search", searchQuery.trim());
 			}
 
-			const [orderResponse, repairResponse] = await Promise.all([
-				fetch(`/api/shop-owner/refunds?${params.toString()}`, {
-					credentials: "include",
-					headers: {
-						Accept: "application/json",
-					},
-				}),
-				fetch(`/api/shop-owner/repair-refunds?${params.toString()}`, {
-					credentials: "include",
-					headers: {
-						Accept: "application/json",
-					},
-				}),
-			]);
+			const orderResponse = await fetch(`/api/shop-owner/refunds?${params.toString()}`, {
+				credentials: "include",
+				headers: {
+					Accept: "application/json",
+				},
+			});
 
-			const [orderData, repairData] = await Promise.all([orderResponse.json(), repairResponse.json()]);
+			const repairResponse = await fetch(`/api/shop-owner/repair-refunds?${params.toString()}`, {
+				credentials: "include",
+				headers: {
+					Accept: "application/json",
+				},
+			});
+
+			const orderData = await orderResponse.json();
+			const repairData = repairResponse.status === 404 ? { data: [] } : await repairResponse.json();
 			if (!orderResponse.ok) {
 				throw new Error(orderData?.message || "Failed to load refund requests");
 			}
-			if (!repairResponse.ok) {
+			if (!repairResponse.ok && repairResponse.status !== 404) {
 				throw new Error(repairData?.message || "Failed to load repair refund requests");
 			}
+			if (repairResponse.status === 404) {
+				console.warn("Shop owner repair refund endpoint unavailable: /api/shop-owner/repair-refunds");
+			}
 
-			const normalizedOrderRefunds: RefundRequest[] = (Array.isArray(orderData?.data) ? orderData.data : []).map((item) => ({
+			const normalizedOrderRefunds: RefundRequest[] = (Array.isArray(orderData?.data) ? orderData.data : []).map((item: any) => ({
 				...item,
 				refundType: "order",
 			}));
 
-			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : []).map((item) => ({
+			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : []).map((item: any) => ({
 				...item,
 				refundType: "repair",
 			}));
