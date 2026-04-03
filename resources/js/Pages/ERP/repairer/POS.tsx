@@ -5,10 +5,12 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
 
 type PaymentMethod = "cash" | "gcash" | "card";
+type PosDueType = "deposit" | "balance" | "full";
 
 type RepairOrderOption = {
 	id: string;
 	customer: string;
+	customerId?: number | null;
 	service: string;
 	amount: number;
 	requestedServices: string[];
@@ -62,86 +64,31 @@ type ReceiptSnapshot = {
 	items: POSItem[];
 };
 
-const VAT_RATE = 12;
 const SERVICES_PER_PAGE = 6;
+const VAT_RATE = 0;
+const staticPackages: ServicePackageOption[] = [];
 
-const fallbackRepairOrders: RepairOrderOption[] = [
-	{ id: "R1", customer: "Miguel Santos", service: "Deep Sole Reglue", amount: 980, requestedServices: ["Deep Sole Reglue", "Stitch Repair"] },
-	{ id: "R2", customer: "Lia Cruz", service: "Full Clean + Deodorize", amount: 550, requestedServices: ["Full Clean + Deodorize"] },
-	{ id: "R3", customer: "Noah Dela Rosa", service: "Heel Replacement", amount: 1250, requestedServices: ["Heel Replacement", "Midsole Whitening"] },
-];
+const normalizeDueType = (value: string | null): PosDueType => {
+	if (value === "deposit" || value === "balance" || value === "full") {
+		return value;
+	}
 
-const fallbackServices: RepairServiceOption[] = [
-	{ id: "S1", name: "Deep Sole Reglue", category: "Sole", price: 980, duration: "2-3 days" },
-	{ id: "S2", name: "Heel Replacement", category: "Heel", price: 1250, duration: "2 days" },
-	{ id: "S3", name: "Full Clean + Deodorize", category: "Cleaning", price: 550, duration: "Same day" },
-	{ id: "S4", name: "Leather Repaint", category: "Color", price: 750, duration: "1-2 days" },
-	{ id: "S5", name: "Stitch Repair", category: "Upper", price: 450, duration: "1 day" },
-	{ id: "S6", name: "Midsole Whitening", category: "Whitening", price: 650, duration: "Same day" },
-];
+	return "full";
+};
 
-const fallbackPackages: ServicePackageOption[] = [
-	{
-		id: "P1",
-		name: "Starter Clean Package",
-		description: "Best for routine restoration and whitening.",
-		includedServices: ["Full Clean + Deodorize", "Midsole Whitening"],
-		price: 1099,
-		saveText: "Save P101",
-	},
-	{
-		id: "P2",
-		name: "Repair Restore Package",
-		description: "Great for structural shoe repairs and patch work.",
-		includedServices: ["Deep Sole Reglue", "Stitch Repair"],
-		price: 1299,
-		saveText: "Save P131",
-	},
-];
+const computeDueAmountForOrder = (order: RepairOrderOption, dueType: PosDueType): number => {
+	if (dueType === "full") {
+		return Number(order.amount || 0);
+	}
 
-const mockReceiptHistory: ReceiptSnapshot[] = [
-	{
-		receiptNo: "POS-20260406-10021",
-		createdAtISO: "2026-04-06T09:15:00.000+08:00",
-		dateLabel: "Mon, Apr 06, 2026, 09:15 AM",
-		cashierName: "Thomas Rodriguez",
-		customerName: "Miguel Santos",
-		customerPhone: "09171234567",
-		paymentMethod: "cash",
-		notes: "Pickup at 5 PM",
-		cashReceived: 3000,
-		subtotal: 2279,
-		discount: 0,
-		vatRate: VAT_RATE,
-		vatAmount: 273.48,
-		totalDue: 2552.48,
-		change: 447.52,
-		items: [
-			{ id: "mock-1", label: "Repair Restore Package (2 services)", qty: 1, unitPrice: 1299, source: "package" },
-			{ id: "mock-2", label: "Deep Sole Reglue", qty: 1, unitPrice: 980, source: "service-catalog" },
-		],
-	},
-	{
-		receiptNo: "POS-20260405-09876",
-		createdAtISO: "2026-04-05T14:40:00.000+08:00",
-		dateLabel: "Sun, Apr 05, 2026, 02:40 PM",
-		cashierName: "Thomas Rodriguez",
-		customerName: "Lia Cruz",
-		customerPhone: "",
-		paymentMethod: "gcash",
-		notes: "Paid via GCash",
-		cashReceived: 1270,
-		subtotal: 980,
-		discount: 0,
-		vatRate: VAT_RATE,
-		vatAmount: 117.6,
-		totalDue: 1097.6,
-		change: 172.4,
-		items: [
-			{ id: "mock-3", label: "Deep Sole Reglue", qty: 1, unitPrice: 980, source: "service-catalog" },
-		],
-	},
-];
+	return Math.round((Number(order.amount || 0) / 2) * 100) / 100;
+};
+
+const mapTenderType = (method: PaymentMethod): "cash" | "paymongo_card" | "paymongo_wallet" => {
+	if (method === "card") return "paymongo_card";
+	if (method === "gcash") return "paymongo_wallet";
+	return "cash";
+};
 
 const formatPeso = (value: number): string => {
 	return new Intl.NumberFormat("en-PH", {
@@ -203,6 +150,9 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 const PointOfSalePage = () => {
 	const { props } = usePage();
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
+	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
+	const dueType = normalizeDueType(urlParams.get("due_type"));
 
 	const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
 	const [orderSearch, setOrderSearch] = useState<string>("");
@@ -219,13 +169,13 @@ const PointOfSalePage = () => {
 	const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
 	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
 	const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
-	const [receiptHistory, setReceiptHistory] = useState<ReceiptSnapshot[]>(mockReceiptHistory);
+	const [receiptHistory, setReceiptHistory] = useState<ReceiptSnapshot[]>([]);
 	const [historySearch, setHistorySearch] = useState<string>("");
 	const [historyDate, setHistoryDate] = useState<string>("");
 	const [selectedRepairOrder, setSelectedRepairOrder] = useState<RepairOrderOption | null>(null);
 
-	const [repairOrders, setRepairOrders] = useState<RepairOrderOption[]>(fallbackRepairOrders);
-	const [serviceCatalog, setServiceCatalog] = useState<RepairServiceOption[]>(fallbackServices);
+	const [repairOrders, setRepairOrders] = useState<RepairOrderOption[]>([]);
+	const [serviceCatalog, setServiceCatalog] = useState<RepairServiceOption[]>([]);
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 
 	useEffect(() => {
@@ -294,6 +244,7 @@ const PointOfSalePage = () => {
 							return {
 								id: String(entry?.id ?? `R-${index}`),
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
+								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
@@ -321,13 +272,33 @@ const PointOfSalePage = () => {
 		};
 	}, []);
 
+	useEffect(() => {
+		if (!requestedRepairRequestId || selectedRepairOrder) return;
+
+		const targetOrder = repairOrders.find((entry) => entry.id === requestedRepairRequestId);
+		if (!targetOrder) return;
+
+		const dueAmount = computeDueAmountForOrder(targetOrder, dueType);
+		setSelectedRepairOrder(targetOrder);
+		setCustomerName(targetOrder.customer);
+		setItems([
+			{
+				id: `order-${targetOrder.id}-${dueType}`,
+				label: `${targetOrder.service} (${dueType})`,
+				qty: 1,
+				unitPrice: dueAmount,
+				source: "repair-order",
+			},
+		]);
+	}, [dueType, repairOrders, requestedRepairRequestId, selectedRepairOrder]);
+
 	const subtotal = useMemo(() => {
 		return items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
 	}, [items]);
 
 	const discount = useMemo(() => {
-		return Math.min(toSafeNumber(discountInput), subtotal);
-	}, [discountInput, subtotal]);
+		return 0;
+	}, [subtotal]);
 
 	const taxableBase = useMemo(() => Math.max(subtotal - discount, 0), [subtotal, discount]);
 	const vatAmount = useMemo(() => taxableBase * (VAT_RATE / 100), [taxableBase]);
@@ -352,8 +323,8 @@ const PointOfSalePage = () => {
 
 	const visiblePackages = useMemo(() => {
 		const query = serviceSearch.trim().toLowerCase();
-		if (!query) return fallbackPackages;
-		return fallbackPackages.filter((pkg) => {
+		if (!query) return staticPackages;
+		return staticPackages.filter((pkg) => {
 			return (
 				pkg.name.toLowerCase().includes(query) ||
 				pkg.description.toLowerCase().includes(query) ||
@@ -374,23 +345,16 @@ const PointOfSalePage = () => {
 	};
 
 	const addFromRepairOrder = (order: RepairOrderOption) => {
-		const requestedServices = order.requestedServices.length > 0 ? order.requestedServices : [order.service];
-		const perServiceFallbackPrice = requestedServices.length > 0 ? order.amount / requestedServices.length : order.amount;
-
-		const generatedItems: POSItem[] = requestedServices.map((serviceName, index) => {
-			const matchedService = serviceCatalog.find((service) => normalizeServiceName(service.name) === normalizeServiceName(serviceName));
-			const resolvedPrice = matchedService?.price ?? perServiceFallbackPrice;
-
-			return {
-				id: `order-${order.id}-${index}`,
-				label: serviceName,
+		const dueAmount = computeDueAmountForOrder(order, dueType);
+		setItems([
+			{
+				id: `order-${order.id}-${dueType}`,
+				label: `${order.service} (${dueType})`,
 				qty: 1,
-				unitPrice: Number.isFinite(resolvedPrice) ? resolvedPrice : 0,
+				unitPrice: dueAmount,
 				source: "repair-order",
-			};
-		});
-
-		setItems(generatedItems);
+			},
+		]);
 		setSelectedRepairOrder(order);
 		setCustomerName(order.customer);
 		setOrderSearch("");
@@ -518,51 +482,124 @@ const PointOfSalePage = () => {
 		setIsReceiptModalOpen(false);
 	};
 
-	const handlePay = () => {
+	const handlePay = async () => {
 		if (!canPay) return;
+		if (!selectedRepairOrder && !requestedRepairRequestId) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Repair Request Required",
+				text: "Please open POS from a Job Order so it has a repair request reference.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
 
-		const now = new Date();
-		const snapshot: ReceiptSnapshot = {
-			receiptNo: `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getTime()).slice(-5)}`,
-			createdAtISO: now.toISOString(),
-			dateLabel: now.toLocaleString("en-PH", {
-				weekday: "short",
-				month: "short",
-				day: "2-digit",
-				year: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			}),
-			cashierName,
-			customerName: customerName.trim(),
-			customerPhone: customerPhone.trim(),
-			paymentMethod,
-			notes,
-			cashReceived: tenderedAmount,
-			subtotal,
-			discount,
-			vatRate: VAT_RATE,
-			vatAmount,
-			totalDue,
-			change: changeValue,
-			items: [...items],
-		};
+		const repairRequestId = Number(selectedRepairOrder?.id || requestedRepairRequestId);
+		if (!Number.isFinite(repairRequestId) || repairRequestId <= 0) {
+			await Swal.fire({
+				icon: "error",
+				title: "Invalid Repair Request",
+				text: "Unable to resolve repair request for POS checkout.",
+				confirmButtonColor: "#dc2626",
+			});
+			return;
+		}
 
-		setReceiptSnapshot(snapshot);
-		setReceiptHistory((prev) => [snapshot, ...prev]);
-		resetOrderInputs();
+		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
 
-		Swal.fire({
-			icon: "success",
-			title: "Payment Successful!",
-			text: `Amount: ${formatPeso(snapshot.totalDue)}`,
-			confirmButtonColor: "#10b981",
-			confirmButtonText: "View Receipt",
-		}).then((result) => {
-			if (result.isConfirmed) {
-				setIsReceiptModalOpen(true);
+		try {
+			const checkoutResponse = await axios.post(
+				"/api/repair-pos/checkout",
+				{
+					repair_request_id: repairRequestId,
+					due_type: dueType,
+					customer_type: customerType,
+					customer_id: selectedRepairOrder?.customerId ?? null,
+					walk_in_name: customerName.trim() || null,
+					walk_in_phone: customerPhone.trim() || null,
+					walk_in_email: null,
+					payment_lines: [
+						{
+							tender_type: mapTenderType(paymentMethod),
+							amount: Number(totalDue.toFixed(2)),
+							provider_reference: null,
+						},
+					],
+				},
+				{
+					headers: {
+						"X-CSRF-TOKEN": csrfToken,
+						Accept: "application/json",
+					},
+					withCredentials: true,
+				},
+			);
+
+			const transactionId = Number(checkoutResponse?.data?.transaction_id || 0);
+			const transactionNo = String(checkoutResponse?.data?.transaction_no || "");
+
+			let receiptPayload: any = null;
+			if (transactionId > 0) {
+				try {
+					const receiptResponse = await axios.get(`/api/repair-pos/transactions/${transactionId}/receipt`, { withCredentials: true });
+					receiptPayload = receiptResponse?.data?.data ?? null;
+				} catch {
+					// Keep local snapshot fallback if receipt endpoint is temporarily unavailable.
+				}
 			}
-		});
+
+			const receiptNo = String(receiptPayload?.receipt_no || transactionNo || `POS-${Date.now()}`);
+			const issuedAt = String(receiptPayload?.issued_at || new Date().toISOString());
+			const receiptTotals = receiptPayload?.print_payload?.totals || {};
+
+			const snapshot: ReceiptSnapshot = {
+				receiptNo,
+				createdAtISO: issuedAt,
+				dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
+					weekday: "short",
+					month: "short",
+					day: "2-digit",
+					year: "numeric",
+					hour: "2-digit",
+					minute: "2-digit",
+				}),
+				cashierName,
+				customerName: customerName.trim(),
+				customerPhone: customerPhone.trim(),
+				paymentMethod,
+				notes,
+				cashReceived: tenderedAmount,
+				subtotal: Number(receiptTotals?.subtotal ?? subtotal),
+				discount: Number(receiptTotals?.discount ?? discount),
+				vatRate: VAT_RATE,
+				vatAmount: Number(receiptTotals?.tax ?? vatAmount),
+				totalDue: Number(receiptTotals?.total ?? totalDue),
+				change: changeValue,
+				items: [...items],
+			};
+
+			setReceiptSnapshot(snapshot);
+			setReceiptHistory((prev) => [snapshot, ...prev]);
+			resetOrderInputs();
+
+			await Swal.fire({
+				icon: "success",
+				title: "Payment Successful!",
+				text: `Amount: ${formatPeso(snapshot.totalDue)}`,
+				confirmButtonColor: "#10b981",
+				confirmButtonText: "View Receipt",
+			});
+
+			setIsReceiptModalOpen(true);
+		} catch (error: any) {
+			await Swal.fire({
+				icon: "error",
+				title: "Checkout Failed",
+				text: error?.response?.data?.message || "POS checkout failed. Please verify payment details and try again.",
+				confirmButtonColor: "#dc2626",
+			});
+		}
 	};
 
 	const printReceipt = () => {
@@ -853,6 +890,7 @@ const PointOfSalePage = () => {
 								min={0}
 								value={discountInput}
 								onChange={(event) => setDiscountInput(toDigitsOnly(event.target.value))}
+								disabled
 								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 							/>
 
