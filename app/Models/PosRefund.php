@@ -25,6 +25,11 @@ class PosRefund extends Model
         'status',
         'finance_status',
         'shop_owner_status',
+        'repairer_status',
+        'repairer_assessment_note',
+        'repairer_reviewed_by',
+        'repairer_reviewed_at',
+        'evidence_snapshot',
         'execution_mode',
         'execution_notes',
         'paymongo_payment_id',
@@ -46,6 +51,8 @@ class PosRefund extends Model
         'approved_at' => 'datetime',
         'executed_at' => 'datetime',
         'failed_at' => 'datetime',
+        'repairer_reviewed_at' => 'datetime',
+        'evidence_snapshot' => 'array',
     ];
 
     public function sourceTransaction(): BelongsTo
