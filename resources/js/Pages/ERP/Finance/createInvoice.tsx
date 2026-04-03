@@ -2,6 +2,7 @@ import { Head, router } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import { useTaxRates } from "../../../hooks/useFinanceQueries";
+import { useFinanceApi } from "../../../hooks/useFinanceApi";
 
 
 type TaxRate = {
@@ -12,16 +13,6 @@ type TaxRate = {
 	is_percentage?: boolean;
 	fixed_amount?: number;
 };
-
-async function getAuthHeaders() {
-	return {
-		"Content-Type": "application/json",
-		"X-Requested-With": "XMLHttpRequest",
-		...(typeof window !== "undefined" && localStorage.getItem("authToken")
-			? { Authorization: `Bearer ${localStorage.getItem("authToken")}` }
-			: {}),
-	};
-}
 
 const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
 	<svg
@@ -69,6 +60,7 @@ const paymentConditions = [
 ];
 
 export default function FinanceCreateInvoice() {
+	const api = useFinanceApi();
 	const [rows, setRows] = useState<ProductRow[]>([]);
 	const [editingRow, setEditingRow] = useState<ProductRow | null>(null);
 	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -294,8 +286,6 @@ export default function FinanceCreateInvoice() {
 
 		setLoading(true);
 		try {
-			const headers = await getAuthHeaders();
-			
 			const items = rows.map((row) => {
 				const unitPrice = row.price * (1 - row.discount / 100);
 				const quantity = row.quantity;
@@ -319,17 +309,9 @@ export default function FinanceCreateInvoice() {
 				items: items,
 			};
 
-		const response = await fetch("/api/finance/session/invoices", {
-				method: "POST",
-				headers: headers,
-				credentials: "include",
-				body: JSON.stringify(invoiceData),
-			});
-
-			const data = await response.json();
-
+			const response = await api.post("/api/finance/session/invoices", invoiceData);
 			if (!response.ok) {
-				throw new Error(data.message || "Failed to create invoice");
+				throw new Error(response.error || "Failed to create invoice");
 			}
 
 			await Swal.fire({

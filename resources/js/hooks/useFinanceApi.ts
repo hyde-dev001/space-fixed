@@ -63,7 +63,17 @@ export function useFinanceApi() {
       'X-Requested-With': 'XMLHttpRequest',
     };
 
-    // Add CSRF token from meta tag (for session-based auth)
+    // Prefer Sanctum/XSRF cookie token for web/session routes.
+    const xsrfCookie = document.cookie
+      .split('; ')
+      .find((entry) => entry.startsWith('XSRF-TOKEN='))
+      ?.split('=')[1];
+
+    if (xsrfCookie) {
+      headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfCookie);
+    }
+
+    // Add CSRF token from meta tag as fallback.
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     if (csrfToken) {
       headers['X-CSRF-TOKEN'] = csrfToken;
