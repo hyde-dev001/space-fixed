@@ -12,6 +12,48 @@ class RepairPosPaymentFlowTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function walk_in_checkout_without_repair_request_creates_manual_repair_reference_and_receipt(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Manual Walk-in Customer',
+            'walk_in_phone' => '09171234567',
+            'idempotency_key' => 'manual-walkin-full-001',
+            'manual_repair_subtotal' => 599,
+            'manual_service_summary' => 'Starter Clean Package (2 services)',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 670.88],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $transactionId = (int) $response->json('transaction_id');
+        $this->assertGreaterThan(0, $transactionId);
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
+        $this->assertSame('repair', (string) $transaction->module_type);
+        $this->assertSame('walk_in', (string) $transaction->customer_type);
+        $this->assertSame('full', (string) $transaction->due_type);
+        $this->assertSame('670.88', number_format((float) $transaction->total_amount, 2, '.', ''));
+
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+        $this->assertSame((int) $shopOwner->id, (int) $repair->shop_owner_id);
+        $this->assertSame('Manual Walk-in Customer', (string) $repair->customer_name);
+        $this->assertSame('full_upfront', (string) $repair->payment_policy_snapshot);
+        $this->assertSame('paid', (string) $repair->payment_status_derived);
+
+        $receipt = \App\Models\PosReceipt::query()->where('pos_transaction_id', $transaction->id)->first();
+        $this->assertNotNull($receipt);
+    }
+
+    #[Test]
     public function checkout_replay_returns_existing_transaction_and_does_not_duplicate_phase_charge(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

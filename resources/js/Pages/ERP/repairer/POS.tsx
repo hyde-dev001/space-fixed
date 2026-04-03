@@ -852,18 +852,13 @@ const PointOfSalePage = () => {
 
 	const handlePay = async () => {
 		if (!canPay) return;
-		if (!selectedRepairOrder && !requestedRepairRequestId) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Repair Request Required",
-				text: "Please open POS from a Job Order so it has a repair request reference.",
-				confirmButtonColor: "#2563eb",
-			});
-			return;
-		}
 
-		const repairRequestId = Number(selectedRepairOrder?.id || requestedRepairRequestId);
-		if (!Number.isFinite(repairRequestId) || repairRequestId <= 0) {
+		const hasRepairReference = Boolean(selectedRepairOrder || requestedRepairRequestId);
+		const repairRequestId = hasRepairReference
+			? Number(selectedRepairOrder?.id || requestedRepairRequestId)
+			: null;
+
+		if (hasRepairReference && (!Number.isFinite(Number(repairRequestId)) || Number(repairRequestId) <= 0)) {
 			await Swal.fire({
 				icon: "error",
 				title: "Invalid Repair Request",
@@ -874,22 +869,28 @@ const PointOfSalePage = () => {
 		}
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
-		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
-		const idempotencyKey = `repair-${repairRequestId}-${effectiveDueType}-${Date.now()}`;
+		const customerType = hasRepairReference && selectedRepairOrder?.customerId ? "registered" : "walk_in";
+		const dueTypeForCheckout = hasRepairReference ? effectiveDueType : "full";
+		const idempotencyKey = hasRepairReference
+			? `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`
+			: `repair-manual-${Date.now()}`;
+		const manualServiceSummary = items.map((item) => item.label).join(", ").slice(0, 1800);
 
 		setIsProcessingPayment(true);
 		try {
 			const checkoutResponse = await axios.post(
 				"/api/repair-pos/checkout",
 				{
-					repair_request_id: repairRequestId,
-					due_type: effectiveDueType,
+					repair_request_id: hasRepairReference ? repairRequestId : null,
+					due_type: dueTypeForCheckout,
 					idempotency_key: idempotencyKey,
 					customer_type: customerType,
-					customer_id: selectedRepairOrder?.customerId ?? null,
+					customer_id: hasRepairReference ? (selectedRepairOrder?.customerId ?? null) : null,
 					walk_in_name: customerName.trim() || null,
 					walk_in_phone: customerPhone.trim() || null,
 					walk_in_email: null,
+					manual_repair_subtotal: hasRepairReference ? null : Number(subtotal.toFixed(2)),
+					manual_service_summary: hasRepairReference ? null : (manualServiceSummary || "Walk-in POS service"),
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),

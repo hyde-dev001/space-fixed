@@ -1409,37 +1409,39 @@ const MyOrders: React.FC = () => {
                               {hasShippingInfo && (
                                 <div className={hasBothDetailSections ? '' : 'lg:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-10">
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
-                                      <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
+                                  <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Estimated Delivery Date </p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.eta || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Business </p>
-                                      <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Business </p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.carrier_company || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Name </p>
-                                      <p className="text-sm text-black font-medium">{order.carrier_name || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Name </p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.carrier_name || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number </p>
-                                      <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Number </p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.tracking_number || '-'}</p>
                                     </div>
                                     <div className="sm:col-span-2">
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
-                                      {order.tracking_link ? (
-                                        <a
-                                          href={order.tracking_link}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-sm text-black underline break-all"
-                                        >
-                                          {order.tracking_link}
-                                        </a>
-                                      ) : (
-                                        <p className="text-sm text-black font-medium">-</p>
-                                      )}
+                                      <div className="flex items-start justify-between gap-3 sm:block">
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Link</p>
+                                        {order.tracking_link ? (
+                                          <a
+                                            href={order.tracking_link}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="max-w-[58%] text-right text-sm text-black underline break-all sm:max-w-none sm:text-left"
+                                          >
+                                            {order.tracking_link}
+                                          </a>
+                                        ) : (
+                                          <p className="text-right text-sm text-black font-medium sm:text-left">-</p>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -1449,45 +1451,47 @@ const MyOrders: React.FC = () => {
                               {hasStaffPickup && (
                                 <div className={hasBothDetailSections ? '' : 'lg:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-10">
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
-                                      <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>
+                                  <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Pickup Status</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{getRefundStageText(order) || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Carrier Company</p>
-                                      <p className="text-sm text-black font-medium">{stage?.staff_return_carrier || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Company</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_carrier || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Name</p>
-                                      <p className="text-sm text-black font-medium">{stage?.staff_return_rider_name || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Name</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_rider_name || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Phone</p>
-                                      <p className="text-sm text-black font-medium">{stage?.staff_return_rider_phone || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Phone</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_rider_phone || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number</p>
-                                      <p className="text-sm text-black font-medium">{stage?.staff_return_tracking_number || '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Number</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_tracking_number || '-'}</p>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Arranged At</p>
-                                      <p className="text-sm text-black font-medium">{stage?.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Arranged At</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
                                     </div>
                                     <div className="sm:col-span-2">
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
-                                      {stage?.staff_return_tracking_link ? (
-                                        <a
-                                          href={stage.staff_return_tracking_link}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-sm text-black underline break-all"
-                                        >
-                                          {stage.staff_return_tracking_link}
-                                        </a>
-                                      ) : (
-                                        <p className="text-sm text-black font-medium">-</p>
-                                      )}
+                                      <div className="flex items-start justify-between gap-3 sm:block">
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Link</p>
+                                        {stage?.staff_return_tracking_link ? (
+                                          <a
+                                            href={stage.staff_return_tracking_link}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="max-w-[58%] text-right text-sm text-black underline break-all sm:max-w-none sm:text-left"
+                                          >
+                                            {stage.staff_return_tracking_link}
+                                          </a>
+                                        ) : (
+                                          <p className="text-right text-sm text-black font-medium sm:text-left">-</p>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>

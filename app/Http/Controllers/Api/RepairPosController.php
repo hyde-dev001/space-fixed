@@ -18,7 +18,7 @@ class RepairPosController extends Controller
     public function checkout(Request $request, RepairPosPaymentService $service)
     {
         $validated = $request->validate([
-            'repair_request_id' => ['required', 'integer', 'exists:repair_requests,id'],
+            'repair_request_id' => ['nullable', 'integer', 'exists:repair_requests,id'],
             'due_type' => ['required', 'string', 'in:deposit,balance,full'],
             'idempotency_key' => ['required', 'string', 'min:8', 'max:100'],
             'customer_type' => ['required', 'string', 'in:registered,walk_in'],
@@ -26,6 +26,8 @@ class RepairPosController extends Controller
             'walk_in_name' => ['nullable', 'string', 'max:255'],
             'walk_in_phone' => ['nullable', 'string', 'max:30'],
             'walk_in_email' => ['nullable', 'email', 'max:255'],
+            'manual_repair_subtotal' => ['nullable', 'numeric', 'min:0.01'],
+            'manual_service_summary' => ['nullable', 'string', 'max:2000'],
             'payment_lines' => ['required', 'array', 'min:1'],
             'payment_lines.*.tender_type' => ['required', 'string', 'in:cash,paymongo_card,paymongo_wallet'],
             'payment_lines.*.amount' => ['required', 'numeric', 'min:0.01'],
@@ -43,15 +45,50 @@ class RepairPosController extends Controller
             }
         }
 
-        $repair = RepairRequest::findOrFail((int) $validated['repair_request_id']);
         $actor = Auth::guard('user')->user();
-
-        if (!$actor || !$actor->can('posCheckout', $repair)) {
+        if (!$actor) {
             return response()->json([
                 'success' => false,
-                'code' => 'AUTH_FORBIDDEN_SHOP_SCOPE',
-                'message' => 'You are not allowed to process checkout for this repair request.',
-            ], 403);
+                'message' => 'Unauthorized.',
+            ], 401);
+        }
+
+        $repairRequestId = (int) ($validated['repair_request_id'] ?? 0);
+        if ($repairRequestId > 0) {
+            $repair = RepairRequest::findOrFail($repairRequestId);
+
+            if (!$actor->can('posCheckout', $repair)) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'AUTH_FORBIDDEN_SHOP_SCOPE',
+                    'message' => 'You are not allowed to process checkout for this repair request.',
+                ], 403);
+            }
+        } else {
+            if ((string) ($validated['customer_type'] ?? '') !== 'walk_in') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manual POS checkout without a repair request currently supports walk-in customers only.',
+                ], 422);
+            }
+
+            if (trim((string) ($validated['walk_in_name'] ?? '')) === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Walk-in customer name is required for manual POS checkout.',
+                ], 422);
+            }
+
+            $manualSubtotal = (float) ($validated['manual_repair_subtotal'] ?? 0);
+            if ($manualSubtotal <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manual repair subtotal is required when checkout is not linked to a job order.',
+                ], 422);
+            }
+
+            $validated['due_type'] = 'full';
+            $repair = $this->createManualRepairRequestFromPos($validated, $actor);
         }
 
         $actorId = (int) (Auth::guard('user')->id() ?? 0);
@@ -65,6 +102,80 @@ class RepairPosController extends Controller
             'meta' => [
                 'idempotency_replay' => (bool) $transaction->getAttribute('idempotency_replay'),
             ],
+        ]);
+    }
+
+    private function createManualRepairRequestFromPos(array $payload, object $actor): RepairRequest
+    {
+        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        if ($shopOwnerId <= 0) {
+            throw ValidationException::withMessages([
+                'shop_owner_id' => ['Unable to resolve shop scope for manual POS checkout.'],
+            ]);
+        }
+
+        $counter = RepairRequest::query()
+            ->whereDate('created_at', now()->toDateString())
+            ->count() + 1;
+
+        $requestId = sprintf('REP-POS-%s-%04d', now()->format('Ymd'), $counter);
+        while (RepairRequest::query()->where('request_id', $requestId)->exists()) {
+            $counter++;
+            $requestId = sprintf('REP-POS-%s-%04d', now()->format('Ymd'), $counter);
+        }
+
+        $subtotal = round((float) ($payload['manual_repair_subtotal'] ?? 0), 2);
+        $summary = trim((string) ($payload['manual_service_summary'] ?? 'Walk-in service from POS checkout.'));
+        $walkInName = trim((string) ($payload['walk_in_name'] ?? 'Walk-in Customer'));
+        $walkInPhone = trim((string) ($payload['walk_in_phone'] ?? 'N/A'));
+        $walkInEmail = trim((string) ($payload['walk_in_email'] ?? ''));
+
+        $snapshotServiceName = $summary !== '' ? $summary : 'Walk-in POS Service';
+
+        return RepairRequest::create([
+            'request_id' => $requestId,
+            'customer_name' => $walkInName,
+            'email' => $walkInEmail !== '' ? $walkInEmail : sprintf('walkin-pos-%s@local.invalid', strtolower(now()->format('YmdHis'))),
+            'phone' => $walkInPhone !== '' ? $walkInPhone : 'N/A',
+            'shoe_type' => 'Walk-in',
+            'brand' => null,
+            'description' => $snapshotServiceName,
+            'shop_owner_id' => $shopOwnerId,
+            'user_id' => null,
+            'images' => [],
+            'total' => $subtotal,
+            'final_total' => $subtotal,
+            'package_price' => null,
+            'add_ons_total' => 0,
+            'included_services_snapshot' => [[
+                'id' => null,
+                'name' => $snapshotServiceName,
+                'category' => 'Walk-in POS',
+                'price' => $subtotal,
+                'duration' => null,
+            ]],
+            'add_on_services_snapshot' => null,
+            'pricing_breakdown' => [
+                'mode' => 'manual_pos',
+                'package_id' => null,
+                'package_name' => null,
+                'included_services_total' => $subtotal,
+                'package_price' => null,
+                'add_ons_total' => 0,
+                'base_total' => $subtotal,
+                'materials_total' => 0,
+                'final_total' => $subtotal,
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+            'delivery_method' => 'walk_in',
+            'intake_delivery_method' => 'walk_in',
+            'return_delivery_method' => 'walk_in',
+            'status' => 'pending',
         ]);
     }
 
