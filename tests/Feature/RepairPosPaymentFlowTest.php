@@ -271,4 +271,91 @@ class RepairPosPaymentFlowTest extends TestCase
         $this->assertSame('paid', (string) $repair->payment_status_derived);
         $this->assertSame('1344.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
+
+    #[Test]
+    public function non_cash_checkout_requires_provider_reference(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-006',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000023',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Non-cash ref required test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'paymongo_wallet', 'amount' => 560, 'provider_reference' => null],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['payment_lines.0.provider_reference']);
+    }
+
+    #[Test]
+    public function non_cash_checkout_accepts_provider_reference_and_persists_it(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-007',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000024',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Non-cash ref success test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'payment_lines' => [
+                ['tender_type' => 'paymongo_card', 'amount' => 560, 'provider_reference' => 'AUTH-REF-12345'],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('pos_payment_lines', [
+            'tender_type' => 'paymongo_card',
+            'provider_reference' => 'AUTH-REF-12345',
+            'status' => 'paid',
+        ]);
+    }
 }
