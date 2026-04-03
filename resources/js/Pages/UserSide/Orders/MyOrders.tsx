@@ -1338,23 +1338,49 @@ const MyOrders: React.FC = () => {
                               <p className="max-w-md text-sm text-gray-500">{order.shop_address}</p>
                             )}
                           </div>
-                          <div className="flex-1 sm:text-right">
+                          
+                          {/* Mobile: Breakdown on right */}
+                          <div className="sm:hidden flex-1 text-right">
                             <div className="mb-2 space-y-1 text-xs text-gray-500">
-                              <div className="flex items-center justify-between sm:justify-end gap-3">
+                              <div className="flex items-center justify-end gap-3">
                                 <span>Subtotal</span>
                                 <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
                               </div>
-                              <div className="flex items-center justify-between sm:justify-end gap-3">
+                              <div className="flex items-center justify-end gap-3">
                                 <span>Shipping</span>
                                 <span className="text-gray-700">{formatPeso(orderShipping)}</span>
                               </div>
-                              <div className="flex items-center justify-between sm:justify-end gap-3">
+                              <div className="flex items-center justify-end gap-3">
                                 <span>{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
                                 <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
                               </div>
                             </div>
                             <p className="mb-2 text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
-                            <div className="flex items-center justify-between sm:justify-end text-black">
+                            <div className="flex items-center justify-end text-black">
+                              <span className="text-xl font-extrabold">
+                                {formatPeso(orderTotalPaid)}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Desktop: Full breakdown on right */}
+                          <div className="hidden sm:block sm:flex-1 sm:text-right">
+                            <div className="mb-2 space-y-1 text-xs text-gray-500">
+                              <div className="flex items-center justify-end gap-3">
+                                <span>Subtotal</span>
+                                <span className="text-gray-700">{formatPeso(orderSubtotal)}</span>
+                              </div>
+                              <div className="flex items-center justify-end gap-3">
+                                <span>Shipping</span>
+                                <span className="text-gray-700">{formatPeso(orderShipping)}</span>
+                              </div>
+                              <div className="flex items-center justify-end gap-3">
+                                <span>{orderVatRate !== null ? `VAT (${orderVatRate}%)` : 'VAT'}</span>
+                                <span className="text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
+                              </div>
+                            </div>
+                            <p className="mb-2 text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
+                            <div className="flex items-center justify-end text-black">
                               <span className="text-xl font-extrabold">
                                 {formatPeso(orderTotalPaid)}
                               </span>
@@ -1365,12 +1391,12 @@ const MyOrders: React.FC = () => {
 
                       {(() => {
                         const stage = order.refund_stage;
-                        const hasShippingInfo = ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status) && displayStatus !== 'refunded';
+                        const isOrderRefunded = Boolean(stage); // if stage exists, order is refunded
+                        const hasShippingInfo = !isOrderRefunded && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
-                        const isRefundedOrder = displayStatus === 'refunded';
-                        const hasStaffPickup = hasStaffPickupDetails || isRefundedOrder;
+                        const hasStaffPickup = hasStaffPickupDetails || isOrderRefunded;
 
                         if (!hasShippingInfo && !hasStaffPickup) return null;
 
@@ -1381,7 +1407,7 @@ const MyOrders: React.FC = () => {
                               {hasShippingInfo && (
                                 <div>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
-                                  <div className="space-y-4">
+                                  <div className="grid grid-cols-2 gap-4 md:flex md:flex-col md:space-y-4">
                                     <div>
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
                                       <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
@@ -1398,7 +1424,7 @@ const MyOrders: React.FC = () => {
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number </p>
                                       <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
                                     </div>
-                                    <div>
+                                    <div className="col-span-2 md:col-span-1">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
                                       {order.tracking_link ? (
                                         <a
@@ -1421,7 +1447,7 @@ const MyOrders: React.FC = () => {
                               {hasStaffPickup && (
                                 <div>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
-                                  <div className="space-y-4">
+                                  <div className="grid grid-cols-2 gap-4 md:flex md:flex-col md:space-y-4">
                                     <div>
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
                                       <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>
@@ -1446,7 +1472,7 @@ const MyOrders: React.FC = () => {
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Arranged At</p>
                                       <p className="text-sm text-black font-medium">{stage?.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
                                     </div>
-                                    <div>
+                                    <div className="col-span-2 md:col-span-1">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
                                       {stage?.staff_return_tracking_link ? (
                                         <a
