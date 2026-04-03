@@ -3,6 +3,8 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 
+const REPAIR_VAT_RATE_PERCENT = 12;
+
 interface RepairService {
   id: number;
   title: string;
@@ -471,6 +473,8 @@ const RepairProcess: React.FC = () => {
   const packageTotal = selectedPackage ? getEffectivePackagePrice(selectedPackage) : 0;
 
   const grandTotal = selectedPackage ? packageTotal + addOnsTotal : servicesTotal;
+  const vatAmount = Number((grandTotal * (REPAIR_VAT_RATE_PERCENT / 100)).toFixed(2));
+  const grandTotalWithVat = Number((grandTotal + vatAmount).toFixed(2));
   const isSubmitDisabled = isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null);
 
   const shopAddressLine = (shopDetails?.shop_address || shopDetails?.business_address || shopDetails?.address || '').trim();
@@ -567,6 +571,10 @@ const RepairProcess: React.FC = () => {
             <span className="text-black font-medium">₱{servicesTotal.toLocaleString()}</span>
           </div>
         )}
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">VAT ({REPAIR_VAT_RATE_PERCENT}%)</span>
+          <span className="text-black font-medium">₱{vatAmount.toLocaleString()}</span>
+        </div>
       </div>
 
       <div className="border-t border-gray-200 pt-4">
@@ -574,7 +582,7 @@ const RepairProcess: React.FC = () => {
           <span className="text-black">Total</span>
           <div className="flex items-baseline gap-1">
             <span className="text-xs text-gray-600">PHP</span>
-            <span className="text-2xl xl:text-3xl font-bold text-black">₱{grandTotal.toLocaleString()}</span>
+            <span className="text-2xl xl:text-3xl font-bold text-black">₱{grandTotalWithVat.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -819,10 +827,12 @@ const RepairProcess: React.FC = () => {
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Package</span><span class="user-swal2-summary-value">${selectedPackage ? selectedPackage.name : 'None'}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Services</span><span class="user-swal2-summary-value">${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Add-ons</span><span class="user-swal2-summary-value">${selectedPackage ? selectedAddOnServiceIds.length : 0}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Subtotal</span><span class="user-swal2-summary-value">₱${grandTotal.toLocaleString()}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">VAT (${REPAIR_VAT_RATE_PERCENT}%)</span><span class="user-swal2-summary-value">₱${vatAmount.toLocaleString()}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Shop (Intake)</span><span class="user-swal2-summary-value">${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Customer (Return)</span><span class="user-swal2-summary-value">${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</span></p>
           </div>
-          <p class="user-swal2-summary-total"><span>Total</span><strong>₱${grandTotal.toLocaleString()}</strong></p>
+          <p class="user-swal2-summary-total"><span>Total</span><strong>₱${grandTotalWithVat.toLocaleString()}</strong></p>
         </div>
       `,
       icon: 'question',
@@ -912,7 +922,7 @@ const RepairProcess: React.FC = () => {
         
         await Swal.fire({
           title: 'Request Submitted!',
-          text: `Your repair request has been submitted successfully. Total: ₱${grandTotal.toLocaleString()}. We will contact you shortly.`,
+          text: `Your repair request has been submitted successfully. Total: ₱${grandTotalWithVat.toLocaleString()} (VAT included). We will contact you shortly.`,
           icon: 'success',
           confirmButtonColor: '#000000',
         });
@@ -1506,7 +1516,8 @@ const RepairProcess: React.FC = () => {
               <div className="mx-auto max-w-7xl px-4 sm:px-6 py-3 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-xs text-gray-600">Total</p>
-                  <p className="text-4xl font-bold text-black leading-none">₱{grandTotal.toLocaleString()}</p>
+                  <p className="text-4xl font-bold text-black leading-none">₱{grandTotalWithVat.toLocaleString()}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Includes VAT ({REPAIR_VAT_RATE_PERCENT}%)</p>
                 </div>
                 <button
                   type="submit"
