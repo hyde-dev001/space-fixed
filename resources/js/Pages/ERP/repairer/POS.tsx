@@ -4,6 +4,7 @@ import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
 import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
+import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -52,6 +53,7 @@ type POSItem = {
 };
 
 type ReceiptSnapshot = {
+	transactionId?: number;
 	receiptNo: string;
 	createdAtISO: string;
 	dateLabel: string;
@@ -214,6 +216,7 @@ const PointOfSalePage = () => {
 	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
 	const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
 	const [receiptHistory, setReceiptHistory] = useState<ReceiptSnapshot[]>([]);
+	const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
 	const [historySearch, setHistorySearch] = useState<string>("");
 	const [historyDate, setHistoryDate] = useState<string>("");
 	const [selectedRepairOrder, setSelectedRepairOrder] = useState<RepairOrderOption | null>(null);
@@ -379,6 +382,126 @@ const PointOfSalePage = () => {
 			isMounted = false;
 		};
 	}, []);
+
+	useEffect(() => {
+		let isMounted = true;
+
+		const loadHistory = async () => {
+			if (!isHistoryModalOpen) return;
+
+			setIsLoadingHistory(true);
+			try {
+				const scopedRepairId = selectedRepairOrder ? Number(selectedRepairOrder.id) : undefined;
+				const response = await repairPosHistoryApi.listTransactions(scopedRepairId);
+				const rows = Array.isArray((response.data as any)?.data?.data)
+					? (response.data as any).data.data
+					: [];
+
+				const mappedHistory: ReceiptSnapshot[] = rows.map((row: any, index: number) => {
+					const receiptPayload = row?.receipt?.print_payload ?? {};
+					const issuedAt = String(row?.receipt?.issued_at ?? row?.created_at ?? new Date().toISOString());
+					const items = Array.isArray(receiptPayload?.items)
+						? receiptPayload.items
+						: [];
+
+					const methodRaw = String(
+						row?.payment_lines?.[0]?.tender_type
+						?? receiptPayload?.payment_lines?.[0]?.tender_type
+						?? "cash",
+					);
+					const paymentMethod: PaymentMethod = methodRaw.includes("wallet")
+						? "gcash"
+						: methodRaw.includes("card")
+							? "card"
+							: "cash";
+
+					return {
+						transactionId: Number(row?.id || 0),
+						receiptNo: String(row?.receipt?.receipt_no ?? row?.transaction_no ?? `POS-${index + 1}`),
+						createdAtISO: issuedAt,
+						dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
+							weekday: "short",
+							month: "short",
+							day: "2-digit",
+							year: "numeric",
+							hour: "2-digit",
+							minute: "2-digit",
+						}),
+						cashierName: String(row?.created_by ?? cashierName),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
+						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
+						paymentMethod,
+						notes: "",
+						cashReceived: Number(row?.paid_amount ?? receiptPayload?.totals?.paid ?? 0),
+						subtotal: Number(row?.subtotal ?? receiptPayload?.totals?.subtotal ?? 0),
+						discount: Number(row?.discount_amount ?? receiptPayload?.totals?.discount ?? 0),
+						vatRate: VAT_RATE,
+						vatAmount: Number(row?.tax_amount ?? receiptPayload?.totals?.tax ?? 0),
+						totalDue: Number(row?.total_amount ?? receiptPayload?.totals?.total ?? 0),
+						change: 0,
+						items: Array.isArray(items) ? items : [],
+					};
+				});
+
+				if (isMounted) {
+					setReceiptHistory(mappedHistory);
+				}
+			} catch {
+				if (isMounted) {
+					setReceiptHistory((prev) => prev);
+				}
+			} finally {
+				if (isMounted) {
+					setIsLoadingHistory(false);
+				}
+			}
+		};
+
+		loadHistory();
+
+		return () => {
+			isMounted = false;
+		};
+	}, [cashierName, isHistoryModalOpen, selectedRepairOrder]);
+
+	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		const transactionId = Number(receipt.transactionId ?? 0);
+		if (transactionId <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "This record has no linked transaction reference.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
+
+		try {
+			await repairPosHistoryApi.requestRefund({
+				source_transaction_id: transactionId,
+				request_type: "full",
+				requested_amount: receipt.totalDue,
+				reason_code: "repairer_requested_refund",
+				reason_notes: "Requested from Repairer POS receipt history.",
+			});
+
+			await Swal.fire({
+				icon: "success",
+				title: "Refund Requested",
+				text: "Refund request submitted for Shop Owner approval.",
+				confirmButtonColor: "#10b981",
+			});
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Unable to create refund request.";
+			await Swal.fire({
+				icon: "error",
+				title: "Request Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		}
+	};
 
 	useEffect(() => {
 		if (!requestedRepairRequestId || selectedRepairOrder) return;
@@ -1244,6 +1367,9 @@ const PointOfSalePage = () => {
 								</div>
 
 								<div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+									{isLoadingHistory && (
+										<div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">Loading transaction history...</div>
+									)}
 									{filteredReceiptHistory.length === 0 ? (
 										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No receipts found for current filter.</div>
 									) : (
@@ -1258,6 +1384,13 @@ const PointOfSalePage = () => {
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
+														<button
+															type="button"
+															onClick={() => handleRequestRefund(receipt)}
+															className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+														>
+															Request Refund
+														</button>
 														<button
 															type="button"
 															onClick={() => {

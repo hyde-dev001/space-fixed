@@ -182,6 +182,25 @@ class RepairPosController extends Controller
         ]);
     }
 
+    public function listTransactions(Request $request)
+    {
+        $repairRequestId = (int) $request->query('repair_request_id');
+        $shopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
+
+        $rows = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->when($shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
+            ->when($repairRequestId > 0, fn ($query) => $query->where('module_reference_id', $repairRequestId))
+            ->with(['paymentLines', 'receipt'])
+            ->orderByDesc('id')
+            ->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
+    }
+
     public function approveRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
         $actor = Auth::guard('user')->user();
@@ -305,6 +324,14 @@ class RepairPosController extends Controller
         }
 
         $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
-        return $shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id;
+        if (!($shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id)) {
+            return false;
+        }
+
+        if (method_exists($actor, 'hasRole')) {
+            return $actor->hasRole('Shop Owner') || $actor->hasRole('Manager');
+        }
+
+        return false;
     }
 }
