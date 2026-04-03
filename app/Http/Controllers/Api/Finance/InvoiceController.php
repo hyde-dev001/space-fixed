@@ -79,7 +79,7 @@ class InvoiceController extends Controller
 
         // Include job order data in results
         $invoices = $q->with(['items', 'jobOrder' => function($query) {
-            $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'grand_total', 'created_at');
+            $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'created_at');
             }])
             ->orderBy('date', 'desc')
             ->paginate($request->get('per_page', 15));
@@ -105,7 +105,7 @@ class InvoiceController extends Controller
                 'items', 
                 'journalEntry.lines',
                 'jobOrder' => function($query) {
-                    $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'grand_total', 'created_at', 'updated_at');
+                    $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'created_at', 'updated_at');
                 }
             ])
             ->findOrFail($id);
