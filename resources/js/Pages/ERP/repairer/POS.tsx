@@ -179,6 +179,7 @@ const PointOfSalePage = () => {
 	const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
 	const [cashReceivedInput, setCashReceivedInput] = useState<string>("");
 	const [proofReference, setProofReference] = useState<string>("");
+	const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
 	const [notes, setNotes] = useState<string>("");
 	const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
 	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
@@ -383,8 +384,10 @@ const PointOfSalePage = () => {
 	const hasInsufficientCash = paymentMethod === "cash" && shortValue > 0;
 	const isPaid = receiptSnapshot !== null && items.length > 0;
 	const isCustomerPhoneValid = customerPhone.length === 11;
+	const hasCashInput = cashReceivedInput.trim().length > 0;
+	const hasProofReference = proofReference.trim().length > 0;
 
-	const canPay = computeCanPay({
+	const canPay = !isProcessingPayment && computeCanPay({
 		itemsCount: items.length,
 		customerName,
 		customerPhone,
@@ -394,6 +397,16 @@ const PointOfSalePage = () => {
 		proofReference,
 	});
 	const canPrint = isPaid;
+	const payDisableReason = useMemo(() => {
+		if (isProcessingPayment) return "Processing payment...";
+		if (items.length === 0) return "Add at least one service before checkout.";
+		if (customerName.trim().length === 0) return "Customer name is required.";
+		if (paymentMethod === "cash" && !isCustomerPhoneValid) return "Cash payments require an 11-digit phone number.";
+		if (paymentMethod === "cash" && !hasCashInput) return "Enter cash received for cash payments.";
+		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
+		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
+		return "";
+	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
 	const effectiveDueType = useMemo(() => {
 		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
 		return resolveDueTypeForPolicy(policy, requestedDueType);
@@ -608,6 +621,7 @@ const PointOfSalePage = () => {
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
 
+		setIsProcessingPayment(true);
 		try {
 			const checkoutResponse = await axios.post(
 				"/api/repair-pos/checkout",
@@ -694,12 +708,22 @@ const PointOfSalePage = () => {
 
 			setIsReceiptModalOpen(true);
 		} catch (error: any) {
+			const apiErrors = error?.response?.data?.errors || {};
+			const message =
+				apiErrors?.due_type?.[0]
+				|| apiErrors?.payment_lines?.[0]
+				|| apiErrors?.["payment_lines.0.provider_reference"]?.[0]
+				|| error?.response?.data?.message
+				|| "POS checkout failed. Please verify payment details and try again.";
+
 			await Swal.fire({
 				icon: "error",
 				title: "Checkout Failed",
-				text: error?.response?.data?.message || "POS checkout failed. Please verify payment details and try again.",
+				text: message,
 				confirmButtonColor: "#dc2626",
 			});
+		} finally {
+			setIsProcessingPayment(false);
 		}
 	};
 
@@ -786,7 +810,7 @@ const PointOfSalePage = () => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name and phone number before payment.</p>
+								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-2">
 									<input
 										title="Customer name"
@@ -807,7 +831,7 @@ const PointOfSalePage = () => {
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
 								</div>
-								{customerPhone.length > 0 && !isCustomerPhoneValid && (
+								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
@@ -1030,6 +1054,7 @@ const PointOfSalePage = () => {
 										placeholder="Enter transaction/auth reference"
 										className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
+									<p className="mt-1 text-[11px] text-slate-500">Required for GCash/Card transactions.</p>
 								</div>
 							)}
 
@@ -1061,6 +1086,12 @@ const PointOfSalePage = () => {
 								</div>
 							)}
 
+							{!canPay && payDisableReason.length > 0 && (
+								<div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+									{payDisableReason}
+								</div>
+							)}
+
 							<div className="mt-auto grid grid-cols-2 gap-2">
 								<button
 									type="button"
@@ -1068,11 +1099,12 @@ const PointOfSalePage = () => {
 									disabled={!canPay}
 									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
 								>
-									Pay
+									{isProcessingPayment ? "Processing..." : "Pay"}
 								</button>
 								<button
 									type="button"
 									onClick={clearTransaction}
+									disabled={isProcessingPayment}
 									className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
 								>
 									Clear
