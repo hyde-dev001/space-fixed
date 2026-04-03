@@ -228,8 +228,13 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
 
 Route::middleware(['web', 'auth:user'])->prefix('repair-pos')->group(function () {
     Route::post('/checkout', [\App\Http\Controllers\Api\RepairPosController::class, 'checkout']);
+    Route::post('/payment-lines/{line}/verify', [\App\Http\Controllers\Api\RepairPosController::class, 'verifyPaymentLine']);
     Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund']);
+    Route::get('/refunds/mine', [\App\Http\Controllers\Api\RepairPosController::class, 'listMyRefunds']);
     Route::get('/refunds/queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listRefundQueue']);
+    Route::post('/refunds/{refund}/approve', [\App\Http\Controllers\Api\RepairPosController::class, 'approveRefund']);
+    Route::post('/refunds/{refund}/reject', [\App\Http\Controllers\Api\RepairPosController::class, 'rejectRefund']);
+    Route::post('/refunds/{refund}/execute', [\App\Http\Controllers\Api\RepairPosController::class, 'executeRefund']);
     Route::get('/transactions/{transaction}', [\App\Http\Controllers\Api\RepairPosController::class, 'showTransaction']);
     Route::get('/transactions/{transaction}/receipt', [\App\Http\Controllers\Api\RepairPosController::class, 'showReceipt']);
 });

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PosPaymentLine;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
@@ -282,6 +283,19 @@ class RepairPosController extends Controller
             'success' => true,
             'data' => $transaction->receipt,
         ]);
+    }
+
+    public function verifyPaymentLine(Request $request, PosPaymentLine $line, RepairPosPaymentService $service)
+    {
+        $validated = $request->validate([
+            'decision' => ['required', 'string', 'in:approve,reject'],
+            'mode' => ['required', 'string', 'in:gateway,manual_fallback'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $data = $service->verifyPaymentLine($line, $validated, (int) (Auth::guard('user')->id() ?? 0));
+
+        return response()->json(['success' => true, 'data' => $data]);
     }
 
     private function canManageRefund(object $actor, PosRefund $refund): bool

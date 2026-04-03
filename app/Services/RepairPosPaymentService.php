@@ -75,7 +75,10 @@ class RepairPosPaymentService
             ]);
         }
 
-        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy) {
+        $hasNonCashLines = collect($payload['payment_lines'])
+            ->contains(fn ($line) => in_array((string) ($line['tender_type'] ?? ''), ['paymongo_card', 'paymongo_wallet'], true));
+
+        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy, $hasNonCashLines) {
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'idempotency_key' => (string) ($payload['idempotency_key'] ?? ''),
@@ -94,8 +97,8 @@ class RepairPosPaymentService
                 'discount_amount' => 0,
                 'total_amount' => $dueAmount,
                 'paid_amount' => $paidAmount,
-                'status' => 'paid',
-                'paid_at' => now(),
+                'status' => $hasNonCashLines ? 'pending' : 'paid',
+                'paid_at' => $hasNonCashLines ? null : now(),
                 'created_by' => $actorId,
                 'metadata' => [
                     'vat_rate' => self::VAT_RATE_PERCENT,
@@ -103,13 +106,16 @@ class RepairPosPaymentService
             ]);
 
             foreach ($payload['payment_lines'] as $line) {
+                $isNonCash = in_array((string) ($line['tender_type'] ?? ''), ['paymongo_card', 'paymongo_wallet'], true);
+
                 PosPaymentLine::create([
                     'pos_transaction_id' => $transaction->id,
                     'tender_type' => $line['tender_type'],
                     'provider_reference' => $line['provider_reference'] ?? null,
                     'amount' => $line['amount'],
-                    'status' => 'paid',
-                    'paid_at' => now(),
+                    'status' => $isNonCash ? 'pending_authorization' : 'paid',
+                    'verification_status' => $isNonCash ? 'pending' : 'verified',
+                    'paid_at' => $isNonCash ? null : now(),
                 ]);
             }
 
@@ -159,6 +165,61 @@ class RepairPosPaymentService
             app(RepairPosReceiptService::class)->issue($transaction);
 
             return $transaction->fresh(['paymentLines']);
+        });
+    }
+
+    public function verifyPaymentLine(PosPaymentLine $line, array $payload, int $actorId): array
+    {
+        return DB::transaction(function () use ($line, $payload, $actorId) {
+            $decision = (string) $payload['decision'];
+            $mode = (string) $payload['mode'];
+
+            $line->update([
+                'status' => $decision === 'approve' ? 'paid' : 'failed',
+                'verification_status' => $decision === 'approve' ? 'verified' : 'rejected',
+                'paid_at' => $decision === 'approve' ? now() : null,
+                'verified_at' => now(),
+                'verified_by' => $actorId > 0 ? $actorId : null,
+                'manual_fallback_used' => $mode === 'manual_fallback',
+                'verification_mode' => $mode,
+                'verification_note' => $payload['note'] ?? null,
+            ]);
+
+            $transaction = $line->transaction()->firstOrFail();
+            $lineStatuses = $transaction->paymentLines()->pluck('status')->all();
+
+            $nextStatus = in_array('failed', $lineStatuses, true)
+                ? 'failed'
+                : (count(array_unique($lineStatuses)) === 1 && in_array('paid', $lineStatuses, true) ? 'paid' : 'pending');
+
+            $transaction->update([
+                'status' => $nextStatus,
+                'paid_at' => $nextStatus === 'paid' ? now() : null,
+            ]);
+
+            $repair = RepairRequest::query()->find((int) $transaction->module_reference_id);
+            if ($repair) {
+                $totalPaid = (float) PosTransaction::query()
+                    ->where('module_type', 'repair')
+                    ->where('module_reference_id', $repair->id)
+                    ->where('status', 'paid')
+                    ->sum('paid_amount');
+
+                $overallTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
+                $canonical = $totalPaid <= 0 ? 'unpaid' : ($totalPaid < $overallTotal ? 'partially_paid' : 'paid');
+
+                $repair->update([
+                    'total_paid_amount' => $totalPaid,
+                    'payment_status' => $canonical,
+                    'payment_status_derived' => $canonical,
+                    'latest_pos_transaction_id' => $transaction->id,
+                ]);
+            }
+
+            return [
+                'payment_line' => $line->fresh(),
+                'transaction' => $transaction->fresh(['paymentLines']),
+            ];
         });
     }
 }

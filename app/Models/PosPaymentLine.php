@@ -15,12 +15,20 @@ class PosPaymentLine extends Model
         'provider_reference',
         'amount',
         'status',
+        'verification_status',
         'paid_at',
+        'verified_at',
+        'verified_by',
+        'manual_fallback_used',
+        'verification_mode',
+        'verification_note',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'paid_at' => 'datetime',
+        'verified_at' => 'datetime',
+        'manual_fallback_used' => 'boolean',
     ];
 
     public function transaction()
