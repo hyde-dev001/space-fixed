@@ -79,7 +79,7 @@ class InvoiceController extends Controller
 
         // Include job order data in results
         $invoices = $q->with(['items', 'jobOrder' => function($query) {
-                $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'created_at');
+            $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'grand_total', 'created_at');
             }])
             ->orderBy('date', 'desc')
             ->paginate($request->get('per_page', 15));
@@ -105,7 +105,7 @@ class InvoiceController extends Controller
                 'items', 
                 'journalEntry.lines',
                 'jobOrder' => function($query) {
-                    $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'created_at', 'updated_at');
+                    $query->select('id', 'order_number', 'customer_id', 'status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'grand_total', 'created_at', 'updated_at');
                 }
             ])
             ->findOrFail($id);
@@ -444,8 +444,12 @@ class InvoiceController extends Controller
             // Generate invoice reference
             $reference = 'INV-' . now()->format('YmdHis');
             
-            // Calculate total from order (orders table has total_amount column)
-            $total = isset($job->total_amount) ? floatval($job->total_amount) : 0;
+            $itemSubtotal = isset($job->total_amount) ? max(0.0, floatval($job->total_amount)) : 0.0;
+            $shippingFee = isset($job->shipping_fee) ? max(0.0, floatval($job->shipping_fee)) : 0.0;
+            $vatAmount = isset($job->vat_amount) && $job->vat_amount !== null
+                ? max(0.0, floatval($job->vat_amount))
+                : round($itemSubtotal * 0.12, 2);
+            $total = $itemSubtotal + $shippingFee + $vatAmount;
             
             if ($total <= 0) {
                 return response()->json(['error' => 'Job must have a valid total amount'], 400);
@@ -461,30 +465,42 @@ class InvoiceController extends Controller
                 'date' => now(),
                 'due_date' => now()->addDays(30),
                 'total' => $total,
-                'tax_amount' => 0,
+                'tax_amount' => $vatAmount,
                 'status' => 'draft',
                 'shop_id' => $shopOwnerId,
                 'notes' => 'Auto-generated from Job Order #' . $job->order_number,
                 'meta' => [
                     'created_by' => $user->id,
                     'source' => 'job_order',
-                    'job_order_id' => $job->id
+                    'job_order_id' => $job->id,
+                    'subtotal_amount' => $itemSubtotal,
+                    'shipping_fee' => $shippingFee,
+                    'vat_amount' => $vatAmount,
+                    'grand_total' => $total,
                 ]
             ]);
             
-            // Create invoice items (simplified - one line item for the order)
-            $description = 'Order #' . $job->order_number . 
-                          (isset($job->status) ? ' - ' . ucfirst($job->status) : '');
-            
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
-                'description' => $description,
+                'description' => 'Order #' . $job->order_number . (isset($job->status) ? ' - ' . ucfirst($job->status) : ''),
                 'quantity' => 1,
-                'unit_price' => $total,
-                'tax_rate' => 0,
-                'amount' => $total,
+                'unit_price' => $itemSubtotal,
+                'tax_rate' => $itemSubtotal > 0 && $vatAmount > 0 ? round(($vatAmount / $itemSubtotal) * 100, 2) : 0,
+                'amount' => $itemSubtotal + $vatAmount,
                 'account_id' => null,
             ]);
+
+            if ($shippingFee > 0) {
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'description' => 'Shipping Fee',
+                    'quantity' => 1,
+                    'unit_price' => $shippingFee,
+                    'tax_rate' => 0,
+                    'amount' => $shippingFee,
+                    'account_id' => null,
+                ]);
+            }
             
             // Note: orders table doesn't have invoice_generated or invoice_id columns
             // If you want to track this, add migration to add these columns

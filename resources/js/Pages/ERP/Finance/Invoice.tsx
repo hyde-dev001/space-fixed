@@ -206,17 +206,52 @@ interface Invoice {
   payment_method?: string | null;
   job_order_id?: number | null;
   job_reference?: string | null;
+  tax_amount?: number | string | null;
+  items?: InvoiceLineItem[];
+  meta?: {
+    subtotal_amount?: number | string | null;
+    shipping_fee?: number | string | null;
+    vat_amount?: number | string | null;
+    grand_total?: number | string | null;
+    [key: string]: unknown;
+  } | null;
   job_order?: {
     id: number;
     customer: string;
     product: string;
     status: string;
     total: string;
+    total_amount?: number | string | null;
+    shipping_fee?: number | string | null;
+    vat_amount?: number | string | null;
+    vat_rate?: number | string | null;
+    grand_total?: number | string | null;
     created_at: string;
   } | null;
 }
 
+interface InvoiceLineItem {
+  description: string;
+  quantity: number | string;
+  unit_price: number | string;
+  amount: number | string;
+  tax_rate?: number | string | null;
+}
+
 type TabFilter = "all" | "draft" | "sent" | "paid" | "overdue";
+
+const parseAmount = (value: unknown): number => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+const isShippingItem = (item: InvoiceLineItem): boolean => {
+  return /shipping/i.test(item.description || '') && parseAmount(item.tax_rate) === 0;
+};
+
+const formatPeso = (value: number): string => {
+  return `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
 
 const Invoice: React.FC = () => {
   const page = usePage();
@@ -464,6 +499,85 @@ const Invoice: React.FC = () => {
       month: "long",
       day: "numeric",
     });
+  };
+
+  const resolveInvoiceSubtotal = (invoice: Invoice): number => {
+    const metaSubtotal = parseAmount(invoice.meta?.subtotal_amount);
+    if (metaSubtotal > 0) {
+      return metaSubtotal;
+    }
+
+    const jobSubtotal = parseAmount(invoice.job_order?.total_amount ?? invoice.job_order?.total);
+    if (jobSubtotal > 0 && parseAmount(invoice.job_order?.shipping_fee) > 0) {
+      return jobSubtotal;
+    }
+
+    if (invoice.items?.length) {
+      return invoice.items
+        .filter((item) => !isShippingItem(item))
+        .reduce((sum, item) => sum + (parseAmount(item.quantity) * parseAmount(item.unit_price)), 0);
+    }
+
+    return parseAmount(invoice.total);
+  };
+
+  const resolveInvoiceShippingFee = (invoice: Invoice): number => {
+    const metaShipping = parseAmount(invoice.meta?.shipping_fee);
+    if (metaShipping > 0) {
+      return metaShipping;
+    }
+
+    return parseAmount(invoice.job_order?.shipping_fee);
+  };
+
+  const resolveInvoiceVatAmount = (invoice: Invoice): number => {
+    const metaVat = parseAmount(invoice.meta?.vat_amount);
+    if (metaVat > 0) {
+      return metaVat;
+    }
+
+    const storedTax = parseAmount(invoice.tax_amount);
+    if (storedTax > 0) {
+      return storedTax;
+    }
+
+    const jobVat = parseAmount(invoice.job_order?.vat_amount);
+    if (jobVat > 0) {
+      return jobVat;
+    }
+
+    if (invoice.items?.length) {
+      return invoice.items.reduce((sum, item) => {
+        if (isShippingItem(item)) {
+          return sum;
+        }
+
+        const lineSubtotal = parseAmount(item.quantity) * parseAmount(item.unit_price);
+        const lineAmount = parseAmount(item.amount);
+        return sum + Math.max(0, lineAmount - lineSubtotal);
+      }, 0);
+    }
+
+    return 0;
+  };
+
+  const resolveInvoiceGrandTotal = (invoice: Invoice): number => {
+    const metaGrandTotal = parseAmount(invoice.meta?.grand_total);
+    if (metaGrandTotal > 0) {
+      return metaGrandTotal;
+    }
+
+    const jobGrandTotal = parseAmount(invoice.job_order?.grand_total);
+    if (jobGrandTotal > 0) {
+      return jobGrandTotal;
+    }
+
+    const subtotal = resolveInvoiceSubtotal(invoice);
+    const shipping = resolveInvoiceShippingFee(invoice);
+    const vat = resolveInvoiceVatAmount(invoice);
+    const fallbackTotal = subtotal + shipping + vat;
+
+    return fallbackTotal > 0 ? fallbackTotal : parseAmount(invoice.total);
   };
 
   const handleCreateInvoice = () => {
@@ -946,24 +1060,31 @@ const Invoice: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-b border-gray-200 dark:border-gray-700">
-                        <td className="py-2.5">
-                          <p className="text-xs font-medium text-gray-900 dark:text-white">Professional Services</p>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">VAT 12%</p>
-                        </td>
-                        <td className="text-center py-2.5 text-xs text-gray-900 dark:text-white">1</td>
-                        <td className="text-right py-2.5 text-xs text-gray-900 dark:text-white">₱{(Number(selectedInvoice.total) / 1.12).toFixed(2)}</td>
-                        <td className="text-right py-2.5 text-xs font-semibold text-gray-900 dark:text-white">₱{(Number(selectedInvoice.total) / 1.12).toFixed(2)}</td>
-                      </tr>
-                      <tr className="border-b border-gray-200 dark:border-gray-700">
-                        <td className="py-2.5">
-                          <p className="text-xs font-medium text-gray-900 dark:text-white">Implementation</p>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">VAT 12%</p>
-                        </td>
-                        <td className="text-center py-2.5 text-xs text-gray-900 dark:text-white">1</td>
-                        <td className="text-right py-2.5 text-xs text-gray-900 dark:text-white">₱{((Number(selectedInvoice.total) * 0.3) / 1.12).toFixed(2)}</td>
-                        <td className="text-right py-2.5 text-xs font-semibold text-gray-900 dark:text-white">₱{((Number(selectedInvoice.total) * 0.3) / 1.12).toFixed(2)}</td>
-                      </tr>
+                      {(selectedInvoice.items?.length ?? 0) > 0 ? (
+                        selectedInvoice.items?.map((item, index) => (
+                          <tr key={`${item.description}-${index}`} className="border-b border-gray-200 dark:border-gray-700">
+                            <td className="py-2.5">
+                              <p className="text-xs font-medium text-gray-900 dark:text-white">{item.description}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                {isShippingItem(item)
+                                  ? 'Shipping'
+                                  : item.tax_rate !== null && item.tax_rate !== undefined
+                                    ? `VAT ${parseAmount(item.tax_rate)}%`
+                                    : 'VAT not applied'}
+                              </p>
+                            </td>
+                            <td className="text-center py-2.5 text-xs text-gray-900 dark:text-white">{parseAmount(item.quantity)}</td>
+                            <td className="text-right py-2.5 text-xs text-gray-900 dark:text-white">{formatPeso(parseAmount(item.unit_price))}</td>
+                            <td className="text-right py-2.5 text-xs font-semibold text-gray-900 dark:text-white">{formatPeso(parseAmount(item.amount))}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr className="border-b border-gray-200 dark:border-gray-700">
+                          <td className="py-2.5" colSpan={4}>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">No line items found for this invoice.</p>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -972,15 +1093,19 @@ const Invoice: React.FC = () => {
                 <div className="space-y-2 pt-3 border-t-2 border-gray-900 dark:border-gray-300">
                   <div className="flex justify-between items-center">
                     <p className="text-xs text-gray-700 dark:text-gray-300">Subtotal:</p>
-                    <p className="text-xs font-semibold text-gray-900 dark:text-white">₱{(Number(selectedInvoice.total) / 1.12).toFixed(2)}</p>
+                    <p className="text-xs font-semibold text-gray-900 dark:text-white">{formatPeso(resolveInvoiceSubtotal(selectedInvoice))}</p>
                   </div>
                   <div className="flex justify-between items-center">
-                    <p className="text-xs text-gray-700 dark:text-gray-300">VAT 12%:</p>
-                    <p className="text-xs font-semibold text-gray-900 dark:text-white">₱{(Number(selectedInvoice.total) - (Number(selectedInvoice.total) / 1.12)).toFixed(2)}</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300">Shipping Fee:</p>
+                    <p className="text-xs font-semibold text-gray-900 dark:text-white">{formatPeso(resolveInvoiceShippingFee(selectedInvoice))}</p>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <p className="text-xs text-gray-700 dark:text-gray-300">VAT:</p>
+                    <p className="text-xs font-semibold text-gray-900 dark:text-white">{formatPeso(resolveInvoiceVatAmount(selectedInvoice))}</p>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-gray-300 dark:border-gray-600">
                     <p className="text-sm font-bold text-gray-900 dark:text-white">Total:</p>
-                    <p className="text-xl font-bold text-gray-900 dark:text-white">₱{Number(selectedInvoice.total).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{formatPeso(resolveInvoiceGrandTotal(selectedInvoice))}</p>
                   </div>
                 </div>
 
