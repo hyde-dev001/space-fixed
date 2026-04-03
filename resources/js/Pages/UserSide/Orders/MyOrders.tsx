@@ -1391,12 +1391,13 @@ const MyOrders: React.FC = () => {
 
                       {(() => {
                         const stage = order.refund_stage;
-                        const isOrderRefunded = Boolean(stage); // if stage exists, order is refunded
-                        const hasShippingInfo = !isOrderRefunded && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
+                        const isRefundedOrder = isOrderRefunded(order);
+                        const isCancelledRefundOrder = order.status === 'cancelled' && isRefundedOrder;
+                        const hasShippingInfo = !isCancelledRefundOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
-                        const hasStaffPickup = hasStaffPickupDetails || isOrderRefunded;
+                        const hasStaffPickup = !isCancelledRefundOrder && (hasStaffPickupDetails || Boolean(stage) || isRefundedOrder);
 
                         if (!hasShippingInfo && !hasStaffPickup) return null;
 
@@ -1407,7 +1408,7 @@ const MyOrders: React.FC = () => {
                               {hasShippingInfo && (
                                 <div>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
-                                  <div className="grid grid-cols-2 gap-4 md:flex md:flex-col md:space-y-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date </p>
                                       <p className="text-sm text-black font-medium">{order.eta || '-'}</p>
@@ -1424,7 +1425,7 @@ const MyOrders: React.FC = () => {
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number </p>
                                       <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
                                     </div>
-                                    <div className="col-span-2 md:col-span-1">
+                                    <div className="sm:col-span-2">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
                                       {order.tracking_link ? (
                                         <a
@@ -1447,7 +1448,7 @@ const MyOrders: React.FC = () => {
                               {hasStaffPickup && (
                                 <div>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
-                                  <div className="grid grid-cols-2 gap-4 md:flex md:flex-col md:space-y-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pickup Status</p>
                                       <p className="text-sm text-black font-medium">{getRefundStageText(order) || '-'}</p>
@@ -1472,7 +1473,7 @@ const MyOrders: React.FC = () => {
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Arranged At</p>
                                       <p className="text-sm text-black font-medium">{stage?.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
                                     </div>
-                                    <div className="col-span-2 md:col-span-1">
+                                    <div className="sm:col-span-2">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
                                       {stage?.staff_return_tracking_link ? (
                                         <a

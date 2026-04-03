@@ -265,6 +265,7 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 
 interface RefundRequest {
 	id: number;
+	refundType?: "order" | "repair";
 	orderNumber: string;
 	customerName: string;
 	orderTotal?: string;
@@ -287,6 +288,14 @@ interface RefundRequest {
 	rejectionReason?: string;
 	media?: string[];
 }
+
+const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean => {
+	return left.id === right.id && (left.refundType || "order") === (right.refundType || "order");
+};
+
+const getShopOwnerActionBase = (request: RefundRequest): string => {
+	return request.refundType === "repair" ? "/api/shop-owner/repair-refunds" : "/api/shop-owner/refunds";
+};
 
 const refundReasonOptions = [
 	"Product defective or damaged",
@@ -390,19 +399,44 @@ export default function RefundApproval() {
 				params.append("search", searchQuery.trim());
 			}
 
-			const response = await fetch(`/api/shop-owner/refunds?${params.toString()}`, {
-				credentials: "include",
-				headers: {
-					Accept: "application/json",
-				},
-			});
+			const [orderResponse, repairResponse] = await Promise.all([
+				fetch(`/api/shop-owner/refunds?${params.toString()}`, {
+					credentials: "include",
+					headers: {
+						Accept: "application/json",
+					},
+				}),
+				fetch(`/api/shop-owner/repair-refunds?${params.toString()}`, {
+					credentials: "include",
+					headers: {
+						Accept: "application/json",
+					},
+				}),
+			]);
 
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data?.message || "Failed to load refund requests");
+			const [orderData, repairData] = await Promise.all([orderResponse.json(), repairResponse.json()]);
+			if (!orderResponse.ok) {
+				throw new Error(orderData?.message || "Failed to load refund requests");
+			}
+			if (!repairResponse.ok) {
+				throw new Error(repairData?.message || "Failed to load repair refund requests");
 			}
 
-			setRequests(Array.isArray(data?.data) ? data.data : []);
+			const normalizedOrderRefunds: RefundRequest[] = (Array.isArray(orderData?.data) ? orderData.data : []).map((item) => ({
+				...item,
+				refundType: "order",
+			}));
+
+			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : []).map((item) => ({
+				...item,
+				refundType: "repair",
+			}));
+
+			setRequests(
+				[...normalizedOrderRefunds, ...normalizedRepairRefunds].sort((a, b) =>
+					new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime(),
+				),
+			);
 		} catch (error) {
 			Swal.fire({
 				icon: "error",
@@ -453,6 +487,14 @@ export default function RefundApproval() {
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+
+		if (request.refundType === "repair") {
+			return request.status === "Pending"
+				&& financeStatus === "approved_initial"
+				&& shopOwnerStatus === "pending"
+				&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+		}
+
 		const requiresOwnerApproval = isIndividualRegistration ? true : request.requiresOwnerApproval !== false;
 		const financeReadyForOwner = isIndividualRegistration
 			? ["pending", "approved_initial", "approved"].includes(financeStatus)
@@ -527,7 +569,7 @@ export default function RefundApproval() {
 		if (result.isConfirmed) {
 			setIsActionProcessing(true);
 			try {
-				const response = await fetch(`/api/shop-owner/refunds/${request.id}/approve`, {
+				const response = await fetch(`${getShopOwnerActionBase(request)}/${request.id}/approve`, {
 					method: "POST",
 					credentials: "include",
 					headers: {
@@ -544,9 +586,9 @@ export default function RefundApproval() {
 					throw new Error(data?.message || "Failed to approve refund request.");
 				}
 
-				const updatedRefund = { ...request, ...(data?.refund || {}), status: "Approved" };
+				const updatedRefund = { ...request, ...(data?.refund || data?.data || {}), status: "Approved" };
 				setRequests((prev) =>
-					prev.map((r) => (r.id === request.id ? updatedRefund : r))
+					prev.map((r) => (isSameRefundRequest(r, request) ? updatedRefund : r))
 				);
 				setSelectedRequest(updatedRefund);
 				
@@ -600,7 +642,7 @@ export default function RefundApproval() {
 		if (reason) {
 			setIsActionProcessing(true);
 			try {
-				const response = await fetch(`/api/shop-owner/refunds/${request.id}/reject`, {
+				const response = await fetch(`${getShopOwnerActionBase(request)}/${request.id}/reject`, {
 					method: "POST",
 					credentials: "include",
 					headers: {
@@ -609,7 +651,7 @@ export default function RefundApproval() {
 						"X-CSRF-TOKEN":
 							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 					},
-					body: JSON.stringify({ rejection_reason: reason }),
+					body: JSON.stringify(request.refundType === "repair" ? { reason } : { rejection_reason: reason }),
 				});
 
 				const data = await response.json();
@@ -619,8 +661,8 @@ export default function RefundApproval() {
 
 				setRequests((prev) =>
 					prev.map((r) =>
-						r.id === request.id
-							? { ...r, ...(data?.refund || {}), status: "Rejected", rejectionReason: reason }
+						isSameRefundRequest(r, request)
+							? { ...r, ...(data?.refund || data?.data || {}), status: "Rejected", rejectionReason: reason }
 							: r
 					)
 				);
@@ -645,6 +687,10 @@ export default function RefundApproval() {
 	};
 
 	const canExecuteGatewayRefund = (request: RefundRequest): boolean => {
+		if (request.refundType === "repair") {
+			return false;
+		}
+
 		if (!isIndividualRegistration) {
 			return false;
 		}
@@ -701,7 +747,7 @@ export default function RefundApproval() {
 			const data = await response.json();
 			if (!response.ok) {
 				if (response.status === 409) {
-					setSelectedRequest((prev) => (prev && prev.id === request.id ? { ...prev, ...(data?.refund || {}) } : prev));
+					setSelectedRequest((prev) => (prev && isSameRefundRequest(prev, request) ? { ...prev, ...(data?.refund || {}) } : prev));
 					await fetchRefundRequests();
 					await Swal.fire({
 						title: "Already Started",
@@ -715,7 +761,7 @@ export default function RefundApproval() {
 				throw new Error(data?.message || "Failed to execute refund payout.");
 			}
 
-			setSelectedRequest((prev) => (prev && prev.id === request.id ? { ...prev, ...(data?.refund || {}) } : prev));
+			setSelectedRequest((prev) => (prev && isSameRefundRequest(prev, request) ? { ...prev, ...(data?.refund || {}) } : prev));
 
 			Swal.fire({
 				title: "Payout Execution Started",
@@ -831,7 +877,7 @@ export default function RefundApproval() {
 							</thead>
 							<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
 								{paginatedRequests.map((request) => (
-									<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+									<tr key={`${request.refundType || "order"}-${request.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
 										<td className="py-4">
 											<p className="font-medium text-gray-900 dark:text-white">{request.orderNumber}</p>
 										</td>

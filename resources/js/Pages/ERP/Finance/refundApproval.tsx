@@ -264,6 +264,7 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 
 interface RefundRequest {
 	id: number;
+	refundType?: "order" | "repair";
 	orderNumber: string;
 	customerName: string;
 	orderTotal?: string;
@@ -286,6 +287,14 @@ interface RefundRequest {
 	rejectionReason?: string;
 	media?: string[];
 }
+
+const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean => {
+	return left.id === right.id && (left.refundType || "order") === (right.refundType || "order");
+};
+
+const getFinanceActionBase = (request: RefundRequest): string => {
+	return request.refundType === "repair" ? "/api/finance/repair-refunds" : "/api/finance/refunds";
+};
 
 const refundReasonOptions = [
 	"Product defective or damaged",
@@ -404,19 +413,44 @@ export default function RefundApproval() {
 				params.append("search", searchQuery.trim());
 			}
 
-			const response = await fetch(`/api/finance/refunds?${params.toString()}`, {
-				credentials: "include",
-				headers: {
-					Accept: "application/json",
-				},
-			});
+			const [orderResponse, repairResponse] = await Promise.all([
+				fetch(`/api/finance/refunds?${params.toString()}`, {
+					credentials: "include",
+					headers: {
+						Accept: "application/json",
+					},
+				}),
+				fetch(`/api/finance/repair-refunds?${params.toString()}`, {
+					credentials: "include",
+					headers: {
+						Accept: "application/json",
+					},
+				}),
+			]);
 
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data?.message || "Failed to load refund requests");
+			const [orderData, repairData] = await Promise.all([orderResponse.json(), repairResponse.json()]);
+			if (!orderResponse.ok) {
+				throw new Error(orderData?.message || "Failed to load refund requests");
+			}
+			if (!repairResponse.ok) {
+				throw new Error(repairData?.message || "Failed to load repair refund requests");
 			}
 
-			setRequests(Array.isArray(data?.data) ? data.data : []);
+			const normalizedOrderRefunds: RefundRequest[] = (Array.isArray(orderData?.data) ? orderData.data : []).map((item) => ({
+				...item,
+				refundType: "order",
+			}));
+
+			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : []).map((item) => ({
+				...item,
+				refundType: "repair",
+			}));
+
+			setRequests(
+				[...normalizedOrderRefunds, ...normalizedRepairRefunds].sort((a, b) =>
+					new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime(),
+				),
+			);
 		} catch (error) {
 			Swal.fire({
 				icon: "error",
@@ -468,6 +502,12 @@ export default function RefundApproval() {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 		const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
+
+		if (request.refundType === "repair") {
+			return request.status === "Pending"
+				&& financeStatus === "pending"
+				&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+		}
 
 		return request.status === "Pending"
 			&& (
@@ -523,7 +563,7 @@ export default function RefundApproval() {
 		if (result.isConfirmed) {
 			setIsActionProcessing(true);
 			try {
-				const response = await fetch(`/api/finance/refunds/${request.id}/approve`, {
+				const response = await fetch(`${getFinanceActionBase(request)}/${request.id}/approve`, {
 					method: "POST",
 					credentials: "include",
 					headers: {
@@ -540,9 +580,9 @@ export default function RefundApproval() {
 					throw new Error(data?.message || "Failed to approve refund request.");
 				}
 
-				const updatedRefund = { ...request, ...(data?.refund || {}), status: "Approved" };
+				const updatedRefund = { ...request, ...(data?.refund || data?.data || {}), status: "Approved" };
 				setRequests((prev) =>
-					prev.map((r) => (r.id === request.id ? updatedRefund : r))
+					prev.map((r) => (isSameRefundRequest(r, request) ? updatedRefund : r))
 				);
 				setSelectedRequest(updatedRefund);
 				
@@ -600,7 +640,7 @@ export default function RefundApproval() {
 		if (reason) {
 			setIsActionProcessing(true);
 			try {
-				const response = await fetch(`/api/finance/refunds/${request.id}/reject`, {
+				const response = await fetch(`${getFinanceActionBase(request)}/${request.id}/reject`, {
 					method: "POST",
 					credentials: "include",
 					headers: {
@@ -609,7 +649,7 @@ export default function RefundApproval() {
 						"X-CSRF-TOKEN":
 							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 					},
-					body: JSON.stringify({ rejection_reason: reason }),
+					body: JSON.stringify(request.refundType === "repair" ? { reason } : { rejection_reason: reason }),
 				});
 
 				const data = await response.json();
@@ -619,8 +659,8 @@ export default function RefundApproval() {
 
 				setRequests((prev) =>
 					prev.map((r) =>
-						r.id === request.id
-							? { ...r, ...(data?.refund || {}), status: "Rejected", rejectionReason: reason }
+						isSameRefundRequest(r, request)
+							? { ...r, ...(data?.refund || data?.data || {}), status: "Rejected", rejectionReason: reason }
 							: r
 					)
 				);
@@ -649,6 +689,12 @@ export default function RefundApproval() {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 		const returnStatus = String(request.returnStatus || "").toLowerCase();
+
+		if (request.refundType === "repair") {
+			return financeStatus === "approved"
+				&& ["approved", "skipped"].includes(shopOwnerStatus)
+				&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+		}
 
 		return financeStatus === "approved"
 			&& shopOwnerStatus === "approved"
@@ -685,7 +731,11 @@ export default function RefundApproval() {
 
 		setIsActionProcessing(true);
 		try {
-			const response = await fetch(`/api/finance/refunds/${request.id}/execute-gateway-refund`, {
+			const response = await fetch(
+				request.refundType === "repair"
+					? `/api/finance/repair-refunds/${request.id}/execute`
+					: `/api/finance/refunds/${request.id}/execute-gateway-refund`,
+				{
 				method: "POST",
 				credentials: "include",
 				headers: {
@@ -693,8 +743,9 @@ export default function RefundApproval() {
 					Accept: "application/json",
 					"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 				},
-				body: JSON.stringify({}),
-			});
+				body: JSON.stringify(request.refundType === "repair" ? { execution_mode: "manual" } : {}),
+			},
+			);
 
 			const data = await response.json();
 			if (!response.ok) {
@@ -822,7 +873,7 @@ export default function RefundApproval() {
 							</thead>
 							<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
 								{paginatedRequests.map((request) => (
-									<tr key={request.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+									<tr key={`${request.refundType || "order"}-${request.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
 										<td className="py-4">
 											<p className="font-medium text-gray-900 dark:text-white">{request.orderNumber}</p>
 										</td>

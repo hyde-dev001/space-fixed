@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PosRefund;
+use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
@@ -11,6 +12,34 @@ use Illuminate\Support\Facades\Auth;
 
 class RepairRefundWorkflowController extends Controller
 {
+    public function financeIndex(Request $request)
+    {
+        $actor = Auth::guard('user')->user();
+
+        $refunds = $this->buildApprovalListQuery(
+            request: $request,
+            shopOwnerId: (int) ($actor->shop_owner_id ?? 0)
+        )->get();
+
+        return response()->json([
+            'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund))->values(),
+        ]);
+    }
+
+    public function ownerIndex(Request $request)
+    {
+        $actor = Auth::guard('shop_owner')->user();
+
+        $refunds = $this->buildApprovalListQuery(
+            request: $request,
+            shopOwnerId: (int) ($actor->id ?? 0)
+        )->get();
+
+        return response()->json([
+            'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund))->values(),
+        ]);
+    }
+
     public function repairerQueue(Request $request)
     {
         $actor = Auth::guard('user')->user();
@@ -178,5 +207,130 @@ class RepairRefundWorkflowController extends Controller
         return method_exists($actor, 'can')
             ? $actor->can('access-refund-approval')
             : true;
+    }
+
+    private function buildApprovalListQuery(Request $request, int $shopOwnerId)
+    {
+        $query = PosRefund::query()
+            ->with([
+                'sourceTransaction:id,transaction_no,shop_owner_id,customer_type,customer_id,walk_in_name,module_type,module_reference_id,total_amount,paid_amount',
+                'sourceTransaction.receipt:id,pos_transaction_id,receipt_no',
+                'sourceTransaction.paymentLines:id,pos_transaction_id,tender_type',
+                'repairRequest:id,customer_name',
+                'requestedByUser:id,name',
+            ])
+            ->where('module_type', 'repair')
+            ->where('shop_owner_id', $shopOwnerId);
+
+        $statusFilter = strtolower((string) $request->get('status', ''));
+        if ($statusFilter !== '' && $statusFilter !== 'all') {
+            if ($statusFilter === 'pending') {
+                $query->whereIn('status', ['requested']);
+            } elseif ($statusFilter === 'approved') {
+                $query->whereIn('status', ['approved', 'processing', 'succeeded']);
+            } elseif ($statusFilter === 'rejected') {
+                $query->whereIn('status', ['rejected', 'failed', 'cancelled']);
+            }
+        }
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->input('search'));
+            $query->where(function ($builder) use ($search) {
+                $builder->where('refund_no', 'like', "%{$search}%")
+                    ->orWhere('reason_notes', 'like', "%{$search}%")
+                    ->orWhereHas('sourceTransaction', function ($transactionQuery) use ($search) {
+                        $transactionQuery->where('transaction_no', 'like', "%{$search}%")
+                            ->orWhere('walk_in_name', 'like', "%{$search}%")
+                            ->orWhereHas('receipt', fn ($receiptQuery) => $receiptQuery->where('receipt_no', 'like', "%{$search}%"));
+                    })
+                    ->orWhereHas('repairRequest', fn ($repairQuery) => $repairQuery->where('customer_name', 'like', "%{$search}%"))
+                    ->orWhereHas('requestedByUser', fn ($userQuery) => $userQuery->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        return $query->latest('requested_at')->latest('id');
+    }
+
+    private function transformApprovalRefund(PosRefund $refund): array
+    {
+        $source = $refund->sourceTransaction;
+        $repair = $refund->repairRequest;
+        $receiptNo = (string) ($source?->receipt?->receipt_no ?? '');
+        $transactionNo = (string) ($source?->transaction_no ?? '');
+
+        $customerName = (string) (
+            $repair?->customer_name
+            ?? $source?->walk_in_name
+            ?? $refund->requestedByUser?->name
+            ?? 'Customer'
+        );
+
+        $requestedBy = (string) ($refund->requestedByUser?->name ?? $customerName);
+
+        $financeStatus = strtolower((string) ($refund->finance_status ?? 'pending'));
+        $shopOwnerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
+        $status = strtolower((string) $refund->status);
+
+        $requiresOwnerApproval = app(ShopOwnerApprovalPolicyService::class)
+            ->requiresOwnerApprovalForRefund((int) $refund->shop_owner_id, (float) ($refund->requested_amount ?? 0));
+
+        $approvalStage = 'none';
+        if ($financeStatus === 'pending') {
+            $approvalStage = 'finance_initial';
+        } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'pending') {
+            $approvalStage = 'shop_owner';
+        } elseif ($financeStatus === 'approved' && in_array($shopOwnerStatus, ['approved', 'skipped'], true)) {
+            $approvalStage = 'approved';
+        }
+
+        $uiStatus = match (true) {
+            in_array($status, ['requested'], true) => 'Pending',
+            in_array($status, ['rejected', 'failed', 'cancelled'], true) => 'Rejected',
+            default => 'Approved',
+        };
+
+        $evidenceSnapshot = is_array($refund->evidence_snapshot) ? $refund->evidence_snapshot : [];
+        $evidenceMedia = [];
+        if (isset($evidenceSnapshot['media']) && is_array($evidenceSnapshot['media'])) {
+            $evidenceMedia = $evidenceSnapshot['media'];
+        } elseif (isset($evidenceSnapshot['images']) && is_array($evidenceSnapshot['images'])) {
+            $evidenceMedia = $evidenceSnapshot['images'];
+        }
+
+        return [
+            'id' => (int) $refund->id,
+            'refundType' => 'repair',
+            'orderNumber' => $receiptNo !== '' ? $receiptNo : ($transactionNo !== '' ? $transactionNo : (string) $refund->refund_no),
+            'customerName' => $customerName,
+            'orderTotal' => '₱' . number_format((float) ($source?->total_amount ?? $refund->requested_amount), 2),
+            'refundAmount' => '₱' . number_format((float) ($refund->requested_amount ?? 0), 2),
+            'refundMethod' => $this->resolveRefundMethodLabel($source?->paymentLines?->pluck('tender_type')->first()),
+            'requestedBy' => $requestedBy,
+            'requestDate' => optional($refund->requested_at ?? $refund->created_at)->format('Y-m-d'),
+            'refundReason' => ucwords(str_replace('_', ' ', (string) ($refund->reason_code ?? 'repair_refund'))),
+            'refundNote' => (string) ($refund->reason_notes ?? ''),
+            'reason' => (string) ($refund->reason_notes ?? ''),
+            'status' => $uiStatus,
+            'rawStatus' => $status,
+            'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
+            'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
+            'requiresOwnerApproval' => $requiresOwnerApproval,
+            'approvalStage' => $approvalStage,
+            'returnStatus' => 'received',
+            'refundExecutedAt' => optional($refund->executed_at)->toDateTimeString(),
+            'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
+            'rejectionReason' => (string) ($refund->failure_reason ?? ''),
+            'media' => array_values(array_filter($evidenceMedia, fn ($item) => is_string($item) && trim($item) !== '')),
+        ];
+    }
+
+    private function resolveRefundMethodLabel(?string $tenderType): string
+    {
+        return match (strtolower((string) $tenderType)) {
+            'paymongo_card' => 'Credit Card',
+            'paymongo_wallet' => 'GCash',
+            'cash' => 'Cash',
+            default => 'Original Payment Method',
+        };
     }
 }

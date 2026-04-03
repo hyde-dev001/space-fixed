@@ -78,6 +78,8 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     });
 
     Route::prefix('repair-refunds')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerIndex'])
+            ->name('shop_owner.repair-refunds.index');
         Route::post('/{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerApprove'])
             ->name('shop_owner.repair-refunds.approve');
         Route::post('/{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerReject'])

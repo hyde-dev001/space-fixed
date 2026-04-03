@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\User;
 
 class PosRefund extends Model
 {
@@ -69,5 +70,10 @@ class PosRefund extends Model
     public function repairRequest(): BelongsTo
     {
         return $this->belongsTo(RepairRequest::class, 'module_reference_id');
+    }
+
+    public function requestedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by');
     }
 }

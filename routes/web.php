@@ -1027,6 +1027,7 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 });
 
 Route::middleware(['auth:user', 'permission:access-refund-approval'])->prefix('api/finance/repair-refunds')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeIndex']);
     Route::post('{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeApprove']);
     Route::post('{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeReject']);
     Route::post('{refund}/execute', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeExecute']);
