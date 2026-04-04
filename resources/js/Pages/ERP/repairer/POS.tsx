@@ -103,6 +103,25 @@ const normalizePaymentPolicy = (value: unknown): "deposit_50" | "full_upfront" =
 	return value === "full_upfront" ? "full_upfront" : "deposit_50";
 };
 
+const POS_ATTACHABLE_WORKFLOW_STATUSES = new Set([
+	"repairer_accepted",
+	"waiting_customer_confirmation",
+	"owner_approval_pending",
+	"owner_approved",
+	"confirmed",
+	"pending",
+	"received",
+	"in_progress",
+	"in-progress",
+	"awaiting_parts",
+	"ready_for_pickup",
+	"ready-for-pickup",
+]);
+
+const isPosAttachEligibleStatus = (status: string): boolean => {
+	return POS_ATTACHABLE_WORKFLOW_STATUSES.has(status);
+};
+
 const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requestedDueType: PosDueType): PosDueType => {
 	if (policy === "full_upfront") return "full";
 	if (requestedDueType === "deposit" || requestedDueType === "balance") return requestedDueType;
@@ -115,6 +134,10 @@ const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy
 	const workflowStatus = String(order.status ?? "").toLowerCase();
 	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
 	const isDepositSettled = paymentStatus === "paid" || paymentStatus === "partially_paid";
+
+	if (!isPosAttachEligibleStatus(workflowStatus)) {
+		return null;
+	}
 
 	if (paymentStatus === "refunded" || paymentStatus === "partially_refunded") {
 		return null;

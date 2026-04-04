@@ -14,7 +14,7 @@ class RepairPosTenderVerificationTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
-    public function non_cash_tender_is_created_as_pending_authorization(): void
+    public function non_cash_tender_is_created_as_pending(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $actor = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
@@ -57,7 +57,7 @@ class RepairPosTenderVerificationTest extends TestCase
 
         $this->assertDatabaseHas('pos_payment_lines', [
             'tender_type' => 'paymongo_wallet',
-            'status' => 'pending_authorization',
+            'status' => 'pending',
         ]);
     }
 }

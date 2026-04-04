@@ -556,7 +556,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $this->assertDatabaseHas('pos_payment_lines', [
             'tender_type' => 'paymongo_card',
             'provider_reference' => 'AUTH-REF-12345',
-            'status' => 'pending_authorization',
+            'status' => 'pending',
         ]);
     }
 

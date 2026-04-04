@@ -113,7 +113,8 @@ class RepairPosPaymentService
                     'tender_type' => $line['tender_type'],
                     'provider_reference' => $line['provider_reference'] ?? null,
                     'amount' => $line['amount'],
-                    'status' => $isNonCash ? 'pending_authorization' : 'paid',
+                    // Keep line status enum-compatible across deployments; authorization state is tracked separately.
+                    'status' => $isNonCash ? 'pending' : 'paid',
                     'verification_status' => $isNonCash ? 'pending' : 'verified',
                     'paid_at' => $isNonCash ? null : now(),
                 ]);
