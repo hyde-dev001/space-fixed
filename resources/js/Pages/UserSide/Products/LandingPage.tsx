@@ -50,9 +50,29 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
+  const [statsValues, setStatsValues] = useState([0, 0, 0]);
   const hoverTimersRef = useRef<Record<number, number>>({});
   const revealRootRef = useRef<HTMLDivElement | null>(null);
+  const statsSectionRef = useRef<HTMLElement | null>(null);
+  const statsAnimationRef = useRef<number | null>(null);
+  const statsHasAnimatedRef = useRef(false);
   const prefersReducedMotionRef = useRef(false);
+
+  const formatStatValue = (value: number, target: number) => {
+    if (target === 10000) {
+      if (value >= target) {
+        return '10K+';
+      }
+
+      return `${Math.floor(value)}`;
+    }
+
+    if (target === 98) {
+      return `${Math.min(value, target)}%`;
+    }
+
+    return `${Math.min(value, target)}+`;
+  };
 
   useEffect(() => {
     prefersReducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -113,6 +133,73 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
     revealElements.forEach((element) => observer.observe(element));
 
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const statsSection = statsSectionRef.current;
+    if (!statsSection) {
+      return;
+    }
+
+    const targets = [500, 10000, 98];
+
+    const startAnimation = () => {
+      if (statsHasAnimatedRef.current) {
+        return;
+      }
+
+      statsHasAnimatedRef.current = true;
+
+      if (prefersReducedMotionRef.current) {
+        setStatsValues(targets);
+        return;
+      }
+
+      const increments = [1, 10, 1];
+
+      statsAnimationRef.current = window.setInterval(() => {
+        setStatsValues((currentValues) => {
+          const nextValues = currentValues.map((value, index) => {
+            const nextValue = value + increments[index];
+            return nextValue >= targets[index] ? targets[index] : nextValue;
+          });
+
+          if (nextValues.every((value, index) => value === targets[index])) {
+            window.clearInterval(statsAnimationRef.current ?? undefined);
+            statsAnimationRef.current = null;
+          }
+
+          return nextValues;
+        });
+      }, 28);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          window.setTimeout(startAnimation, 220);
+          observer.disconnect();
+        }
+      },
+      {
+        threshold: 0.2,
+      }
+    );
+
+    observer.observe(statsSection);
+
+    const fallbackTimer = window.setTimeout(() => {
+      startAnimation();
+      observer.disconnect();
+    }, 650);
+
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(fallbackTimer);
+      if (statsAnimationRef.current !== null) {
+        window.clearInterval(statsAnimationRef.current);
+      }
+    };
   }, []);
 
   const getProductImages = (product: Product) => {
@@ -189,7 +276,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         </div>
 
         <div className={`${heroContainerClass} flex min-h-[84svh] items-center pb-12 pt-20 sm:min-h-svh sm:py-24 lg:py-32`}>
-          <div className="relative z-10 w-full max-w-[24rem] text-left sm:max-w-[38rem] lg:max-w-4xl">
+          <div className="relative z-10 w-full max-w-[24rem] text-left sm:max-w-152 lg:max-w-4xl">
             <h1 className="hero-headline mb-4 text-[2.35rem] font-bold leading-[0.9] tracking-tight text-white/90 xsm:text-[2.75rem] sm:mb-8 sm:text-[4.4rem] md:text-7xl lg:text-8xl xl:text-9xl">
               <span className="hero-headline-line hero-line-1">ELEVATE YOUR</span>
               <span className="hero-headline-line hero-line-2">SIGNATURE</span>
@@ -236,19 +323,19 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
       {/* Stats Section - Adidas Style: Clean, Bold Numbers */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-gray-100 py-14 text-black sm:py-20">
+      <section ref={statsSectionRef} data-scroll-reveal className="scroll-reveal w-full bg-gray-100 py-14 text-black sm:py-20">
         <div className={sectionContainerClass}>
           <div className="grid grid-cols-3 gap-4 text-center sm:gap-10 lg:gap-20">
             <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">500+</div>
+              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[0], 500)}</div>
               <div className="text-sm uppercase tracking-wider text-black/70">Products</div>
             </div>
             <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">10K+</div>
+              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[1], 10000)}</div>
               <div className="text-sm uppercase tracking-wider text-black/70">Customers</div>
             </div>
             <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">98%</div>
+              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[2], 98)}</div>
               <div className="text-sm uppercase tracking-wider text-black/70">Satisfaction</div>
             </div>
           </div>

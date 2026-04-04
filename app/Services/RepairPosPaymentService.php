@@ -75,10 +75,7 @@ class RepairPosPaymentService
             ]);
         }
 
-        $hasNonCashLines = collect($payload['payment_lines'])
-            ->contains(fn ($line) => in_array((string) ($line['tender_type'] ?? ''), ['paymongo_card', 'paymongo_wallet'], true));
-
-        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy, $hasNonCashLines) {
+        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy) {
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'idempotency_key' => (string) ($payload['idempotency_key'] ?? ''),
@@ -97,8 +94,8 @@ class RepairPosPaymentService
                 'discount_amount' => 0,
                 'total_amount' => $dueAmount,
                 'paid_amount' => $paidAmount,
-                'status' => $hasNonCashLines ? 'pending' : 'paid',
-                'paid_at' => $hasNonCashLines ? null : now(),
+                'status' => 'paid',
+                'paid_at' => now(),
                 'created_by' => $actorId,
                 'metadata' => [
                     'vat_rate' => self::VAT_RATE_PERCENT,
@@ -106,17 +103,14 @@ class RepairPosPaymentService
             ]);
 
             foreach ($payload['payment_lines'] as $line) {
-                $isNonCash = in_array((string) ($line['tender_type'] ?? ''), ['paymongo_card', 'paymongo_wallet'], true);
-
                 PosPaymentLine::create([
                     'pos_transaction_id' => $transaction->id,
                     'tender_type' => $line['tender_type'],
                     'provider_reference' => $line['provider_reference'] ?? null,
                     'amount' => $line['amount'],
-                    // Keep line status enum-compatible across deployments; authorization state is tracked separately.
-                    'status' => $isNonCash ? 'pending' : 'paid',
-                    'verification_status' => $isNonCash ? 'pending' : 'verified',
-                    'paid_at' => $isNonCash ? null : now(),
+                    'status' => 'paid',
+                    'verification_status' => 'verified',
+                    'paid_at' => now(),
                 ]);
             }
 
