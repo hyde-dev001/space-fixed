@@ -35,6 +35,20 @@ export interface RepairMaterialUsage {
   };
 }
 
+export interface RepairMaterialPlanItem {
+  id: number;
+  repair_request_id: number;
+  inventory_item_id: number;
+  planned_quantity: number;
+  actual_quantity: number;
+  remaining_quantity: number;
+  is_critical: boolean;
+  tolerance_percent: number;
+  variance_status: "within_tolerance" | "exceeded_with_note" | "escalated";
+  variance_note?: string | null;
+  inventory_item?: RepairMaterialInventoryItem;
+}
+
 export interface RepairMaterialRequest {
   id: number;
   request_number: string;
@@ -73,6 +87,7 @@ interface RepairUsageResponse {
     repair_id: number;
     repair_status: string;
     usages: RepairMaterialUsage[];
+    plan_items?: RepairMaterialPlanItem[];
     materials: RepairMaterialInventoryItem[];
     summary?: {
       base_total: number;

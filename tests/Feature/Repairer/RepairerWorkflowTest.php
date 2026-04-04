@@ -111,6 +111,14 @@ class RepairerWorkflowTest extends TestCase
     {
         $shopOwner = $this->createRepairShop();
         $repairer = $this->createRepairer($shopOwner, ['access-pricing-services']);
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Package Template Material',
+            'sku' => 'MAT-PKG-001',
+            'available_quantity' => 20,
+            'is_active' => true,
+        ]);
 
         $firstServiceResponse = $this->actingAs($repairer, 'user')->postJson('/api/repair-services', [
             'name' => 'Heel Replacement',
@@ -158,6 +166,14 @@ class RepairerWorkflowTest extends TestCase
             'package_price' => 1300,
             'status' => 'active',
             'service_ids' => [$firstServiceId, $secondServiceId],
+            'material_templates' => [
+                [
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ],
+            ],
         ]);
 
         $packageResponse->assertStatus(201)
@@ -251,7 +267,10 @@ class RepairerWorkflowTest extends TestCase
 
         $completedResponse = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repairRequest->id}/mark-completed",
-            ['completion_notes' => 'Reglue and edge cleanup finished.']
+            [
+                'completion_notes' => 'Reglue and edge cleanup finished.',
+                'no_materials_used_confirmed' => true,
+            ]
         );
 
         $completedResponse->assertStatus(200)
@@ -467,6 +486,152 @@ class RepairerWorkflowTest extends TestCase
 
         $material->refresh();
         $this->assertSame(20, $material->available_quantity);
+    }
+
+    public function test_repairer_cannot_mark_completed_without_usage_when_template_exists(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $customer = $this->createCustomer([
+            'email' => 'repair-template-block@example.com',
+        ]);
+        $repairer = $this->createRepairer($shopOwner, ['access-repair-stocks']);
+        $service = $this->createService($shopOwner, [
+            'name' => 'Template-Based Restore',
+            'price' => 650,
+        ]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Template Adhesive',
+            'sku' => 'MAT-TPL-001',
+            'available_quantity' => 15,
+            'reserved_quantity' => 0,
+            'reorder_level' => 3,
+            'unit' => 'pcs',
+            'is_active' => true,
+            'price' => 80,
+            'cost_price' => 40,
+        ]);
+
+        $service->materialTemplateItems()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $material->id,
+            'template_type' => 'repair_service',
+            'template_id' => $service->id,
+            'default_quantity' => 1,
+            'is_critical' => true,
+            'tolerance_percent' => 20,
+            'created_by' => $repairer->id,
+        ]);
+
+        $repairRequest = $this->createAssignedRepairRequest(
+            $shopOwner,
+            $customer,
+            $repairer,
+            [$service->id],
+            [
+                'status' => 'in_progress',
+                'total' => 650,
+                'final_total' => 650,
+            ]
+        );
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/mark-completed",
+            [
+                'completion_notes' => 'Attempting completion without material logs.',
+                'no_materials_used_confirmed' => true,
+            ]
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('requires_material_logging', true);
+
+        $repairRequest->refresh();
+        $this->assertSame('in_progress', $repairRequest->status);
+    }
+
+    public function test_template_material_plan_is_generated_and_updated_from_usage_logs(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $customer = $this->createCustomer([
+            'email' => 'repair-template-plan@example.com',
+        ]);
+        $repairer = $this->createRepairer($shopOwner, ['access-repair-stocks']);
+        $service = $this->createService($shopOwner, [
+            'name' => 'Template Plan Service',
+            'price' => 700,
+        ]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Template Material',
+            'sku' => 'MAT-TPL-PLAN-001',
+            'available_quantity' => 20,
+            'reserved_quantity' => 0,
+            'reorder_level' => 5,
+            'unit' => 'pcs',
+            'is_active' => true,
+            'price' => 95,
+            'cost_price' => 50,
+        ]);
+
+        $service->materialTemplateItems()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $material->id,
+            'template_type' => 'repair_service',
+            'template_id' => $service->id,
+            'default_quantity' => 2,
+            'is_critical' => true,
+            'tolerance_percent' => 20,
+            'created_by' => $repairer->id,
+        ]);
+
+        $repairRequest = $this->createAssignedRepairRequest(
+            $shopOwner,
+            $customer,
+            $repairer,
+            [$service->id],
+            [
+                'status' => 'in_progress',
+                'total' => 700,
+                'final_total' => 700,
+            ]
+        );
+
+        $usageResponse = $this->actingAs($repairer, 'user')->getJson(
+            "/api/repairer/repairs/{$repairRequest->id}/materials"
+        );
+
+        $usageResponse->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.plan_items.0.inventory_item_id', $material->id)
+            ->assertJsonPath('data.plan_items.0.planned_quantity', 2.0)
+            ->assertJsonPath('data.plan_items.0.actual_quantity', 0.0);
+
+        $logResponse = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 2,
+                'notes' => 'Applied full planned quantity.',
+            ]
+        );
+
+        $logResponse->assertStatus(201)
+            ->assertJsonPath('success', true);
+
+        $planItem = \App\Models\RepairMaterialPlanItem::query()
+            ->where('repair_request_id', $repairRequest->id)
+            ->where('inventory_item_id', $material->id)
+            ->first();
+
+        $this->assertNotNull($planItem);
+        $this->assertSame(2.0, (float) $planItem->planned_quantity);
+        $this->assertSame(2.0, (float) $planItem->actual_quantity);
     }
 
     public function test_repairer_can_ship_pickup_repairs_and_customer_can_confirm_delivery(): void

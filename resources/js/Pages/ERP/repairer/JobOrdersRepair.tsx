@@ -4,7 +4,7 @@ import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
-import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem } from "../../../services/repairMaterialsApi";
+import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem, type RepairMaterialPlanItem } from "../../../services/repairMaterialsApi";
 
 type RepairOrder = {
   id: string;
@@ -478,6 +478,7 @@ export default function JobOrdersRepair() {
   const [highlightRepairToken, setHighlightRepairToken] = useState<string | null>(null);
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
   const [materialUsages, setMaterialUsages] = useState<RepairMaterialUsage[]>([]);
+  const [materialPlanItems, setMaterialPlanItems] = useState<RepairMaterialPlanItem[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<RepairMaterialInventoryItem[]>([]);
   const [isMaterialsLoading, setIsMaterialsLoading] = useState(false);
   const [materialForm, setMaterialForm] = useState({
@@ -759,11 +760,13 @@ export default function JobOrdersRepair() {
       const response = await repairMaterialsApi.getRepairUsage(repairId);
       if (response.success) {
         setMaterialUsages(response.data.usages ?? []);
+        setMaterialPlanItems(response.data.plan_items ?? []);
         setAvailableMaterials(response.data.materials ?? []);
       }
     } catch (err) {
       console.error("Failed to load repair materials", err);
       setMaterialUsages([]);
+      setMaterialPlanItems([]);
       setAvailableMaterials([]);
     } finally {
       setIsMaterialsLoading(false);
@@ -777,6 +780,7 @@ export default function JobOrdersRepair() {
     }
 
     setMaterialUsages([]);
+    setMaterialPlanItems([]);
     setAvailableMaterials([]);
     setMaterialForm({
       inventory_item_id: "",
@@ -784,6 +788,24 @@ export default function JobOrdersRepair() {
       notes: "",
     });
   }, [isViewModalOpen, viewOrder?.database_id]);
+
+  useEffect(() => {
+    if (!isViewModalOpen || !viewOrder) return;
+    if (materialForm.inventory_item_id) return;
+    if (materialPlanItems.length === 0) return;
+
+    const suggestedPlan = materialPlanItems.find((item) => item.remaining_quantity > 0) ?? materialPlanItems[0];
+    const suggestedQuantity = Math.max(
+      1,
+      Math.ceil(suggestedPlan.remaining_quantity > 0 ? suggestedPlan.remaining_quantity : suggestedPlan.planned_quantity),
+    );
+
+    setMaterialForm((prev) => ({
+      ...prev,
+      inventory_item_id: String(suggestedPlan.inventory_item_id),
+      quantity_used: prev.quantity_used || String(suggestedQuantity),
+    }));
+  }, [isViewModalOpen, materialForm.inventory_item_id, materialPlanItems, viewOrder]);
 
   const parsePositiveWholeQuantity = (rawValue: string): number | null => {
     const trimmed = String(rawValue ?? "").trim();
@@ -2937,6 +2959,53 @@ export default function JobOrdersRepair() {
                   </div>
 
                   <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-3">
+                    {materialPlanItems.length > 0 && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-2">
+                          Planned From Templates
+                        </p>
+                        <div className="space-y-2">
+                          {materialPlanItems.map((planItem) => {
+                            const remaining = Number(planItem.remaining_quantity ?? 0);
+                            const suggestedQty = Math.max(
+                              1,
+                              Math.ceil(remaining > 0 ? remaining : Number(planItem.planned_quantity ?? 1)),
+                            );
+
+                            return (
+                              <div
+                                key={planItem.id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-100 bg-white px-2 py-2 dark:border-blue-900 dark:bg-gray-900"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {planItem.inventory_item?.name || `Material #${planItem.inventory_item_id}`}
+                                    {planItem.is_critical ? " (Critical)" : ""}
+                                  </p>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                                    Planned: {planItem.planned_quantity} • Logged: {planItem.actual_quantity} • Remaining: {planItem.remaining_quantity}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setMaterialForm((prev) => ({
+                                      ...prev,
+                                      inventory_item_id: String(planItem.inventory_item_id),
+                                      quantity_used: String(suggestedQty),
+                                    }))
+                                  }
+                                  className="rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                                >
+                                  Use Plan
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                       <select
                         title="Select material"

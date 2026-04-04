@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\RepairRequest;
+use App\Models\RepairMaterialPlanItem;
 use App\Models\RepairMaterialUsage;
 use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
@@ -275,6 +276,8 @@ class RepairWorkflowController extends Controller
     public function validateMaterialStart($id, RepairMaterialPlanningService $planner)
     {
         $repair = $this->resolveRepairForMaterialValidation((int) $id);
+        $this->ensureRepairMaterialPlanItems($repair);
+        $repair->load('materialPlanItems');
         $result = $planner->validateStartReadiness($repair);
 
         if ($result['readiness_state'] === 'blocked') {
@@ -286,7 +289,9 @@ class RepairWorkflowController extends Controller
 
     public function validateMaterialCompletion($id, RepairMaterialPlanningService $planner)
     {
-        $repair = $this->resolveRepairForMaterialValidation((int) $id)->load('materialPlanItems');
+        $repair = $this->resolveRepairForMaterialValidation((int) $id);
+        $this->ensureRepairMaterialPlanItems($repair);
+        $repair->load('materialPlanItems');
         $result = $planner->validateCompletionReadiness($repair);
 
         if ($result['readiness_state'] !== 'ready') {
@@ -1719,12 +1724,22 @@ class RepairWorkflowController extends Controller
                     ->firstOrFail();
 
                 $materialUsageExists = $repairRequest->materialUsages()->exists();
-                if (!$materialUsageExists && !$noMaterialsUsedConfirmed) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
-                        'requires_material_confirmation' => true,
-                    ], 422);
+                if (!$materialUsageExists) {
+                    if ($this->repairHasConfiguredMaterialTemplates($repairRequest)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This repair has configured material templates. Log the material usage before marking it as completed.',
+                            'requires_material_logging' => true,
+                        ], 422);
+                    }
+
+                    if (!$noMaterialsUsedConfirmed) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
+                            'requires_material_confirmation' => true,
+                        ], 422);
+                    }
                 }
 
                 // Shop owner can mark any repair for their shop as completed
@@ -1765,12 +1780,22 @@ class RepairWorkflowController extends Controller
                 ->firstOrFail();
 
             $materialUsageExists = $repairRequest->materialUsages()->exists();
-            if (!$materialUsageExists && !$noMaterialsUsedConfirmed) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
-                    'requires_material_confirmation' => true,
-                ], 422);
+            if (!$materialUsageExists) {
+                if ($this->repairHasConfiguredMaterialTemplates($repairRequest)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This repair has configured material templates. Log the material usage before marking it as completed.',
+                        'requires_material_logging' => true,
+                    ], 422);
+                }
+
+                if (!$noMaterialsUsedConfirmed) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
+                        'requires_material_confirmation' => true,
+                    ], 422);
+                }
             }
 
             DB::beginTransaction();
@@ -3296,6 +3321,8 @@ class RepairWorkflowController extends Controller
                 ])
                 ->firstOrFail();
 
+            $this->ensureRepairMaterialPlanItems($repairRequest);
+
             if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id && !$user->hasRole('Manager')) {
                 return response()->json([
                     'success' => false,
@@ -3322,12 +3349,39 @@ class RepairWorkflowController extends Controller
                 ]);
             })->values();
 
+            $planItems = RepairMaterialPlanItem::query()
+                ->where('repair_request_id', $repairRequest->id)
+                ->with(['inventoryItem:id,name,sku,available_quantity,unit'])
+                ->orderByDesc('is_critical')
+                ->orderBy('inventory_item_id')
+                ->get()
+                ->map(function (RepairMaterialPlanItem $planItem) {
+                    $planned = round((float) $planItem->planned_quantity, 2);
+                    $actual = round((float) $planItem->actual_quantity, 2);
+
+                    return [
+                        'id' => (int) $planItem->id,
+                        'repair_request_id' => (int) $planItem->repair_request_id,
+                        'inventory_item_id' => (int) $planItem->inventory_item_id,
+                        'planned_quantity' => $planned,
+                        'actual_quantity' => $actual,
+                        'remaining_quantity' => round(max($planned - $actual, 0), 2),
+                        'is_critical' => (bool) $planItem->is_critical,
+                        'tolerance_percent' => round((float) $planItem->tolerance_percent, 2),
+                        'variance_status' => (string) $planItem->variance_status,
+                        'variance_note' => $planItem->variance_note,
+                        'inventory_item' => $planItem->inventoryItem,
+                    ];
+                })
+                ->values();
+
             return response()->json([
                 'success' => true,
                 'data' => [
                     'repair_id' => $repairRequest->id,
                     'repair_status' => $repairRequest->status,
                     'usages' => $usageEntries,
+                    'plan_items' => $planItems,
                     'materials' => $materials,
                     'summary' => $pricingTotals,
                 ],
@@ -3365,6 +3419,8 @@ class RepairWorkflowController extends Controller
                 ->where('id', $id)
                 ->where('shop_owner_id', $user->shop_owner_id)
                 ->firstOrFail();
+
+            $this->ensureRepairMaterialPlanItems($repairRequest);
 
             if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id) {
                 return response()->json([
@@ -3465,6 +3521,17 @@ class RepairWorkflowController extends Controller
                     'used_at' => now(),
                     'stock_movement_id' => $movement->id,
                 ]);
+
+                $planItem = RepairMaterialPlanItem::query()
+                    ->where('repair_request_id', $repairRequest->id)
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($planItem) {
+                    $planItem->actual_quantity = round((float) $planItem->actual_quantity + (float) $quantityUsed, 2);
+                    $planItem->save();
+                }
 
                 $remainingQuantity = (int) $inventoryItem->available_quantity;
                 $reorderLevel = max(0, (int) ($inventoryItem->reorder_level ?? 0));
@@ -3579,10 +3646,12 @@ class RepairWorkflowController extends Controller
                 $message .= ' ' . implode(' ', array_values(array_unique($warnings)));
             }
 
+            $usagePayload = $usage ? $usage->load(['inventoryItem', 'user']) : null;
+
             return response()->json([
                 'success' => true,
                 'message' => $message,
-                'data' => $usage->load(['inventoryItem', 'user']),
+                'data' => $usagePayload,
                 'meta' => [
                     'stock_status' => $stockStatus,
                     'remaining_quantity' => $remainingQuantity,
@@ -3648,6 +3717,17 @@ class RepairWorkflowController extends Controller
                         'reference_type' => 'repair_request',
                         'reference_id' => $repairRequest->id,
                     ]);
+                }
+
+                $planItem = RepairMaterialPlanItem::query()
+                    ->where('repair_request_id', $repairRequest->id)
+                    ->where('inventory_item_id', $usage->inventory_item_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($planItem) {
+                    $planItem->actual_quantity = round(max((float) $planItem->actual_quantity - (float) $usage->quantity_used, 0), 2);
+                    $planItem->save();
                 }
 
                 $usage->delete();
@@ -3892,6 +3972,107 @@ class RepairWorkflowController extends Controller
         $policy = strtolower((string) ($repairRequest->payment_policy_snapshot ?: $repairRequest->payment_policy ?: 'deposit_50'));
 
         return $policy === 'deposit_50' && $status === 'partially_paid';
+    }
+
+    private function ensureRepairMaterialPlanItems(RepairRequest $repairRequest): void
+    {
+        $templatePlan = $this->buildTemplateMaterialPlan($repairRequest);
+        if (empty($templatePlan)) {
+            return;
+        }
+
+        $existing = RepairMaterialPlanItem::query()
+            ->where('repair_request_id', $repairRequest->id)
+            ->get()
+            ->keyBy('inventory_item_id');
+
+        foreach ($templatePlan as $inventoryItemId => $line) {
+            /** @var RepairMaterialPlanItem|null $existingLine */
+            $existingLine = $existing->get((int) $inventoryItemId);
+
+            if ($existingLine) {
+                $existingLine->planned_quantity = (float) $line['planned_quantity'];
+                $existingLine->is_critical = (bool) $line['is_critical'];
+                $existingLine->tolerance_percent = (float) $line['tolerance_percent'];
+                $existingLine->save();
+                continue;
+            }
+
+            RepairMaterialPlanItem::query()->create([
+                'repair_request_id' => $repairRequest->id,
+                'inventory_item_id' => (int) $inventoryItemId,
+                'planned_quantity' => (float) $line['planned_quantity'],
+                'actual_quantity' => 0,
+                'is_critical' => (bool) $line['is_critical'],
+                'tolerance_percent' => (float) $line['tolerance_percent'],
+            ]);
+        }
+    }
+
+    private function buildTemplateMaterialPlan(RepairRequest $repairRequest): array
+    {
+        $repairRequest->loadMissing([
+            'repairPackage.materialTemplateItems:id,inventory_item_id,default_quantity,is_critical,tolerance_percent',
+            'services.materialTemplateItems:id,inventory_item_id,default_quantity,is_critical,tolerance_percent',
+        ]);
+
+        $templateRows = collect();
+
+        if ($repairRequest->repairPackage) {
+            $templateRows = $templateRows->concat($repairRequest->repairPackage->materialTemplateItems);
+        }
+
+        foreach ($repairRequest->services as $service) {
+            $templateRows = $templateRows->concat($service->materialTemplateItems);
+        }
+
+        $grouped = [];
+        foreach ($templateRows as $row) {
+            $inventoryItemId = (int) ($row->inventory_item_id ?? 0);
+            if ($inventoryItemId <= 0) {
+                continue;
+            }
+
+            if (!isset($grouped[$inventoryItemId])) {
+                $grouped[$inventoryItemId] = [
+                    'planned_quantity' => 0.0,
+                    'is_critical' => false,
+                    'tolerance_percent' => 0.0,
+                ];
+            }
+
+            $grouped[$inventoryItemId]['planned_quantity'] += (float) ($row->default_quantity ?? 0);
+            $grouped[$inventoryItemId]['is_critical'] =
+                $grouped[$inventoryItemId]['is_critical'] || (bool) ($row->is_critical ?? false);
+
+            $rowTolerance = (float) ($row->tolerance_percent ?? 20);
+            $grouped[$inventoryItemId]['tolerance_percent'] = max(
+                (float) $grouped[$inventoryItemId]['tolerance_percent'],
+                $rowTolerance
+            );
+        }
+
+        foreach ($grouped as $inventoryItemId => $line) {
+            $grouped[$inventoryItemId]['planned_quantity'] = round(max((float) $line['planned_quantity'], 0), 2);
+            $grouped[$inventoryItemId]['tolerance_percent'] = round(max((float) $line['tolerance_percent'], 0), 2);
+        }
+
+        return array_filter($grouped, fn ($line) => (float) $line['planned_quantity'] > 0);
+    }
+
+    private function repairHasConfiguredMaterialTemplates(RepairRequest $repairRequest): bool
+    {
+        $repairRequest->loadMissing([
+            'repairPackage.materialTemplateItems:id,template_id,template_type',
+            'services.materialTemplateItems:id,template_id,template_type',
+        ]);
+
+        $packageTemplateCount = (int) ($repairRequest->repairPackage?->materialTemplateItems?->count() ?? 0);
+        $serviceTemplateCount = (int) $repairRequest->services->sum(
+            fn ($service) => (int) $service->materialTemplateItems->count()
+        );
+
+        return ($packageTemplateCount + $serviceTemplateCount) > 0;
     }
 
     private function generateStockRequestNumber(): string
