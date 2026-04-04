@@ -73,7 +73,31 @@ class RepairServiceController extends Controller
             });
         }
 
-        $services = $query->orderBy('created_at', 'desc')->get();
+        $services = $query
+            ->with(['materialTemplateItems.inventoryItem:id,name'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function (RepairService $service) {
+                $payload = $service->toArray();
+
+                $payload['material_templates'] = $service->materialTemplateItems
+                    ->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'inventory_item_id' => (int) $item->inventory_item_id,
+                            'inventory_item_name' => $item->inventoryItem?->name,
+                            'default_quantity' => (float) $item->default_quantity,
+                            'is_critical' => (bool) $item->is_critical,
+                            'tolerance_percent' => (float) ($item->tolerance_percent ?? 20),
+                        ];
+                    })
+                    ->values();
+
+                unset($payload['material_template_items']);
+
+                return $payload;
+            })
+            ->values();
 
         $shopPayload = null;
         if ($request->filled('shop_id')) {

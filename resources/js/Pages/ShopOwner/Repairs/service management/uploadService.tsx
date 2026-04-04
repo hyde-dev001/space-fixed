@@ -13,6 +13,22 @@ type Service = {
   duration: string;
   description: string;
   status: "Active" | "Inactive" | "Pending";
+  material_templates?: MaterialTemplateLine[];
+};
+
+type MaterialTemplateLine = {
+  id?: number;
+  inventory_item_id: number;
+  inventory_item_name?: string | null;
+  default_quantity: number;
+  is_critical: boolean;
+  tolerance_percent: number;
+};
+
+type RepairMaterialOption = {
+  id: number;
+  name: string;
+  available_quantity: number;
 };
 
 type MetricCardProps = {
@@ -133,6 +149,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 export default function UploadService() {
   const [services, setServices] = useState<Service[]>([]);
+  const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
 
@@ -151,6 +168,12 @@ export default function UploadService() {
     duration: "",
     description: "",
     status: "Active" as "Active" | "Inactive" | "Pending",
+    material_templates: [] as Array<{
+      inventory_item_id: number;
+      default_quantity: string;
+      is_critical: boolean;
+      tolerance_percent: string;
+    }>,
   });
 
   // Fetch services from backend
@@ -178,9 +201,26 @@ export default function UploadService() {
     }
   };
 
+  const fetchRepairMaterials = async () => {
+    try {
+      const response = await axios.get('/api/shop-owner/repair-materials', {
+        params: { category: 'repair_materials' },
+      });
+
+      if (response.data?.success) {
+        setRepairMaterials(response.data.data || []);
+      } else {
+        setRepairMaterials([]);
+      }
+    } catch {
+      setRepairMaterials([]);
+    }
+  };
+
   // Load services on component mount
   useEffect(() => {
     fetchServices();
+    fetchRepairMaterials();
   }, []);
 
   const handleAddService = async () => {
@@ -204,6 +244,12 @@ export default function UploadService() {
         duration: formData.duration,
         description: formData.description,
         status: 'Active', // New services are always Active, no approval needed
+        material_templates: formData.material_templates.map((line) => ({
+          inventory_item_id: Number(line.inventory_item_id),
+          default_quantity: Number(line.default_quantity),
+          is_critical: Boolean(line.is_critical),
+          tolerance_percent: Number(line.tolerance_percent || '20'),
+        })),
       });
 
       if (response.data.success) {
@@ -249,6 +295,12 @@ export default function UploadService() {
         duration: formData.duration,
         description: formData.description,
         status: formData.status,
+        material_templates: formData.material_templates.map((line) => ({
+          inventory_item_id: Number(line.inventory_item_id),
+          default_quantity: Number(line.default_quantity),
+          is_critical: Boolean(line.is_critical),
+          tolerance_percent: Number(line.tolerance_percent || '20'),
+        })),
       });
 
       if (response.data.success) {
@@ -320,6 +372,12 @@ export default function UploadService() {
       duration: service.duration,
       description: service.description,
       status: service.status,
+      material_templates: (service.material_templates || []).map((line) => ({
+        inventory_item_id: Number(line.inventory_item_id),
+        default_quantity: String(line.default_quantity),
+        is_critical: Boolean(line.is_critical),
+        tolerance_percent: String(line.tolerance_percent ?? 20),
+      })),
     });
     setIsEditModalOpen(true);
   };
@@ -332,7 +390,43 @@ export default function UploadService() {
       duration: "",
       description: "",
       status: "Active",
+      material_templates: [],
     });
+  };
+
+  const addMaterialTemplateLine = () => {
+    setFormData((prev) => ({
+      ...prev,
+      material_templates: [
+        ...prev.material_templates,
+        {
+          inventory_item_id: 0,
+          default_quantity: '1',
+          is_critical: false,
+          tolerance_percent: '20',
+        },
+      ],
+    }));
+  };
+
+  const updateMaterialTemplateLine = (
+    index: number,
+    field: 'inventory_item_id' | 'default_quantity' | 'is_critical' | 'tolerance_percent',
+    value: number | string | boolean,
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      material_templates: prev.material_templates.map((line, lineIndex) => (
+        lineIndex === index ? { ...line, [field]: value } : line
+      )),
+    }));
+  };
+
+  const removeMaterialTemplateLine = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      material_templates: prev.material_templates.filter((_, lineIndex) => lineIndex !== index),
+    }));
   };
 
   const filteredServices = services.filter((service) => {
@@ -449,6 +543,7 @@ export default function UploadService() {
                     Category
                   </label>
                   <select
+                    title="Filter by category"
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -467,6 +562,7 @@ export default function UploadService() {
                     Status
                   </label>
                   <select
+                    title="Filter by status"
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -631,6 +727,7 @@ export default function UploadService() {
                     Category *
                   </label>
                   <select
+                    title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -648,6 +745,7 @@ export default function UploadService() {
                     Status *
                   </label>
                   <select
+                    title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -698,6 +796,104 @@ export default function UploadService() {
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter service description"
                 />
+              </div>
+
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Optional)</h3>
+                  <button
+                    type="button"
+                    onClick={addMaterialTemplateLine}
+                    className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    + Add Material
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Attach default materials for this service using existing repair-material inventory items.
+                </p>
+
+                {formData.material_templates.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+                    No template lines yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.material_templates.map((line, index) => (
+                      <div key={`add-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                        <div className="md:col-span-5">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
+                          <select
+                            title="Select inventory material"
+                            value={line.inventory_item_id || ""}
+                            onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                          >
+                            <option value="">Select material</option>
+                            {repairMaterials.map((material) => (
+                              <option key={material.id} value={material.id}>
+                                {material.name} (Available: {material.available_quantity})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Default Qty</label>
+                          <input
+                            type="number"
+                            title="Default quantity"
+                            placeholder="1.00"
+                            min="0.01"
+                            step="0.01"
+                            value={line.default_quantity}
+                            onChange={(e) => updateMaterialTemplateLine(index, 'default_quantity', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Tolerance %</label>
+                          <input
+                            type="number"
+                            title="Tolerance percent"
+                            placeholder="20"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={line.tolerance_percent}
+                            onChange={(e) => updateMaterialTemplateLine(index, 'tolerance_percent', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Critical</label>
+                          <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={line.is_critical}
+                              onChange={(e) => updateMaterialTemplateLine(index, 'is_critical', e.target.checked)}
+                              className="h-4 w-4"
+                            />
+                            Yes
+                          </label>
+                        </div>
+
+                        <div className="md:col-span-1 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => removeMaterialTemplateLine(index)}
+                            className="px-2.5 py-2 text-xs rounded-md border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -750,6 +946,7 @@ export default function UploadService() {
                     Category *
                   </label>
                   <select
+                    title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -767,6 +964,7 @@ export default function UploadService() {
                     Status *
                   </label>
                   <select
+                    title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -817,6 +1015,104 @@ export default function UploadService() {
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter service description"
                 />
+              </div>
+
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Optional)</h3>
+                  <button
+                    type="button"
+                    onClick={addMaterialTemplateLine}
+                    className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    + Add Material
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Attach default materials for this service using existing repair-material inventory items.
+                </p>
+
+                {formData.material_templates.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+                    No template lines yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.material_templates.map((line, index) => (
+                      <div key={`edit-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                        <div className="md:col-span-5">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
+                          <select
+                            title="Select inventory material"
+                            value={line.inventory_item_id || ""}
+                            onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                          >
+                            <option value="">Select material</option>
+                            {repairMaterials.map((material) => (
+                              <option key={material.id} value={material.id}>
+                                {material.name} (Available: {material.available_quantity})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Default Qty</label>
+                          <input
+                            type="number"
+                            title="Default quantity"
+                            placeholder="1.00"
+                            min="0.01"
+                            step="0.01"
+                            value={line.default_quantity}
+                            onChange={(e) => updateMaterialTemplateLine(index, 'default_quantity', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Tolerance %</label>
+                          <input
+                            type="number"
+                            title="Tolerance percent"
+                            placeholder="20"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={line.tolerance_percent}
+                            onChange={(e) => updateMaterialTemplateLine(index, 'tolerance_percent', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Critical</label>
+                          <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={line.is_critical}
+                              onChange={(e) => updateMaterialTemplateLine(index, 'is_critical', e.target.checked)}
+                              className="h-4 w-4"
+                            />
+                            Yes
+                          </label>
+                        </div>
+
+                        <div className="md:col-span-1 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => removeMaterialTemplateLine(index)}
+                            className="px-2.5 py-2 text-xs rounded-md border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
