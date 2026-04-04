@@ -609,8 +609,8 @@ class RepairerWorkflowTest extends TestCase
         $usageResponse->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.plan_items.0.inventory_item_id', $material->id)
-            ->assertJsonPath('data.plan_items.0.planned_quantity', 2.0)
-            ->assertJsonPath('data.plan_items.0.actual_quantity', 0.0);
+            ->assertJsonPath('data.plan_items.0.planned_quantity', 2)
+            ->assertJsonPath('data.plan_items.0.actual_quantity', 0);
 
         $logResponse = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repairRequest->id}/materials",

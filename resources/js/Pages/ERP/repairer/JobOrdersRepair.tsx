@@ -2949,21 +2949,21 @@ export default function JobOrdersRepair() {
                   </div>
                 )}
 
-                {viewOrder.status === "in-progress" && (
+                {canTrackMaterials(viewOrder.status) && (
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Materials Used</p>
-                    {!canTrackMaterials(viewOrder.status) && (
-                      <span className="text-xs text-amber-600 dark:text-amber-400">Logging enabled only during In Progress / Awaiting Parts</span>
-                    )}
                   </div>
 
                   <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-3">
-                    {materialPlanItems.length > 0 && (
-                      <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-2">
-                          Planned From Templates
-                        </p>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-2">
+                        Planned From Templates
+                      </p>
+
+                      {isMaterialsLoading ? (
+                        <p className="text-xs text-blue-700 dark:text-blue-300">Loading material plan...</p>
+                      ) : materialPlanItems.length > 0 ? (
                         <div className="space-y-2">
                           {materialPlanItems.map((planItem) => {
                             const remaining = Number(planItem.remaining_quantity ?? 0);
@@ -3003,8 +3003,12 @@ export default function JobOrdersRepair() {
                             );
                           })}
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          No template plan found for this repair yet. Add material templates to the selected package/services, then reopen this modal.
+                        </p>
+                      )}
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                       <select

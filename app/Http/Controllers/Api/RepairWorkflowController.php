@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use App\Models\RepairRequest;
 use App\Models\RepairMaterialPlanItem;
 use App\Models\RepairMaterialUsage;
+use App\Models\RepairPackage;
+use App\Models\RepairService;
 use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
 use App\Models\User;
@@ -4012,8 +4014,9 @@ class RepairWorkflowController extends Controller
     private function buildTemplateMaterialPlan(RepairRequest $repairRequest): array
     {
         $repairRequest->loadMissing([
-            'repairPackage.materialTemplateItems:id,inventory_item_id,default_quantity,is_critical,tolerance_percent',
-            'services.materialTemplateItems:id,inventory_item_id,default_quantity,is_critical,tolerance_percent',
+            'repairPackage.materialTemplateItems',
+            'repairPackage.services.materialTemplateItems',
+            'services.materialTemplateItems',
         ]);
 
         $templateRows = collect();
@@ -4022,8 +4025,60 @@ class RepairWorkflowController extends Controller
             $templateRows = $templateRows->concat($repairRequest->repairPackage->materialTemplateItems);
         }
 
-        foreach ($repairRequest->services as $service) {
-            $templateRows = $templateRows->concat($service->materialTemplateItems);
+        if ($repairRequest->services->isNotEmpty()) {
+            foreach ($repairRequest->services as $service) {
+                $templateRows = $templateRows->concat($service->materialTemplateItems);
+            }
+        } elseif ($repairRequest->repairPackage) {
+            foreach ($repairRequest->repairPackage->services as $packageService) {
+                $templateRows = $templateRows->concat($packageService->materialTemplateItems);
+            }
+        }
+
+        // Fallback for records where relationships are missing but service snapshots still exist.
+        if ($templateRows->isEmpty()) {
+            $snapshotRows = array_merge(
+                (array) ($repairRequest->included_services_snapshot ?? []),
+                (array) ($repairRequest->add_on_services_snapshot ?? [])
+            );
+
+            $snapshotServiceIds = collect($snapshotRows)
+                ->map(fn ($row) => is_array($row) ? (int) ($row['id'] ?? 0) : 0)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values();
+
+            if ($snapshotServiceIds->isNotEmpty()) {
+                $snapshotServices = RepairService::query()
+                    ->whereIn('id', $snapshotServiceIds)
+                    ->where('shop_owner_id', $repairRequest->shop_owner_id)
+                    ->with(['materialTemplateItems'])
+                    ->get();
+
+                foreach ($snapshotServices as $snapshotService) {
+                    $templateRows = $templateRows->concat($snapshotService->materialTemplateItems);
+                }
+            }
+        }
+
+        // Fallback for archived packages that are no longer returned by the default relation.
+        if ($templateRows->isEmpty() && !empty($repairRequest->repair_package_id) && !$repairRequest->repairPackage) {
+            $archivedPackage = RepairPackage::withTrashed()
+                ->with([
+                    'materialTemplateItems',
+                    'services.materialTemplateItems',
+                ])
+                ->find((int) $repairRequest->repair_package_id);
+
+            if ($archivedPackage) {
+                $templateRows = $templateRows->concat($archivedPackage->materialTemplateItems);
+
+                if ($repairRequest->services->isEmpty()) {
+                    foreach ($archivedPackage->services as $archivedPackageService) {
+                        $templateRows = $templateRows->concat($archivedPackageService->materialTemplateItems);
+                    }
+                }
+            }
         }
 
         $grouped = [];
