@@ -6,6 +6,8 @@ use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class RepairPackageSeeder extends Seeder
 {
@@ -15,6 +17,7 @@ class RepairPackageSeeder extends Seeder
     public function run(): void
     {
         $eligibleRegistrationTypes = ['individual', 'company', 'registered'];
+        $templateTableExists = Schema::hasTable('repair_material_template_items');
 
         $packageBlueprints = [
             [
@@ -43,9 +46,15 @@ class RepairPackageSeeder extends Seeder
             ->get(['id']);
 
         foreach ($eligibleShops as $shop) {
-            $services = RepairService::query()
+            $servicesQuery = RepairService::query()
                 ->where('shop_owner_id', $shop->id)
-                ->where('status', 'Active')
+                ->where('status', 'Active');
+
+            if ($templateTableExists) {
+                $servicesQuery->with(['materialTemplateItems']);
+            }
+
+            $services = $servicesQuery
                 ->get()
                 ->keyBy('name');
 
@@ -74,9 +83,57 @@ class RepairPackageSeeder extends Seeder
                 );
 
                 $package->syncIncludedServices($includedServices->pluck('id')->all());
+                if ($templateTableExists) {
+                    $this->syncPackageMaterialTemplates($package, $includedServices);
+                }
             }
         }
 
         $this->command?->info('Repair packages seeded for repair/both shops across individual/company/registered registration types.');
+        if (!$templateTableExists) {
+            $this->command?->warn('Skipped package material template linking because repair_material_template_items table does not exist yet.');
+        }
+    }
+
+    private function syncPackageMaterialTemplates(RepairPackage $package, Collection $includedServices): void
+    {
+        $package->materialTemplateItems()->delete();
+
+        $aggregatedLines = [];
+
+        foreach ($includedServices as $service) {
+            foreach ($service->materialTemplateItems as $line) {
+                $inventoryItemId = (int) $line->inventory_item_id;
+
+                if (!isset($aggregatedLines[$inventoryItemId])) {
+                    $aggregatedLines[$inventoryItemId] = [
+                        'default_quantity' => 0.0,
+                        'is_critical' => false,
+                        'tolerance_percent' => 0.0,
+                    ];
+                }
+
+                $aggregatedLines[$inventoryItemId]['default_quantity'] += (float) $line->default_quantity;
+                $aggregatedLines[$inventoryItemId]['is_critical'] =
+                    $aggregatedLines[$inventoryItemId]['is_critical'] || (bool) $line->is_critical;
+                $aggregatedLines[$inventoryItemId]['tolerance_percent'] = max(
+                    (float) $aggregatedLines[$inventoryItemId]['tolerance_percent'],
+                    (float) $line->tolerance_percent
+                );
+            }
+        }
+
+        foreach ($aggregatedLines as $inventoryItemId => $payload) {
+            $package->materialTemplateItems()->create([
+                'shop_owner_id' => $package->shop_owner_id,
+                'inventory_item_id' => $inventoryItemId,
+                'template_type' => 'repair_package',
+                'template_id' => $package->id,
+                'default_quantity' => $payload['default_quantity'],
+                'is_critical' => $payload['is_critical'],
+                'tolerance_percent' => $payload['tolerance_percent'] > 0 ? $payload['tolerance_percent'] : 20,
+                'created_by' => null,
+            ]);
+        }
     }
 }

@@ -18,8 +18,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             ShopOwnerSeeder::class,
             RolesAndPermissionsSeeder::class,
-            RepairServiceSeeder::class,
             RepairMaterialSeeder::class,
+            RepairServiceSeeder::class,
             RepairPackageSeeder::class,
             EmployeeSeeder::class,
             PayrollMasterDataSeeder::class,
