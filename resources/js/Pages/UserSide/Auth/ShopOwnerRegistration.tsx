@@ -652,49 +652,78 @@ export default function ShopOwnerRegistration() {
   const additionalUploadCount = additionalDocuments.filter((doc) => !!doc.file).length;
   const hasAdditionalDocuments = additionalDocuments.length > 0;
   const hasReachedAdditionalLimit = additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS;
+  const registrationSteps = [
+    { id: 1, label: 'Personal Info', shortLabel: 'Personal' },
+    { id: 2, label: 'Shop Info', shortLabel: 'Shop' },
+    { id: 3, label: 'Documents', shortLabel: 'Docs' },
+    { id: 4, label: 'Review & Submit', shortLabel: 'Review' },
+  ];
 
   return (
     <>
       <Head title="Shop Owner Registration" />
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <Navigation />
-        <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-28 pb-12 lg:pt-32">
+        <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
           {/* Header Section */}
-          <div className="text-center mb-12">
-            <h1 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-4 tracking-tight">
+          <div className="text-center mb-8 md:mb-10 lg:mb-12 px-1">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3 md:mb-4 tracking-tight leading-tight">
               Shop Owner Registration
             </h1>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto mb-2">
+            <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto mb-1.5 md:mb-2">
               Join our platform and reach more customers
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-xs sm:text-sm text-gray-500">
               Complete your registration to start selling products and services
             </p>
           </div>
 
           {/* Progress Indicator */}
-          <div className="mb-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between">
-              {[1, 2, 3, 4].map((step, index) => (
-                <div key={step} className="flex items-center">
-                  <div className="flex items-center space-x-2">
-                    <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold ${
-                      currentStep >= step ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'
+          <div className="mb-6 md:mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-5 lg:p-6">
+            <div className="grid grid-cols-2 gap-2 md:gap-3 lg:hidden">
+              {registrationSteps.map((stepItem) => (
+                <div
+                  key={stepItem.id}
+                  className={`rounded-xl border px-3 py-2.5 ${
+                    currentStep >= stepItem.id
+                      ? 'border-blue-200 bg-blue-50'
+                      : 'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                      currentStep >= stepItem.id ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'
                     }`}>
-                      {step}
+                      {stepItem.id}
                     </div>
-                    <span className={`text-sm font-medium ${
-                      currentStep >= step ? 'text-gray-900' : 'text-gray-500'
+                    <span className={`text-xs font-semibold leading-tight ${
+                      currentStep >= stepItem.id ? 'text-gray-900' : 'text-gray-500'
                     }`}>
-                      {step === 1 && 'Personal Info'}
-                      {step === 2 && 'Shop Info'}
-                      {step === 3 && 'Documents'}
-                      {step === 4 && 'Review & Submit'}
+                      {stepItem.shortLabel}
                     </span>
                   </div>
-                  {index < 3 && (
-                    <div className={`flex-1 mx-4 h-1 rounded-full ${
-                      currentStep > step ? 'bg-blue-600' : 'bg-gray-200'
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden lg:flex lg:items-center lg:justify-between">
+              {registrationSteps.map((stepItem, index) => (
+                <div key={stepItem.id} className="flex items-center">
+                  <div className="flex items-center space-x-2">
+                    <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold ${
+                      currentStep >= stepItem.id ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'
+                    }`}>
+                      {stepItem.id}
+                    </div>
+                    <span className={`text-sm font-medium ${
+                      currentStep >= stepItem.id ? 'text-gray-900' : 'text-gray-500'
+                    }`}>
+                      {stepItem.label}
+                    </span>
+                  </div>
+                  {index < registrationSteps.length - 1 && (
+                    <div className={`w-14 xl:w-20 mx-4 h-1 rounded-full ${
+                      currentStep > stepItem.id ? 'bg-blue-600' : 'bg-gray-200'
                     }`}></div>
                   )}
                 </div>
@@ -766,7 +795,7 @@ export default function ShopOwnerRegistration() {
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
+                    className="w-full sm:w-auto px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
                   >
                     Next
                   </button>
@@ -913,13 +942,13 @@ export default function ShopOwnerRegistration() {
                       <p className="mb-2 text-sm font-medium text-gray-700">
                         Shop Location <span className="font-normal text-gray-500">(drag pin or click map to adjust)</span>
                       </p>
-                      <div ref={mapRef} className="h-72 w-full rounded-xl border border-gray-200 overflow-hidden z-0" />
+                      <div ref={mapRef} className="h-64 sm:h-72 w-full rounded-xl border border-gray-200 overflow-hidden z-0" />
                       <div className="mt-3 flex justify-end">
                         <button
                           type="button"
                           onClick={handleSaveAddress}
                           disabled={savingAddress}
-                          className="px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 whitespace-nowrap rounded"
+                          className="w-full sm:w-auto px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 whitespace-nowrap rounded"
                         >
                           {savingAddress ? 'Saving...' : 'Save Location'}
                         </button>
@@ -931,11 +960,11 @@ export default function ShopOwnerRegistration() {
                     {errors.shop_longitude && <p className="text-sm text-red-600">{errors.shop_longitude}</p>}
                   </div>
                 </div>
-                <div className="flex justify-between pt-4">
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between pt-4">
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
+                    className="w-full sm:w-auto px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
                   >
                     Previous
                   </button>
@@ -943,7 +972,7 @@ export default function ShopOwnerRegistration() {
                     type="button"
                     onClick={handleNext}
                     disabled={!caviteLocationState.allowed}
-                    className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
+                    className="w-full sm:w-auto px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
                   >
                     Next
                   </button>
@@ -1213,18 +1242,18 @@ export default function ShopOwnerRegistration() {
                     )}
                   </div>
                 </div>
-                <div className="flex justify-between pt-4">
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between pt-4">
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
+                    className="w-full sm:w-auto px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
                   >
                     Previous
                   </button>
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
+                    className="w-full sm:w-auto px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors"
                   >
                     Next
                   </button>
@@ -1235,8 +1264,8 @@ export default function ShopOwnerRegistration() {
             {currentStep === 4 && (
               <>
                 {/* Review Timeline */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                  <div className="flex gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 md:p-6">
+                  <div className="flex flex-col sm:flex-row gap-4">
                     <div className="flex-shrink-0">
                       <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
@@ -1254,12 +1283,12 @@ export default function ShopOwnerRegistration() {
                 </div>
 
                 {/* Submit Button Section */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-                  <div className="flex justify-between items-center">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-8">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
                     <button
                       type="button"
                       onClick={handlePrev}
-                      className="px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
+                      className="w-full lg:w-auto px-6 py-3 bg-gray-200 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-300 transition-colors"
                     >
                       Previous
                     </button>
@@ -1278,7 +1307,7 @@ export default function ShopOwnerRegistration() {
                       type="submit"
                       onClick={handleSubmit}
                       disabled={isSubmitting || !caviteLocationState.allowed}
-                      className="px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                      className="w-full lg:w-auto px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Submit Registration
                     </button>
@@ -1300,7 +1329,7 @@ export default function ShopOwnerRegistration() {
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4">
               {/* Header Section */}
-              <div className="px-8 pt-8 pb-6 text-center">
+              <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-5 sm:pb-6 text-center">
                 <div className="flex justify-center mb-4">
                   <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center">
                     <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1308,10 +1337,10 @@ export default function ShopOwnerRegistration() {
                     </svg>
                   </div>
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                   Documents submitted successfully
                 </h2>
-                <p className="text-gray-600">
+                <p className="text-sm sm:text-base text-gray-600">
                   Your registration is now under review
                 </p>
               </div>
@@ -1320,7 +1349,7 @@ export default function ShopOwnerRegistration() {
               <div className="border-t border-gray-100"></div>
 
               {/* Content Section */}
-              <div className="px-8 py-6 space-y-6">
+              <div className="px-5 sm:px-8 py-5 sm:py-6 space-y-6">
                 {/* Review Info Block */}
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
                   <div className="flex items-center space-x-2">
@@ -1389,7 +1418,7 @@ export default function ShopOwnerRegistration() {
               </div>
 
               {/* Footer */}
-              <div className="border-t border-gray-100 px-8 py-6">
+              <div className="border-t border-gray-100 px-5 sm:px-8 py-5 sm:py-6">
                 <button
                   onClick={() => {
                     setShowSuccessModal(false);

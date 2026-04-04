@@ -8,16 +8,18 @@ interface BadgeCounts {
   userIconCount: number;
 }
 
+type InitialBadgeCounts = Partial<BadgeCounts>;
+
 /**
  * Custom hook to fetch and auto-refresh badge counts for navigation header
  * Polls every 2 seconds for real-time updates
  */
-export function useBadgeCounts(enabled: boolean = true): BadgeCounts {
+export function useBadgeCounts(enabled: boolean = true, initialCounts: InitialBadgeCounts = {}): BadgeCounts {
   const [counts, setCounts] = useState<BadgeCounts>({
-    orderStatusCount: 0,
-    repairStatusCount: 0,
-    chatIconCount: 0,
-    userIconCount: 0,
+    orderStatusCount: initialCounts.orderStatusCount ?? 0,
+    repairStatusCount: initialCounts.repairStatusCount ?? 0,
+    chatIconCount: initialCounts.chatIconCount ?? 0,
+    userIconCount: initialCounts.userIconCount ?? 0,
   });
 
   useEffect(() => {

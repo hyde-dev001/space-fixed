@@ -252,6 +252,16 @@ export default function RepairPackageManager({
     setIsAddModalOpen(true);
   };
 
+  const normalizeWholeQuantity = (value: unknown): string => {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return "1";
+    }
+
+    return String(Math.max(1, Math.ceil(numericValue)));
+  };
+
   const openEditModal = (pkg: RepairPackage) => {
     setSelectedPackage(pkg);
     setFormState({
@@ -264,7 +274,7 @@ export default function RepairPackageManager({
       service_ids: pkg.services.map((service) => service.id),
       material_templates: (pkg.material_templates || []).map((line) => ({
         inventory_item_id: line.inventory_item_id,
-        default_quantity: String(line.default_quantity),
+        default_quantity: normalizeWholeQuantity(line.default_quantity),
         is_critical: Boolean(line.is_critical),
         tolerance_percent: String(line.tolerance_percent ?? 20),
       })),
@@ -330,6 +340,10 @@ export default function RepairPackageManager({
       return "Select at least 2 services to form a package.";
     }
 
+    if (formState.material_templates.length < 1) {
+      return "At least one predefined material template is required for a package.";
+    }
+
     for (const line of formState.material_templates) {
       const defaultQuantity = Number(line.default_quantity);
       const tolerancePercent = Number(line.tolerance_percent || "20");
@@ -338,8 +352,8 @@ export default function RepairPackageManager({
         return "Each material template line must select an inventory material.";
       }
 
-      if (!Number.isFinite(defaultQuantity) || defaultQuantity <= 0) {
-        return "Material default quantity must be greater than zero.";
+      if (!Number.isFinite(defaultQuantity) || defaultQuantity < 1 || !Number.isInteger(defaultQuantity)) {
+        return "Material default quantity must be a whole number (1, 2, 3...).";
       }
 
       if (!Number.isFinite(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100) {
@@ -570,7 +584,7 @@ export default function RepairPackageManager({
 
             <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates *</h3>
                 <button
                   type="button"
                   onClick={addMaterialTemplateLine}
@@ -586,7 +600,7 @@ export default function RepairPackageManager({
 
               {formState.material_templates.length === 0 ? (
                 <div className="rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
-                  No template lines yet.
+                  At least one material template line is required.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -614,9 +628,9 @@ export default function RepairPackageManager({
                         <input
                           type="number"
                           title="Default quantity"
-                          placeholder="1.00"
-                          min="0.01"
-                          step="0.01"
+                          placeholder="1"
+                          min="1"
+                          step="1"
                           value={line.default_quantity}
                           onChange={(e) => updateMaterialTemplateLine(index, "default_quantity", e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"

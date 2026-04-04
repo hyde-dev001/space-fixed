@@ -103,6 +103,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<number, string>>({});
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [activeConversationReadId, setActiveConversationReadId] = useState<number | null>(null);
   
   const quickReactionList = ['❤️', '😂', '😍', '😮', '😢', '😡', '👍', '🎉'];
   
@@ -192,7 +193,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           if (existingConv) {
             console.log('Found existing conversation for shop owner:', existingConv);
             setSelectedConversation(existingConv);
-            fetchMessages(existingConv.id);
+            setActiveConversationReadId(existingConv.id);
+            fetchMessages(existingConv.id, false, true);
           } else {
             console.log('Creating new conversation for shop owner:', shopOwnerId);
             // Create new conversation
@@ -204,16 +206,18 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           if (foundConv) {
             console.log('Found initial conversation in list:', foundConv);
             setSelectedConversation(foundConv);
-            fetchMessages(foundConv.id);
+            setActiveConversationReadId(foundConv.id);
+            fetchMessages(foundConv.id, false, true);
           } else {
             console.log('Initial conversation not found, using it anyway');
-            fetchMessages(initialConversation.id);
+            setActiveConversationReadId(initialConversation.id);
+            fetchMessages(initialConversation.id, false, true);
           }
         } else if (sortedConversations.length > 0) {
           // Auto-select first conversation if no specific one was requested
           console.log('Auto-selecting first conversation:', sortedConversations[0]);
           setSelectedConversation(sortedConversations[0]);
-          fetchMessages(sortedConversations[0].id);
+          fetchMessages(sortedConversations[0].id, false, false);
         } else {
           console.log('No conversations available');
         }
@@ -234,14 +238,14 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     return () => clearInterval(conversationInterval);
   }, [activeFilter]);  // Re-fetch when filter changes
 
-  const fetchMessages = async (conversationId: number, silent: boolean = false) => {
+  const fetchMessages = async (conversationId: number, silent: boolean = false, markAsRead: boolean = false) => {
     if (!silent) {
       setIsMessagesLoading(true);
     }
 
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      const response = await fetch(`/api/customer/conversations/${conversationId}/messages`, {
+      const response = await fetch(`/api/customer/conversations/${conversationId}/messages?mark_read=${markAsRead ? '1' : '0'}`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -305,7 +309,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const fetchLastMessage = async (conversationId: number) => {
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      const response = await fetch(`/api/customer/conversations/${conversationId}/messages`, {
+      const response = await fetch(`/api/customer/conversations/${conversationId}/messages?mark_read=0`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -525,7 +529,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
   const handleConversationClick = (conversation: Conversation) => {
     setSelectedConversation(conversation);
-    fetchMessages(conversation.id);
+    setActiveConversationReadId(conversation.id);
+    fetchMessages(conversation.id, false, true);
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setIsMobileChatOpen(true);
     }
@@ -732,7 +737,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
     if (selectedConversation) {
       // Poll every 2 seconds for new messages
       pollingIntervalRef.current = setInterval(() => {
-        fetchMessages(selectedConversation.id, true); // silent = true to avoid console spam
+        if (!document.hidden && activeConversationReadId === selectedConversation.id) {
+          fetchMessages(selectedConversation.id, true, true); // silent = true to avoid console spam
+        }
       }, 2000);
     }
 
@@ -743,7 +750,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
         pollingIntervalRef.current = null;
       }
     };
-  }, [selectedConversation]);
+  }, [selectedConversation, activeConversationReadId]);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     requestAnimationFrame(() => {

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\RepairPackage;
 
+use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
 use App\Models\RepairService;
@@ -25,6 +26,24 @@ class RepairPackageApiTest extends TestCase
             'description' => 'Basic service',
             'status' => 'Active',
             'shop_owner_id' => $shopOwner->id,
+        ], $overrides));
+    }
+
+    private function createRepairMaterial(ShopOwner $shopOwner, array $overrides = []): InventoryItem
+    {
+        return InventoryItem::create(array_merge([
+            'shop_owner_id' => $shopOwner->id,
+            'sku' => 'RM-' . strtoupper(substr((string) str()->uuid(), 0, 8)),
+            'name' => 'Industrial Shoe Glue',
+            'category' => 'repair_materials',
+            'unit' => 'tube',
+            'available_quantity' => 25,
+            'reserved_quantity' => 0,
+            'reorder_level' => 5,
+            'reorder_quantity' => 10,
+            'price' => 200,
+            'cost_price' => 120,
+            'is_active' => true,
         ], $overrides));
     }
 
@@ -59,6 +78,7 @@ class RepairPackageApiTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create();
         $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
+        $material = $this->createRepairMaterial($shopOwner);
 
         $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-packages', [
             'name' => 'Starter Restore Bundle',
@@ -66,6 +86,14 @@ class RepairPackageApiTest extends TestCase
             'package_price' => 1000,
             'status' => 'active',
             'service_ids' => [$s1->id, $s2->id],
+            'material_templates' => [
+                [
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ],
+            ],
         ]);
 
         $response->assertStatus(201)
@@ -95,11 +123,20 @@ class RepairPackageApiTest extends TestCase
 
         $ownService = $this->createService($shopOwner, ['name' => 'Own Service']);
         $foreignService = $this->createService($otherShopOwner, ['name' => 'Foreign Service']);
+        $material = $this->createRepairMaterial($shopOwner);
 
         $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-packages', [
             'name' => 'Invalid Mixed Package',
             'package_price' => 900,
             'service_ids' => [$ownService->id, $foreignService->id],
+            'material_templates' => [
+                [
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ],
+            ],
         ]);
 
         $response->assertStatus(422)

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
+import NotificationBell from '../../../Components/common/NotificationBell';
 
 type Product = {
   id: number;
@@ -568,23 +569,13 @@ const Products: React.FC<Props> = () => {
             )}
           </div>
 
-          {/* Cart icon with badge */}
-          <Link
-            href="/checkout"
-            className="relative flex h-9 w-9 shrink-0 items-center justify-center text-gray-700 hover:text-[#16233b] transition-colors"
-            aria-label="Shopping cart"
-          >
-            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
-              <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
-              <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
-            </svg>
-            {cartBadgeCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
-                {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
-              </span>
-            )}
-          </Link>
+          {isAuthenticated && (
+            <NotificationBell
+              basePath="/api/notifications"
+              iconSize={20}
+              className="text-gray-700 hover:text-[#16233b] transition-colors"
+            />
+          )}
 
           {/* User / Account icon with dropdown */}
           <div className="relative" ref={mobileAccountRef}>
@@ -669,6 +660,24 @@ const Products: React.FC<Props> = () => {
               </>
             )}
           </div>
+
+          {/* Cart icon with badge */}
+          <Link
+            href="/checkout"
+            className="relative flex h-9 w-9 shrink-0 items-center justify-center text-gray-700 hover:text-[#16233b] transition-colors"
+            aria-label="Shopping cart"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
+              <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
+              <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
+            </svg>
+            {cartBadgeCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+                {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
+              </span>
+            )}
+          </Link>
         </div>
 
         <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-16 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">

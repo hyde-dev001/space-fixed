@@ -247,12 +247,53 @@ export default function UploadService() {
     );
   }
 
+  const getMaterialTemplateValidationError = (): string | null => {
+    for (const line of formData.material_templates) {
+      const defaultQuantity = Number(line.default_quantity);
+      const tolerancePercent = Number(line.tolerance_percent || '20');
+
+      if (!line.inventory_item_id) {
+        return 'Each material template line must select an inventory material.';
+      }
+
+      if (!Number.isFinite(defaultQuantity) || defaultQuantity < 1 || !Number.isInteger(defaultQuantity)) {
+        return 'Material default quantity must be a whole number (1, 2, 3...).';
+      }
+
+      if (!Number.isFinite(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100) {
+        return 'Material tolerance percent must be between 0 and 100.';
+      }
+    }
+
+    return null;
+  };
+
+  const normalizeWholeQuantity = (value: unknown): string => {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return '1';
+    }
+
+    return String(Math.max(1, Math.ceil(numericValue)));
+  };
+
   const handleAddService = async () => {
     if (!formData.name || !formData.category || !formData.price || !formData.duration) {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
         text: "Please fill in all required fields",
+      });
+      return;
+    }
+
+    const materialValidationError = getMaterialTemplateValidationError();
+    if (materialValidationError) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: materialValidationError,
       });
       return;
     }
@@ -307,6 +348,16 @@ export default function UploadService() {
         icon: "error",
         title: "Validation Error",
         text: "Please fill in all required fields",
+      });
+      return;
+    }
+
+    const materialValidationError = getMaterialTemplateValidationError();
+    if (materialValidationError) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: materialValidationError,
       });
       return;
     }
@@ -398,7 +449,7 @@ export default function UploadService() {
       status: service.status,
       material_templates: (service.material_templates || []).map((line) => ({
         inventory_item_id: Number(line.inventory_item_id),
-        default_quantity: String(line.default_quantity),
+        default_quantity: normalizeWholeQuantity(line.default_quantity),
         is_critical: Boolean(line.is_critical),
         tolerance_percent: String(line.tolerance_percent ?? 20),
       })),
@@ -908,9 +959,9 @@ export default function UploadService() {
                           <input
                             type="number"
                             title="Default quantity"
-                            placeholder="1.00"
-                            min="0.01"
-                            step="0.01"
+                            placeholder="1"
+                            min="1"
+                            step="1"
                             value={line.default_quantity}
                             onChange={(e) => updateMaterialTemplateLine(index, 'default_quantity', e.target.value)}
                             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
@@ -1148,9 +1199,9 @@ export default function UploadService() {
                           <input
                             type="number"
                             title="Default quantity"
-                            placeholder="1.00"
-                            min="0.01"
-                            step="0.01"
+                            placeholder="1"
+                            min="1"
+                            step="1"
                             value={line.default_quantity}
                             onChange={(e) => updateMaterialTemplateLine(index, 'default_quantity', e.target.value)}
                             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"

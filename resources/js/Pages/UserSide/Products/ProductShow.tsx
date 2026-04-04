@@ -87,6 +87,14 @@ const ProductShow: React.FC = () => {
   const handleLogout = () => {
     router.post('/user/logout', {}, { preserveState: false, preserveScroll: false });
   };
+
+  const formatCategoryText = (rawCategory: unknown): string => {
+    return String(rawCategory || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .join(', ');
+  };
   
   // Check if product has color variants (new Adidas-style system)
   const hasColorVariants = product.colorVariants && Array.isArray(product.colorVariants) && product.colorVariants.length > 0;
@@ -411,7 +419,7 @@ const ProductShow: React.FC = () => {
   const mainPageVariantQuantity = getMainPageVariantQuantity();
 
   const buttonBaseClass =
-    'group inline-flex w-full items-center justify-center gap-3 rounded-full px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-10 sm:py-4 sm:text-sm disabled:cursor-not-allowed disabled:opacity-50';
+    'group inline-flex w-full items-center justify-center gap-3 rounded-full px-8 py-3.5 text-[15px] font-medium tracking-normal transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-10 sm:py-4 sm:text-base disabled:cursor-not-allowed disabled:opacity-50';
   const buttonLightClass =
     'border border-gray-300 bg-white text-black shadow-[0_8px_24px_-16px_rgba(0,0,0,0.25)] hover:border-black hover:bg-gray-50 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:ring-offset-white';
   const buttonDarkClass =
@@ -419,7 +427,7 @@ const ProductShow: React.FC = () => {
   const qtyStepperButtonClass =
     'h-11 w-11 inline-flex items-center justify-center rounded-full border border-black/15 bg-white/90 text-slate-900 backdrop-blur-md shadow-[0_12px_24px_-18px_rgba(0,0,0,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_18px_30px_-18px_rgba(0,0,0,0.55)] disabled:cursor-not-allowed disabled:opacity-40';
   const qtyInputClass =
-    'h-11 w-16 rounded-full border border-black/15 bg-white/90 text-center text-sm font-semibold text-slate-900 shadow-[0_12px_24px_-18px_rgba(0,0,0,0.45)] transition-all duration-300 focus:border-[#16233b] focus:outline-none focus:ring-2 focus:ring-[#16233b]/20';
+    'h-11 w-16 rounded-full border border-black/15 bg-white/90 text-center text-base font-medium text-slate-900 shadow-[0_12px_24px_-18px_rgba(0,0,0,0.45)] transition-all duration-300 focus:border-[#16233b] focus:outline-none focus:ring-2 focus:ring-[#16233b]/20';
 
   // Auto-adjust quantity when variant changes on main page
   useEffect(() => {
@@ -1165,40 +1173,27 @@ const ProductShow: React.FC = () => {
             </div>
 
             <div className="w-full xl:w-[420px] px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0">
-              <h1 className="text-xl sm:text-2xl xl:text-[1.9rem] font-semibold mt-0 mb-1 text-black leading-tight">{product.name}</h1>
+              <h1 className="mt-0 mb-1 text-[1.85rem] font-medium leading-[1.15] text-black sm:text-[2rem] xl:text-[2.1rem]">{product.name}</h1>
               
-              {product.brand && (
-                <div className="text-base text-gray-600 mb-3">{product.brand}</div>
+              {product.brand && product.brand.trim().toLowerCase() !== product.name.trim().toLowerCase() && (
+                <div className="mb-3 text-[1.05rem] text-gray-600">{product.brand}</div>
               )}
               
               <div className="mb-4">
                 <div className="flex items-center gap-2">
                   {product.compare_at_price && (
-                    <div className="text-sm text-gray-400 line-through">{product.compare_at_price}</div>
+                    <div className="text-base text-gray-400 line-through">{product.compare_at_price}</div>
                   )}
-                  <div className="text-3xl xl:text-[1.75rem] font-semibold text-black">{product.price}</div>
+                  <div className="text-[2rem] font-medium leading-none text-black xl:text-[2.15rem]">{product.price}</div>
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1.5 text-sm text-gray-500">
                   {product.views_count || 0} views · {product.sales_count || 0} sold
                 </div>
               </div>
 
-              {product.description && (
-                <div className="mb-5">
-                  <p className="text-[15px] text-gray-700 leading-relaxed">{product.description}</p>
-                </div>
-              )}
-
-              {product.category && (
-                <div className="text-xs text-gray-500 mb-4">Category: {product.category}</div>
-              )}
-
               {/* Color Selection - Adidas Style */}
               {hasColorVariants ? (
                 <div className="mb-6">
-                  <div className="text-sm font-medium text-gray-900 mb-3">
-                    Color: <span className="font-normal">{selectedColor}</span>
-                  </div>
                   <div className="flex flex-wrap gap-2.5">
                     {product.colorVariants.map((colorVariant: ColorVariant) => {
                       const thumbnail = colorVariant.images.find(img => img.is_thumbnail) || colorVariant.images[0];
@@ -1238,15 +1233,11 @@ const ProductShow: React.FC = () => {
                       );
                     })}
                   </div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    {selectedColorVariant?.images.length || 0} images available for this color
-                  </div>
                 </div>
               ) : (
                 /* Legacy Color Selection */
                 ((product.colors_available && Array.isArray(product.colors_available) && product.colors_available.length > 0) || (product.colors && Array.isArray(product.colors) && product.colors.length > 0)) && (
                   <div className="mb-6">
-                    <div className="text-sm font-medium text-gray-900 mb-3">Color: {selectedColor}</div>
                     <div className="flex flex-wrap gap-2.5">
                       {(product.colors_available || product.colors).map((color: string) => {
                         const colorVariants = product.variants?.filter((v: any) => 
@@ -1283,15 +1274,15 @@ const ProductShow: React.FC = () => {
 
               <div className="mt-5">
                   <div className="flex items-center justify-between mb-3">
-                  <div className="text-sm font-medium text-black">Select Size</div>
-                  <button onClick={() => setShowSizeChart(true)} className="text-sm text-black underline" type="button">Size Guide</button>
+                  <div className="text-[15px] font-medium text-black">Select Size</div>
+                  <button onClick={() => setShowSizeChart(true)} className="text-[15px] text-black underline" type="button">Size Guide</button>
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   {sizeOptions.map((option: SizeOption) => (
                     <button
                       key={option.key}
                       onClick={() => setSelectedSize(option.value)}
-                      className={`rounded-md border bg-white px-3 py-2.5 text-sm font-medium text-black transition-colors ${
+                      className={`rounded-md border bg-white px-3 py-2.5 text-[15px] font-medium text-black transition-colors ${
                         isSameSize(selectedSize, option.value)
                           ? 'border-black shadow-[inset_0_0_0_1px_rgba(17,24,39,0.85)]'
                           : 'border-gray-300 hover:border-gray-500'
@@ -1420,7 +1411,7 @@ const ProductShow: React.FC = () => {
               )}
 
               <div className="mt-6">
-                <div className="text-sm font-medium text-black mb-2">Quantity</div>
+                <div className="mb-2 text-[15px] font-medium text-black">Quantity</div>
                 <div className="flex items-center gap-3">
                   <button 
                     onClick={() => setQty(Math.max(1, qty - 1))} 
@@ -1471,7 +1462,7 @@ const ProductShow: React.FC = () => {
                   )}
                 </div>
                 {selectedSize && selectedColor && mainPageVariantQuantity > 0 && (
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="mt-2 text-[13px] text-gray-500">
                     <span className={mainPageVariantQuantity <= 10 ? 'text-orange-600 font-semibold' : 'text-gray-600'}>
                       {mainPageVariantQuantity} {mainPageVariantQuantity === 1 ? 'piece' : 'pieces'} available
                     </span>
@@ -1509,6 +1500,10 @@ const ProductShow: React.FC = () => {
                   disabled={!selectedSize || !selectedColor || mainPageVariantQuantity === 0}
                 />
               </div>
+
+              <p className="mt-5 hidden text-center text-sm leading-relaxed text-gray-500 xl:block">
+                This product is excluded from site promotions and discounts.
+              </p>
 
               {/* Mobile/Tablet sticky bottom CTA bar - Shopee style */}
               <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] xl:hidden">
@@ -1844,23 +1839,33 @@ const ProductShow: React.FC = () => {
                 </div>
               )}
 
-              <div className="mt-8 border-t pt-6">
+              <div className="mt-10 border-t border-gray-200 pt-7">
                 {product.shop?.id && product.shop?.name && (
-                  <>
-                    <div className="text-sm text-black mb-2">Sold by</div>
-                    <div className="text-sm font-medium mb-4">
+                  <div className="mb-6">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Sold by</div>
+                    <div className="text-sm font-medium text-black">
                       <a href={`/shop-profile/${product.shop.id}`} className="underline text-black hover:text-gray-700 transition-colors">
                         {product.shop.name}
                       </a>
                     </div>
-                  </>
+                  </div>
+                )}
+
+                {product.description && (
+                  <div className="border-t border-gray-200 pt-7">
+                    <h3 className="mb-4 text-[1.1rem] font-medium text-black">Product Details</h3>
+                    <p className="text-[15px] leading-8 text-black/80">{product.description}</p>
+                    {product.category && (
+                      <p className="mt-5 text-[15px] leading-7 text-black/75">Category: {formatCategoryText(product.category)}</p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
           </div>
 
           {/* Voucher claim strip (horizontal) */}
-          <div className="mt-8 xl:mt-12 px-4 sm:px-6 xl:px-0">
+          <div className="mt-12 xl:mt-16 px-4 sm:px-6 xl:px-0">
             <div className="mx-auto max-w-260 overflow-hidden rounded-[26px] border border-gray-200 bg-white p-4 shadow-[0_16px_36px_-24px_rgba(15,23,42,0.35)] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
                 <div>

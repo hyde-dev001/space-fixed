@@ -77,23 +77,32 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   // Check if user is authenticated and is a regular customer (not ERP staff)
   const user = auth?.user;
   const isAuthenticated = Boolean(user && !user.shop_owner_id);
+  const initialOrderStatusCount = Number((page.props as any)?.orderStatusCount ?? 0);
+  const initialRepairStatusCount = Number((page.props as any)?.repairStatusCount ?? 0);
+  const initialChatIconCount = Number((page.props as any)?.chatIconCount ?? 0);
+  const initialUserIconCount = Number((page.props as any)?.userIconCount ?? (initialOrderStatusCount + initialRepairStatusCount));
   
   // Use live badge counts hook for authenticated users
-  const liveBadgeCounts = useBadgeCounts(isAuthenticated);
+  const liveBadgeCounts = useBadgeCounts(isAuthenticated, {
+    orderStatusCount: initialOrderStatusCount,
+    repairStatusCount: initialRepairStatusCount,
+    chatIconCount: initialChatIconCount,
+    userIconCount: initialUserIconCount,
+  });
   
   // Use either live counts or fallback to page props
   const orderStatusCount = isAuthenticated 
     ? liveBadgeCounts.orderStatusCount 
-    : Number((page.props as any)?.orderStatusCount ?? 0);
+    : initialOrderStatusCount;
   const repairStatusCount = isAuthenticated 
     ? liveBadgeCounts.repairStatusCount 
-    : Number((page.props as any)?.repairStatusCount ?? 0);
+    : initialRepairStatusCount;
   const userIconCount = isAuthenticated 
     ? liveBadgeCounts.userIconCount 
-    : Number((page.props as any)?.userIconCount ?? (orderStatusCount + repairStatusCount));
+    : initialUserIconCount;
   const chatIconCount = isAuthenticated 
     ? liveBadgeCounts.chatIconCount 
-    : Number((page.props as any)?.chatIconCount ?? 0);
+    : initialChatIconCount;
   const cartIconCount = Number((page.props as any)?.cartIconCount ?? 0);
   
   const effectiveCartCount = isAuthenticated ? cartIconCount : (cartLoading ? 0 : cartCount);
@@ -524,6 +533,16 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 </span>
               )}
             </Link>
+            {isAuthenticated && (
+              <NotificationBell
+                basePath="/api/notifications"
+                iconSize={24}
+                className={isTransparentNav
+                  ? 'text-white hover:opacity-70'
+                  : 'text-gray-900 hover:opacity-70'
+                }
+              />
+            )}
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -919,8 +938,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 basePath="/api/notifications"
                 iconSize={24}
                 className={isTransparentNav
-                  ? 'rounded-full border border-white/65 bg-white/10 text-white hover:bg-white/20'
-                  : 'rounded-full border border-gray-300 bg-white text-gray-900 hover:bg-gray-100'
+                  ? 'text-white hover:opacity-70'
+                  : 'text-gray-900 hover:opacity-70'
                 }
               />
             )}

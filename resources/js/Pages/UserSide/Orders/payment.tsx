@@ -1313,36 +1313,36 @@ const Payment: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-2 bg-white px-4 py-5 border-y border-gray-200">
-              <h3 className="text-3xl font-semibold text-black mb-4">Order summary</h3>
+            <div className="mt-2 bg-white px-4 py-4 md:px-6 md:py-5 border-y border-gray-200">
+              <h3 className="text-xl md:text-2xl font-semibold text-black mb-3">Order summary</h3>
 
-              <div className="space-y-3 text-base">
+              <div className="space-y-2.5 text-sm md:text-base">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-black">Product subtotal</span>
                   <span className="font-semibold text-black">₱{subtotal.toLocaleString()}</span>
                 </div>
-                <div className="flex items-center justify-between pl-4">
-                  <span className="text-gray-700">Product total</span>
-                  <span className="text-gray-700">₱{subtotal.toLocaleString()}</span>
+                <div className="flex items-center justify-between pl-3 text-xs md:text-sm">
+                  <span className="text-gray-600">Product total</span>
+                  <span className="text-gray-600">₱{subtotal.toLocaleString()}</span>
                 </div>
 
-                <div className="pt-3">
+                <div className="pt-2">
                   <div className="flex items-start justify-between gap-3">
                     <span className="text-gray-700">Shipping</span>
-                    <span className="text-black text-right max-w-[65%] wrap-break-word">{shippingSummaryValue}</span>
+                    <span className="text-black text-right max-w-[70%] wrap-break-word">{shippingSummaryValue}</span>
                   </div>
                   {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                   {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between pt-0.5">
                   <span className="text-gray-700">{vatLabel}</span>
                   <span className="text-gray-700">{vatDisplay}</span>
                 </div>
 
-                <div className="border-t border-gray-200 pt-4 mt-4 flex items-center justify-between">
-                  <span className="text-2xl font-semibold text-black">Total</span>
-                  <span className="text-4xl font-bold text-black">₱{total.toLocaleString()}</span>
+                <div className="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between">
+                  <span className="text-lg md:text-2xl font-semibold text-black">Total</span>
+                  <span className="text-2xl md:text-3xl font-bold text-black">₱{total.toLocaleString()}</span>
                 </div>
               </div>
 

@@ -118,36 +118,10 @@ Route::get('/repair-services', [LandingPageController::class, 'repair'])->name('
 Route::get('/repair-shop/{id}', [LandingPageController::class, 'repairShow'])->name('repair.show');
 // Customer conversations / Chat with repairer
 Route::get('/customer/conversations', function () {
-    $user = Auth::guard('user')->user();
-    if ($user) {
-        \App\Models\ConversationMessage::query()
-            ->whereNull('read_at')
-            ->where('sender_id', '!=', $user->id)
-            ->whereHas('conversation', function ($query) use ($user) {
-                $query->where('customer_id', $user->id);
-            })
-            ->update([
-                'read_at' => now(),
-            ]);
-    }
-
     return Inertia::render('UserSide/Communication/message');
 })->middleware(['auth:user', 'customer.account'])->name('customer.conversations');
 // Message / Chat with shop owner
 Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
-    $user = Auth::guard('user')->user();
-    if ($user) {
-        \App\Models\ConversationMessage::query()
-            ->whereNull('read_at')
-            ->where('sender_id', '!=', $user->id)
-            ->whereHas('conversation', function ($query) use ($user) {
-                $query->where('customer_id', $user->id);
-            })
-            ->update([
-                'read_at' => now(),
-            ]);
-    }
-
     return Inertia::render('UserSide/Communication/message', [
         'shopOwnerId' => $shopOwnerId ? (int)$shopOwnerId : null,
     ]);
@@ -155,19 +129,6 @@ Route::get('/message/{shopOwnerId?}', function ($shopOwnerId = null) {
 
 // Messages / Conversations listing page
 Route::get('/messages', function () {
-    $user = Auth::guard('user')->user();
-    if ($user) {
-        \App\Models\ConversationMessage::query()
-            ->whereNull('read_at')
-            ->where('sender_id', '!=', $user->id)
-            ->whereHas('conversation', function ($query) use ($user) {
-                $query->where('customer_id', $user->id);
-            })
-            ->update([
-                'read_at' => now(),
-            ]);
-    }
-
     return Inertia::render('UserSide/Communication/message', [
         'shops' => [], // Frontend will fetch shop list
     ]);
@@ -301,8 +262,14 @@ Route::get('/api/customer/badge-counts', function () {
         ->whereHas('conversation', function ($query) use ($user) {
             $query->where('customer_id', $user->id);
         })
-        ->where('sender_type', '!=', 'customer')
-        ->where('read_at', null)
+        ->where(function ($query) use ($user) {
+            $query->where('sender_type', '!=', 'customer')
+                ->orWhere(function ($legacyQuery) use ($user) {
+                    $legacyQuery->whereNull('sender_type')
+                        ->where('sender_id', '!=', $user->id);
+                });
+        })
+        ->whereNull('read_at')
         ->count();
 
     return response()->json([

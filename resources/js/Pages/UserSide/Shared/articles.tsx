@@ -170,32 +170,34 @@ const Articles: React.FC = () => {
 		<>
 			<Head title={t.headTitle} />
 
-			<main className="min-h-screen bg-white font-outfit antialiased">
-				<section className="mx-auto max-w-6xl px-5 pb-14 pt-28 sm:px-6 lg:px-10 lg:pb-20 lg:pt-32">
-					<header className="mb-10 flex flex-wrap items-start justify-between gap-4 border-b border-gray-200 pb-7">
+			<main className="min-h-screen bg-slate-50 font-outfit antialiased lg:bg-white">
+				<section className="relative mx-auto max-w-6xl px-5 pb-14 pt-24 sm:px-6 sm:pt-28 md:px-8 lg:px-10 lg:pb-20 lg:pt-32">
+					<div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-0 h-52 w-52 -translate-x-[65%] rounded-full bg-[#16233b14] blur-3xl lg:hidden" />
+					<div aria-hidden="true" className="pointer-events-none absolute right-0 top-32 h-44 w-44 rounded-full bg-emerald-200/25 blur-3xl lg:hidden" />
+					<header className="mb-8 flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-6 sm:mb-10 sm:gap-4 sm:pb-7">
 						<section className="max-w-3xl">
 							<p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-black/70">{t.category}</p>
 							<h1 className="text-3xl font-bold uppercase tracking-tight text-black sm:text-4xl lg:text-[3.2rem] lg:leading-[1.05]">
 								{t.title}
 							</h1>
-							<p className="mt-4 max-w-2xl text-base leading-relaxed text-black/75 sm:text-lg">
+							<p className="mt-3 max-w-2xl text-[0.98rem] leading-relaxed text-black/75 sm:mt-4 sm:text-lg">
 								{t.description}
 							</p>
 						</section>
 
-						<div className="flex items-center gap-3">
+						<div className="flex w-full items-center gap-3 sm:w-auto">
 							{useHistoryBackButton ? (
 								<button
 									type="button"
 									onClick={() => navigateBackOr(backFallbackHref)}
-									className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50"
+									className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 sm:w-auto"
 								>
 									Back
 								</button>
 							) : (
 								<Link
 									href="/services"
-									className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50"
+									className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-gray-900 transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 sm:w-auto"
 								>
 									{t.backToServices}
 								</Link>
@@ -203,11 +205,11 @@ const Articles: React.FC = () => {
 						</div>
 					</header>
 
-					<article className="space-y-10 px-0 py-1">
+					<article className="space-y-8 rounded-[1.6rem] border border-slate-200/80 bg-white/95 px-4 py-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)] backdrop-blur-sm sm:space-y-10 sm:px-5 sm:py-5 md:px-6 lg:space-y-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:px-0 lg:py-1 lg:shadow-none lg:backdrop-blur-none">
 						<section>
-							<div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+							<div className="mb-5 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:items-center">
 								<h3 className="text-xl font-bold uppercase tracking-[0.12em] text-black sm:text-2xl">{t.beforeYouStart}</h3>
-								<label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-gray-300 bg-white px-3 py-2">
+								<label className="inline-flex shrink-0 justify-self-end cursor-pointer items-center gap-3 rounded-full border border-gray-300 bg-white px-3 py-2">
 									<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-900">{t.languageLabel}</span>
 									<input
 										type="checkbox"
@@ -223,7 +225,7 @@ const Articles: React.FC = () => {
 							</div>
 							<ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 								{t.beforeYouStartItems.map((item) => (
-									<li key={item} className="rounded-xl border border-gray-200 bg-white p-4 text-sm leading-relaxed text-black/80 sm:text-base">
+									<li key={item} className="rounded-xl border border-gray-200/90 bg-white p-4 text-sm leading-relaxed text-black/80 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.7)] sm:text-base lg:border-gray-200 lg:shadow-none">
 										{item}
 									</li>
 								))}
@@ -232,15 +234,15 @@ const Articles: React.FC = () => {
 
 						<section>
 							<h3 className="mb-5 text-xl font-bold uppercase tracking-[0.12em] text-black sm:text-2xl">{t.photoWorkflow}</h3>
-							<ol className="space-y-4">
+							<ol className="space-y-3 sm:space-y-4">
 								{t.steps.map((step, index) => (
-									<li key={step.title} className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
-										<div className="flex items-start gap-4">
-											<span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black bg-black text-sm font-bold text-white">
+									<li key={step.title} className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.6)] sm:p-6 lg:border-gray-200 lg:bg-gray-50/70 lg:shadow-none">
+										<div className="flex items-start gap-3 sm:gap-4">
+											<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-black bg-black text-xs font-bold text-white sm:h-8 sm:w-8 sm:text-sm">
 												{index + 1}
 											</span>
 											<div>
-												<p className="text-base font-semibold uppercase tracking-[0.12em] text-black sm:text-lg">{step.title}</p>
+												<p className="text-[0.98rem] font-semibold uppercase tracking-[0.12em] text-black sm:text-lg">{step.title}</p>
 												<p className="mt-2 text-sm leading-relaxed text-black/80 sm:text-base">{step.description}</p>
 												{index < 5 ? (
 													<button
@@ -251,20 +253,20 @@ const Articles: React.FC = () => {
 																alt: `${step.title} tutorial example`,
 															})
 														}
-														className="mt-4 block w-full"
+														className="mt-3 block w-full sm:mt-4"
 														aria-label={`Open larger image for ${step.title}`}
 													>
 														<img
 															src={`/images/tuts/step${index + 1}.png`}
 															alt={`${step.title} tutorial example`}
 															loading="lazy"
-															className="mx-auto block h-auto w-full max-w-3xl rounded-xl border border-gray-200 bg-white object-cover shadow-sm transition-transform duration-200 hover:scale-[1.01] sm:max-w-4xl"
+															className="mx-auto block h-auto w-full max-w-3xl rounded-lg border border-gray-200 bg-white object-cover shadow-sm transition-transform duration-200 hover:scale-[1.01] sm:max-w-4xl sm:rounded-xl"
 														/>
 													</button>
 												) : null}
 												{step.showInlineViewer ? (
-													<div className="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-														<Virtual3DShowroom productName="Adidas Ulti" embedded embeddedHeightClass="h-[24rem] sm:h-[30rem]" showHeader={false} />
+													<div className="mt-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm sm:mt-4">
+														<Virtual3DShowroom productName="Adidas Ulti" embedded embeddedHeightClass="h-[18rem] sm:h-[24rem] md:h-[28rem] lg:h-[30rem]" showHeader={false} />
 													</div>
 												) : null}
 											</div>
@@ -274,14 +276,14 @@ const Articles: React.FC = () => {
 							</ol>
 						</section>
 
-						<aside className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-5 sm:p-6">
+						<aside className="rounded-2xl border border-emerald-200 bg-linear-to-br from-emerald-50 to-white p-5 shadow-[0_18px_38px_-30px_rgba(6,95,70,0.45)] sm:p-6 lg:bg-emerald-50/80 lg:shadow-none">
 							<p className="text-base font-semibold uppercase tracking-widest text-emerald-900">{t.importantReminder}</p>
 							<p className="mt-2 text-sm leading-relaxed text-black/80 sm:text-base">
 								{t.importantReminderText}
 							</p>
 							<div className="mt-4 border-t border-emerald-200/80 pt-4">
 								<p className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-900 sm:text-base">{t.quickTips}</p>
-								<ul className="mt-2 space-y-2 text-sm leading-relaxed text-black/80 sm:text-base">
+								<ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed text-black/80 marker:text-emerald-800 sm:text-base">
 									{t.quickTipItems.map((tip) => (
 										<li key={tip}>{tip}</li>
 									))}
@@ -291,10 +293,10 @@ const Articles: React.FC = () => {
 
 						<section>
 							<h3 className="mb-5 text-xl font-bold uppercase tracking-[0.12em] text-black sm:text-2xl">{t.videoTutorials}</h3>
-							<ul className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-								<li className="rounded-3xl border border-gray-300 bg-white p-5 shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] sm:p-6">
+							<ul className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+								<li className="overflow-hidden rounded-3xl border border-gray-300 bg-linear-to-b from-white to-slate-50/70 p-4 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.45)] sm:p-6 lg:bg-white">
 									<p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-black/60">{t.tutorialOneLabel}</p>
-									<h4 className="mb-2 text-xl font-bold uppercase tracking-tight text-black">{t.tutorialOneTitle}</h4>
+									<h4 className="mb-2 text-lg font-bold uppercase tracking-tight text-black sm:text-xl">{t.tutorialOneTitle}</h4>
 									<p className="mb-4 text-sm leading-relaxed text-black/80 sm:text-base">{t.tutorialOneDescription}</p>
 									<iframe
 										className="aspect-video w-full overflow-hidden rounded-2xl border border-gray-200"
@@ -308,14 +310,14 @@ const Articles: React.FC = () => {
 										href="https://youtu.be/ACh9Jof7uSc?si=BfeUSdZ5HC-ZTN7Y"
 										target="_blank"
 										rel="noreferrer noopener"
-										className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black"
+										className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black sm:w-auto"
 									>
 										{t.openYoutube}
 									</a>
 								</li>
-								<li className="rounded-3xl border border-gray-300 bg-white p-5 shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] sm:p-6">
+								<li className="overflow-hidden rounded-3xl border border-gray-300 bg-linear-to-b from-white to-slate-50/70 p-4 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.45)] sm:p-6 lg:bg-white">
 									<p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-black/60">{t.tutorialTwoLabel}</p>
-									<h4 className="mb-2 text-xl font-bold uppercase tracking-tight text-black">{t.tutorialTwoTitle}</h4>
+									<h4 className="mb-2 text-lg font-bold uppercase tracking-tight text-black sm:text-xl">{t.tutorialTwoTitle}</h4>
 									<p className="mb-4 text-sm leading-relaxed text-black/80 sm:text-base">{t.tutorialTwoDescription}</p>
 									<iframe
 										className="aspect-video w-full overflow-hidden rounded-2xl border border-gray-200"
@@ -329,7 +331,7 @@ const Articles: React.FC = () => {
 										href="https://youtu.be/2e1B0hJ3mEo?si=d6ey--pEoY-Odjlm"
 										target="_blank"
 										rel="noreferrer noopener"
-										className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black"
+										className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-black sm:w-auto"
 									>
 										{t.openYoutube}
 									</a>
@@ -342,24 +344,24 @@ const Articles: React.FC = () => {
 
 				{selectedImage ? (
 					<div
-						className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+						className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4"
 						onClick={() => setSelectedImage(null)}
 						role="dialog"
 						aria-modal="true"
 						aria-label="Tutorial image preview"
 					>
-						<div className="relative w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+						<div className="relative w-full max-w-[95vw] sm:max-w-5xl lg:max-w-6xl" onClick={(event) => event.stopPropagation()}>
 							<button
 								type="button"
 								onClick={() => setSelectedImage(null)}
-								className="absolute right-3 top-3 rounded-full border border-white/40 bg-black/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white hover:bg-black/60"
+								className="absolute right-2 top-2 rounded-full border border-white/40 bg-black/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white hover:bg-black/60 sm:right-3 sm:top-3"
 							>
 								Close
 							</button>
 							<img
 								src={selectedImage.src}
 								alt={selectedImage.alt}
-								className="mx-auto max-h-[85vh] w-auto max-w-full rounded-2xl border border-white/20 bg-black/20 object-contain"
+								className="mx-auto max-h-[78vh] w-auto max-w-full rounded-2xl border border-white/20 bg-black/20 object-contain sm:max-h-[85vh]"
 							/>
 						</div>
 					</div>

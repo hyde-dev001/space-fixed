@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
+import NotificationBell from '../../../Components/common/NotificationBell';
 
 interface Shop {
   id: number;
@@ -205,22 +206,107 @@ const Repair: React.FC<Props> = ({ shops }) => {
           <Navigation />
         </div>
 
-        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white px-4 pb-3 pt-3 shadow-sm xl:hidden">
-          <div className="mx-auto flex w-full max-w-107.5 items-center gap-1.5 sm:max-w-170 md:max-w-225 lg:max-w-5xl">
-            <div className="relative flex-1">
-              <svg className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-2 bg-white px-2 py-2 shadow-sm xl:hidden">
+          <Link
+            href="/"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+            aria-label="Home"
+            title="Home"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10.5l9-7 9 7V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1v-9.5z" />
+            </svg>
+          </Link>
+          <div className="relative flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-20">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
+            </span>
               <input
                 type="text"
                 value={mobileSearchQuery}
                 onChange={(e) => setMobileSearchQuery(e.target.value)}
                 placeholder="Search repair shops"
-                className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-11 pr-3 text-base text-gray-900 shadow-sm outline-none ring-0 placeholder:text-gray-500"
+                className="w-full rounded-full border border-gray-300 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
                 aria-label="Search repair shops"
               />
+          </div>
+            {isAuthenticated && (
+              <NotificationBell
+                basePath="/api/notifications"
+                iconSize={20}
+                className="text-gray-700 hover:text-[#16233b] transition-colors"
+              />
+            )}
+            <div className="relative" ref={accountMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsAccountMenuOpen((prev) => !prev)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+                aria-label="Account menu"
+                aria-controls="repair-account-menu"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </button>
+
+              {isAccountMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsAccountMenuOpen(false)}
+                  />
+                  <div
+                    id="repair-account-menu"
+                    className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]"
+                  >
+                    {isAuthenticated ? (
+                      <>
+                        <Link
+                          href="/my-orders"
+                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                        >
+                          <span>Orders</span>
+                        </Link>
+                        <Link
+                          href="/my-repairs"
+                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                        >
+                          <span>Repair</span>
+                        </Link>
+                        <Link
+                          href="/customer-profile"
+                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                        >
+                          <span>Edit Profile</span>
+                        </Link>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                          onClick={handleMobileLogout}
+                        >
+                          <span>Log out</span>
+                        </button>
+                      </>
+                    ) : (
+                      <Link
+                        href={meHref}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                        onClick={() => setIsAccountMenuOpen(false)}
+                      >
+                        <span>Customer Login</span>
+                      </Link>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-            <Link href="/checkout" className="relative inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black" aria-label="Cart">
+            <Link href="/checkout" className="relative flex h-9 w-9 shrink-0 items-center justify-center text-gray-700 hover:text-[#16233b] transition-colors" aria-label="Shopping cart">
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
                 <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
@@ -232,71 +318,9 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 </span>
               )}
             </Link>
-            <div className="relative" ref={accountMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsAccountMenuOpen((prev) => !prev)}
-                className="inline-flex h-12 w-12 items-center justify-center text-[#16233b] transition-colors hover:text-black"
-                aria-label="Account menu"
-                aria-controls="repair-account-menu"
-              >
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </button>
-
-              {isAccountMenuOpen && (
-                <div
-                  id="repair-account-menu"
-                  className="absolute right-0 top-full z-50 mt-2 w-[min(88vw,14rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]"
-                >
-                  {isAuthenticated ? (
-                    <>
-                      <Link
-                        href="/my-orders"
-                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setIsAccountMenuOpen(false)}
-                      >
-                        <span>Orders</span>
-                      </Link>
-                      <Link
-                        href="/my-repairs"
-                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setIsAccountMenuOpen(false)}
-                      >
-                        <span>Repair</span>
-                      </Link>
-                      <Link
-                        href="/customer-profile"
-                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setIsAccountMenuOpen(false)}
-                      >
-                        <span>Edit Profile</span>
-                      </Link>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                        onClick={handleMobileLogout}
-                      >
-                        <span>Log out</span>
-                      </button>
-                    </>
-                  ) : (
-                    <Link
-                      href={meHref}
-                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                      onClick={() => setIsAccountMenuOpen(false)}
-                    >
-                      <span>Customer Login</span>
-                    </Link>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
-        <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-5 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
+        <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-16 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
           {/* Header row */}
           <div className="mb-4 flex items-center justify-between gap-3 sm:mb-5">
             <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Repair</div>

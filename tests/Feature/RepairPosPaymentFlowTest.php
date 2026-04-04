@@ -47,7 +47,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $this->assertSame((int) $shopOwner->id, (int) $repair->shop_owner_id);
         $this->assertSame('Manual Walk-in Customer', (string) $repair->customer_name);
         $this->assertSame('deposit_50', (string) $repair->payment_policy_snapshot);
-        $this->assertSame('partially_paid', (string) $repair->payment_status_derived);
+        $this->assertSame('paid', (string) $repair->payment_status_derived);
 
         $receipt = \App\Models\PosReceipt::query()->where('pos_transaction_id', $transaction->id)->first();
         $this->assertNotNull($receipt);
@@ -290,7 +290,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $response->assertOk()->assertJsonPath('success', true);
 
         $repair->refresh();
-        $this->assertSame('partially_paid', (string) $repair->payment_status_derived);
+        $this->assertSame('paid', (string) $repair->payment_status_derived);
         $this->assertSame('560.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
@@ -424,7 +424,7 @@ class RepairPosPaymentFlowTest extends TestCase
         ])->assertOk();
 
         $repair->refresh();
-        $this->assertSame('paid', (string) $repair->payment_status_derived);
+        $this->assertSame('completed', (string) $repair->payment_status_derived);
         $this->assertSame('1120.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
@@ -467,7 +467,7 @@ class RepairPosPaymentFlowTest extends TestCase
         ])->assertOk();
 
         $repair->refresh();
-        $this->assertSame('paid', (string) $repair->payment_status_derived);
+        $this->assertSame('completed', (string) $repair->payment_status_derived);
         $this->assertSame('1344.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
@@ -683,7 +683,7 @@ class RepairPosPaymentFlowTest extends TestCase
         ])->assertOk();
 
         $repair->refresh();
-        $this->assertSame('partially_paid', (string) $repair->payment_status);
+        $this->assertSame('paid', (string) $repair->payment_status);
     }
 
     #[Test]
@@ -725,7 +725,7 @@ class RepairPosPaymentFlowTest extends TestCase
         ])->assertOk();
 
         $repair->refresh();
-        $this->assertSame('paid', (string) $repair->payment_status);
+        $this->assertSame('completed', (string) $repair->payment_status);
     }
 
     #[Test]

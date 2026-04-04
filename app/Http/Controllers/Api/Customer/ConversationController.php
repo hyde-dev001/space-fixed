@@ -277,7 +277,7 @@ class ConversationController extends Controller
     /**
      * Get messages for a specific conversation
      */
-    public function getMessages(Conversation $conversation): JsonResponse
+    public function getMessages(Request $request, Conversation $conversation): JsonResponse
     {
         $user = Auth::user();
 
@@ -291,8 +291,10 @@ class ConversationController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
-        // Mark messages as read for this customer
-        $conversation->markAsRead($user->id);
+        // Only mark as read when explicitly requested by the client.
+        if ($request->boolean('mark_read', false)) {
+            $conversation->markAsRead($user->id);
+        }
 
         return response()->json($messages);
     }

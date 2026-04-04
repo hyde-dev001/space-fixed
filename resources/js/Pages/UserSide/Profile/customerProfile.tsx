@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
+import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 
 type ProfileData = {
 	firstName: string;
@@ -271,6 +272,15 @@ const CustomerProfile: React.FC = () => {
 	const displayPhone = profileData.phone || 'No phone';
 	const displayAddress = profileData.address || 'No address';
 	const profileInitial = (profileData.firstName || displayName || 'M').charAt(0).toUpperCase();
+	const authUser = (page.props as any)?.auth?.user;
+	const isAuthenticated = Boolean(authUser && !authUser.shop_owner_id);
+	const initialChatIconCount = Number((page.props as any)?.chatIconCount ?? 0);
+	const liveBadgeCounts = useBadgeCounts(isAuthenticated, {
+		chatIconCount: initialChatIconCount,
+	});
+	const chatIconCount = isAuthenticated
+		? liveBadgeCounts.chatIconCount
+		: initialChatIconCount;
 	const currentPath = page.url.split('?')[0];
 	type TileIcon = 'pay' | 'ship' | 'receive' | 'rate' | 'pending' | 'accepted' | 'progress' | 'completed';
 	const purchaseTiles: Array<{ label: string; icon: TileIcon; href: string }> = [
@@ -368,10 +378,15 @@ const CustomerProfile: React.FC = () => {
 										<circle cx="17" cy="19" r="1.5" strokeWidth={2} />
 									</svg>
 								</a>
-								<a href="/messages" title="Open messages" aria-label="Open messages" className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white">
+								<a href="/messages" title="Open messages" aria-label="Open messages" className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white">
 									<svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" />
 									</svg>
+									{chatIconCount > 0 && (
+										<span className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+											{chatIconCount > 99 ? '99+' : chatIconCount}
+										</span>
+									)}
 								</a>
 							</div>
 						</div>
@@ -611,6 +626,11 @@ const CustomerProfile: React.FC = () => {
 					</a>
 					<a href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
 						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
+						{chatIconCount > 0 && (
+							<span className="absolute -right-0.5 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+								{chatIconCount > 99 ? '99+' : chatIconCount}
+							</span>
+						)}
 						<svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
 						<span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
 					</a>

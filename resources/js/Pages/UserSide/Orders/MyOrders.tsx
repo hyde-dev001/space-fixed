@@ -1506,7 +1506,7 @@ const MyOrders: React.FC = () => {
                       })()}
 
                       {/* Order Actions */}
-                      <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:justify-end sm:pt-6 sm:gap-3">
+                      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
                         {order.status === 'pending' && (
                           <div className="w-full flex justify-end">
                             <button

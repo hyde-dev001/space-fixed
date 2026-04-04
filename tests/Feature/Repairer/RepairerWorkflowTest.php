@@ -415,6 +415,60 @@ class RepairerWorkflowTest extends TestCase
             ->assertJsonCount(1, 'data');
     }
 
+    public function test_repairer_cannot_log_fractional_material_usage_quantity(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $customer = $this->createCustomer([
+            'email' => 'repair-fractional@example.com',
+        ]);
+        $repairer = $this->createRepairer($shopOwner, ['access-repair-stocks']);
+        $service = $this->createService($shopOwner, [
+            'name' => 'Glue Touch-Up',
+            'price' => 400,
+        ]);
+
+        $repairRequest = $this->createAssignedRepairRequest(
+            $shopOwner,
+            $customer,
+            $repairer,
+            [$service->id],
+            [
+                'status' => 'in_progress',
+                'total' => 400,
+                'final_total' => 400,
+            ]
+        );
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Precision Adhesive',
+            'sku' => 'MAT-ADH-002',
+            'available_quantity' => 20,
+            'reserved_quantity' => 0,
+            'reorder_level' => 5,
+            'unit' => 'pcs',
+            'is_active' => true,
+            'price' => 100,
+            'cost_price' => 60,
+        ]);
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 1.5,
+                'notes' => 'Should fail due to fractional quantity.',
+            ]
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['quantity_used']);
+
+        $material->refresh();
+        $this->assertSame(20, $material->available_quantity);
+    }
+
     public function test_repairer_can_ship_pickup_repairs_and_customer_can_confirm_delivery(): void
     {
         $shopOwner = $this->createRepairShop();

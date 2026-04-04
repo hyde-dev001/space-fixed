@@ -113,13 +113,14 @@ const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy
 	const paymentStatus = String(order.paymentStatus ?? "").toLowerCase();
 	const workflowStatus = String(order.status ?? "").toLowerCase();
 	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
+	const isDepositSettled = paymentStatus === "paid" || paymentStatus === "partially_paid";
 
 	if (policy === "full_upfront") {
-		return paymentStatus === "paid" || paymentStatus === "completed" ? null : "full";
+		return paymentStatus === "paid" || paymentStatus === "completed" || paymentStatus === "partially_paid" ? null : "full";
 	}
 
 	if (paymentStatus === "completed") return null;
-	if (paymentStatus === "paid") {
+	if (isDepositSettled) {
 		if (returnMethod === "shop_delivery") return null;
 
 		if (workflowStatus === "ready-for-pickup" || workflowStatus === "ready_for_pickup") {
@@ -790,8 +791,12 @@ const PointOfSalePage = () => {
 			setIsReceiptModalOpen(true);
 		} catch (error: any) {
 			const apiErrors = error?.response?.data?.errors || {};
+			const dueTypeError = apiErrors?.due_type?.[0];
+			const normalizedDueTypeError = String(dueTypeError || "").toUpperCase();
 			const message =
-				apiErrors?.due_type?.[0]
+				normalizedDueTypeError === "PAYMENT_PHASE_ALREADY_SETTLED"
+					? "This payment phase is already settled for this repair request."
+					: dueTypeError
 				|| apiErrors?.payment_lines?.[0]
 				|| apiErrors?.["payment_lines.0.provider_reference"]?.[0]
 				|| error?.response?.data?.message

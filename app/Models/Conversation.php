@@ -85,13 +85,20 @@ class Conversation extends Model
      */
     public function unreadMessagesCount(int $userId): int
     {
+        $isCustomerViewer = (int) $this->customer_id === $userId;
+
         return $this->messages()
-            ->where(function ($query) use ($userId) {
-                $query->where('sender_type', '!=', 'customer')
-                    ->orWhere(function ($legacyQuery) use ($userId) {
-                        $legacyQuery->whereNull('sender_type')
-                            ->where('sender_id', '!=', $userId);
-                    });
+            ->where(function ($query) use ($userId, $isCustomerViewer) {
+                if ($isCustomerViewer) {
+                    $query->where('sender_type', '!=', 'customer');
+                } else {
+                    $query->where('sender_type', '=', 'customer');
+                }
+
+                $query->orWhere(function ($legacyQuery) use ($userId) {
+                    $legacyQuery->whereNull('sender_type')
+                        ->where('sender_id', '!=', $userId);
+                });
             })
             ->whereNull('read_at')
             ->count();
@@ -102,13 +109,20 @@ class Conversation extends Model
      */
     public function markAsRead(int $userId): void
     {
+        $isCustomerViewer = (int) $this->customer_id === $userId;
+
         $this->messages()
-            ->where(function ($query) use ($userId) {
-                $query->where('sender_type', '!=', 'customer')
-                    ->orWhere(function ($legacyQuery) use ($userId) {
-                        $legacyQuery->whereNull('sender_type')
-                            ->where('sender_id', '!=', $userId);
-                    });
+            ->where(function ($query) use ($userId, $isCustomerViewer) {
+                if ($isCustomerViewer) {
+                    $query->where('sender_type', '!=', 'customer');
+                } else {
+                    $query->where('sender_type', '=', 'customer');
+                }
+
+                $query->orWhere(function ($legacyQuery) use ($userId) {
+                    $legacyQuery->whereNull('sender_type')
+                        ->where('sender_id', '!=', $userId);
+                });
             })
             ->whereNull('read_at')
             ->update(['read_at' => now()]);

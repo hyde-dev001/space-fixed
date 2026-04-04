@@ -82,9 +82,15 @@ class HandleInertiaRequests extends Middleware
 
             $chatIconCount = ConversationMessage::query()
                 ->whereNull('read_at')
-                ->where('sender_id', '!=', $user->id)
                 ->whereHas('conversation', function ($query) use ($user) {
                     $query->where('customer_id', $user->id);
+                })
+                ->where(function ($query) use ($user) {
+                    $query->where('sender_type', '!=', 'customer')
+                        ->orWhere(function ($legacyQuery) use ($user) {
+                            $legacyQuery->whereNull('sender_type')
+                                ->where('sender_id', '!=', $user->id);
+                        });
                 })
                 ->count();
 

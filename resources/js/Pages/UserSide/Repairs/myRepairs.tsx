@@ -983,6 +983,12 @@ const MyRepairs: React.FC = () => {
         cancelButtonText: 'Cancel',
         confirmButtonColor: '#000000',
         cancelButtonColor: '#6b7280',
+        buttonsStyling: false,
+        customClass: {
+          actions: '!mt-5 !w-full !gap-2 sm:!gap-3 !justify-end',
+          confirmButton: '!m-0 !h-10 sm:!h-11 !rounded-xl !px-4 sm:!px-5 !text-sm !font-semibold !tracking-[0.01em] !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
+          cancelButton: '!m-0 !h-10 sm:!h-11 !rounded-xl !px-4 sm:!px-5 !text-sm !font-semibold !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
+        },
       });
 
       if (!confirmResult.isConfirmed) {
@@ -1693,11 +1699,11 @@ const MyRepairs: React.FC = () => {
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
   const tabButtonBaseClass =
-    'relative inline-flex min-w-[132px] shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 lg:min-w-0 lg:flex-1';
+    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 xl:min-w-0 xl:flex-1 xl:rounded-full xl:px-4 xl:text-[11px] xl:tracking-[0.16em]';
   const tabBadgeClass =
-    'absolute right-1 top-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center';
+    'pointer-events-none absolute -right-1 top-1 z-10 min-w-[20px] h-[20px] rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold leading-none text-white';
   const actionButtonBaseClass =
-    'inline-flex items-center justify-center gap-2 rounded-full border px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+    'inline-flex items-center justify-center gap-2 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-6 sm:py-2.5 sm:text-xs sm:tracking-[0.16em]';
   const actionButtonPrimaryClass =
     'border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/45';
   const actionButtonSecondaryClass =
@@ -1705,29 +1711,125 @@ const MyRepairs: React.FC = () => {
   const actionButtonDangerClass =
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
+  const mobileHeroFilterButtonBaseClass =
+    'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
+  const repairTabs: RepairTab[] = [
+    'new_request',
+    'pending',
+    'received',
+    'in_progress',
+    'ready_for_pickup',
+    'picked_up',
+    'cancelled',
+    'rejected',
+  ];
+
+  const getTabIcon = (tab: RepairTab) => {
+    switch (tab) {
+      case 'new_request':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        );
+      case 'pending':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        );
+      case 'received':
+      case 'in_progress':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h13l4 4v6a2 2 0 01-2 2h-1m-10 0h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0z" />
+          </svg>
+        );
+      case 'ready_for_pickup':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h2l2 5h10l2-8H7m0 0L5.5 5H3" />
+          </svg>
+        );
+      case 'picked_up':
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.02 3.138a1 1 0 00.95.69h3.3c.969 0 1.371 1.24.588 1.81l-2.67 1.94a1 1 0 00-.364 1.118l1.02 3.138c.3.922-.755 1.688-1.54 1.118l-2.67-1.94a1 1 0 00-1.176 0l-2.67 1.94c-.784.57-1.838-.196-1.539-1.118l1.02-3.138a1 1 0 00-.364-1.118l-2.67-1.94c-.784-.57-.38-1.81.588-1.81h3.3a1 1 0 00.95-.69l1.02-3.138z" />
+          </svg>
+        );
+      case 'cancelled':
+      case 'rejected':
+      default:
+        return (
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        );
+    }
+  };
+
+  const getTabLabel = (tab: RepairTab) => {
+    switch (tab) {
+      case 'new_request': return 'New Request';
+      case 'pending': return 'Pending';
+      case 'received': return 'Received';
+      case 'in_progress': return 'In Progress';
+      case 'ready_for_pickup': return 'Ready';
+      case 'picked_up': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      case 'rejected': return 'Rejected';
+      default: return 'Status';
+    }
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
       <Head title="My Repairs" />
       <Navigation />
 
       <main className="flex-1">
-        <div className="w-full px-6 pb-16 pt-28 lg:pt-32 xl:px-10 2xl:px-14">
-          <div className="mx-auto mb-10 max-w-6xl select-none text-center">
-            <h1 className="text-4xl font-bold tracking-tight text-[#16233b] sm:text-5xl">My Repairs</h1>
-            <p className="mx-auto mt-2 max-w-2xl text-sm text-black/55 sm:text-base">
+        <div className="w-full pb-16 pt-24 sm:px-6 xl:pt-32 xl:px-10 2xl:px-14">
+          <div className="mx-auto mb-10 hidden max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 text-center shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 xl:block xl:rounded-none xl:border-0 xl:bg-transparent xl:px-0 xl:py-0 xl:shadow-none">
+            <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl xl:text-center xl:text-5xl xl:font-bold">My Repairs</h1>
+            <p className="mx-auto mt-2 max-w-2xl text-xs text-black/55 sm:text-base xl:text-center">
               Track every request, payment, and pickup update in one place.
             </p>
           </div>
 
-          {/* Tabs */}
-          <div className="mb-12 flex w-full gap-3 overflow-x-auto pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="px-4 pb-2 xl:hidden">
+            <h1 className="mb-1 text-xl font-extrabold tracking-tight text-[#16233b]">My Repairs</h1>
+            <p className="text-xs text-black/55">
+              Track every request, payment, and pickup update in one place.
+            </p>
+          </div>
+
+          {/* Mobile Tabs */}
+          <div className="mb-6 flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
+            {repairTabs.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setSelectedTab(tab)}
+                className={`${mobileHeroFilterButtonBaseClass} ${
+                  selectedTab === tab
+                    ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                    : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+                }`}
+              >
+                {getTabIcon(tab)}
+                <span className="leading-none">{getTabLabel(tab)}</span>
+                {getCountByStatus(tab) > 0 && <span className={tabBadgeClass}>{getCountByStatus(tab)}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Desktop Tabs */}
+          <div className="mb-12 hidden w-full gap-3 overflow-x-auto pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:flex">
             <button
               onClick={() => setSelectedTab('new_request')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'new_request'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               NEW REQUEST
@@ -1742,7 +1844,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'pending'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               PENDING
@@ -1757,7 +1859,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'received'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               RECEIVED
@@ -1772,7 +1874,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'in_progress'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               IN PROGRESS
@@ -1787,7 +1889,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'ready_for_pickup'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               READY FOR PICKUP
@@ -1802,7 +1904,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'picked_up'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               COMPLETED
@@ -1817,7 +1919,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'cancelled'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               CANCELLED
@@ -1832,7 +1934,7 @@ const MyRepairs: React.FC = () => {
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'rejected'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
-                  : 'border-gray-300 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-400 hover:text-black'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
               }`}
             >
               REJECTED
@@ -1844,7 +1946,7 @@ const MyRepairs: React.FC = () => {
             </button>
           </div>
 
-          <div className="mx-auto max-w-6xl">
+          <div className="mx-auto mt-6 max-w-6xl px-4 xl:px-0">
 
           {/* Loading State */}
           {loading && (
@@ -1856,7 +1958,7 @@ const MyRepairs: React.FC = () => {
 
           {/* Empty State */}
           {!loading && filteredOrders.length === 0 && (
-            <div className="text-center py-20 bg-gray-50 rounded">
+            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] xl:rounded-none xl:border-0 xl:bg-gray-50 xl:py-20 xl:shadow-none">
               <div className="mb-6">
                 <svg className="w-24 h-24 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -1875,19 +1977,19 @@ const MyRepairs: React.FC = () => {
 
           {/* Repair Orders List */}
           {!loading && filteredOrders.length > 0 && (
-            <div className="space-y-8">
+            <div className="space-y-4 sm:space-y-7 xl:space-y-8">
               {filteredOrders.map((order) => (
                 <div
                   key={order.id}
                   data-repair-id={order.id}
-                  className={`border overflow-hidden hover:shadow-lg transition-shadow duration-300 ${
-                    highlightRepairId === order.id ? 'border-black bg-gray-50/30' : 'border-gray-200'
+                  className={`border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] xl:rounded-none xl:shadow-none xl:hover:shadow-lg ${
+                    highlightRepairId === order.id ? 'border-black bg-gray-50/40 xl:bg-gray-50/30' : 'border-gray-200'
                   }`}
                 >
                   {/* Order Header */}
-                  <div className="bg-white px-8 py-5 border-b border-gray-200">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex items-center gap-8">
+                  <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 xl:border-gray-200 xl:bg-white">
+                    <div className="flex items-start justify-between gap-3 sm:flex-wrap sm:items-center sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-8">
                         <div>
                           <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
                           <p className="text-sm text-black">
@@ -1899,7 +2001,18 @@ const MyRepairs: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="ml-auto shrink-0 flex items-end gap-1.5">
+                        <span
+                          className={`inline-flex items-center justify-end px-3 py-1 text-[9px] font-semibold tracking-[0.12em] uppercase sm:px-4 sm:py-1.5 sm:text-xs whitespace-nowrap ${getStatusColor(
+                            order.status
+                          )}`}
+                          title={getStatusText(order)}
+                        >
+                          <span className="max-w-28 truncate sm:max-w-none">{getStatusText(order)}</span>
+                        </span>
+
+                        <div className="flex items-center justify-end gap-2">
+
                         {(['repairer_accepted', 'pending'].includes(order.status)) &&
                           (getIntakeMethod(order) === 'walk_in' || order.conversation_id) &&
                           !order.estimated_completion && (
@@ -1976,23 +2089,50 @@ const MyRepairs: React.FC = () => {
                             </svg>
                           </button>
                         )}
-
-                        <span
-                          className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold tracking-wider uppercase ${getStatusColor(
-                            order.status
-                          )}`}
-                        >
-                          {getStatusText(order)}
-                        </span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Order Details */}
-                  <div className="p-8">
-                    <div className="flex gap-6">
+                  <div className="p-3 sm:p-8">
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 xl:hidden">
+                      <div className="flex items-start gap-3">
+                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
+                          {order.image ? (
+                            <img
+                              src={order.image}
+                              alt={order.repair_type}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-gray-300">
+                              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.5}
+                                  d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                                />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 grow">
+                          <h3 className="truncate text-sm font-semibold text-black">{order.repair_type}</h3>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{order.description}</p>
+                          <p className="mt-1 text-xs text-gray-500">Duration: {getRepairDuration(order)}</p>
+                        </div>
+                        <div className="shrink-0 pl-2 text-right">
+                          <p className="text-xs text-gray-400">Repair Total</p>
+                          <p className="text-sm font-semibold text-black">{formatCurrency(getOrderGrandTotal(order))}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="hidden xl:flex xl:gap-6">
                       {/* Item Image */}
-                      <div className="w-24 h-24 bg-white border border-gray-200 overflow-hidden shrink-0">
+                      <div className="h-20 w-20 shrink-0 overflow-hidden border border-gray-200 bg-white sm:h-24 sm:w-24">
                         {order.image ? (
                           <img
                             src={order.image}
@@ -2015,11 +2155,11 @@ const MyRepairs: React.FC = () => {
 
                       {/* Item Details */}
                       <div className="flex-1">
-                        <h3 className="font-bold text-black text-xl mb-2">{order.repair_type}</h3>
-                        <p className="text-gray-600 mb-4">{order.description}</p>
+                        <h3 className="mb-2 text-base font-bold text-black sm:text-xl">{order.repair_type}</h3>
+                        <p className="mb-4 text-sm text-gray-600 sm:text-base">{order.description}</p>
 
                         {order.repair_package_id && (
-                          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4">
                             <div className="flex items-center justify-between gap-4">
                               <div>
                                 <p className="text-xs uppercase tracking-wide text-gray-500">Package</p>
@@ -2062,7 +2202,7 @@ const MyRepairs: React.FC = () => {
                           </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3 sm:mt-6">
                           <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Shop Location</p>
                             {order.shop_id ? (
@@ -2111,7 +2251,7 @@ const MyRepairs: React.FC = () => {
                         </div>
 
                         {shouldShowCourierShippingInfo(order) && (
-                          <div className="mt-6 pt-6 border-t border-gray-200">
+                          <div className="mt-6 border-t border-gray-200 pt-6">
                             <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
@@ -2156,6 +2296,109 @@ const MyRepairs: React.FC = () => {
 
                     </div>
 
+                    <div className="mt-5 grid grid-cols-1 gap-4 xl:hidden">
+                      {order.repair_package_id && (
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs uppercase tracking-wide text-gray-500">Package</p>
+                              <p className="text-sm font-semibold text-black">{order.pricing_breakdown?.package_name || 'Repair package selected'}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs uppercase tracking-wide text-gray-500">Base Price</p>
+                              <p className="text-sm font-semibold text-black">{formatCurrency(order.package_price)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Shop Location</p>
+                        {order.shop_id ? (
+                          <Link
+                            href={`/shop-profile/${order.shop_id}`}
+                            className="text-sm font-medium text-black underline"
+                          >
+                            {order.shop_name}
+                          </Link>
+                        ) : (
+                          <p className="text-sm font-medium text-black">{order.shop_name}</p>
+                        )}
+                        <p className="text-sm text-gray-500">{order.shop_address}</p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-[118px_minmax(0,1fr)] items-start gap-x-3">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider">Duration</p>
+                          <p className="text-right text-sm font-semibold leading-5 text-black">{getRepairDuration(order)}</p>
+                        </div>
+                        <div className="grid grid-cols-[118px_minmax(0,1fr)] items-start gap-x-3">
+                          <span></span>
+                          <p className="truncate text-right text-[10px] leading-4 text-gray-500 whitespace-nowrap">Note: Duration starts once the status is IN PROGRESS.</p>
+                        </div>
+                        <div className="grid grid-cols-[118px_minmax(0,1fr)] items-start gap-x-3">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider">To Shop (Intake)</p>
+                          <p className="text-right text-sm font-medium leading-5 text-black wrap-break-word">{getIntakeMethodLabel(order)}</p>
+                        </div>
+                        <div className="grid grid-cols-[118px_minmax(0,1fr)] items-start gap-x-3">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider">To Customer (Return)</p>
+                          <p className="text-right text-sm font-medium leading-5 text-black wrap-break-word">{getReturnMethodLabel(order)}</p>
+                        </div>
+                      </div>
+                      {order.estimated_completion && (
+                        <div className="grid grid-cols-[118px_minmax(0,1fr)] items-start gap-x-3">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider">
+                            {(order.status === 'completed' || order.status === 'picked_up') && order.completed_at
+                              ? (getReturnMethod(order) === 'walk_in' ? 'Marked Received On' : 'Completed On')
+                              : 'Preferred Date'}
+                          </p>
+                          <p className="text-right text-sm font-medium leading-5 text-black wrap-break-word">{order.completed_at || order.estimated_completion}</p>
+                        </div>
+                      )}
+
+                      {shouldShowCourierShippingInfo(order) && (
+                        <div className="border-t border-gray-200 pt-5">
+                          <p className="mb-3 text-sm text-gray-500 uppercase tracking-wider">Shipping Information</p>
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider">Estimated Delivery Date</p>
+                              <p className="text-right text-sm font-medium text-black">{getCourierEstimatedDelivery(order)}</p>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider">Shipping Business</p>
+                              <p className="text-right text-sm font-medium text-black">{order.carrier_company || '-'}</p>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider">Rider Name</p>
+                              <p className="text-right text-sm font-medium text-black">{order.carrier_name || '-'}</p>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider">Rider Phone</p>
+                              <p className="text-right text-sm font-medium text-black">{order.carrier_phone || '-'}</p>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider">Tracking Number</p>
+                              <p className="text-right text-sm font-medium text-black">{order.tracking_number || '-'}</p>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider">Tracking Link</p>
+                              {order.tracking_link ? (
+                                <a
+                                  href={order.tracking_link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="max-w-[58%] break-all text-right text-sm text-black underline"
+                                >
+                                  {order.tracking_link}
+                                </a>
+                              ) : (
+                                <p className="text-right text-sm font-medium text-black">-</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Shop at capacity notice — shown when the shop can't accept new repairs yet */}
                     {(order.status === 'new_request' || order.status === 'assigned_to_repairer') &&
                       order.shop_owner_id != null &&
@@ -2172,19 +2415,19 @@ const MyRepairs: React.FC = () => {
                     )}
 
                     {/* Repair Total */}
-                    <div className="mt-8 pt-6 border-t border-gray-200">
-                      <div className="flex justify-between items-center">
+                    <div className="mt-6 border-t border-gray-200 pt-5 sm:mt-8 sm:pt-6">
+                      <div className="flex items-start justify-between gap-4">
                         <div>
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Shop</p>
                           {order.shop_id ? (
                             <Link
                               href={`/shop-profile/${order.shop_id}`}
-                              className="font-semibold text-black underline"
+                              className="text-sm font-semibold text-black underline"
                             >
                               {order.shop_name}
                             </Link>
                           ) : (
-                            <p className="font-semibold text-black">{order.shop_name}</p>
+                            <p className="text-sm font-semibold text-black">{order.shop_name}</p>
                           )}
                         </div>
                         <div className="text-right">
@@ -2212,9 +2455,9 @@ const MyRepairs: React.FC = () => {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-4">
+                    <div className="mt-4 ml-auto flex w-full flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:gap-3 sm:pt-6 xl:gap-4">
                       {latestRefundByRepairId[order.id] && (
-                        <div className="mr-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                        <div className="mr-auto w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 sm:w-auto">
                           <p className="font-semibold">{getRefundStatusLabel(latestRefundByRepairId[order.id])}</p>
                           <p>
                             {formatCurrency((latestRefundByRepairId[order.id].approved_amount ?? latestRefundByRepairId[order.id].requested_amount) || 0)}

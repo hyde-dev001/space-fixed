@@ -282,6 +282,7 @@ const getPaymentStatusBadgeLabel = (paymentStatus?: string): string | null => {
   const normalized = String(paymentStatus ?? '').toLowerCase();
   if (normalized === 'refunded') return 'Refunded';
   if (normalized === 'partially_refunded') return 'Partially Refunded';
+  if (normalized === 'partially_paid') return 'Deposit Paid';
   return null;
 };
 
@@ -784,14 +785,28 @@ export default function JobOrdersRepair() {
     });
   }, [isViewModalOpen, viewOrder?.database_id]);
 
+  const parsePositiveWholeQuantity = (rawValue: string): number | null => {
+    const trimmed = String(rawValue ?? "").trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 1 || !Number.isInteger(parsed)) {
+      return null;
+    }
+
+    return parsed;
+  };
+
   const handleLogMaterialUsage = async () => {
     if (!viewOrder) return;
 
-    const quantityUsed = Number(materialForm.quantity_used);
-    if (!materialForm.inventory_item_id || !quantityUsed || quantityUsed <= 0) {
+    const quantityUsed = parsePositiveWholeQuantity(materialForm.quantity_used);
+    if (!materialForm.inventory_item_id || quantityUsed === null) {
       await Swal.fire({
         title: "Missing details",
-        text: "Please select a material and enter a valid quantity.",
+        text: "Please select a material and enter a whole-number quantity (1, 2, 3...).",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -878,11 +893,11 @@ export default function JobOrdersRepair() {
   const handleRequestMaterialFromOrder = async () => {
     if (!viewOrder) return;
 
-    const quantityNeeded = Number(materialForm.quantity_used);
-    if (!materialForm.inventory_item_id || !quantityNeeded || quantityNeeded <= 0) {
+    const quantityNeeded = parsePositiveWholeQuantity(materialForm.quantity_used);
+    if (!materialForm.inventory_item_id || quantityNeeded === null) {
       await Swal.fire({
         title: "Missing details",
-        text: "Please select a material and enter quantity before requesting.",
+        text: "Please select a material and enter a whole-number quantity before requesting.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1061,6 +1076,7 @@ export default function JobOrdersRepair() {
 
   const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
+    const isDepositSettled = status === 'paid' || status === 'partially_paid';
     const policy = order.payment_policy ?? 'deposit_50';
     const returnMethod = order.returnDeliveryMethod;
 
@@ -1079,13 +1095,13 @@ export default function JobOrdersRepair() {
     }
 
     if (['pending', 'failed', 'expired', ''].includes(status)) return true;
-    if (status === 'paid') return order.status === 'ready-for-pickup';
+    if (isDepositSettled) return order.status === 'ready-for-pickup';
     return false;
   };
 
   const getMarkPaidInShopLabel = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
-    if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && status === 'paid') {
+    if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && (status === 'paid' || status === 'partially_paid')) {
       return 'Proceed to POS (Collect Remaining Balance)';
     }
     return 'Proceed to POS (Collect Payment)';
@@ -1096,7 +1112,7 @@ export default function JobOrdersRepair() {
     const status = (order.payment_status ?? '').toLowerCase();
 
     if (policy === 'full_upfront') return 'full';
-    if (status === 'paid') return 'balance';
+    if (status === 'paid' || status === 'partially_paid') return 'balance';
     return 'deposit';
   };
 
@@ -1107,14 +1123,14 @@ export default function JobOrdersRepair() {
 
     return !isWalkInReturn(order)
       && paymentPolicy === 'deposit_50'
-      && paymentStatus === 'paid'
+      && (paymentStatus === 'paid' || paymentStatus === 'partially_paid')
       && (orderStatus === 'ready-for-pickup' || orderStatus === 'ready_for_pickup')
       && !Boolean(order.payment_enabled);
   };
 
   const isInShopPaymentRecorded = (order: Pick<RepairOrder, 'payment_status' | 'paymongo_payment_id'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
-    if (!['paid', 'completed'].includes(status)) return false;
+    if (!['paid', 'partially_paid', 'completed'].includes(status)) return false;
 
     const paymentId = (order.paymongo_payment_id ?? '').toLowerCase();
     return paymentId.startsWith('in_shop');
@@ -2405,7 +2421,7 @@ export default function JobOrdersRepair() {
                           <span className="text-rose-600 dark:text-rose-400">Partially Refunded</span>
                         ) : order.payment_status === 'completed' ? (
                           <span className="text-green-600 dark:text-green-400">{order.grandTotal || order.total}</span>
-                        ) : order.payment_status === 'paid' ? (
+                        ) : order.payment_status === 'paid' || order.payment_status === 'partially_paid' ? (
                           <span className="text-amber-600 dark:text-amber-400">{getHalfPriceText(order.grandTotal || order.total)}</span>
                         ) : (
                           <span className="text-gray-400 dark:text-gray-500">—</span>
@@ -2928,6 +2944,7 @@ export default function JobOrdersRepair() {
                       <input
                         type="number"
                         min={1}
+                        step={1}
                         placeholder="Qty"
                         value={materialForm.quantity_used}
                         onChange={(event) => setMaterialForm((prev) => ({ ...prev, quantity_used: event.target.value }))}

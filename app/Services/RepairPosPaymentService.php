@@ -137,16 +137,17 @@ class RepairPosPaymentService
             $hasBalancePayment = in_array('balance', $paidDueTypes, true);
             $hasFullPayment = in_array('full', $paidDueTypes, true);
 
-            $overallTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
-            $derivedStatus = $totalPaid <= 0
-                ? 'unpaid'
-                : ($totalPaid < $overallTotal ? 'partially_paid' : 'paid');
-
-            $canonicalStatus = $derivedStatus;
-            if ($normalizedPolicy === 'deposit_50' && !$hasDepositPayment && !$hasBalancePayment && $totalPaid <= 0) {
-                $canonicalStatus = 'unpaid';
-            } elseif ($normalizedPolicy === 'full_upfront' && !$hasFullPayment && $totalPaid <= 0) {
-                $canonicalStatus = 'unpaid';
+            $canonicalStatus = 'unpaid';
+            if ($normalizedPolicy === 'full_upfront') {
+                if ($hasFullPayment || $totalPaid > 0) {
+                    $canonicalStatus = 'completed';
+                }
+            } else {
+                if ($hasBalancePayment) {
+                    $canonicalStatus = 'completed';
+                } elseif ($hasDepositPayment || $totalPaid > 0) {
+                    $canonicalStatus = 'paid';
+                }
             }
 
             $repair->update([
@@ -201,8 +202,32 @@ class RepairPosPaymentService
                     ->where('status', 'paid')
                     ->sum('paid_amount');
 
-                $overallTotal = (float) ($repair->final_total ?? $repair->total ?? 0);
-                $canonical = $totalPaid <= 0 ? 'unpaid' : ($totalPaid < $overallTotal ? 'partially_paid' : 'paid');
+                $paidDueTypes = PosTransaction::query()
+                    ->where('module_type', 'repair')
+                    ->where('module_reference_id', $repair->id)
+                    ->where('status', 'paid')
+                    ->pluck('due_type')
+                    ->map(fn ($value) => strtolower((string) $value))
+                    ->all();
+
+                $policy = (string) ($repair->payment_policy_snapshot ?: $repair->payment_policy ?: 'deposit_50');
+                $normalizedPolicy = $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
+                $hasDepositPayment = in_array('deposit', $paidDueTypes, true);
+                $hasBalancePayment = in_array('balance', $paidDueTypes, true);
+                $hasFullPayment = in_array('full', $paidDueTypes, true);
+
+                $canonical = 'unpaid';
+                if ($normalizedPolicy === 'full_upfront') {
+                    if ($hasFullPayment || $totalPaid > 0) {
+                        $canonical = 'completed';
+                    }
+                } else {
+                    if ($hasBalancePayment) {
+                        $canonical = 'completed';
+                    } elseif ($hasDepositPayment || $totalPaid > 0) {
+                        $canonical = 'paid';
+                    }
+                }
 
                 $repair->update([
                     'total_paid_amount' => $totalPaid,
