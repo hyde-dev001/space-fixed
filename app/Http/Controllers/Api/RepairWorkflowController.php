@@ -1570,7 +1570,7 @@ class RepairWorkflowController extends Controller
                 ->firstOrFail();
             
             // Validate payment is completed (or deposit paid) before starting work
-            if ($repairRequest->payment_enabled && !in_array($repairRequest->payment_status, ['paid', 'completed'])) {
+            if ($repairRequest->payment_enabled && !$this->isPaymentSatisfiedForRepairProgress($repairRequest)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1923,7 +1923,7 @@ class RepairWorkflowController extends Controller
                     ], 400);
                 }
 
-                if (!in_array((string) ($debugRepair->payment_status ?? ''), ['paid', 'completed'], true)) {
+                if (!$this->isPaymentSatisfiedForRepairProgress($debugRepair)) {
                     DB::rollBack();
                     return response()->json([
                         'success' => false,
@@ -1993,7 +1993,7 @@ class RepairWorkflowController extends Controller
                 ], 400);
             }
 
-            if (!in_array((string) ($debugRepair->payment_status ?? ''), ['paid', 'completed'], true)) {
+            if (!$this->isPaymentSatisfiedForRepairProgress($debugRepair)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -3873,6 +3873,25 @@ class RepairWorkflowController extends Controller
         ])->save();
 
         return $totals;
+    }
+
+    /**
+     * Backward-compatible payment gate for repair progression.
+     *
+     * Legacy records may still hold `partially_paid` for the deposit phase.
+     * Treat that as paid when policy is deposit_50 so existing orders can be
+     * marked received and moved to in-progress.
+     */
+    private function isPaymentSatisfiedForRepairProgress(RepairRequest $repairRequest): bool
+    {
+        $status = strtolower((string) ($repairRequest->payment_status ?? ''));
+        if (in_array($status, ['paid', 'completed'], true)) {
+            return true;
+        }
+
+        $policy = strtolower((string) ($repairRequest->payment_policy_snapshot ?: $repairRequest->payment_policy ?: 'deposit_50'));
+
+        return $policy === 'deposit_50' && $status === 'partially_paid';
     }
 
     private function generateStockRequestNumber(): string

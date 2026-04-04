@@ -802,6 +802,18 @@ export default function JobOrdersRepair() {
   const handleLogMaterialUsage = async () => {
     if (!viewOrder) return;
 
+    const workflowStatus = String(viewOrder.status ?? "").toLowerCase();
+    const canLogByStatus = ["in-progress", "in_progress", "awaiting_parts"].includes(workflowStatus);
+    if (!canLogByStatus) {
+      await Swal.fire({
+        title: "Cannot log materials yet",
+        text: "Move this repair to In Progress (or Awaiting Parts) first before logging material usage.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     const quantityUsed = parsePositiveWholeQuantity(materialForm.quantity_used);
     if (!materialForm.inventory_item_id || quantityUsed === null) {
       await Swal.fire({
