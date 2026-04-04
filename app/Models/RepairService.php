@@ -99,6 +99,12 @@ class RepairService extends Model
             ->withTimestamps();
     }
 
+    public function materialTemplateItems()
+    {
+        return $this->hasMany(RepairMaterialTemplateItem::class, 'template_id')
+            ->where('template_type', 'repair_service');
+    }
+
     /**
      * Get repair requests using this service
      */

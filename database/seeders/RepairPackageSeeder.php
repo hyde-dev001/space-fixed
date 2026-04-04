@@ -14,6 +14,8 @@ class RepairPackageSeeder extends Seeder
      */
     public function run(): void
     {
+        $eligibleRegistrationTypes = ['individual', 'company', 'registered'];
+
         $packageBlueprints = [
             [
                 'name' => 'Starter Clean Package',
@@ -34,6 +36,10 @@ class RepairPackageSeeder extends Seeder
         $eligibleShops = ShopOwner::query()
             ->whereIn('business_type', ['repair', 'both'])
             ->where('status', 'approved')
+            ->where(function ($query) use ($eligibleRegistrationTypes) {
+                $query->whereNull('registration_type')
+                    ->orWhereIn('registration_type', $eligibleRegistrationTypes);
+            })
             ->get(['id']);
 
         foreach ($eligibleShops as $shop) {
@@ -71,6 +77,6 @@ class RepairPackageSeeder extends Seeder
             }
         }
 
-        $this->command?->info('Repair packages seeded for repair and both business types.');
+        $this->command?->info('Repair packages seeded for repair/both shops across individual/company/registered registration types.');
     }
 }

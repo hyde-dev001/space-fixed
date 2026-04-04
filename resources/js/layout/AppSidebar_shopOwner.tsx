@@ -177,6 +177,18 @@ const productManagementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 3v18"></path>
+        <path d="M3 12h18"></path>
+        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+      </svg>
+    ),
+    name: "Upload Stock Materials",
+    route: "shop-owner.upload-stock-materials",
+    path: "/shop-owner/upload-stock-materials",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
       </svg>
     ),
@@ -312,6 +324,7 @@ const AppSidebar_shopOwner: React.FC = () => {
       'shop-owner.job-orders-repair',
       'shop-owner.product-uploder',
       'shop-owner.upload-services',
+      'shop-owner.upload-stock-materials',
     ];
 
     if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
@@ -322,7 +335,7 @@ const AppSidebar_shopOwner: React.FC = () => {
 
       // For individual accounts, show based on business type
       const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
-      const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.upload-services'];
+      const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.upload-services', 'shop-owner.upload-stock-materials'];
 
       if (retailRoutes.includes(menuItem.route)) {
         return itemBusinessType === 'retail' || itemBusinessType === 'both';

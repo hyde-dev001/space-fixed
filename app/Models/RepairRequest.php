@@ -230,6 +230,11 @@ class RepairRequest extends Model
         return $this->hasMany(RepairMaterialUsage::class);
     }
 
+    public function materialPlanItems()
+    {
+        return $this->hasMany(RepairMaterialPlanItem::class);
+    }
+
     /**
      * Scope for filtering by customer
      */

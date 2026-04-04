@@ -164,6 +164,13 @@ export default function RequestMaterials() {
     notes: "",
   });
 
+  const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const repairMode = searchParams.get("mode") === "repair" || searchParams.get("repairMode") === "1";
+  const parsedRepairRequestId = Number(searchParams.get("repair_request_id") || searchParams.get("repairRequestId") || "");
+  const repairRequestId = Number.isFinite(parsedRepairRequestId) && parsedRepairRequestId > 0
+    ? parsedRepairRequestId
+    : null;
+
   const selectedMaterial = useMemo(
     () => materials.find((material) => String(material.id) === formData.materialId) ?? null,
     [materials, formData.materialId]
@@ -174,7 +181,7 @@ export default function RequestMaterials() {
       setLoading(true);
       const [materialsResponse, requestsResponse] = await Promise.all([
         repairMaterialsApi.getStocksOverview({ category: "repair_materials" }),
-        repairMaterialsApi.getMyMaterialRequests(),
+        repairMaterialsApi.getMyMaterialRequests(repairRequestId ? { repair_request_id: repairRequestId } : undefined),
       ]);
 
       if (materialsResponse.success) {
@@ -298,6 +305,16 @@ export default function RequestMaterials() {
   };
 
   const handleSubmitCart = async () => {
+    if (repairMode && !repairRequestId) {
+      await Swal.fire({
+        title: "Missing repair context",
+        text: "Select a repair job before requesting materials.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     if (cart.length === 0) {
       await Swal.fire({
         title: "Empty cart",
@@ -317,6 +334,7 @@ export default function RequestMaterials() {
           priority: toPriorityPayload(item.priority),
           notes: item.notes,
         })),
+        repair_request_id: repairRequestId ?? undefined,
       });
 
       if (response.success) {
@@ -344,6 +362,16 @@ export default function RequestMaterials() {
   };
 
   const handleSubmitRequest = async () => {
+    if (repairMode && !repairRequestId) {
+      await Swal.fire({
+        title: "Missing repair context",
+        text: "Select a repair job before requesting materials.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     // Original single submission kept for backward compatibility
     if (!selectedMaterial || !formData.quantity || !formData.notes.trim()) {
       await Swal.fire({
@@ -372,6 +400,7 @@ export default function RequestMaterials() {
         quantity_needed: quantity,
         priority: toPriorityPayload(formData.priority),
         notes: formData.notes.trim(),
+        repair_request_id: repairRequestId ?? undefined,
       });
 
       if (response.success) {

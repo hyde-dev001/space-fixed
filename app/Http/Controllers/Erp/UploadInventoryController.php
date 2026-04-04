@@ -30,7 +30,13 @@ class UploadInventoryController extends Controller
      */
     public function index(Request $request)
     {
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
         $allowedCategories = $this->allowedCategoriesForBusinessType(
             $this->resolveBusinessType($request)
         );
@@ -179,8 +185,15 @@ class UploadInventoryController extends Controller
             }
             unset($variantData);
         }
-        
-        $shopOwnerId = $request->user()->shop_owner_id;
+
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
+        $actorUserId = $this->resolveActorUserId($request);
         
         // Generate SKU if not provided
         if (empty($validated['sku'])) {
@@ -206,7 +219,7 @@ class UploadInventoryController extends Controller
                 'cost_price' => $validated['cost_price'] ?? null,
                 'weight' => $validated['weight'] ?? null,
                 'is_active' => true,
-                'created_by' => $request->user()->id
+                'created_by' => $actorUserId
             ]);
             
             // Create color variants if provided
@@ -298,7 +311,7 @@ class UploadInventoryController extends Controller
                     'quantity_after' => $validated['available_quantity'],
                     'reference_type' => 'initial_stock',
                     'notes' => 'Initial stock entry',
-                    'performed_by' => $request->user()->id,
+                    'performed_by' => $actorUserId,
                     'performed_at' => now()
                 ]);
             }
@@ -354,7 +367,14 @@ class UploadInventoryController extends Controller
             return $authorizationError;
         }
         
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
+        $actorUserId = $this->resolveActorUserId($request);
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
@@ -363,14 +383,14 @@ class UploadInventoryController extends Controller
             return $authorizationError;
         }
         
-        DB::transaction(function () use ($item, $validated, $request) {
+        DB::transaction(function () use ($item, $validated, $request, $actorUserId) {
             $quantityBefore = $item->available_quantity;
             $newQuantity = $validated['available_quantity'] ?? $quantityBefore;
             $quantityChange = $newQuantity - $quantityBefore;
 
             $updateData = array_merge(
                 array_diff_key($validated, ['available_quantity' => null]),
-                ['available_quantity' => $newQuantity, 'updated_by' => $request->user()->id]
+                ['available_quantity' => $newQuantity, 'updated_by' => $actorUserId]
             );
 
             $item->update($updateData);
@@ -385,7 +405,7 @@ class UploadInventoryController extends Controller
                     'quantity_after' => $newQuantity,
                     'reference_type' => 'manual',
                     'notes' => 'Quantity updated via Upload Inventory page',
-                    'performed_by' => $request->user()->id,
+                    'performed_by' => $actorUserId,
                     'performed_at' => now(),
                 ]);
             }
@@ -400,14 +420,19 @@ class UploadInventoryController extends Controller
     /**
      * Delete inventory item (soft delete)
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $shopOwnerId = request()->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
-        if ($authorizationError = $this->authorizeCategoryForBusinessType(request(), $item->category)) {
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
         
@@ -430,7 +455,12 @@ class UploadInventoryController extends Controller
             'color_variant_id' => 'nullable|exists:inventory_color_variants,id'
         ]);
         
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($request->inventory_item_id);
@@ -462,7 +492,12 @@ class UploadInventoryController extends Controller
      */
     public function deleteImage(Request $request, $imageId)
     {
-        $shopOwnerId = request()->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $image = InventoryImage::whereHas('inventoryItem', function ($query) use ($shopOwnerId) {
                 $query->where('shop_owner_id', $shopOwnerId);
@@ -492,7 +527,12 @@ class UploadInventoryController extends Controller
      */
     public function setThumbnail(Request $request, $imageId)
     {
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $image = InventoryImage::whereHas('inventoryItem', function ($query) use ($shopOwnerId) {
                 $query->where('shop_owner_id', $shopOwnerId);
@@ -544,7 +584,14 @@ class UploadInventoryController extends Controller
             'images.*'          => 'image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
 
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
+        $actorUserId = $this->resolveActorUserId($request);
 
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
@@ -640,7 +687,7 @@ class UploadInventoryController extends Controller
                     'quantity_after'    => $newTotalQty,
                     'reference_type'    => 'colour_added',
                     'notes'             => "Added colour variant: {$canonicalColorName}",
-                    'performed_by'      => $request->user()->id,
+                    'performed_by'      => $actorUserId,
                     'performed_at'      => now(),
                 ]);
             }
@@ -736,7 +783,14 @@ class UploadInventoryController extends Controller
             'quantity' => 'required|integer|min:1',
         ]);
 
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
+        $actorUserId = $this->resolveActorUserId($request);
 
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
@@ -796,7 +850,7 @@ class UploadInventoryController extends Controller
                 'quantity_after' => $newTotalQty,
                 'reference_type' => 'size_added',
                 'notes' => "Added size {$sizeValue} (+{$quantityToAdd}) to {$colorVariant->color_name}",
-                'performed_by' => $request->user()->id,
+                'performed_by' => $actorUserId,
                 'performed_at' => now(),
             ]);
 
@@ -860,7 +914,14 @@ class UploadInventoryController extends Controller
             'quantity' => 'required|integer|min:0',
         ]);
 
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
+        $actorUserId = $this->resolveActorUserId($request);
 
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
@@ -915,7 +976,7 @@ class UploadInventoryController extends Controller
                 'quantity_after'    => $newQty,
                 'reference_type'    => 'size_correction',
                 'notes'             => "Size {$size->size} corrected: {$oldQty} → {$newQty}",
-                'performed_by'      => $request->user()->id,
+                'performed_by'      => $actorUserId,
                 'performed_at'      => now(),
             ]);
 
@@ -938,9 +999,46 @@ class UploadInventoryController extends Controller
         }
     }
 
+    protected function resolveShopOwnerId(Request $request): ?int
+    {
+        $requestShopId = (int) $request->input('user_shop_id');
+        if ($requestShopId > 0) {
+            return $requestShopId;
+        }
+
+        $user = $request->user();
+        if (!empty($user?->shop_owner_id)) {
+            return (int) $user->shop_owner_id;
+        }
+
+        if ($shopOwner = $request->user('shop_owner')) {
+            return (int) $shopOwner->id;
+        }
+
+        return null;
+    }
+
+    protected function resolveActorUserId(Request $request): ?int
+    {
+        $user = $request->user();
+
+        if (!empty($user?->shop_owner_id)) {
+            return (int) $user->id;
+        }
+
+        return null;
+    }
+
     protected function resolveBusinessType(Request $request): string
     {
-        return $this->normalizeBusinessType($request->user()?->shopOwner?->business_type);
+        if (!empty($request->user('shop_owner')?->business_type)) {
+            return $this->normalizeBusinessType($request->user('shop_owner')->business_type);
+        }
+
+        return $this->normalizeBusinessType(
+            $request->user()?->shopOwner?->business_type
+            ?? $request->user()?->business_type
+        );
     }
 
     protected function normalizeBusinessType(?string $businessType): string

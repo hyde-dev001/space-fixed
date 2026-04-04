@@ -13,6 +13,8 @@ class RepairServiceSeeder extends Seeder
      */
     public function run(): void
     {
+        $eligibleRegistrationTypes = ['individual', 'company', 'registered'];
+
         $services = [
             [
                 'name' => 'Deep Sole Cleaning',
@@ -67,6 +69,10 @@ class RepairServiceSeeder extends Seeder
         $eligibleShops = ShopOwner::query()
             ->whereIn('business_type', ['repair', 'both'])
             ->where('status', 'approved')
+            ->where(function ($query) use ($eligibleRegistrationTypes) {
+                $query->whereNull('registration_type')
+                    ->orWhereIn('registration_type', $eligibleRegistrationTypes);
+            })
             ->get(['id', 'business_name', 'business_type']);
 
         foreach ($eligibleShops as $shop) {
@@ -87,6 +93,6 @@ class RepairServiceSeeder extends Seeder
             }
         }
 
-        $this->command?->info('Repair services seeded for repair and both business types.');
+        $this->command?->info('Repair services seeded for repair/both shops across individual/company/registered registration types.');
     }
 }

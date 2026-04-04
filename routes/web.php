@@ -516,6 +516,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
             return Inertia::render('ShopOwner/Repairs/service management/uploadService');
         })->name('upload-services');
 
+        Route::get('/upload-stock-materials', function () {
+            return Inertia::render('ShopOwner/Repairs/individual/uploadStockMaterial');
+        })->middleware('check.registration.type:individual')->name('upload-stock-materials');
+
         Route::middleware('check.registration.type:company')->group(function () {
             Route::get('/repair-reject-approval', function () {
                 return Inertia::render('ShopOwner/Repairs/repairRejectReview');
@@ -1088,6 +1092,8 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
     Route::post('{id}/mark-awaiting-parts', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAwaitingParts']);
     Route::post('{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork']);
     Route::post('{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted']);
+    Route::post('{id}/materials/validate-start', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'validateMaterialStart']);
+    Route::post('{id}/materials/validate-complete', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'validateMaterialCompletion']);
     Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
     Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
     Route::post('{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup']);

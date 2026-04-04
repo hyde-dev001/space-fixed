@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
 use App\Services\ShopOwnerApprovalPolicyService;
@@ -33,7 +34,11 @@ class RepairPackageController extends Controller
 
         $query = RepairPackage::query()
             ->active()
-            ->with('services:id,name,category,price,duration,status,shop_owner_id');
+            ->with([
+                'services:id,name,category,price,duration,status,shop_owner_id',
+                'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+                'materialTemplateItems.inventoryItem:id,name,available_quantity',
+            ]);
 
         if ($request->filled('shop_id')) {
             $query->where('shop_owner_id', (int) $request->shop_id);
@@ -78,6 +83,14 @@ class RepairPackageController extends Controller
                     'duration' => $service->duration,
                     'status' => $service->status,
                 ])->values(),
+                'material_templates' => $package->materialTemplateItems->map(fn ($line) => [
+                    'id' => $line->id,
+                    'inventory_item_id' => $line->inventory_item_id,
+                    'inventory_item_name' => $line->inventoryItem?->name,
+                    'default_quantity' => (float) $line->default_quantity,
+                    'is_critical' => (bool) $line->is_critical,
+                    'tolerance_percent' => (float) $line->tolerance_percent,
+                ])->values(),
             ];
         });
 
@@ -89,7 +102,11 @@ class RepairPackageController extends Controller
 
     public function index(Request $request)
     {
-        $query = RepairPackage::query()->with('services:id,name,category,price,duration,status,shop_owner_id');
+        $query = RepairPackage::query()->with([
+            'services:id,name,category,price,duration,status,shop_owner_id',
+            'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+            'materialTemplateItems.inventoryItem:id,name,available_quantity',
+        ]);
 
         if ($shopOwnerId = $this->resolveShopOwnerId()) {
             $query->where('shop_owner_id', $shopOwnerId);
@@ -137,6 +154,14 @@ class RepairPackageController extends Controller
                     'price' => (float) $service->price,
                     'duration' => $service->duration,
                     'status' => $service->status,
+                ])->values(),
+                'material_templates' => $package->materialTemplateItems->map(fn ($line) => [
+                    'id' => $line->id,
+                    'inventory_item_id' => $line->inventory_item_id,
+                    'inventory_item_name' => $line->inventoryItem?->name,
+                    'default_quantity' => (float) $line->default_quantity,
+                    'is_critical' => (bool) $line->is_critical,
+                    'tolerance_percent' => (float) $line->tolerance_percent,
                 ])->values(),
                 'created_at' => optional($package->created_at)?->toIso8601String(),
                 'updated_at' => optional($package->updated_at)?->toIso8601String(),
@@ -301,6 +326,11 @@ class RepairPackageController extends Controller
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
             'service_ids' => 'required|array|min:2',
             'service_ids.*' => 'integer|exists:repair_services,id',
+            'material_templates' => 'nullable|array',
+            'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
+            'material_templates.*.default_quantity' => 'required|numeric|min:0.01',
+            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -326,6 +356,7 @@ class RepairPackageController extends Controller
 
         try {
             $package->syncIncludedServices((array) $request->service_ids);
+            $this->syncMaterialTemplates($package, (array) $request->input('material_templates', []));
         } catch (ValidationException $e) {
             $package->delete();
 
@@ -338,13 +369,20 @@ class RepairPackageController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Repair package created successfully.',
-            'data' => $package->load('services:id,name,category,price,duration,status,shop_owner_id'),
+            'data' => $package->load([
+                'services:id,name,category,price,duration,status,shop_owner_id',
+                'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+            ]),
         ], 201);
     }
 
     public function show(int $id)
     {
-        $package = RepairPackage::with('services:id,name,category,price,duration,status,shop_owner_id')->find($id);
+        $package = RepairPackage::with([
+            'services:id,name,category,price,duration,status,shop_owner_id',
+            'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+            'materialTemplateItems.inventoryItem:id,name,available_quantity',
+        ])->find($id);
 
         if (!$package) {
             return response()->json([
@@ -468,6 +506,11 @@ class RepairPackageController extends Controller
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
             'service_ids' => 'sometimes|required|array|min:2',
             'service_ids.*' => 'integer|exists:repair_services,id',
+            'material_templates' => 'sometimes|array',
+            'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
+            'material_templates.*.default_quantity' => 'required|numeric|min:0.01',
+            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -495,10 +538,24 @@ class RepairPackageController extends Controller
             }
         }
 
+        if ($request->has('material_templates')) {
+            try {
+                $this->syncMaterialTemplates($package, (array) $request->input('material_templates', []));
+            } catch (ValidationException $e) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Repair package updated successfully.',
-            'data' => $package->load('services:id,name,category,price,duration,status,shop_owner_id'),
+            'data' => $package->load([
+                'services:id,name,category,price,duration,status,shop_owner_id',
+                'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+            ]),
         ]);
     }
 
@@ -566,5 +623,39 @@ class RepairPackageController extends Controller
         }
 
         return (float) $package->package_price;
+    }
+
+    private function syncMaterialTemplates(RepairPackage $package, array $materialTemplates): void
+    {
+        $createdBy = Auth::guard('user')->id();
+
+        foreach ($materialTemplates as $index => $line) {
+            $inventoryItem = InventoryItem::query()
+                ->where('id', (int) ($line['inventory_item_id'] ?? 0))
+                ->where('shop_owner_id', $package->shop_owner_id)
+                ->where('category', 'repair_materials')
+                ->first();
+
+            if (!$inventoryItem) {
+                throw ValidationException::withMessages([
+                    "material_templates.{$index}.inventory_item_id" => 'Selected inventory item must belong to this shop and be a repair material.',
+                ]);
+            }
+        }
+
+        $package->materialTemplateItems()->delete();
+
+        collect($materialTemplates)->each(function (array $line) use ($package, $createdBy): void {
+            $package->materialTemplateItems()->create([
+                'shop_owner_id' => $package->shop_owner_id,
+                'inventory_item_id' => (int) $line['inventory_item_id'],
+                'template_type' => 'repair_package',
+                'template_id' => $package->id,
+                'default_quantity' => (float) $line['default_quantity'],
+                'is_critical' => (bool) $line['is_critical'],
+                'tolerance_percent' => (float) ($line['tolerance_percent'] ?? 20),
+                'created_by' => $createdBy,
+            ]);
+        });
     }
 }

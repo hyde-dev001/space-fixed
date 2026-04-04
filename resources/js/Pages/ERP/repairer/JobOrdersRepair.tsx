@@ -118,6 +118,7 @@ const getMonthKey = (date: Date): string => {
 const staticOrders: RepairOrder[] = [
   {
     id: "RR-1000",
+    database_id: 1000,
     customer: "Jade Navarro",
     email: "jade.navarro@example.com",
     phone: "0917-555-0100",
@@ -150,6 +151,7 @@ const staticOrders: RepairOrder[] = [
   },
   {
     id: "RR-1001",
+    database_id: 1001,
     customer: "Ava Santos",
     email: "ava.santos@example.com",
     phone: "0917-555-0101",
@@ -162,6 +164,7 @@ const staticOrders: RepairOrder[] = [
   },
   {
     id: "RR-1002",
+    database_id: 1002,
     customer: "Liam Cruz",
     email: "liam.cruz@example.com",
     phone: "0917-555-0102",
@@ -173,6 +176,7 @@ const staticOrders: RepairOrder[] = [
   },
   {
     id: "RR-1003",
+    database_id: 1003,
     customer: "Mia Velasquez",
     email: "mia.velasquez@example.com",
     phone: "0917-555-0103",
@@ -185,6 +189,7 @@ const staticOrders: RepairOrder[] = [
   },
   {
     id: "RR-1004",
+    database_id: 1004,
     customer: "Noah Reyes",
     email: "noah.reyes@example.com",
     phone: "0917-555-0104",
@@ -197,6 +202,7 @@ const staticOrders: RepairOrder[] = [
   },
   {
     id: "RR-1005",
+    database_id: 1005,
     customer: "Emma Dela Cruz",
     email: "emma.delacruz@example.com",
     phone: "0917-555-0105",
@@ -209,6 +215,7 @@ const staticOrders: RepairOrder[] = [
   },
   {
     id: "RR-1006",
+    database_id: 1006,
     customer: "Miguel Torres",
     email: "miguel.torres@example.com",
     phone: "0917-555-0106",
@@ -1234,6 +1241,54 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     try {
+      const readiness = await repairMaterialsApi.validateStartReadiness(order.database_id);
+
+      if (!readiness.success || readiness.data.readiness_state === "blocked") {
+        await Swal.fire({
+          title: "Cannot start work",
+          text: "Critical materials are unavailable. Please request materials first.",
+          icon: "warning",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
+
+      if (readiness.data.readiness_state === "at_risk") {
+        const continueAtRisk = await Swal.fire({
+          title: "Materials at risk",
+          text: "Some non-critical materials are short. Continue starting work?",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Continue",
+          cancelButtonText: "Cancel",
+          confirmButtonColor: "#2563eb",
+        });
+
+        if (!continueAtRisk.isConfirmed) {
+          return;
+        }
+      }
+    } catch (readinessError: any) {
+      if (readinessError?.response?.data?.data?.readiness_state === "blocked") {
+        await Swal.fire({
+          title: "Cannot start work",
+          text: "Critical materials are unavailable. Please request materials first.",
+          icon: "warning",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
+
+      await Swal.fire({
+        title: "Readiness check failed",
+        text: readinessError?.response?.data?.message || "Unable to validate material readiness right now.",
+        icon: "error",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const response = await fetch(`/api/repairer/repairs/${order.database_id}/start-work`, {
@@ -1323,6 +1378,38 @@ export default function JobOrdersRepair() {
 
     if (!result.isConfirmed) return;
 
+    try {
+      const completionReadiness = await repairMaterialsApi.validateCompletionReadiness(Number(orderId));
+
+      if (!completionReadiness.success || completionReadiness.data.readiness_state === "variance_review_needed") {
+        await Swal.fire({
+          title: "Completion blocked",
+          text: "Resolve material variance note/review first.",
+          icon: "warning",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
+    } catch (readinessError: any) {
+      if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
+        await Swal.fire({
+          title: "Completion blocked",
+          text: "Resolve material variance note/review first.",
+          icon: "warning",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
+
+      await Swal.fire({
+        title: "Readiness check failed",
+        text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
+        icon: "error",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     const completeRepair = (noMaterialsUsedConfirmed: boolean = false) => {
       return axios.post(`/api/repairer/repairs/${orderId}/mark-completed`, {
         completion_notes: '',
@@ -1386,7 +1473,7 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const handleMarkReady = async (orderId: string) => {
+  const handleMarkReady = async (order: RepairOrder) => {
     const result = await Swal.fire({
       title: 'Mark as Ready for Pickup',
       text: 'Are you sure you want to mark this repair as ready for pickup?',
@@ -1399,8 +1486,42 @@ export default function JobOrdersRepair() {
 
     if (!result.isConfirmed) return;
 
+    if (order.status === "in-progress") {
+      try {
+        const completionReadiness = await repairMaterialsApi.validateCompletionReadiness(order.database_id);
+
+        if (!completionReadiness.success || completionReadiness.data.readiness_state === "variance_review_needed") {
+          await Swal.fire({
+            title: "Completion blocked",
+            text: "Resolve material variance note/review first.",
+            icon: "warning",
+            confirmButtonColor: "#2563eb",
+          });
+          return;
+        }
+      } catch (readinessError: any) {
+        if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
+          await Swal.fire({
+            title: "Completion blocked",
+            text: "Resolve material variance note/review first.",
+            icon: "warning",
+            confirmButtonColor: "#2563eb",
+          });
+          return;
+        }
+
+        await Swal.fire({
+          title: "Readiness check failed",
+          text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
+          icon: "error",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
+    }
+
     try {
-      const response = await axios.post(`/api/repairer/repairs/${orderId}/mark-ready`, { 
+      const response = await axios.post(`/api/repairer/repairs/${order.database_id}/mark-ready`, { 
         pickup_instructions: '' 
       });
       
@@ -2384,7 +2505,7 @@ export default function JobOrdersRepair() {
 
                           {(order.status === "in-progress" || order.status === "completed") && (
                             <button
-                              onClick={() => handleMarkReady(String(order.database_id))}
+                              onClick={() => handleMarkReady(order)}
                               className="inline-flex items-center justify-center p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30 rounded-lg transition-colors"
                               title="Ready for Pickup"
                               aria-label="Ready for Pickup"

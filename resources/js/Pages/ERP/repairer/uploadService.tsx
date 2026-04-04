@@ -637,7 +637,10 @@ export default function UploadService() {
           </>
         ) : (
           <div className="space-y-4">
-            <RepairPackageManager />
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Predefined materials must be selected from existing repair-material inventory items only.
+            </p>
+            <RepairPackageManager materialsEndpoint="/api/repairer/materials" />
           </div>
         )}
       </div>

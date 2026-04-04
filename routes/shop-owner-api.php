@@ -23,6 +23,7 @@ use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchas
 use App\Http\Controllers\ShopOwner\ExpenseController as ShopOwnerExpenseController;
 use App\Http\Controllers\ShopOwner\PremiumCheckoutController;
 use App\Http\Controllers\Api\RefundApprovalController;
+use App\Http\Controllers\Erp\UploadInventoryController;
 
 /**
  * Shop Owner Routes
@@ -185,8 +186,21 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // INVENTORY MANAGEMENT (Shop Owner)
     // ============================================
-    Route::prefix('inventory')->middleware('check.business.type:retail,both')->group(function () {
-        Route::get('/overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index'])->name('shop_owner.inventory.overview');
+    Route::prefix('inventory')->group(function () {
+        Route::middleware('check.business.type:retail,both')->group(function () {
+            Route::get('/overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index'])->name('shop_owner.inventory.overview');
+        });
+
+        Route::middleware(['check.business.type:repair,both', 'check.registration.type:individual'])->group(function () {
+            Route::get('/items', [UploadInventoryController::class, 'index'])->name('shop_owner.inventory.items.index');
+            Route::post('/items', [UploadInventoryController::class, 'store'])->name('shop_owner.inventory.items.store');
+            Route::put('/items/{id}', [UploadInventoryController::class, 'update'])->name('shop_owner.inventory.items.update');
+            Route::delete('/items/{id}', [UploadInventoryController::class, 'destroy'])->name('shop_owner.inventory.items.destroy');
+
+            Route::post('/items/images', [UploadInventoryController::class, 'uploadImages'])->name('shop_owner.inventory.items.images.upload');
+            Route::delete('/items/images/{id}', [UploadInventoryController::class, 'deleteImage'])->name('shop_owner.inventory.items.images.delete');
+            Route::put('/items/images/{id}/thumbnail', [UploadInventoryController::class, 'setThumbnail'])->name('shop_owner.inventory.items.images.thumbnail');
+        });
     });
 
     // ============================================
@@ -233,6 +247,10 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::put('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'update'])->name('shop_owner.repair-services.update');
         Route::delete('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'destroy'])->name('shop_owner.repair-services.destroy');
     });
+
+    Route::get('/repair-materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'repairStocksOverview'])
+        ->middleware('check.business.type:repair,both')
+        ->name('shop_owner.repair-materials.index');
 
     // ============================================
     // CUSTOMER REVIEWS (Shop Owner)

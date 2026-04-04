@@ -114,6 +114,16 @@ interface GenericResponse<T = unknown, M = Record<string, unknown>> {
   meta?: M;
 }
 
+export type MaterialReadinessResponse = {
+  success: boolean;
+  data: {
+    readiness_state: "ready" | "at_risk" | "blocked" | "variance_review_needed";
+    blockers: Array<Record<string, unknown>>;
+    warnings: Array<Record<string, unknown>>;
+    actions: string[];
+  };
+};
+
 const BASE_URL = "/api/repairer";
 
 const repairMaterialsApi = {
@@ -203,6 +213,20 @@ const repairMaterialsApi = {
   async removeRepairUsage(repairId: number, usageId: number): Promise<GenericResponse<null>> {
     const response: AxiosResponse<GenericResponse<null>> = await axios.delete(
       `${BASE_URL}/repairs/${repairId}/materials/${usageId}`
+    );
+    return response.data;
+  },
+
+  async validateStartReadiness(repairId: number): Promise<MaterialReadinessResponse> {
+    const response: AxiosResponse<MaterialReadinessResponse> = await axios.post(
+      `${BASE_URL}/repairs/${repairId}/materials/validate-start`
+    );
+    return response.data;
+  },
+
+  async validateCompletionReadiness(repairId: number): Promise<MaterialReadinessResponse> {
+    const response: AxiosResponse<MaterialReadinessResponse> = await axios.post(
+      `${BASE_URL}/repairs/${repairId}/materials/validate-complete`
     );
     return response.data;
   },

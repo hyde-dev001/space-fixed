@@ -23,6 +23,20 @@ type RepairPackage = {
   services_total_price: number;
   savings_amount: number;
   services: RepairServiceOption[];
+  material_templates?: Array<{
+    id?: number;
+    inventory_item_id: number;
+    inventory_item_name?: string | null;
+    default_quantity: number;
+    is_critical: boolean;
+    tolerance_percent: number;
+  }>;
+};
+
+type RepairMaterialOption = {
+  id: number;
+  name: string;
+  available_quantity: number;
 };
 
 type PackageAnalytics = {
@@ -81,6 +95,12 @@ type PackageFormState = {
   starts_at: string;
   ends_at: string;
   service_ids: number[];
+  material_templates: Array<{
+    inventory_item_id: number;
+    default_quantity: string;
+    is_critical: boolean;
+    tolerance_percent: string;
+  }>;
 };
 
 const defaultFormState: PackageFormState = {
@@ -91,6 +111,7 @@ const defaultFormState: PackageFormState = {
   starts_at: "",
   ends_at: "",
   service_ids: [],
+  material_templates: [],
 };
 
 const formatMoney = (value: number | string) => {
@@ -122,15 +143,18 @@ const TrashIcon = ({ className }: { className?: string }) => (
 
 type RepairPackageManagerProps = {
   serviceEndpoint?: string;
+  materialsEndpoint?: string;
 };
 
 export default function RepairPackageManager({
   serviceEndpoint = "/api/repair-services",
+  materialsEndpoint = "/api/repairer/materials",
 }: RepairPackageManagerProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [packages, setPackages] = useState<RepairPackage[]>([]);
   const [services, setServices] = useState<RepairServiceOption[]>([]);
+  const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);
   const [analytics, setAnalytics] = useState<PackageAnalytics | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
@@ -156,6 +180,20 @@ export default function RepairPackageManager({
         const activeServices = (servicesResponse.data.data || []).filter((service: RepairServiceOption) => service.status === "Active");
         setServices(activeServices);
       }
+
+      try {
+        const materialsResponse = await axios.get(materialsEndpoint, {
+          params: { category: "repair_materials" },
+        });
+
+        if (materialsResponse.data?.success) {
+          setRepairMaterials(materialsResponse.data.data || []);
+        } else {
+          setRepairMaterials([]);
+        }
+      } catch {
+        setRepairMaterials([]);
+      }
     } catch (error) {
       console.error("Failed to load repair packages", error);
       Swal.fire({ icon: "error", title: "Error", text: "Failed to load repair package data." });
@@ -177,7 +215,7 @@ export default function RepairPackageManager({
 
   useEffect(() => {
     loadData();
-  }, [serviceEndpoint]);
+  }, [serviceEndpoint, materialsEndpoint]);
 
   const filteredPackages = useMemo(() => {
     return packages.filter((item) => {
@@ -224,6 +262,12 @@ export default function RepairPackageManager({
       starts_at: pkg.starts_at ? pkg.starts_at.slice(0, 16) : "",
       ends_at: pkg.ends_at ? pkg.ends_at.slice(0, 16) : "",
       service_ids: pkg.services.map((service) => service.id),
+      material_templates: (pkg.material_templates || []).map((line) => ({
+        inventory_item_id: line.inventory_item_id,
+        default_quantity: String(line.default_quantity),
+        is_critical: Boolean(line.is_critical),
+        tolerance_percent: String(line.tolerance_percent ?? 20),
+      })),
     });
     setIsEditModalOpen(true);
   };
@@ -237,6 +281,46 @@ export default function RepairPackageManager({
     }));
   };
 
+  const addMaterialTemplateLine = () => {
+    setFormState((prev) => ({
+      ...prev,
+      material_templates: [
+        ...prev.material_templates,
+        {
+          inventory_item_id: 0,
+          default_quantity: "1",
+          is_critical: false,
+          tolerance_percent: "20",
+        },
+      ],
+    }));
+  };
+
+  const updateMaterialTemplateLine = (
+    index: number,
+    field: "inventory_item_id" | "default_quantity" | "is_critical" | "tolerance_percent",
+    value: number | string | boolean
+  ) => {
+    setFormState((prev) => ({
+      ...prev,
+      material_templates: prev.material_templates.map((line, lineIndex) => {
+        if (lineIndex !== index) return line;
+
+        return {
+          ...line,
+          [field]: value,
+        };
+      }),
+    }));
+  };
+
+  const removeMaterialTemplateLine = (index: number) => {
+    setFormState((prev) => ({
+      ...prev,
+      material_templates: prev.material_templates.filter((_, lineIndex) => lineIndex !== index),
+    }));
+  };
+
   const validateBeforeSubmit = () => {
     if (!formState.name.trim()) {
       return "Package name is required.";
@@ -244,6 +328,23 @@ export default function RepairPackageManager({
 
     if (formState.service_ids.length < 2) {
       return "Select at least 2 services to form a package.";
+    }
+
+    for (const line of formState.material_templates) {
+      const defaultQuantity = Number(line.default_quantity);
+      const tolerancePercent = Number(line.tolerance_percent || "20");
+
+      if (!line.inventory_item_id) {
+        return "Each material template line must select an inventory material.";
+      }
+
+      if (!Number.isFinite(defaultQuantity) || defaultQuantity <= 0) {
+        return "Material default quantity must be greater than zero.";
+      }
+
+      if (!Number.isFinite(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100) {
+        return "Material tolerance percent must be between 0 and 100.";
+      }
     }
 
     // Price is now auto-calculated and derived from selected services
@@ -261,11 +362,19 @@ export default function RepairPackageManager({
 
     setSubmitting(true);
     try {
+      const materialTemplatesPayload = formState.material_templates.map((line) => ({
+        inventory_item_id: Number(line.inventory_item_id),
+        default_quantity: Number(line.default_quantity),
+        is_critical: Boolean(line.is_critical),
+        tolerance_percent: Number(line.tolerance_percent || "20"),
+      }));
+
       const payload = {
         ...formState,
         package_price: selectedServicesTotal, // Use auto-calculated price from selected services
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
+        material_templates: materialTemplatesPayload,
       };
 
       const response = await axios.post("/api/repair-packages", payload);
@@ -293,11 +402,19 @@ export default function RepairPackageManager({
 
     setSubmitting(true);
     try {
+      const materialTemplatesPayload = formState.material_templates.map((line) => ({
+        inventory_item_id: Number(line.inventory_item_id),
+        default_quantity: Number(line.default_quantity),
+        is_critical: Boolean(line.is_critical),
+        tolerance_percent: Number(line.tolerance_percent || "20"),
+      }));
+
       const payload = {
         ...formState,
         package_price: selectedServicesTotal, // Use auto-calculated price from selected services
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
+        material_templates: materialTemplatesPayload,
       };
 
       const response = await axios.put(`/api/repair-packages/${selectedPackage.id}`, payload);
@@ -449,6 +566,104 @@ export default function RepairPackageManager({
                 Draft package savings: <span className={`font-semibold ${draftSavings >= 0 ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>{formatMoney(Math.abs(draftSavings))}</span>
                 <span className="ml-1">{draftSavings >= 0 ? "below combined service price" : "above combined service price"}</span>
               </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates</h3>
+                <button
+                  type="button"
+                  onClick={addMaterialTemplateLine}
+                  className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  + Add Material
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Choose from existing repair-material inventory items only. Free-text entries are not allowed.
+              </p>
+
+              {formState.material_templates.length === 0 ? (
+                <div className="rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+                  No template lines yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {formState.material_templates.map((line, index) => (
+                    <div key={`material-template-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                      <div className="md:col-span-5">
+                        <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
+                        <select
+                          title="Select inventory material"
+                          value={line.inventory_item_id || ""}
+                          onChange={(e) => updateMaterialTemplateLine(index, "inventory_item_id", Number(e.target.value || 0))}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                        >
+                          <option value="">Select material</option>
+                          {repairMaterials.map((material) => (
+                            <option key={material.id} value={material.id}>
+                              {material.name} (Available: {material.available_quantity})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Default Qty</label>
+                        <input
+                          type="number"
+                          title="Default quantity"
+                          placeholder="1.00"
+                          min="0.01"
+                          step="0.01"
+                          value={line.default_quantity}
+                          onChange={(e) => updateMaterialTemplateLine(index, "default_quantity", e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Tolerance %</label>
+                        <input
+                          type="number"
+                          title="Tolerance percent"
+                          placeholder="20"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={line.tolerance_percent}
+                          onChange={(e) => updateMaterialTemplateLine(index, "tolerance_percent", e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Critical</label>
+                        <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={line.is_critical}
+                            onChange={(e) => updateMaterialTemplateLine(index, "is_critical", e.target.checked)}
+                            className="h-4 w-4"
+                          />
+                          Yes
+                        </label>
+                      </div>
+
+                      <div className="md:col-span-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeMaterialTemplateLine(index)}
+                          className="px-2.5 py-2 text-xs rounded-md border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

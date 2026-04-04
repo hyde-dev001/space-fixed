@@ -15,6 +15,7 @@ use App\Models\ConversationMessage;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Events\LowStockAlert;
+use App\Services\RepairMaterialPlanningService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
@@ -269,6 +270,50 @@ class RepairWorkflowController extends Controller
                 'message' => 'Failed to fetch assigned repairs: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function validateMaterialStart($id, RepairMaterialPlanningService $planner)
+    {
+        $repair = $this->resolveRepairForMaterialValidation((int) $id);
+        $result = $planner->validateStartReadiness($repair);
+
+        if ($result['readiness_state'] === 'blocked') {
+            return response()->json(['success' => false, 'data' => $result], 422);
+        }
+
+        return response()->json(['success' => true, 'data' => $result]);
+    }
+
+    public function validateMaterialCompletion($id, RepairMaterialPlanningService $planner)
+    {
+        $repair = $this->resolveRepairForMaterialValidation((int) $id)->load('materialPlanItems');
+        $result = $planner->validateCompletionReadiness($repair);
+
+        if ($result['readiness_state'] !== 'ready') {
+            return response()->json(['success' => false, 'data' => $result], 422);
+        }
+
+        return response()->json(['success' => true, 'data' => $result]);
+    }
+
+    private function resolveRepairForMaterialValidation(int $id): RepairRequest
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            abort(401, 'Unauthenticated');
+        }
+
+        $repairQuery = RepairRequest::query()
+            ->where('id', $id)
+            ->where('shop_owner_id', $user->shop_owner_id);
+
+        $isManager = method_exists($user, 'hasRole') ? $user->hasRole('Manager') : false;
+        if (!$isManager) {
+            $repairQuery->where('assigned_repairer_id', $user->id);
+        }
+
+        return $repairQuery->firstOrFail();
     }
     
     /**
@@ -2853,8 +2898,10 @@ class RepairWorkflowController extends Controller
     {
         try {
             $user = Auth::guard('user')->user();
+            $shopOwner = Auth::guard('shop_owner')->user();
+            $shopOwnerId = $user?->shop_owner_id ?? $shopOwner?->id;
 
-            if (!$user) {
+            if (!$shopOwnerId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthenticated'
@@ -2871,7 +2918,7 @@ class RepairWorkflowController extends Controller
             }
 
             $query = InventoryItem::query()
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->where('is_active', true);
 
             if ($request->filled('search')) {
@@ -2904,7 +2951,7 @@ class RepairWorkflowController extends Controller
                 ->get();
 
             $baseQuery = InventoryItem::query()
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->where('is_active', true);
 
             $baseQuery->where('category', $categoryFilter);

@@ -590,9 +590,15 @@ export default function UploadService() {
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                 Create bundled repair offers using your uploaded individual services.
               </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Predefined materials must be selected from existing repair-material inventory items only.
+              </p>
             </div>
 
-            <RepairPackageManager serviceEndpoint="/api/shop-owner/repair-services/" />
+            <RepairPackageManager
+              serviceEndpoint="/api/shop-owner/repair-services/"
+              materialsEndpoint="/api/shop-owner/repair-materials"
+            />
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryItem;
 use App\Models\RepairService;
 use App\Models\RepairPackage;
 use App\Models\ShopOwner;
@@ -11,6 +12,7 @@ use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Spatie\Activitylog\Models\Activity;
 
 class RepairServiceController extends Controller
@@ -129,6 +131,11 @@ class RepairServiceController extends Controller
             'duration' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'nullable|in:Active,Inactive,Pending',
+            'material_templates' => 'nullable|array',
+            'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
+            'material_templates.*.default_quantity' => 'required|numeric|min:0.01',
+            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -161,6 +168,17 @@ class RepairServiceController extends Controller
             'shop_owner_id' => $shopOwnerId,
             'created_by' => $createdBy,
         ]);
+
+        try {
+            $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
+        } catch (ValidationException $e) {
+            $service->delete();
+
+            return response()->json([
+                'success' => false,
+                'errors' => $e->errors(),
+            ], 422);
+        }
 
         return response()->json([
             'success' => true,
@@ -213,6 +231,11 @@ class RepairServiceController extends Controller
             'reason' => 'sometimes|string|max:1000',
             'status' => 'sometimes|in:Active,Inactive,Pending,Under Review,Rejected',
             'rejection_reason' => 'nullable|string',
+            'material_templates' => 'sometimes|array',
+            'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
+            'material_templates.*.default_quantity' => 'required|numeric|min:0.01',
+            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -260,6 +283,17 @@ class RepairServiceController extends Controller
             $service->finance_notes = (string) $proposedPrice;
             $service->save();
 
+            if ($request->has('material_templates')) {
+                try {
+                    $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
+                } catch (ValidationException $e) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => $e->errors(),
+                    ], 422);
+                }
+            }
+
             // Activity log for price change request
             activity()
                 ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
@@ -290,6 +324,17 @@ class RepairServiceController extends Controller
         $updateData['updated_by'] = Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id();
 
         $service->update($updateData);
+
+        if ($request->has('material_templates')) {
+            try {
+                $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
+            } catch (ValidationException $e) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+        }
 
         // Activity log for non-price updates
         activity()
@@ -1325,6 +1370,40 @@ class RepairServiceController extends Controller
         }
 
         return null;
+    }
+
+    private function syncMaterialTemplates(RepairService $service, array $materialTemplates): void
+    {
+        foreach ($materialTemplates as $index => $line) {
+            $inventoryItem = InventoryItem::query()
+                ->where('id', (int) ($line['inventory_item_id'] ?? 0))
+                ->where('shop_owner_id', $service->shop_owner_id)
+                ->where('category', 'repair_materials')
+                ->first();
+
+            if (!$inventoryItem) {
+                throw ValidationException::withMessages([
+                    "material_templates.{$index}.inventory_item_id" => 'Selected inventory item must belong to this shop and be a repair material.',
+                ]);
+            }
+        }
+
+        $service->materialTemplateItems()->delete();
+
+        $createdBy = Auth::guard('user')->id();
+
+        collect($materialTemplates)->each(function (array $line) use ($service, $createdBy): void {
+            $service->materialTemplateItems()->create([
+                'shop_owner_id' => $service->shop_owner_id,
+                'inventory_item_id' => (int) $line['inventory_item_id'],
+                'template_type' => 'repair_service',
+                'template_id' => $service->id,
+                'default_quantity' => (float) $line['default_quantity'],
+                'is_critical' => (bool) $line['is_critical'],
+                'tolerance_percent' => (float) ($line['tolerance_percent'] ?? 20),
+                'created_by' => $createdBy,
+            ]);
+        });
     }
 
     private function resolveChangeReason(RepairService $service): string
