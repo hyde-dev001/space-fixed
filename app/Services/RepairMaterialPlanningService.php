@@ -46,15 +46,22 @@ class RepairMaterialPlanningService
     {
         $varianceIssues = [];
 
-        foreach ($repair->materialPlanItems as $line) {
-            $planned = max((float) $line->planned_quantity, 0.01);
+        foreach ($repair->materialPlanItems()->with('inventoryItem:id,name')->get() as $line) {
+            $rawPlanned = max((float) $line->planned_quantity, 0.01);
+            // Material usage logging accepts whole numbers only, so fractional plans
+            // are evaluated against their whole-unit requirement.
+            $planned = abs($rawPlanned - round($rawPlanned)) > 0.00001
+                ? (float) ceil($rawPlanned)
+                : $rawPlanned;
             $actual = (float) $line->actual_quantity;
             $variancePercent = abs($actual - $planned) / $planned * 100;
 
             if ($variancePercent > (float) $line->tolerance_percent && empty($line->variance_note)) {
                 $varianceIssues[] = [
                     'inventory_item_id' => $line->inventory_item_id,
-                    'planned_quantity' => $planned,
+                    'name' => $line->inventoryItem->name ?? 'Unknown',
+                    'planned_quantity' => $rawPlanned,
+                    'comparison_quantity' => $planned,
                     'actual_quantity' => $actual,
                     'variance_percent' => round($variancePercent, 2),
                 ];
