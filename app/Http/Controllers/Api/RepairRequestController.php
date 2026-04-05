@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\PosTransaction;
+use App\Support\Tax\VatInclusiveCalculator;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\RepairPosPaymentService;
@@ -339,6 +340,7 @@ class RepairRequestController extends Controller
                     'materials_total' => 0.0,
                     'final_total' => $requestTotal,
                     'add_on_count' => count($addOnServiceIds),
+                    'tax_mode' => 'vat_inclusive',
                 ],
                 'status' => 'new_request',
                 'delivery_method' => $deliveryMethod,
@@ -583,7 +585,7 @@ class RepairRequestController extends Controller
             ->whereNull('owner_decision')
             ->update(['status' => 'pending']);
 
-        $query = RepairRequest::with(['services', 'shopOwner', 'repairer', 'materialUsages.inventoryItem:id,price'])
+        $query = RepairRequest::with(['services', 'shopOwner', 'repairer', 'materialUsages.inventoryItem:id,price', 'latestPosTransaction:id,metadata'])
             ->forCustomer($user->id);
 
         // Filter by status if provided
@@ -599,9 +601,8 @@ class RepairRequestController extends Controller
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
-                $vatRate = self::REPAIR_VAT_RATE_PERCENT;
-                $vatAmount = round(max(0.0, (float) $pricingSnapshot['final_total']) * ($vatRate / 100), 2);
-                $grandTotal = round(max(0.0, (float) $pricingSnapshot['final_total']) + $vatAmount, 2);
+                $taxMode = $this->resolveRepairTaxMode($repair);
+                $taxSummary = $this->calculateRepairTaxSummary((float) $pricingSnapshot['final_total'], $taxMode);
 
                 return [
                     'id' => $repair->id,
@@ -650,9 +651,10 @@ class RepairRequestController extends Controller
                     'total_paid_amount' => (float) $repair->total_paid_amount,
                     'total_refunded_amount' => (float) $repair->total_refunded_amount,
                     'latest_pos_transaction_id' => $repair->latest_pos_transaction_id,
-                    'vat_rate' => $vatRate,
-                    'vat_amount' => $vatAmount,
-                    'grand_total' => $grandTotal,
+                    'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
+                    'vat_amount' => $taxSummary['vat_amount'],
+                    'grand_total' => $taxSummary['grand_total'],
+                    'tax_mode' => $taxMode,
                     'materials_total' => $pricingSnapshot['materials_total'],
                     'final_total' => $pricingSnapshot['final_total'],
                     'included_services_snapshot' => $repair->included_services_snapshot,
@@ -1477,15 +1479,24 @@ class RepairRequestController extends Controller
 
             $isRemainingBalancePhase = $this->isRepairRemainingBalancePhase($repair);
             if ($policy === 'full_upfront') {
-                $dueSubtotal = $chargeSubtotal;
+                $phaseBaseAmount = $chargeSubtotal;
                 $phase = 'full payment';
             } else {
-                $dueSubtotal = max(1.0, round($chargeSubtotal / 2, 2));
+                $phaseBaseAmount = max(1.0, round($chargeSubtotal / 2, 2));
                 $phase = $isRemainingBalancePhase ? 'remaining balance' : 'down payment';
             }
 
-            $vatAmount = round($dueSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
-            $amount = round($dueSubtotal + $vatAmount, 2);
+            $taxMode = $this->resolveRepairTaxMode($repair);
+            if ($taxMode === 'vat_inclusive') {
+                $breakdown = VatInclusiveCalculator::extract($phaseBaseAmount, self::REPAIR_VAT_RATE_PERCENT);
+                $dueSubtotal = (float) $breakdown['net'];
+                $vatAmount = (float) $breakdown['vat'];
+                $amount = (float) $breakdown['total'];
+            } else {
+                $dueSubtotal = $phaseBaseAmount;
+                $vatAmount = round($dueSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
+                $amount = round($dueSubtotal + $vatAmount, 2);
+            }
 
             if ($amount <= 0) {
                 return response()->json([
@@ -1578,6 +1589,7 @@ class RepairRequestController extends Controller
                 'vat_amount' => $vatAmount,
                 'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
                 'total_amount' => $amount,
+                'tax_mode' => $taxMode,
             ]);
         } catch (\Exception $e) {
             \Log::error('Retry payment session failed for repair', [
@@ -2150,6 +2162,42 @@ class RepairRequestController extends Controller
         }
 
         return $currentStatus;
+    }
+
+    private function resolveRepairTaxMode(RepairRequest $repair): string
+    {
+        $pricingTaxMode = strtolower((string) data_get($repair->pricing_breakdown, 'tax_mode', ''));
+        if (in_array($pricingTaxMode, ['vat_inclusive', 'legacy_add_on'], true)) {
+            return $pricingTaxMode;
+        }
+
+        $latestPosTaxMode = strtolower((string) data_get($repair->latestPosTransaction?->metadata, 'tax_mode', ''));
+        if (in_array($latestPosTaxMode, ['vat_inclusive', 'legacy_add_on'], true)) {
+            return $latestPosTaxMode;
+        }
+
+        return 'legacy_add_on';
+    }
+
+    private function calculateRepairTaxSummary(float $finalTotal, string $taxMode): array
+    {
+        $total = round(max(0.0, $finalTotal), 2);
+
+        if ($taxMode === 'vat_inclusive') {
+            $breakdown = VatInclusiveCalculator::extract($total, self::REPAIR_VAT_RATE_PERCENT);
+
+            return [
+                'vat_amount' => (float) $breakdown['vat'],
+                'grand_total' => (float) $breakdown['total'],
+            ];
+        }
+
+        $vatAmount = round($total * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
+
+        return [
+            'vat_amount' => $vatAmount,
+            'grand_total' => round($total + $vatAmount, 2),
+        ];
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float
