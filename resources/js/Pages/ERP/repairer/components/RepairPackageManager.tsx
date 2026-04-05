@@ -163,7 +163,6 @@ export default function RepairPackageManager({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<RepairPackage | null>(null);
   const [formState, setFormState] = useState<PackageFormState>(defaultFormState);
-  const [isPriceManuallyEdited, setIsPriceManuallyEdited] = useState(false);
 
   const loadData = async () => {
     try {
@@ -244,7 +243,6 @@ export default function RepairPackageManager({
 
   const resetAndCloseModal = () => {
     setFormState(defaultFormState);
-    setIsPriceManuallyEdited(false);
     setSelectedPackage(null);
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
@@ -252,7 +250,6 @@ export default function RepairPackageManager({
 
   const openAddModal = () => {
     setFormState(defaultFormState);
-    setIsPriceManuallyEdited(false);
     setSelectedPackage(null);
     setIsAddModalOpen(true);
   };
@@ -269,7 +266,6 @@ export default function RepairPackageManager({
 
   const openEditModal = (pkg: RepairPackage) => {
     setSelectedPackage(pkg);
-    setIsPriceManuallyEdited(true);
     setFormState({
       name: pkg.name,
       description: pkg.description || "",
@@ -288,27 +284,15 @@ export default function RepairPackageManager({
     setIsEditModalOpen(true);
   };
 
-  const calculateServicesTotal = (serviceIds: number[]): number => {
-    return services
-      .filter((service) => serviceIds.includes(service.id))
-      .reduce((sum, service) => sum + (typeof service.price === "string" ? parseFloat(service.price) : service.price), 0);
-  };
-
   const toggleService = (serviceId: number) => {
     setFormState((prev) => {
       const nextServiceIds = prev.service_ids.includes(serviceId)
         ? prev.service_ids.filter((id) => id !== serviceId)
         : [...prev.service_ids, serviceId];
 
-      const shouldAutoSuggestPrice = isAddModalOpen && !isPriceManuallyEdited;
-      const nextPrice = shouldAutoSuggestPrice
-        ? String(calculateServicesTotal(nextServiceIds).toFixed(2))
-        : prev.package_price;
-
       return {
         ...prev,
         service_ids: nextServiceIds,
-        package_price: nextPrice,
       };
     });
   };
@@ -558,7 +542,6 @@ export default function RepairPackageManager({
                   step="0.01"
                   value={formState.package_price}
                   onChange={(e) => {
-                    setIsPriceManuallyEdited(true);
                     setFormState((prev) => ({ ...prev, package_price: e.target.value }));
                   }}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
@@ -568,17 +551,16 @@ export default function RepairPackageManager({
                 {mode === "add" ? (
                   <div className="mt-1 space-y-1">
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Suggested from selected services: <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
+                      Suggested from selected services (reference): <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
                     </p>
                     <button
                       type="button"
                       onClick={() => {
-                        setIsPriceManuallyEdited(false);
                         setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
                       }}
                       className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                     >
-                      Use suggested price
+                      Apply suggested price
                     </button>
                   </div>
                 ) : (
