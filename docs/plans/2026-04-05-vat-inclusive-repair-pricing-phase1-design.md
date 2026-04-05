@@ -17,7 +17,7 @@ This design standardizes repair pricing to VAT-inclusive logic for new transacti
 3. Deposit policy: For deposit_50, split the displayed final inclusive total into 50/50 phases.
 4. VAT storage: Store extracted VAT from inclusive totals using VAT = total * 12 / 112.
 5. Rollout strategy: Phased rollout (repairs first, then products/services).
-6. UI requirement: Job Order Repair page must show a clear price breakdown, not only a single total.
+6. UI requirement: Job Order Repair page must show a clear price breakdown, not only a single total. it should also show in the POS page
 
 ## 3. Recommended Approach
 
@@ -149,3 +149,10 @@ Verify breakdown rendering includes subtotal, VAT, and grand total, especially i
 3. Job Order Repair page shows full price breakdown clearly.
 4. Legacy records continue to render without forced migration.
 5. Deposit and balance totals remain internally consistent and test-verified.
+
+## 11. Phase 1 Verification Log
+
+- [ ] Repair POS checkout stores metadata.tax_mode = vat_inclusive.
+- [ ] Deposit amount equals 50% of displayed inclusive final price.
+- [ ] Job order details show subtotal, VAT, and grand total breakdown.
+- [ ] Customer my-repairs grand total does not add VAT twice.
