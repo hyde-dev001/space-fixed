@@ -248,6 +248,10 @@ export default function UploadService() {
   }
 
   const getMaterialTemplateValidationError = (): string | null => {
+    if (formData.material_templates.length === 0) {
+      return 'Add at least one predefined material template before saving this service.';
+    }
+
     for (const line of formData.material_templates) {
       const defaultQuantity = Number(line.default_quantity);
       const tolerancePercent = Number(line.tolerance_percent || '20');
@@ -915,7 +919,7 @@ export default function UploadService() {
 
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Optional)</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Required)</h3>
                   <button
                     type="button"
                     onClick={addMaterialTemplateLine}
@@ -926,12 +930,12 @@ export default function UploadService() {
                 </div>
 
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Attach default materials for this service using existing repair-material inventory items.
+                  Attach at least one default material for this service using existing repair-material inventory items.
                 </p>
 
                 {formData.material_templates.length === 0 ? (
                   <div className="rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
-                    No template lines yet.
+                    No template lines yet. Add at least one material line to continue.
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1155,7 +1159,7 @@ export default function UploadService() {
 
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Optional)</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Required)</h3>
                   <button
                     type="button"
                     onClick={addMaterialTemplateLine}
@@ -1166,12 +1170,12 @@ export default function UploadService() {
                 </div>
 
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Attach default materials for this service using existing repair-material inventory items.
+                  Attach at least one default material for this service using existing repair-material inventory items.
                 </p>
 
                 {formData.material_templates.length === 0 ? (
                   <div className="rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
-                    No template lines yet.
+                    No template lines yet. Add at least one material line to continue.
                   </div>
                 ) : (
                   <div className="space-y-3">

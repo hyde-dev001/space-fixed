@@ -40,7 +40,7 @@ class RepairServiceController extends Controller
         // This is used by the repair booking flow (/repair-process?shop=...).
         if ($request->filled('shop_id')) {
             $query->where('shop_owner_id', (int) $request->shop_id)
-                ->where('status', 'Active');
+                ->whereIn('status', ['Active', 'active']);
         } else {
             // Backoffice path: scope by authenticated actor.
             // Filter by shop_owner_id based on authentication
@@ -56,7 +56,15 @@ class RepairServiceController extends Controller
 
         // Filter by status if provided
         if ($request->has('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
+            $normalizedStatus = $this->normalizeServiceStatus((string) $request->status);
+
+            if ($normalizedStatus === 'Active') {
+                $query->whereIn('status', ['Active', 'active']);
+            } elseif ($normalizedStatus !== null) {
+                $query->where('status', $normalizedStatus);
+            } else {
+                $query->where('status', $request->status);
+            }
         }
 
         // Filter by category if provided
@@ -148,6 +156,11 @@ class RepairServiceController extends Controller
      */
     public function store(Request $request)
     {
+        $normalizedInputStatus = $this->normalizeServiceStatus($request->input('status'));
+        if ($normalizedInputStatus !== null) {
+            $request->merge(['status' => $normalizedInputStatus]);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'category' => 'required|string|max:255',
@@ -155,7 +168,7 @@ class RepairServiceController extends Controller
             'duration' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'nullable|in:Active,Inactive,Pending',
-            'material_templates' => 'nullable|array',
+            'material_templates' => 'required|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
             'material_templates.*.is_critical' => 'required|boolean',
@@ -182,13 +195,23 @@ class RepairServiceController extends Controller
             $shopOwnerId = $user->shop_owner_id;
         }
 
+        if (!$shopOwnerId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to resolve shop owner context for this service.',
+                'errors' => [
+                    'shop_owner_id' => ['A repair shop owner context is required before uploading services.'],
+                ],
+            ], 422);
+        }
+
         $service = RepairService::create([
             'name' => $request->name,
             'category' => $request->category,
             'price' => $request->price,
             'duration' => $request->duration,
             'description' => $request->description,
-            'status' => $request->status ?? 'Active',
+            'status' => $normalizedInputStatus ?? 'Active',
             'shop_owner_id' => $shopOwnerId,
             'created_by' => $createdBy,
         ]);
@@ -246,6 +269,11 @@ class RepairServiceController extends Controller
             ], 404);
         }
 
+        $normalizedInputStatus = $this->normalizeServiceStatus($request->input('status'));
+        if ($normalizedInputStatus !== null) {
+            $request->merge(['status' => $normalizedInputStatus]);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|string|max:255',
             'category' => 'sometimes|string|max:255',
@@ -255,7 +283,7 @@ class RepairServiceController extends Controller
             'reason' => 'sometimes|string|max:1000',
             'status' => 'sometimes|in:Active,Inactive,Pending,Under Review,Rejected',
             'rejection_reason' => 'nullable|string',
-            'material_templates' => 'sometimes|array',
+            'material_templates' => 'sometimes|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
             'material_templates.*.is_critical' => 'required|boolean',
@@ -343,7 +371,7 @@ class RepairServiceController extends Controller
         // Non-price updates can be applied directly
         $updateData = $request->only(['name', 'category', 'duration', 'description']);
         if ($request->filled('status')) {
-            $updateData['status'] = $request->status;
+            $updateData['status'] = $normalizedInputStatus ?? $request->status;
         }
         $updateData['updated_by'] = Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id();
 
@@ -1375,6 +1403,24 @@ class RepairServiceController extends Controller
         }
 
         return (float) $service->price;
+    }
+
+    private function normalizeServiceStatus(mixed $status): ?string
+    {
+        if (!is_string($status)) {
+            return null;
+        }
+
+        $normalized = strtolower(trim($status));
+
+        return match ($normalized) {
+            'active' => 'Active',
+            'inactive' => 'Inactive',
+            'pending' => 'Pending',
+            'under review' => 'Under Review',
+            'rejected' => 'Rejected',
+            default => null,
+        };
     }
 
     private function resolveProposedPrice(RepairService $service): ?float

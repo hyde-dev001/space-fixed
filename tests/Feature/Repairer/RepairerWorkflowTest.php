@@ -127,6 +127,14 @@ class RepairerWorkflowTest extends TestCase
             'duration' => '2 hours',
             'description' => 'Replace worn heel block',
             'status' => 'Active',
+            'material_templates' => [
+                [
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ],
+            ],
         ]);
 
         $firstServiceResponse->assertStatus(201)
@@ -140,6 +148,14 @@ class RepairerWorkflowTest extends TestCase
             'duration' => '90 min',
             'description' => 'Secure detached midsole',
             'status' => 'Active',
+            'material_templates' => [
+                [
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ],
+            ],
         ]);
 
         $secondServiceResponse->assertStatus(201)
@@ -196,6 +212,78 @@ class RepairerWorkflowTest extends TestCase
             'repair_package_id' => $packageId,
             'repair_service_id' => $secondServiceId,
         ]);
+    }
+
+    public function test_repairer_cannot_create_service_without_predefined_material_plan(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $repairer = $this->createRepairer($shopOwner, ['access-upload-service']);
+
+        $response = $this->actingAs($repairer, 'user')->postJson('/api/repair-services', [
+            'name' => 'No Template Service',
+            'category' => 'Care',
+            'price' => 500,
+            'duration' => '30 min',
+            'description' => 'Service missing predefined material plan',
+            'status' => 'Active',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonValidationErrors(['material_templates']);
+    }
+
+    public function test_public_repair_service_listing_includes_active_services_for_selected_shop(): void
+    {
+        $shopA = $this->createRepairShop();
+        $shopB = $this->createRepairShop();
+
+        RepairService::create([
+            'shop_owner_id' => $shopA->id,
+            'name' => 'Active Uppercase',
+            'category' => 'Care',
+            'price' => 450,
+            'duration' => '30 min',
+            'status' => 'Active',
+        ]);
+
+        RepairService::create([
+            'shop_owner_id' => $shopA->id,
+            'name' => 'Active Lowercase Legacy',
+            'category' => 'Care',
+            'price' => 480,
+            'duration' => '30 min',
+            'status' => 'active',
+        ]);
+
+        RepairService::create([
+            'shop_owner_id' => $shopA->id,
+            'name' => 'Inactive Service',
+            'category' => 'Care',
+            'price' => 500,
+            'duration' => '30 min',
+            'status' => 'Inactive',
+        ]);
+
+        RepairService::create([
+            'shop_owner_id' => $shopB->id,
+            'name' => 'Other Shop Service',
+            'category' => 'Care',
+            'price' => 520,
+            'duration' => '30 min',
+            'status' => 'Active',
+        ]);
+
+        $response = $this->getJson('/api/repair-services?shop_id=' . $shopA->id);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $names = collect($response->json('data'))->pluck('name')->all();
+        $this->assertContains('Active Uppercase', $names);
+        $this->assertContains('Active Lowercase Legacy', $names);
+        $this->assertNotContains('Inactive Service', $names);
+        $this->assertNotContains('Other Shop Service', $names);
     }
 
     public function test_repairer_can_process_an_assigned_service_request_through_completion(): void
