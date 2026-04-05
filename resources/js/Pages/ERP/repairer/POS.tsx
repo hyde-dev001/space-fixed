@@ -931,7 +931,9 @@ const PointOfSalePage = () => {
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 		const customerType = hasRepairReference && selectedRepairOrder?.customerId ? "registered" : "walk_in";
-		const dueTypeForCheckout = hasRepairReference ? effectiveDueType : dueTypeForManualCheckout;
+		const dueTypeForCheckout = hasRepairReference
+			? (selectedRepairOrder?.dueTypeToCollect ?? effectiveDueType)
+			: dueTypeForManualCheckout;
 		const idempotencyKey = hasRepairReference
 			? `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`
 			: `repair-manual-${Date.now()}`;

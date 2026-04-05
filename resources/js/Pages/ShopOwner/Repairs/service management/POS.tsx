@@ -730,7 +730,8 @@ const PointOfSalePage = () => {
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
-		const idempotencyKey = `repair-${repairRequestId}-${effectiveDueType}-${Date.now()}`;
+		const dueTypeForCheckout = selectedRepairOrder?.dueTypeToCollect ?? effectiveDueType;
+		const idempotencyKey = `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`;
 
 		setIsProcessingPayment(true);
 		try {
@@ -738,7 +739,7 @@ const PointOfSalePage = () => {
 				"/api/repair-pos/checkout",
 				{
 					repair_request_id: repairRequestId,
-					due_type: effectiveDueType,
+					due_type: dueTypeForCheckout,
 					idempotency_key: idempotencyKey,
 					customer_type: customerType,
 					customer_id: selectedRepairOrder?.customerId ?? null,
