@@ -4,6 +4,7 @@ import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
+import { buildRepairBreakdown, type RepairTaxMode } from "../../../utils/repairPricing";
 import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem, type RepairMaterialPlanItem } from "../../../services/repairMaterialsApi";
 
 type RepairOrder = {
@@ -53,6 +54,7 @@ type RepairOrder = {
   packagePrice?: string | null;
   addOnsSubtotal?: string | null;
   finalPrice?: string | null;
+  taxMode?: RepairTaxMode | null;
   vatRate?: number | null;
   vatAmount?: string | null;
   grandTotal?: string | null;
@@ -602,20 +604,20 @@ export default function JobOrdersRepair() {
       if (response.data.success) {
         // Map the API response to match the RepairOrder type
         const mappedOrders = response.data.data.map((repair: any) => {
-          const subtotalAmount =
-            toNumber(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total) ?? 0;
+          const finalTotalAmount =
+            toNumber(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total)
+            ?? 0;
           const rawVatRate = Number(repair.vat_rate);
           const vatRate = Number.isFinite(rawVatRate) && rawVatRate > 0 ? rawVatRate : REPAIR_VAT_RATE_PERCENT;
-          const parsedVatAmount = toNumber(repair.vat_amount);
-          const vatAmount =
-            parsedVatAmount !== null
-              ? Math.max(parsedVatAmount, 0)
-              : Number((subtotalAmount * (vatRate / 100)).toFixed(2));
-          const parsedGrandTotal = toNumber(repair.grand_total);
-          const grandTotal =
-            parsedGrandTotal !== null
-              ? Math.max(parsedGrandTotal, 0)
-              : Number((subtotalAmount + vatAmount).toFixed(2));
+          const rawTaxMode = String(repair.tax_mode ?? repair.pricing_breakdown?.tax_mode ?? 'legacy_additive').toLowerCase();
+          const taxMode: RepairTaxMode = rawTaxMode === 'vat_inclusive'
+            ? 'vat_inclusive'
+            : (rawTaxMode === 'legacy_add_on' ? 'legacy_add_on' : 'legacy_additive');
+          const breakdown = buildRepairBreakdown({
+            finalTotal: finalTotalAmount,
+            vatRate,
+            taxMode,
+          });
 
           return {
           id: repair.request_id || `REP-${repair.id}`,
@@ -625,15 +627,16 @@ export default function JobOrdersRepair() {
           phone: repair.phone || 'N/A',
           item: repair.shoe_type || 'N/A',
           service: repair.services?.map((s: any) => s.name).join(', ') || 'N/A',
-          total: formatPesoAmount(subtotalAmount) || '₱0.00',
+          total: formatPesoAmount(finalTotalAmount) || '₱0.00',
           repairPackageId: repair.repair_package_id ?? null,
           packageName: repair.pricing_breakdown?.package_name || repair.repair_package?.name || null,
           packagePrice: formatPesoAmount(repair.package_price ?? repair.pricing_breakdown?.package_price),
           addOnsSubtotal: formatPesoAmount(repair.add_ons_total ?? repair.pricing_breakdown?.add_ons_total),
-          finalPrice: formatPesoAmount(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total),
-          vatRate,
-          vatAmount: formatPesoAmount(vatAmount),
-          grandTotal: formatPesoAmount(grandTotal),
+          finalPrice: formatPesoAmount(breakdown.netSubtotal),
+          taxMode,
+          vatRate: breakdown.vatRate,
+          vatAmount: formatPesoAmount(breakdown.vatAmount),
+          grandTotal: formatPesoAmount(breakdown.grandTotal),
           pricingBreakdown: repair.pricing_breakdown || null,
           status: normalizeRepairStatus(repair.status),
           createdAt: new Date(repair.created_at).toLocaleString('en-US', {
@@ -2881,10 +2884,6 @@ export default function JobOrdersRepair() {
                         {formatReturnDeliveryMethod(viewOrder)}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Subtotal</span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.finalPrice || viewOrder.total}</span>
-                    </div>
                     {(viewOrder.packagePrice || viewOrder.addOnsSubtotal || viewOrder.finalPrice) && (
                       <>
                         <div className="flex items-center justify-between">
@@ -2901,18 +2900,14 @@ export default function JobOrdersRepair() {
                         </div>
                       </>
                     )}
-                    {(viewOrder.vatAmount || viewOrder.grandTotal) && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">VAT ({viewOrder.vatRate ?? REPAIR_VAT_RATE_PERCENT}%)</span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vatAmount || '₱0.00'}</span>
-                        </div>
-                        <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
-                          <span className="text-sm text-gray-700 dark:text-gray-300">Grand Total</span>
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.grandTotal || viewOrder.total}</span>
-                        </div>
-                      </>
-                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">VAT ({viewOrder.vatRate ?? REPAIR_VAT_RATE_PERCENT}%)</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vatAmount || '₱0.00'}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Grand Total</span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.grandTotal || viewOrder.total}</span>
+                    </div>
                     {viewOrder.startedAt && (
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600 dark:text-gray-400">Started At</span>

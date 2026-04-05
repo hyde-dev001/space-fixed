@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { buildRepairBreakdown } from '../repairPricing';
 
 describe('buildRepairBreakdown', () => {
+  it('returns values suitable for job-order breakdown rendering', () => {
+    const row = buildRepairBreakdown({ finalTotal: 1000, vatRate: 12, taxMode: 'vat_inclusive' });
+
+    expect(row.netSubtotal).toBe(892.86);
+    expect(row.vatAmount).toBe(107.14);
+    expect(row.grandTotal).toBe(1000);
+  });
+
   it('extracts VAT from inclusive total', () => {
     const row = buildRepairBreakdown({ finalTotal: 500, vatRate: 12, taxMode: 'vat_inclusive' });
 
