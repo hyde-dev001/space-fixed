@@ -4,6 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { refundStageLabel } from './refundWorkflow';
+import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -75,6 +76,7 @@ type RepairOrder = {
   add_ons_total?: number | null;
   materials_total?: number | null;
   final_total?: number | null;
+  tax_mode?: string | null;
   vat_amount?: number | null;
   vat_rate?: number | null;
   grand_total?: number | null;
@@ -97,6 +99,7 @@ type RepairOrder = {
   }> | null;
   pricing_breakdown?: {
     mode?: string;
+    tax_mode?: string;
     package_id?: number;
     package_name?: string;
     included_services_total?: number;
@@ -149,26 +152,46 @@ const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walk_in' 
 };
 
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
-const getOrderSubtotal = (order: RepairOrder) => Number(order.final_total ?? order.total_amount ?? 0);
+
+const resolveOrderTaxMode = (order: RepairOrder): RepairTaxMode => {
+  const value = String(order.tax_mode ?? order.pricing_breakdown?.tax_mode ?? '').toLowerCase();
+  if (value === 'vat_inclusive') return 'vat_inclusive';
+  if (value === 'legacy_add_on') return 'legacy_add_on';
+  return 'legacy_additive';
+};
+
 const getOrderVatRate = (order: RepairOrder) => {
   const parsed = Number(order.vat_rate);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : REPAIR_VAT_RATE_PERCENT;
 };
+
+const getOrderBreakdown = (order: RepairOrder) => {
+  const finalTotal = Number(order.final_total ?? order.total_amount ?? 0);
+  return buildRepairBreakdown({
+    finalTotal: Number.isFinite(finalTotal) ? finalTotal : 0,
+    vatRate: getOrderVatRate(order),
+    taxMode: resolveOrderTaxMode(order),
+  });
+};
+
+const getOrderSubtotal = (order: RepairOrder) => getOrderBreakdown(order).netSubtotal;
+
 const getOrderVatAmount = (order: RepairOrder) => {
   const parsed = Number(order.vat_amount);
   if (Number.isFinite(parsed) && parsed >= 0) {
     return parsed;
   }
 
-  return Number((getOrderSubtotal(order) * (getOrderVatRate(order) / 100)).toFixed(2));
+  return getOrderBreakdown(order).vatAmount;
 };
+
 const getOrderGrandTotal = (order: RepairOrder) => {
   const parsedGrandTotal = Number(order.grand_total);
   if (Number.isFinite(parsedGrandTotal) && parsedGrandTotal > 0) {
     return parsedGrandTotal;
   }
 
-  return Number((getOrderSubtotal(order) + getOrderVatAmount(order)).toFixed(2));
+  return getOrderBreakdown(order).grandTotal;
 };
 const getOrderMaterialsTotal = (order: RepairOrder) => Number(order.materials_total ?? order.pricing_breakdown?.materials_total ?? 0);
 const escapeSwalText = (value?: string | null): string => {
@@ -963,10 +986,11 @@ const MyRepairs: React.FC = () => {
         throw new Error('Incomplete payment data received from PayMongo');
       }
 
-      const subtotalAmount = Number(paymentData?.subtotal_amount ?? getOrderSubtotal(selectedOrder));
-      const vatAmount = Number(paymentData?.vat_amount ?? (subtotalAmount * (REPAIR_VAT_RATE_PERCENT / 100)));
-      const vatRate = Number(paymentData?.vat_rate ?? REPAIR_VAT_RATE_PERCENT);
-      const totalAmount = Number(paymentData?.total_amount ?? (subtotalAmount + vatAmount));
+      const fallbackBreakdown = getOrderBreakdown(selectedOrder);
+      const subtotalAmount = Number(paymentData?.subtotal_amount ?? fallbackBreakdown.netSubtotal);
+      const vatAmount = Number(paymentData?.vat_amount ?? fallbackBreakdown.vatAmount);
+      const vatRate = Number(paymentData?.vat_rate ?? getOrderVatRate(selectedOrder));
+      const totalAmount = Number(paymentData?.total_amount ?? fallbackBreakdown.grandTotal);
 
       const confirmResult = await Swal.fire({
         title: 'Confirm Repair Payment',

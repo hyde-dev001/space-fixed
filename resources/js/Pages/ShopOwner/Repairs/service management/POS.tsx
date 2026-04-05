@@ -4,6 +4,7 @@ import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import Swal from "sweetalert2";
 import { computeCanPay, getPhoneDisplayForReceipt } from "../../../Repairs/posPaymentValidation";
+import { buildRepairBreakdown } from "../../../../utils/repairPricing";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -472,8 +473,15 @@ const PointOfSalePage = () => {
 	}, [subtotal]);
 
 	const taxableBase = useMemo(() => Math.max(subtotal - discount, 0), [subtotal, discount]);
-	const vatAmount = useMemo(() => taxableBase * (VAT_RATE / 100), [taxableBase]);
-	const totalDue = useMemo(() => taxableBase + vatAmount, [taxableBase, vatAmount]);
+	const dueBreakdown = useMemo(() => {
+		return buildRepairBreakdown({
+			finalTotal: taxableBase,
+			vatRate: VAT_RATE,
+			taxMode: "vat_inclusive",
+		});
+	}, [taxableBase]);
+	const vatAmount = useMemo(() => dueBreakdown.vatAmount, [dueBreakdown.vatAmount]);
+	const totalDue = useMemo(() => dueBreakdown.grandTotal, [dueBreakdown.grandTotal]);
 
 	const cashReceived = useMemo(() => toSafeNumber(cashReceivedInput), [cashReceivedInput]);
 	const tenderedAmount = paymentMethod === "cash" ? cashReceived : totalDue;
@@ -789,7 +797,7 @@ const PointOfSalePage = () => {
 				paymentMethod,
 				notes,
 				cashReceived: tenderedAmount,
-				subtotal: Number(receiptTotals?.subtotal ?? subtotal),
+				subtotal: Number(receiptTotals?.subtotal ?? dueBreakdown.netSubtotal),
 				discount: Number(receiptTotals?.discount ?? discount),
 				vatRate: VAT_RATE,
 				vatAmount: Number(receiptTotals?.tax ?? vatAmount),
@@ -1214,7 +1222,7 @@ const PointOfSalePage = () => {
 
 							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<div className="space-y-2 text-sm">
-									<div className="flex items-center justify-between text-slate-600"><span>Subtotal</span><span>{formatPeso(subtotal)}</span></div>
+									<div className="flex items-center justify-between text-slate-600"><span>Subtotal (Before VAT)</span><span>{formatPeso(dueBreakdown.netSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Discount</span><span>- {formatPeso(discount)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(vatAmount)}</span></div>
 									<div className="my-2 border-t border-dashed border-slate-300" />

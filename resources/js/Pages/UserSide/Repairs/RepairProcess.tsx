@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
+import { buildRepairBreakdown } from '../../../utils/repairPricing';
 
 const REPAIR_VAT_RATE_PERCENT = 12;
 
@@ -473,8 +474,15 @@ const RepairProcess: React.FC = () => {
   const packageTotal = selectedPackage ? getEffectivePackagePrice(selectedPackage) : 0;
 
   const grandTotal = selectedPackage ? packageTotal + addOnsTotal : servicesTotal;
-  const vatAmount = Number((grandTotal * (REPAIR_VAT_RATE_PERCENT / 100)).toFixed(2));
-  const grandTotalWithVat = Number((grandTotal + vatAmount).toFixed(2));
+  const pricingBreakdown = useMemo(() => {
+    return buildRepairBreakdown({
+      finalTotal: grandTotal,
+      vatRate: REPAIR_VAT_RATE_PERCENT,
+      taxMode: 'vat_inclusive',
+    });
+  }, [grandTotal]);
+  const vatAmount = pricingBreakdown.vatAmount;
+  const grandTotalWithVat = pricingBreakdown.grandTotal;
   const isSubmitDisabled = isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null);
 
   const shopAddressLine = (shopDetails?.shop_address || shopDetails?.business_address || shopDetails?.address || '').trim();
@@ -827,7 +835,7 @@ const RepairProcess: React.FC = () => {
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Package</span><span class="user-swal2-summary-value">${selectedPackage ? selectedPackage.name : 'None'}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Services</span><span class="user-swal2-summary-value">${selectedPackage ? selectedPackage.service_count : selectedServiceIds.length}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Add-ons</span><span class="user-swal2-summary-value">${selectedPackage ? selectedAddOnServiceIds.length : 0}</span></p>
-            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Subtotal</span><span class="user-swal2-summary-value">₱${grandTotal.toLocaleString()}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Subtotal</span><span class="user-swal2-summary-value">₱${pricingBreakdown.netSubtotal.toLocaleString()}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">VAT (${REPAIR_VAT_RATE_PERCENT}%)</span><span class="user-swal2-summary-value">₱${vatAmount.toLocaleString()}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Shop (Intake)</span><span class="user-swal2-summary-value">${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Customer (Return)</span><span class="user-swal2-summary-value">${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</span></p>
@@ -893,6 +901,7 @@ const RepairProcess: React.FC = () => {
       
       // Calculate total
       submitFormData.append('total', grandTotal.toString());
+  submitFormData.append('total', grandTotalWithVat.toString());
 
       const response = await fetch('/api/repair-requests', {
         method: 'POST',
