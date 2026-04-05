@@ -50,5 +50,43 @@ export default defineConfig({
     },
     build: {
         emptyOutDir: true,
+        chunkSizeWarningLimit: 650,
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (!id.includes('node_modules')) {
+                        return;
+                    }
+
+                    if (id.includes('react-apexcharts') || id.includes('/apexcharts/')) {
+                        return 'vendor-apexcharts';
+                    }
+
+                    if (id.includes('/three/examples/')) {
+                        return 'vendor-three-examples';
+                    }
+
+                    if (id.includes('/three/')) {
+                        return 'vendor-three-core';
+                    }
+
+                    if (id.includes('/leaflet/')) {
+                        return 'vendor-leaflet';
+                    }
+
+                    if (id.includes('/sweetalert2/')) {
+                        return 'vendor-sweetalert2';
+                    }
+
+                    if (id.includes('@fullcalendar/')) {
+                        return 'vendor-fullcalendar';
+                    }
+
+                    if (id.includes('@react-jvectormap/')) {
+                        return 'vendor-jvectormap';
+                    }
+                },
+            },
+        },
     },
 });
