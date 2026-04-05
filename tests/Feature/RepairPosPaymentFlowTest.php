@@ -28,7 +28,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'manual_repair_subtotal' => 599,
             'manual_service_summary' => 'Starter Clean Package (2 services)',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 335.44],
+                ['tender_type' => 'cash', 'amount' => 299.50],
             ],
         ]);
 
@@ -41,7 +41,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $this->assertSame('repair', (string) $transaction->module_type);
         $this->assertSame('walk_in', (string) $transaction->customer_type);
         $this->assertSame('deposit', (string) $transaction->due_type);
-        $this->assertSame('335.44', number_format((float) $transaction->total_amount, 2, '.', ''));
+        $this->assertSame('299.50', number_format((float) $transaction->total_amount, 2, '.', ''));
 
         $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
         $this->assertSame((int) $shopOwner->id, (int) $repair->shop_owner_id);
@@ -51,6 +51,52 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $receipt = \App\Models\PosReceipt::query()->where('pos_transaction_id', $transaction->id)->first();
         $this->assertNotNull($receipt);
+    }
+
+    #[Test]
+    public function deposit_due_uses_inclusive_split_and_extracts_vat(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = \App\Models\User::factory()->create();
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-VAT-INC-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09175550000',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Inclusive VAT test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'ready_for_pickup',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'idempotency_key' => 'vat-inclusive-pos-001',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 500],
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail((int) $response->json('transaction_id'));
+
+        $this->assertSame('500.00', number_format((float) $transaction->total_amount, 2, '.', ''));
+        $this->assertSame('53.57', number_format((float) $transaction->tax_amount, 2, '.', ''));
+        $this->assertSame('446.43', number_format((float) $transaction->subtotal, 2, '.', ''));
+        $this->assertSame('vat_inclusive', (string) data_get($transaction->metadata, 'tax_mode'));
     }
 
     #[Test]
@@ -87,7 +133,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'walk_in_name' => 'Replay Test',
             'idempotency_key' => 'idem-phase-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ];
 
@@ -142,11 +188,11 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'due_type' => 'deposit',
-            'subtotal' => 500,
-            'tax_amount' => 60,
+            'subtotal' => 446.43,
+            'tax_amount' => 53.57,
             'discount_amount' => 0,
-            'total_amount' => 560,
-            'paid_amount' => 560,
+            'total_amount' => 500,
+            'paid_amount' => 500,
             'status' => 'paid',
             'paid_at' => now(),
         ]);
@@ -195,7 +241,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'canon-sync-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ])->assertOk();
 
@@ -283,7 +329,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-deposit-derived-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ]);
 
@@ -291,7 +337,7 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $repair->refresh();
         $this->assertSame('paid', (string) $repair->payment_status_derived);
-        $this->assertSame('560.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('500.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
     #[Test]
@@ -361,7 +407,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-receipt-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ]);
 
@@ -408,7 +454,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-deposit-balance-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ])->assertOk();
 
@@ -419,13 +465,13 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-deposit-balance-002',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ])->assertOk();
 
         $repair->refresh();
         $this->assertSame('completed', (string) $repair->payment_status_derived);
-        $this->assertSame('1120.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('1000.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
     #[Test]
@@ -462,13 +508,13 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-full-upfront-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 1344],
+                ['tender_type' => 'cash', 'amount' => 1200],
             ],
         ])->assertOk();
 
         $repair->refresh();
         $this->assertSame('completed', (string) $repair->payment_status_derived);
-        $this->assertSame('1344.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('1200.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
     }
 
     #[Test]
@@ -505,7 +551,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-noncash-ref-required-001',
             'payment_lines' => [
-                ['tender_type' => 'paymongo_wallet', 'amount' => 560, 'provider_reference' => null],
+                ['tender_type' => 'paymongo_wallet', 'amount' => 500, 'provider_reference' => null],
             ],
         ]);
 
@@ -547,7 +593,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-noncash-ref-success-001',
             'payment_lines' => [
-                ['tender_type' => 'paymongo_card', 'amount' => 560, 'provider_reference' => 'AUTH-REF-12345'],
+                ['tender_type' => 'paymongo_card', 'amount' => 500, 'provider_reference' => 'AUTH-REF-12345'],
             ],
         ]);
 
@@ -594,7 +640,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-policy-fullupfront-invalid-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 1120],
+                ['tender_type' => 'cash', 'amount' => 1000],
             ],
         ]);
 
@@ -636,7 +682,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-policy-deposit-invalid-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ]);
 
@@ -678,7 +724,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-status-deposit-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 560],
+                ['tender_type' => 'cash', 'amount' => 500],
             ],
         ])->assertOk();
 
@@ -720,7 +766,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-status-fullupfront-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 1120],
+                ['tender_type' => 'cash', 'amount' => 1000],
             ],
         ])->assertOk();
 
@@ -765,7 +811,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-refund-lifecycle-001',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 1120],
+                ['tender_type' => 'cash', 'amount' => 1000],
             ],
         ])->assertOk();
 
@@ -774,7 +820,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $refundRequest = $this->actingAs($customer, 'user')->postJson('/api/repair-pos/refunds', [
             'source_transaction_id' => $transactionId,
             'request_type' => 'full',
-            'requested_amount' => 1120,
+            'requested_amount' => 1000,
             'reason_code' => 'customer_refund_request',
             'reason_notes' => 'Refund requested from test',
         ])->assertOk();
@@ -798,7 +844,7 @@ class RepairPosPaymentFlowTest extends TestCase
         ]);
 
         $repair->refresh();
-        $this->assertSame('1120.00', number_format((float) $repair->total_refunded_amount, 2, '.', ''));
+        $this->assertSame('1000.00', number_format((float) $repair->total_refunded_amount, 2, '.', ''));
         $this->assertSame('refunded', (string) $repair->payment_status_derived);
     }
 
@@ -855,7 +901,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
             'idempotency_key' => 'tdd-refund-visibility-001',
-            'payment_lines' => [['tender_type' => 'cash', 'amount' => 1120]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 1000]],
         ])->assertOk();
 
         $tx2 = $this->actingAs($shopActor, 'user')->postJson('/api/repair-pos/checkout', [
@@ -864,20 +910,20 @@ class RepairPosPaymentFlowTest extends TestCase
             'customer_type' => 'registered',
             'customer_id' => $otherCustomer->id,
             'idempotency_key' => 'tdd-refund-visibility-002',
-            'payment_lines' => [['tender_type' => 'cash', 'amount' => 1120]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 1000]],
         ])->assertOk();
 
         $this->actingAs($customer, 'user')->postJson('/api/repair-pos/refunds', [
             'source_transaction_id' => (int) $tx1->json('transaction_id'),
             'request_type' => 'full',
-            'requested_amount' => 1120,
+            'requested_amount' => 1000,
             'reason_code' => 'customer_refund_request',
         ])->assertOk();
 
         $this->actingAs($otherCustomer, 'user')->postJson('/api/repair-pos/refunds', [
             'source_transaction_id' => (int) $tx2->json('transaction_id'),
             'request_type' => 'full',
-            'requested_amount' => 1120,
+            'requested_amount' => 1000,
             'reason_code' => 'customer_refund_request',
         ])->assertOk();
 

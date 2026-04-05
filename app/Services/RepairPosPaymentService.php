@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PosPaymentLine;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
+use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -30,14 +31,16 @@ class RepairPosPaymentService
             ]);
         }
 
-        $total = (float) ($repair->final_total ?? $repair->total ?? 0);
+        $totalInclusive = (float) ($repair->final_total ?? $repair->total ?? 0);
 
-        $dueSubtotal = $normalizedPolicy === 'full_upfront'
-            ? $total
-            : round($total * 0.5, 2);
+        $dueTotal = $normalizedPolicy === 'full_upfront'
+            ? round($totalInclusive, 2)
+            : round($totalInclusive * 0.5, 2);
 
-        $vatAmount = round($dueSubtotal * (self::VAT_RATE_PERCENT / 100), 2);
-        $dueAmount = round($dueSubtotal + $vatAmount, 2);
+        $breakdown = VatInclusiveCalculator::extract($dueTotal, self::VAT_RATE_PERCENT);
+        $dueSubtotal = (float) $breakdown['net'];
+        $vatAmount = (float) $breakdown['vat'];
+        $dueAmount = (float) $breakdown['total'];
 
         $paidAmount = collect($payload['payment_lines'])->sum(fn ($line) => (float) $line['amount']);
 
@@ -99,6 +102,7 @@ class RepairPosPaymentService
                 'created_by' => $actorId,
                 'metadata' => [
                     'vat_rate' => self::VAT_RATE_PERCENT,
+                    'tax_mode' => 'vat_inclusive',
                 ],
             ]);
 
