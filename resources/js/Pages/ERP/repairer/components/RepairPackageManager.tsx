@@ -163,6 +163,7 @@ export default function RepairPackageManager({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<RepairPackage | null>(null);
   const [formState, setFormState] = useState<PackageFormState>(defaultFormState);
+  const [isPriceManuallyEdited, setIsPriceManuallyEdited] = useState(false);
 
   const loadData = async () => {
     try {
@@ -177,7 +178,9 @@ export default function RepairPackageManager({
       }
 
       if (servicesResponse.data?.success) {
-        const activeServices = (servicesResponse.data.data || []).filter((service: RepairServiceOption) => service.status === "Active");
+        const activeServices = (servicesResponse.data.data || []).filter(
+          (service: RepairServiceOption) => String(service.status || "").toLowerCase() === "active"
+        );
         setServices(activeServices);
       }
 
@@ -241,6 +244,7 @@ export default function RepairPackageManager({
 
   const resetAndCloseModal = () => {
     setFormState(defaultFormState);
+    setIsPriceManuallyEdited(false);
     setSelectedPackage(null);
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
@@ -248,6 +252,7 @@ export default function RepairPackageManager({
 
   const openAddModal = () => {
     setFormState(defaultFormState);
+    setIsPriceManuallyEdited(false);
     setSelectedPackage(null);
     setIsAddModalOpen(true);
   };
@@ -264,6 +269,7 @@ export default function RepairPackageManager({
 
   const openEditModal = (pkg: RepairPackage) => {
     setSelectedPackage(pkg);
+    setIsPriceManuallyEdited(true);
     setFormState({
       name: pkg.name,
       description: pkg.description || "",
@@ -282,13 +288,29 @@ export default function RepairPackageManager({
     setIsEditModalOpen(true);
   };
 
+  const calculateServicesTotal = (serviceIds: number[]): number => {
+    return services
+      .filter((service) => serviceIds.includes(service.id))
+      .reduce((sum, service) => sum + (typeof service.price === "string" ? parseFloat(service.price) : service.price), 0);
+  };
+
   const toggleService = (serviceId: number) => {
-    setFormState((prev) => ({
-      ...prev,
-      service_ids: prev.service_ids.includes(serviceId)
+    setFormState((prev) => {
+      const nextServiceIds = prev.service_ids.includes(serviceId)
         ? prev.service_ids.filter((id) => id !== serviceId)
-        : [...prev.service_ids, serviceId],
-    }));
+        : [...prev.service_ids, serviceId];
+
+      const shouldAutoSuggestPrice = isAddModalOpen && !isPriceManuallyEdited;
+      const nextPrice = shouldAutoSuggestPrice
+        ? String(calculateServicesTotal(nextServiceIds).toFixed(2))
+        : prev.package_price;
+
+      return {
+        ...prev,
+        service_ids: nextServiceIds,
+        package_price: nextPrice,
+      };
+    });
   };
 
   const addMaterialTemplateLine = () => {
@@ -361,8 +383,14 @@ export default function RepairPackageManager({
       }
     }
 
-    // Price is now auto-calculated and derived from selected services
-    // No need to validate manual price entry
+    if (formState.package_price.trim() === "") {
+      return "Package price is required.";
+    }
+
+    const packagePrice = Number(formState.package_price);
+    if (!Number.isFinite(packagePrice) || packagePrice < 0) {
+      return "Package price must be a valid non-negative number.";
+    }
 
     return null;
   };
@@ -385,7 +413,7 @@ export default function RepairPackageManager({
 
       const payload = {
         ...formState,
-        package_price: selectedServicesTotal, // Use auto-calculated price from selected services
+        package_price: Number(formState.package_price),
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
         material_templates: materialTemplatesPayload,
@@ -395,7 +423,7 @@ export default function RepairPackageManager({
       if (response.data?.success) {
         await loadData();
         resetAndCloseModal();
-        Swal.fire({ icon: "success", title: "Created", text: "Repair package created successfully. You can adjust pricing in the Repair Pricing section.", timer: 1800, showConfirmButton: false });
+        Swal.fire({ icon: "success", title: "Created", text: "Repair package created successfully.", timer: 1800, showConfirmButton: false });
       }
     } catch (error: any) {
       console.error("Failed to create package", error);
@@ -425,7 +453,7 @@ export default function RepairPackageManager({
 
       const payload = {
         ...formState,
-        package_price: selectedServicesTotal, // Use auto-calculated price from selected services
+        package_price: Number(formState.package_price),
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
         material_templates: materialTemplatesPayload,
@@ -523,11 +551,39 @@ export default function RepairPackageManager({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Auto-Calculated Price</label>
-                <div className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold flex items-center">
-                  {formatMoney(selectedServicesTotal)}
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price is based on selected services. Adjust in Repair Pricing section if needed.</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Package Price *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formState.package_price}
+                  onChange={(e) => {
+                    setIsPriceManuallyEdited(true);
+                    setFormState((prev) => ({ ...prev, package_price: e.target.value }));
+                  }}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  placeholder="e.g. 948.00"
+                  disabled={mode === "edit"}
+                />
+                {mode === "add" ? (
+                  <div className="mt-1 space-y-1">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Suggested from selected services: <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPriceManuallyEdited(false);
+                        setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      Use suggested price
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price updates after creation are handled in the Repair Pricing workflow.</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Starts At (optional)</label>
