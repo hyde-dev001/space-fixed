@@ -228,6 +228,13 @@ class RepairWorkflowController extends Controller
     public function myAssignedRepairs(Request $request)
     {
         try {
+            $excludeManualPosRepairs = static function ($query): void {
+                $query->where(function ($inner) {
+                    $inner->whereNull('request_id')
+                        ->orWhere('request_id', 'not like', 'REP-POS-%');
+                });
+            };
+
             // Check if authenticated as shop owner first
             $shopOwner = Auth::guard('shop_owner')->user();
             
@@ -235,6 +242,7 @@ class RepairWorkflowController extends Controller
                 // Shop owner sees all repairs for their shop
                 $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
                     ->where('shop_owner_id', $shopOwner->id)
+                    ->where($excludeManualPosRepairs)
                     ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received', 'under-review'])
                     ->orderBy('created_at', 'desc')
                     ->get();
@@ -258,6 +266,7 @@ class RepairWorkflowController extends Controller
             // Get repairs assigned to this repairer
             $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
                 ->forRepairer($user->id)
+                ->where($excludeManualPosRepairs)
                 ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received'])
                 ->orderBy('created_at', 'desc')
                 ->get();
