@@ -8,6 +8,7 @@ import { buildRepairBreakdown } from "../../../../utils/repairPricing";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
+type ManualPaymentPolicy = "deposit_50" | "full_upfront";
 
 type RepairOrderOption = {
 	id: string;
@@ -247,6 +248,14 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 const PointOfSalePage = () => {
 	const { props } = usePage();
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
+	const shopRepairPaymentPolicy: ManualPaymentPolicy =
+		String(
+			(props as any)?.auth?.shop_owner?.repair_payment_policy
+			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
+			?? (props as any)?.shop_settings?.repair_payment_policy
+		) === "full_upfront"
+			? "full_upfront"
+			: "deposit_50";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -483,11 +492,27 @@ const PointOfSalePage = () => {
 		return items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
 	}, [items]);
 
+	const isManualStandaloneCheckout = useMemo(() => {
+		return !selectedRepairOrder && !requestedRepairRequestId;
+	}, [requestedRepairRequestId, selectedRepairOrder]);
+
+	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+
+	const chargeableSubtotal = useMemo(() => {
+		if (!isManualStandaloneCheckout) {
+			return subtotal;
+		}
+
+		return dueTypeForManualCheckout === "deposit"
+			? Math.round(subtotal * 0.5 * 100) / 100
+			: subtotal;
+	}, [dueTypeForManualCheckout, isManualStandaloneCheckout, subtotal]);
+
 	const discount = useMemo(() => {
 		return 0;
 	}, [subtotal]);
 
-	const taxableBase = useMemo(() => Math.max(subtotal - discount, 0), [subtotal, discount]);
+	const taxableBase = useMemo(() => Math.max(chargeableSubtotal - discount, 0), [chargeableSubtotal, discount]);
 	const dueBreakdown = useMemo(() => {
 		return buildRepairBreakdown({
 			finalTotal: taxableBase,
@@ -722,18 +747,13 @@ const PointOfSalePage = () => {
 
 	const handlePay = async () => {
 		if (!canPay) return;
-		if (!selectedRepairOrder && !requestedRepairRequestId) {
-			await Swal.fire({
-				icon: "warning",
-				title: "Repair Request Required",
-				text: "Please open POS from a Job Order so it has a repair request reference.",
-				confirmButtonColor: "#2563eb",
-			});
-			return;
-		}
 
-		const repairRequestId = Number(selectedRepairOrder?.id || requestedRepairRequestId);
-		if (!Number.isFinite(repairRequestId) || repairRequestId <= 0) {
+		const hasRepairReference = Boolean(selectedRepairOrder || requestedRepairRequestId);
+		const repairRequestId = hasRepairReference
+			? Number(selectedRepairOrder?.id || requestedRepairRequestId)
+			: null;
+
+		if (hasRepairReference && (!Number.isFinite(Number(repairRequestId)) || Number(repairRequestId) <= 0)) {
 			await Swal.fire({
 				icon: "error",
 				title: "Invalid Repair Request",
@@ -744,23 +764,31 @@ const PointOfSalePage = () => {
 		}
 
 		const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
-		const customerType = selectedRepairOrder?.customerId ? "registered" : "walk_in";
-		const dueTypeForCheckout = selectedRepairOrder?.dueTypeToCollect ?? effectiveDueType;
-		const idempotencyKey = `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`;
+		const customerType = hasRepairReference && selectedRepairOrder?.customerId ? "registered" : "walk_in";
+		const dueTypeForCheckout = hasRepairReference
+			? (selectedRepairOrder?.dueTypeToCollect ?? effectiveDueType)
+			: dueTypeForManualCheckout;
+		const idempotencyKey = hasRepairReference
+			? `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`
+			: `repair-manual-${Date.now()}`;
+		const manualServiceSummary = items.map((item) => item.label).join(", ").slice(0, 1800);
 
 		setIsProcessingPayment(true);
 		try {
 			const checkoutResponse = await axios.post(
 				"/api/repair-pos/checkout",
 				{
-					repair_request_id: repairRequestId,
+					repair_request_id: hasRepairReference ? repairRequestId : null,
 					due_type: dueTypeForCheckout,
 					idempotency_key: idempotencyKey,
 					customer_type: customerType,
-					customer_id: selectedRepairOrder?.customerId ?? null,
+					customer_id: hasRepairReference ? (selectedRepairOrder?.customerId ?? null) : null,
 					walk_in_name: customerName.trim() || null,
 					walk_in_phone: customerPhone.trim() || null,
 					walk_in_email: null,
+					manual_repair_subtotal: hasRepairReference ? null : Number(subtotal.toFixed(2)),
+					manual_service_summary: hasRepairReference ? null : (manualServiceSummary || "Walk-in POS service"),
+					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),
@@ -824,7 +852,9 @@ const PointOfSalePage = () => {
 
 			setReceiptSnapshot(snapshot);
 			setReceiptHistory((prev) => [snapshot, ...prev]);
-			setRepairOrders((prev) => prev.filter((entry) => entry.id !== String(repairRequestId)));
+			if (hasRepairReference && repairRequestId) {
+				setRepairOrders((prev) => prev.filter((entry) => entry.id !== String(repairRequestId)));
+			}
 			resetOrderInputs();
 
 			await Swal.fire({
