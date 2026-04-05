@@ -2415,7 +2415,9 @@ class RepairWorkflowController extends Controller
         $baseTotal = !is_null($repair->repair_package_id)
             ? round($packagePrice + $addOnsTotal, 2)
             : round((float) ($repair->total ?? 0), 2);
-        $finalTotal = round($baseTotal + $materialsTotal, 2);
+        // Material usage is operational tracking and should not auto-inflate
+        // the customer-facing billable amount for the repair.
+        $finalTotal = $baseTotal;
 
         $pricingBreakdown = is_array($repair->pricing_breakdown)
             ? $repair->pricing_breakdown
@@ -3767,7 +3769,9 @@ class RepairWorkflowController extends Controller
             ? round($packagePrice + $addOnsTotal, 2)
             : round((float) ($repairRequest->total ?? 0), 2);
 
-        $finalTotal = round($baseTotal + $materialsTotal, 2);
+        // Keep final_total stable with the billable base amount; materials_total
+        // remains available in pricing_breakdown for operational visibility.
+        $finalTotal = $baseTotal;
 
         return [
             'base_total' => $baseTotal,
