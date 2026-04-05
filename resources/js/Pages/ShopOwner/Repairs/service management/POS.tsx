@@ -188,6 +188,21 @@ const toSafeNumber = (value: string): number => {
 
 const toDigitsOnly = (value: string): string => value.replace(/[^0-9]/g, "");
 
+const toCurrencyInput = (value: string): string => {
+	const sanitized = value.replace(/[^0-9.]/g, "");
+	if (sanitized === "") return "";
+
+	const [rawWhole, ...rawFractionParts] = sanitized.split(".");
+	const whole = rawWhole === "" ? "0" : rawWhole.replace(/^0+(?=\d)/, "");
+
+	if (rawFractionParts.length === 0) {
+		return whole;
+	}
+
+	const fraction = rawFractionParts.join("").slice(0, 2);
+	return `${whole}.${fraction}`;
+};
+
 const normalizeServiceName = (value: string): string => value.trim().toLowerCase();
 
 const toDateInputValue = (isoValue: string): string => {
@@ -1198,11 +1213,11 @@ const PointOfSalePage = () => {
 							<input
 								title="Cash received"
 								type="text"
-								inputMode="numeric"
-								pattern="[0-9]*"
+								inputMode="decimal"
+								pattern="[0-9]*[.]?[0-9]{0,2}"
 								min={0}
 								value={cashReceivedInput}
-								onChange={(event) => setCashReceivedInput(toDigitsOnly(event.target.value))}
+								onChange={(event) => setCashReceivedInput(toCurrencyInput(event.target.value))}
 								disabled={paymentMethod !== "cash"}
 								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 							/>
