@@ -290,8 +290,8 @@ const PointOfSalePage = () => {
 			setIsLoadingData(true);
 			try {
 				const [servicesResult, ordersResult, packagesResult] = await Promise.allSettled([
-					axios.get("/api/shop-owner/repair-services/"),
-					axios.get("/api/shop-owner/repairs/"),
+					axios.get("/api/shop-owner/repair-services"),
+					axios.get("/api/shop-owner/repairs"),
 					axios.get("/api/repair-packages"),
 				]);
 

@@ -8,6 +8,7 @@ use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
@@ -47,7 +48,7 @@ class RepairPosController extends Controller
             }
         }
 
-        $actor = Auth::guard('user')->user();
+        $actor = $this->resolveActor();
         if (!$actor) {
             return response()->json([
                 'success' => false,
@@ -55,11 +56,13 @@ class RepairPosController extends Controller
             ], 401);
         }
 
+        $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
+
         $repairRequestId = (int) ($validated['repair_request_id'] ?? 0);
         if ($repairRequestId > 0) {
             $repair = RepairRequest::findOrFail($repairRequestId);
 
-            if (!$actor->can('posCheckout', $repair)) {
+            if (!$this->canActorCheckoutRepair($actor, $repair, $actorShopOwnerId)) {
                 return response()->json([
                     'success' => false,
                     'code' => 'AUTH_FORBIDDEN_SHOP_SCOPE',
@@ -89,12 +92,12 @@ class RepairPosController extends Controller
                 ], 422);
             }
 
-            $repair = $this->createManualRepairRequestFromPos($validated, $actor);
+            $repair = $this->createManualRepairRequestFromPos($validated, $actor, $actorShopOwnerId);
         }
 
-        $actorId = (int) (Auth::guard('user')->id() ?? 0);
+        $auditActorId = $this->resolveActorAuditUserId();
 
-        $transaction = $service->checkout($repair, $validated, $actorId);
+        $transaction = $service->checkout($repair, $validated, $auditActorId);
 
         return response()->json([
             'success' => true,
@@ -106,9 +109,8 @@ class RepairPosController extends Controller
         ]);
     }
 
-    private function createManualRepairRequestFromPos(array $payload, object $actor): RepairRequest
+    private function createManualRepairRequestFromPos(array $payload, object $actor, int $shopOwnerId): RepairRequest
     {
-        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
         if ($shopOwnerId <= 0) {
             throw ValidationException::withMessages([
                 'shop_owner_id' => ['Unable to resolve shop scope for manual POS checkout.'],
@@ -210,8 +212,15 @@ class RepairPosController extends Controller
             ], 422);
         }
 
-        $actor = Auth::guard('user')->user();
-        $actorId = (int) ($actor?->id ?? 0);
+        $actor = $this->resolveActor();
+        $actorId = $this->resolveActorId();
+
+        if (!$actor || $actorId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 401);
+        }
 
         $repair = RepairRequest::query()->find((int) $source->module_reference_id);
         if (!$repair) {
@@ -221,9 +230,9 @@ class RepairPosController extends Controller
             ], 404);
         }
 
-        $isCustomerOwner = (int) $repair->user_id === $actorId;
-        $isShopActor = $actor && (int) ($actor->shop_owner_id ?? 0) > 0
-            && (int) $actor->shop_owner_id === (int) $source->shop_owner_id;
+        $isCustomerOwner = Auth::guard('user')->check() && (int) $repair->user_id === $actorId;
+        $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
+        $isShopActor = $actorShopOwnerId > 0 && $actorShopOwnerId === (int) $source->shop_owner_id;
 
         if (!$isCustomerOwner && !$isShopActor) {
             return response()->json([
@@ -256,7 +265,7 @@ class RepairPosController extends Controller
             }
         }
 
-        $refund = $service->requestRefund($source, $validated, $actorId);
+        $refund = $service->requestRefund($source, $validated, $this->resolveActorAuditUserId());
 
         return response()->json([
             'success' => true,
@@ -266,8 +275,7 @@ class RepairPosController extends Controller
 
     public function listRefundQueue(Request $request)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = (int) ($user?->shop_owner_id ?? 0);
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $includeHistory = filter_var($request->query('include_history', false), FILTER_VALIDATE_BOOLEAN);
 
         $statuses = $includeHistory
@@ -294,6 +302,13 @@ class RepairPosController extends Controller
 
     public function listMyRefunds(Request $request)
     {
+        if (!Auth::guard('user')->check()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only registered customers can view this refund list.',
+            ], 403);
+        }
+
         $actorId = (int) (Auth::guard('user')->id() ?? 0);
         if ($actorId <= 0) {
             return response()->json([
@@ -325,7 +340,7 @@ class RepairPosController extends Controller
     public function listTransactions(Request $request)
     {
         $repairRequestId = (int) $request->query('repair_request_id');
-        $shopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
 
         $rows = PosTransaction::query()
             ->where('module_type', 'repair')
@@ -347,7 +362,7 @@ class RepairPosController extends Controller
 
     public function approveRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
-        $actor = Auth::guard('user')->user();
+        $actor = $this->resolveActor();
         if (!$actor) {
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
         }
@@ -364,7 +379,7 @@ class RepairPosController extends Controller
 
         $updated = $service->approve(
             refund: $refund,
-            actorId: (int) $actor->id,
+            actorId: $this->resolveActorAuditUserId(),
             approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
             approvalNote: $validated['approval_note'] ?? null,
             stage: $approvalStage,
@@ -378,7 +393,7 @@ class RepairPosController extends Controller
 
     public function rejectRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
-        $actor = Auth::guard('user')->user();
+        $actor = $this->resolveActor();
         if (!$actor) {
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
         }
@@ -394,7 +409,7 @@ class RepairPosController extends Controller
 
         $updated = $service->reject(
             refund: $refund,
-            actorId: (int) $actor->id,
+            actorId: $this->resolveActorAuditUserId(),
             rejectionReason: $validated['rejection_reason'],
             stage: $approvalStage,
         );
@@ -407,7 +422,7 @@ class RepairPosController extends Controller
 
     public function executeRefund(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
-        $actor = Auth::guard('user')->user();
+        $actor = $this->resolveActor();
         if (!$actor) {
             return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
         }
@@ -424,7 +439,7 @@ class RepairPosController extends Controller
         $executionMode = strtolower((string) ($validated['execution_mode'] ?? 'manual'));
         $updated = $service->execute(
             refund: $refund,
-            actorId: (int) $actor->id,
+            actorId: $this->resolveActorAuditUserId(),
             executionMode: in_array($executionMode, ['manual', 'gateway'], true) ? $executionMode : 'manual',
             executionNote: $validated['execution_note'] ?? null,
         );
@@ -460,7 +475,7 @@ class RepairPosController extends Controller
             'note' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $data = $service->verifyPaymentLine($line, $validated, (int) (Auth::guard('user')->id() ?? 0));
+        $data = $service->verifyPaymentLine($line, $validated, $this->resolveActorAuditUserId());
 
         return response()->json(['success' => true, 'data' => $data]);
     }
@@ -471,7 +486,7 @@ class RepairPosController extends Controller
             return false;
         }
 
-        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        $shopOwnerId = $this->resolveActorShopOwnerId($actor);
         if (!($shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id)) {
             return false;
         }
@@ -506,7 +521,7 @@ class RepairPosController extends Controller
             return false;
         }
 
-        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        $shopOwnerId = $this->resolveActorShopOwnerId($actor);
         if (!($shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id)) {
             return false;
         }
@@ -540,7 +555,7 @@ class RepairPosController extends Controller
             return false;
         }
 
-        $shopOwnerId = (int) ($actor->shop_owner_id ?? 0);
+        $shopOwnerId = $this->resolveActorShopOwnerId($actor);
         if (!($shopOwnerId > 0 && $shopOwnerId === (int) $refund->shop_owner_id)) {
             return false;
         }
@@ -555,5 +570,77 @@ class RepairPosController extends Controller
         }
 
         return false;
+    }
+
+    private function resolveActor(): ?object
+    {
+        return Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
+    }
+
+    private function resolveActorId(): int
+    {
+        return (int) (Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id() ?? 0);
+    }
+
+    private function resolveActorAuditUserId(): int
+    {
+        if (Auth::guard('user')->check()) {
+            return (int) (Auth::guard('user')->id() ?? 0);
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return 0;
+        }
+
+        $shopOwnerId = (int) ($shopOwner->id ?? 0);
+        if ($shopOwnerId <= 0) {
+            return 0;
+        }
+
+        $shopOwnerEmail = trim((string) ($shopOwner->email ?? ''));
+        if ($shopOwnerEmail !== '') {
+            $matchedByEmail = (int) (User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('email', $shopOwnerEmail)
+                ->value('id') ?? 0);
+
+            if ($matchedByEmail > 0) {
+                return $matchedByEmail;
+            }
+        }
+
+        return (int) (User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderBy('id')
+            ->value('id') ?? 0);
+    }
+
+    private function resolveActorShopOwnerId(?object $actor = null): int
+    {
+        if (Auth::guard('shop_owner')->check()) {
+            return (int) Auth::guard('shop_owner')->id();
+        }
+
+        if (Auth::guard('user')->check()) {
+            return (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
+        }
+
+        return (int) ($actor?->shop_owner_id ?? 0);
+    }
+
+    private function canActorCheckoutRepair(object $actor, RepairRequest $repair, int $actorShopOwnerId): bool
+    {
+        if (!($actorShopOwnerId > 0 && $actorShopOwnerId === (int) $repair->shop_owner_id)) {
+            return false;
+        }
+
+        if (Auth::guard('shop_owner')->check()) {
+            $allowedStatuses = ['pending', 'ready_for_pickup', 'in_progress', 'completed', 'picked_up'];
+
+            return in_array((string) $repair->status, $allowedStatuses, true);
+        }
+
+        return method_exists($actor, 'can') && $actor->can('posCheckout', $repair);
     }
 }

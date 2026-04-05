@@ -180,7 +180,7 @@ export default function UploadService() {
   const fetchServices = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/shop-owner/repair-services/');
+      const response = await axios.get('/api/shop-owner/repair-services');
       if (response.data.success) {
         // Format price with peso sign for display
         const formattedServices = response.data.data.map((service: any) => ({
@@ -282,7 +282,7 @@ export default function UploadService() {
       // Remove peso sign and parse price
       const priceValue = formData.price.replace(/[₱,]/g, '');
       
-      const response = await axios.post('/api/shop-owner/repair-services/', {
+      const response = await axios.post('/api/shop-owner/repair-services', {
         name: formData.name,
         category: formData.category,
         price: priceValue,
@@ -747,7 +747,7 @@ export default function UploadService() {
             </div>
 
             <RepairPackageManager
-              serviceEndpoint="/api/shop-owner/repair-services/"
+              serviceEndpoint="/api/shop-owner/repair-services"
               materialsEndpoint="/api/shop-owner/repair-materials"
             />
           </div>

@@ -79,7 +79,7 @@ class RepairPosRefundService
             'status' => 'requested',
             'finance_status' => 'pending',
             'shop_owner_status' => 'pending',
-            'requested_by' => $actorId,
+            'requested_by' => $actorId > 0 ? $actorId : null,
             'requested_at' => now(),
         ]);
     }
@@ -153,7 +153,7 @@ class RepairPosRefundService
             $refund->update([
                 'status' => $requiresOwnerApproval ? 'requested' : 'approved',
                 'approved_amount' => round($amountToApprove, 2),
-                'approved_by' => $actorId,
+                'approved_by' => $actorId > 0 ? $actorId : null,
                 'approved_at' => now(),
                 'finance_status' => $requiresOwnerApproval ? 'approved_initial' : 'approved',
                 'shop_owner_status' => $requiresOwnerApproval ? 'pending' : 'skipped',
@@ -180,7 +180,7 @@ class RepairPosRefundService
         $refund->update([
             'status' => 'approved',
             'approved_amount' => round($amountToApprove, 2),
-            'approved_by' => $actorId,
+            'approved_by' => $actorId > 0 ? $actorId : null,
             'approved_at' => now(),
             'finance_status' => 'approved',
             'shop_owner_status' => 'approved',
@@ -215,7 +215,7 @@ class RepairPosRefundService
 
         $payload = [
             'status' => 'rejected',
-            'approved_by' => $actorId,
+            'approved_by' => $actorId > 0 ? $actorId : null,
             'approved_at' => now(),
             'failure_reason' => Str::limit(trim($rejectionReason), 255, ''),
             'failed_at' => now(),
@@ -308,7 +308,7 @@ class RepairPosRefundService
             'execution_mode' => 'gateway',
             'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
             'paymongo_payment_id' => $paymentReference,
-            'executed_by' => $actorId,
+            'executed_by' => $actorId > 0 ? $actorId : null,
             'executed_at' => now(),
             'failure_reason' => null,
             'failed_at' => null,
@@ -363,7 +363,7 @@ class RepairPosRefundService
             'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
             'paymongo_payment_id' => $paymongoPaymentId,
             'paymongo_refund_id' => $paymongoRefundId,
-            'executed_by' => $actorId,
+            'executed_by' => $actorId > 0 ? $actorId : null,
             'executed_at' => now(),
             'failure_reason' => null,
             'failed_at' => null,
@@ -404,7 +404,7 @@ class RepairPosRefundService
             'status' => 'failed',
             'execution_mode' => 'gateway',
             'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
-            'executed_by' => $actorId,
+            'executed_by' => $actorId > 0 ? $actorId : null,
             'executed_at' => now(),
             'failure_reason' => Str::limit(trim($reason), 255, ''),
             'failed_at' => now(),

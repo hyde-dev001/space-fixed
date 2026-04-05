@@ -226,7 +226,7 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
     }
 });
 
-Route::middleware(['web', 'auth:user'])->prefix('repair-pos')->group(function () {
+Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(function () {
     Route::post('/checkout', [\App\Http\Controllers\Api\RepairPosController::class, 'checkout']);
     Route::get('/transactions', [\App\Http\Controllers\Api\RepairPosController::class, 'listTransactions']);
     Route::post('/payment-lines/{line}/verify', [\App\Http\Controllers\Api\RepairPosController::class, 'verifyPaymentLine']);

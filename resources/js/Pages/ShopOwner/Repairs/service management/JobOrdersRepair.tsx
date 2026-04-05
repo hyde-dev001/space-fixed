@@ -516,7 +516,7 @@ export default function JobOrdersRepair() {
     try {
       setIsLoading(true);
       const currentOverrides = readDeliveryMethodOverrides();
-      const response = await axios.get('/api/shop-owner/repairs/');
+      const response = await axios.get('/api/shop-owner/repairs');
 
       if (response.data.success) {
         // Map the API response to match the RepairOrder type

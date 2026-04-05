@@ -12,6 +12,36 @@ class RepairPosPaymentFlowTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function shop_owner_guard_can_checkout_walk_in_without_unauthorized_response(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in From Shop Owner Guard',
+            'walk_in_phone' => '09179990000',
+            'idempotency_key' => 'shop-owner-guard-checkout-001',
+            'manual_repair_subtotal' => 800,
+            'manual_service_summary' => 'Walk-in guard regression coverage',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 400],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $transactionId = (int) $response->json('transaction_id');
+        $this->assertGreaterThan(0, $transactionId);
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
+        $this->assertSame((int) $shopOwner->id, (int) $transaction->shop_owner_id);
+        $this->assertSame('walk_in', (string) $transaction->customer_type);
+        $this->assertSame('deposit', (string) $transaction->due_type);
+    }
+
+    #[Test]
     public function walk_in_checkout_without_repair_request_creates_manual_repair_reference_and_receipt(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
@@ -57,7 +87,9 @@ class RepairPosPaymentFlowTest extends TestCase
     public function deposit_due_uses_inclusive_split_and_extracts_vat(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
         $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
         $repair = \App\Models\RepairRequest::create([

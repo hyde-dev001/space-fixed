@@ -99,7 +99,7 @@ class RepairPosPaymentService
                 'paid_amount' => $paidAmount,
                 'status' => 'paid',
                 'paid_at' => now(),
-                'created_by' => $actorId,
+                'created_by' => $actorId > 0 ? $actorId : null,
                 'metadata' => [
                     'vat_rate' => self::VAT_RATE_PERCENT,
                     'tax_mode' => 'vat_inclusive',
