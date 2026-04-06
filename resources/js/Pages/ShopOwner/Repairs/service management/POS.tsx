@@ -5,6 +5,7 @@ import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import Swal from "sweetalert2";
 import { computeCanPay, getPhoneDisplayForReceipt } from "../../../Repairs/posPaymentValidation";
 import { buildRepairBreakdown } from "../../../../utils/repairPricing";
+import { repairPosHistoryApi } from "../../../../services/repairPosHistoryApi";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -54,6 +55,13 @@ type POSItem = {
 };
 
 type ReceiptSnapshot = {
+	transactionId?: number;
+	customerType?: "registered" | "walk_in";
+	dueType?: PosDueType | null;
+	latestRefund?: {
+		id: number;
+		status: string;
+	};
 	receiptNo: string;
 	createdAtISO: string;
 	dateLabel: string;
@@ -103,6 +111,27 @@ type ManualQueueRow = {
 	remaining_balance: number;
 	next_due_type: PosDueType | null;
 	receipt_no?: string | null;
+};
+
+const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
+	const status = String(receipt.latestRefund?.status || "").toLowerCase();
+	return ["requested", "approved", "processing", "succeeded"].includes(status);
+};
+
+const parseDueType = (value: unknown): PosDueType | null => {
+	const normalized = String(value ?? "").toLowerCase();
+	if (normalized === "deposit" || normalized === "balance" || normalized === "full") {
+		return normalized;
+	}
+
+	return null;
+};
+
+const getDueTypeLabel = (dueType: PosDueType | null | undefined): string => {
+	if (dueType === "deposit") return "DEPOSIT";
+	if (dueType === "balance") return "BALANCE";
+	if (dueType === "full") return "FULL";
+	return "PAYMENT";
 };
 
 const SERVICES_PER_PAGE = 6;
@@ -251,6 +280,7 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 		...(snapshot.paymentReference ? [`Reference: ${snapshot.paymentReference}`] : []),
 		`Cashier: ${snapshot.cashierName}`,
 		`Method: ${snapshot.paymentMethod.toUpperCase()}`,
+		`Phase: ${getDueTypeLabel(snapshot.dueType)}`,
 		"",
 		"Items:",
 		...snapshot.items.map((line) => `${line.label} | ${line.qty} x ${formatPeso(line.unitPrice)} = ${formatPeso(line.qty * line.unitPrice)}`),
@@ -302,6 +332,7 @@ const PointOfSalePage = () => {
 	const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
 	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
 	const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+	const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
 	const [receiptHistory, setReceiptHistory] = useState<ReceiptSnapshot[]>([]);
 	const [historySearch, setHistorySearch] = useState<string>("");
 	const [historyDate, setHistoryDate] = useState<string>("");
@@ -510,6 +541,118 @@ const PointOfSalePage = () => {
 	useEffect(() => {
 		fetchManualQueue();
 	}, []);
+
+	useEffect(() => {
+		let isMounted = true;
+
+		const loadHistory = async () => {
+			if (!isHistoryModalOpen) return;
+
+			setIsLoadingHistory(true);
+			try {
+				const scopedRepairId = selectedRepairOrder ? Number(selectedRepairOrder.id) : undefined;
+				const response = await repairPosHistoryApi.listTransactions(scopedRepairId, 200);
+				const rows = Array.isArray((response.data as any)?.data?.data)
+					? (response.data as any).data.data
+					: [];
+
+				const mappedHistory: ReceiptSnapshot[] = rows.map((row: any, index: number) => {
+					const receiptPayload = row?.receipt?.print_payload ?? {};
+					const issuedAt = String(row?.receipt?.issued_at ?? row?.created_at ?? new Date().toISOString());
+					const items = Array.isArray(receiptPayload?.items)
+						? receiptPayload.items
+						: [];
+
+					const latestRefund = Array.isArray(row?.refunds) && row.refunds.length > 0
+						? row.refunds[0]
+						: null;
+
+					const methodRaw = String(
+						row?.payment_lines?.[0]?.tender_type
+						?? receiptPayload?.payment_lines?.[0]?.tender_type
+						?? "cash",
+					);
+					const paymentMethod: PaymentMethod = methodRaw.includes("wallet")
+						? "gcash"
+						: methodRaw.includes("card")
+							? "card"
+							: "cash";
+
+					return {
+						transactionId: Number(row?.id || 0),
+						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
+						dueType: parseDueType(row?.due_type ?? receiptPayload?.due_type),
+						latestRefund: latestRefund ? {
+							id: Number(latestRefund?.id || 0),
+							status: String(latestRefund?.status || "requested"),
+						} : undefined,
+						receiptNo: String(row?.receipt?.receipt_no ?? row?.transaction_no ?? `POS-${index + 1}`),
+						createdAtISO: issuedAt,
+						dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
+							weekday: "short",
+							month: "short",
+							day: "2-digit",
+							year: "numeric",
+							hour: "2-digit",
+							minute: "2-digit",
+						}),
+						cashierName: String(row?.created_by ?? cashierName),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
+						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
+						paymentMethod,
+						notes: "",
+						cashReceived: Number(row?.paid_amount ?? receiptPayload?.totals?.paid ?? 0),
+						subtotal: Number(row?.subtotal ?? receiptPayload?.totals?.subtotal ?? 0),
+						discount: Number(row?.discount_amount ?? receiptPayload?.totals?.discount ?? 0),
+						vatRate: VAT_RATE,
+						vatAmount: Number(row?.tax_amount ?? receiptPayload?.totals?.tax ?? 0),
+						totalDue: Number(row?.total_amount ?? receiptPayload?.totals?.total ?? 0),
+						change: 0,
+						items: Array.isArray(items) ? items : [],
+					};
+				});
+
+				if (isMounted) {
+					setReceiptHistory((prev) => {
+						if (mappedHistory.length === 0) {
+							return prev;
+						}
+
+						const combined = [...mappedHistory, ...prev];
+						const seen = new Set<string>();
+
+						return combined.filter((entry) => {
+							const key = entry.transactionId && entry.transactionId > 0
+								? `tx:${entry.transactionId}`
+								: `rcpt:${entry.receiptNo}`;
+
+							if (seen.has(key)) {
+								return false;
+							}
+
+							seen.add(key);
+							return true;
+						});
+					});
+				}
+			} catch {
+				if (isMounted) {
+					setReceiptHistory((prev) => prev);
+				}
+			} finally {
+				if (isMounted) {
+					setIsLoadingHistory(false);
+				}
+			}
+		};
+
+		loadHistory();
+
+		return () => {
+			isMounted = false;
+		};
+	}, [cashierName, isHistoryModalOpen, selectedRepairOrder]);
 
 	useEffect(() => {
 		if (!isRefundQueueOpen) return;
@@ -750,6 +893,8 @@ const PointOfSalePage = () => {
 				receipt.customerPhone,
 				receipt.cashierName,
 				receipt.paymentMethod,
+				getDueTypeLabel(receipt.dueType),
+				String(receipt.latestRefund?.status || ""),
 				receipt.items.map((item) => item.label).join(" "),
 			]
 				.join(" ")
@@ -873,6 +1018,9 @@ const PointOfSalePage = () => {
 			const receiptTotals = receiptPayload?.print_payload?.totals || {};
 
 			const snapshot: ReceiptSnapshot = {
+				transactionId: transactionId > 0 ? transactionId : undefined,
+				customerType,
+				dueType: dueTypeForCheckout,
 				receiptNo,
 				createdAtISO: issuedAt,
 				dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
@@ -946,6 +1094,68 @@ const PointOfSalePage = () => {
 		setTimeout(() => {
 			window.print();
 		}, 80);
+	};
+
+	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (hasOpenOrCompletedRefund(receipt)) {
+			await Swal.fire({
+				icon: "info",
+				title: "Refund Already Exists",
+				text: "This receipt already has a refund flow in progress or completed.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
+		const transactionId = Number(receipt.transactionId ?? 0);
+		if (transactionId <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "This record has no linked transaction reference.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
+
+		try {
+			const response = await repairPosHistoryApi.requestRefund({
+				source_transaction_id: transactionId,
+				request_type: "full",
+				requested_amount: receipt.totalDue,
+				reason_code: "repairer_requested_refund",
+				reason_notes: "Requested from Shop Owner POS receipt history.",
+				receipt_no: receipt.receiptNo,
+			});
+
+			const createdRefundId = Number((response.data as any)?.refund_id ?? 0);
+			setReceiptHistory((prev) => prev.map((entry) => (
+				entry.receiptNo === receipt.receiptNo
+					? {
+						...entry,
+						latestRefund: {
+							id: createdRefundId > 0 ? createdRefundId : Number(entry.latestRefund?.id ?? 0),
+							status: "requested",
+						},
+					}
+					: entry
+			)));
+
+			await Swal.fire({
+				icon: "success",
+				title: "Refund Requested",
+				text: "Refund request submitted for approval workflow.",
+				confirmButtonColor: "#10b981",
+			});
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Unable to create refund request.";
+			await Swal.fire({
+				icon: "error",
+				title: "Request Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		}
 	};
 
 	const getRefundStatusClass = (status: string): string => {
@@ -1674,6 +1884,9 @@ const PointOfSalePage = () => {
 								</div>
 
 								<div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+									{isLoadingHistory && (
+										<div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">Loading transaction history...</div>
+									)}
 									{filteredReceiptHistory.length === 0 ? (
 										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No receipts found for current filter.</div>
 									) : (
@@ -1684,10 +1897,24 @@ const PointOfSalePage = () => {
 														<p className="text-sm font-semibold text-slate-900">{receipt.receiptNo}</p>
 														<p className="text-xs text-slate-600">{receipt.dateLabel}</p>
 														<p className="text-xs text-slate-600">Customer: {receipt.customerName}</p>
-														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()}</p>
+														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()} | Phase: {getDueTypeLabel(receipt.dueType)}</p>
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
+														{receipt.latestRefund?.status && (
+															<span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${getRefundStatusClass(String(receipt.latestRefund.status || ""))}`}>
+																{receipt.latestRefund.status}
+															</span>
+														)}
+														{!hasOpenOrCompletedRefund(receipt) && (
+															<button
+																type="button"
+																onClick={() => handleRequestRefund(receipt)}
+																className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+															>
+																Request Refund
+															</button>
+														)}
 														<button
 															type="button"
 															onClick={() => {
