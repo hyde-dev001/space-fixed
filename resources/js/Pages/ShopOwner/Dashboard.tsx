@@ -67,6 +67,9 @@ interface DashboardStats {
 
 export default function Ecommerce() {
   const { auth } = usePage().props as any;
+  const businessType = String(auth?.shop_owner?.business_type ?? "").toLowerCase();
+  const registrationType = String(auth?.shop_owner?.registration_type ?? "").toLowerCase();
+  const hideOrderMetrics = businessType === "repair" && registrationType === "individual";
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -127,10 +130,12 @@ export default function Ecommerce() {
             Dashboard
           </h3>
           <p className="mt-1 text-gray-500 dark:text-gray-400">
-            Overview of your shop's ecommerce performance
+            {hideOrderMetrics
+              ? "Overview of your shop's repair performance"
+              : "Overview of your shop's ecommerce performance"}
           </p>
         </div>
-      <EcommerceMetrics stats={stats} />
+      <EcommerceMetrics stats={stats} showOrdersMetric={!hideOrderMetrics} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <MonthlySalesChart revenueTrend={stats?.revenue_trend || []} />
@@ -140,9 +145,9 @@ export default function Ecommerce() {
         />
       </div>
 
-      <StatisticsChart stats={stats} />
+      {!hideOrderMetrics && <StatisticsChart stats={stats} />}
 
-      <RecentOrders orders={stats?.recent_orders || []} />
+      {!hideOrderMetrics && <RecentOrders orders={stats?.recent_orders || []} />}
       </div>
     </AppLayoutShopOwner>
   );

@@ -41,6 +41,7 @@ interface DashboardStats {
 
 interface EcommerceMetricsProps {
   stats: DashboardStats | null;
+  showOrdersMetric?: boolean;
 }
 
 // Icon Components
@@ -70,7 +71,7 @@ const PackageIcon = ({ className = "" }) => (
   </svg>
 );
 
-export default function EcommerceMetrics({ stats }: EcommerceMetricsProps) {
+export default function EcommerceMetrics({ stats, showOrdersMetric = true }: EcommerceMetricsProps) {
   // Format currency
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -100,7 +101,7 @@ export default function EcommerceMetrics({ stats }: EcommerceMetricsProps) {
   const ordersGrowth = normalizeGrowth(stats?.orders?.growth_percentage);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 md:gap-6">
+    <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${showOrdersMetric ? "lg:grid-cols-4" : "lg:grid-cols-3"} md:gap-6`}>
       {/* Revenue Metric */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
@@ -124,26 +125,28 @@ export default function EcommerceMetrics({ stats }: EcommerceMetricsProps) {
       </div>
 
       {/* Orders Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-        <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
-          <BoxIconLine className="text-gray-800 size-6 dark:text-white/90" />
-        </div>
-        <div className="flex items-end justify-between mt-5">
-          <div>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              Total Orders
-            </span>
-            <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
-              {stats ? formatNumber(stats.orders.total) : '0'}
-            </h4>
+      {showOrdersMetric && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+          <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
+            <BoxIconLine className="text-gray-800 size-6 dark:text-white/90" />
           </div>
+          <div className="flex items-end justify-between mt-5">
+            <div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Total Orders
+              </span>
+              <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
+                {stats ? formatNumber(stats.orders.total) : '0'}
+              </h4>
+            </div>
 
-          <Badge color={getGrowthColor(ordersGrowth)}>
-            {ordersGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-            {Math.abs(ordersGrowth).toFixed(2)}%
-          </Badge>
+            <Badge color={getGrowthColor(ordersGrowth)}>
+              {ordersGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
+              {Math.abs(ordersGrowth).toFixed(2)}%
+            </Badge>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Products Metric */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
