@@ -57,6 +57,7 @@ type POSItem = {
 type ReceiptSnapshot = {
 	transactionId?: number;
 	customerType?: "registered" | "walk_in";
+	dueType?: PosDueType | null;
 	latestRefund?: {
 		id: number;
 		status: string;
@@ -103,6 +104,32 @@ const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 
 const canExecuteReceiptRefund = (receipt: ReceiptSnapshot): boolean => {
 	return receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || "").toLowerCase() === "approved";
+};
+
+const parseDueType = (value: unknown): PosDueType | null => {
+	const normalized = String(value ?? "").toLowerCase();
+	if (normalized === "deposit" || normalized === "balance" || normalized === "full") {
+		return normalized;
+	}
+
+	return null;
+};
+
+const getDueTypeLabel = (dueType: PosDueType | null | undefined): string => {
+	if (dueType === "deposit") return "DEPOSIT";
+	if (dueType === "balance") return "BALANCE";
+	if (dueType === "full") return "FULL";
+	return "PAYMENT";
+};
+
+const getRefundStatusHint = (status: string | undefined): string => {
+	const normalized = String(status || "").toLowerCase();
+	if (normalized === "requested") return "Pending Finance approval";
+	if (normalized === "approved") return "Approved, ready for payout execution";
+	if (normalized === "processing") return "Payout is being processed";
+	if (normalized === "succeeded") return "Refund payout completed";
+	if (normalized === "rejected") return "Refund request was rejected";
+	return "";
 };
 
 const SERVICES_PER_PAGE = 6;
@@ -255,6 +282,7 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 		...(snapshot.paymentReference ? [`Reference: ${snapshot.paymentReference}`] : []),
 		`Cashier: ${snapshot.cashierName}`,
 		`Method: ${snapshot.paymentMethod.toUpperCase()}`,
+		`Phase: ${getDueTypeLabel(snapshot.dueType)}`,
 		"",
 		"Items:",
 		...snapshot.items.map((line) => `${line.label} | ${line.qty} x ${formatPeso(line.unitPrice)} = ${formatPeso(line.qty * line.unitPrice)}`),
@@ -534,10 +562,12 @@ const PointOfSalePage = () => {
 						: methodRaw.includes("card")
 							? "card"
 							: "cash";
+					const dueType = parseDueType(row?.due_type ?? receiptPayload?.due_type);
 
 					return {
 						transactionId: Number(row?.id || 0),
 						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
+						dueType,
 						latestRefund: latestRefund ? {
 							id: Number(latestRefund?.id || 0),
 							status: String(latestRefund?.status || "requested"),
@@ -951,6 +981,7 @@ const PointOfSalePage = () => {
 				receipt.customerPhone,
 				receipt.cashierName,
 				receipt.paymentMethod,
+				getDueTypeLabel(receipt.dueType),
 				receipt.items.map((item) => item.label).join(" "),
 			]
 				.join(" ")
@@ -1076,6 +1107,7 @@ const PointOfSalePage = () => {
 			const snapshot: ReceiptSnapshot = {
 				transactionId: transactionId > 0 ? transactionId : undefined,
 				customerType: customerType,
+				dueType: dueTypeForCheckout,
 				receiptNo,
 				createdAtISO: issuedAt,
 				dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
@@ -1774,7 +1806,10 @@ const PointOfSalePage = () => {
 														<p className="text-sm font-semibold text-slate-900">{receipt.receiptNo}</p>
 														<p className="text-xs text-slate-600">{receipt.dateLabel}</p>
 														<p className="text-xs text-slate-600">Customer: {receipt.customerName}</p>
-														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()}</p>
+														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()} | Phase: {getDueTypeLabel(receipt.dueType)}</p>
+														{receipt.latestRefund?.status && (
+															<p className="text-[11px] text-slate-500">{getRefundStatusHint(receipt.latestRefund.status)}</p>
+														)}
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
