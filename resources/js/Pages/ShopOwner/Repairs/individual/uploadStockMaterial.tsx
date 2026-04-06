@@ -262,7 +262,7 @@ export default function UploadStockMaterial() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <AppLayoutShopOwner hideHeader={isModalOpen}>
       <Head title="Upload Stock Materials" />
 
       <div className="space-y-6 p-6">
