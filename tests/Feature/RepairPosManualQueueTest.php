@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class RepairPosManualQueueTest extends TestCase
@@ -120,6 +121,35 @@ class RepairPosManualQueueTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('success', true);
         $this->assertCount(0, $response->json('data'));
+    }
+
+    #[Test]
+    public function manual_queue_backfills_unassigned_rep_pos_when_repairer_available(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $user */
+        $user = User::factory()->create(['shop_owner_id' => $shopOwner->id, 'status' => 'active']);
+        $repairer = User::factory()->create(['shop_owner_id' => $shopOwner->id, 'status' => 'active']);
+
+        Role::findOrCreate('Repairer', 'user');
+        $repairer->assignRole('Repairer');
+
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'request_id' => 'REP-POS-20260406-0111',
+            'manual_pos_queue_enabled' => true,
+            'assigned_repairer_id' => null,
+            'status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($user, 'user')->getJson('/api/repair-pos/manual-queue');
+
+        $response->assertOk();
+        $response->assertJsonPath('success', true);
+        $this->assertCount(0, $response->json('data'));
+
+        $repair->refresh();
+        $this->assertSame((int) $repairer->id, (int) $repair->assigned_repairer_id);
     }
 
     #[Test]

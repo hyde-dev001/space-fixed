@@ -221,4 +221,40 @@ class ManualPosJobOrderAssignmentTest extends TestCase
 
         $this->assertContains((int) $repair->id, $ids);
     }
+
+    #[Test]
+    public function shop_owner_actor_auto_assigns_manual_pos_checkout_to_repairer(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+
+        $this->seedRepairerRole();
+        $repairer->assignRole('Repairer');
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'idempotency_key' => 'manual-pos-shop-owner-assign-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Shop Owner Assign Test',
+            'walk_in_phone' => '09170000044',
+            'manual_repair_subtotal' => 900,
+            'manual_service_summary' => 'Manual POS shop owner assign',
+            'manual_payment_policy' => 'deposit_50',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 450],
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $tx = PosTransaction::findOrFail((int) $response->json('transaction_id'));
+        $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
+
+        $this->assertSame((int) $repairer->id, (int) $repair->assigned_repairer_id);
+        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+    }
 }

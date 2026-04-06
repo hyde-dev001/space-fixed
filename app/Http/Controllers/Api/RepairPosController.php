@@ -414,6 +414,10 @@ class RepairPosController extends Controller
             ], 401);
         }
 
+        // Legacy REP-POS records created before assignment rollout stay unassigned.
+        // Attempt to auto-assign them so they transition into Job Orders ownership.
+        $this->backfillManualPosAssignments($shopOwnerId);
+
         $q = trim((string) $request->query('q', ''));
 
         $rows = RepairRequest::query()
@@ -479,6 +483,41 @@ class RepairPosController extends Controller
             'success' => true,
             'data' => $data,
         ]);
+    }
+
+    private function backfillManualPosAssignments(int $shopOwnerId): void
+    {
+        $candidates = RepairRequest::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('manual_pos_queue_enabled', true)
+            ->where('request_id', 'like', 'REP-POS-%')
+            ->whereNull('assigned_repairer_id')
+            ->whereIn('status', ['pending', 'received', 'in_progress', 'ready_for_pickup'])
+            ->orderBy('id')
+            ->limit(100)
+            ->get();
+
+        if ($candidates->isEmpty()) {
+            return;
+        }
+
+        $assignedBy = $this->resolveActorAuditUserId();
+
+        foreach ($candidates as $repair) {
+            $candidate = $this->resolveLeastLoadedRepairer($shopOwnerId, false)
+                ?? $this->resolveLeastLoadedRepairer($shopOwnerId, true);
+
+            if (!$candidate) {
+                continue;
+            }
+
+            $repair->forceFill([
+                'assigned_repairer_id' => (int) $candidate->id,
+                'assigned_at' => now(),
+                'assignment_method' => 'pos_backfill_assign',
+                'assigned_by' => $assignedBy > 0 ? $assignedBy : null,
+            ])->save();
+        }
     }
 
     public function updateManualQueueStatus(Request $request, int $repairId)
