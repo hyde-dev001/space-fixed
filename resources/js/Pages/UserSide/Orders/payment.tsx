@@ -75,6 +75,12 @@ const PH_CITY_OPTIONS = [
   'City of Cavite',
 ];
 
+const normalizeCitySelection = (city?: string | null) => {
+  const trimmedCity = (city || '').trim();
+  if (!trimmedCity) return '';
+  return PH_CITY_OPTIONS.find((option) => option.toLowerCase() === trimmedCity.toLowerCase()) || '';
+};
+
 const Payment: React.FC = () => {
   const { auth } = usePage().props as any;
   const user = auth?.user;
@@ -123,8 +129,12 @@ const Payment: React.FC = () => {
   const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
 
   const handleCityChange = (city: string) => {
-    setShippingCity(city);
-    setShippingRegion(city ? DEFAULT_SHIPPING_REGION : '');
+    const selectedCity = normalizeCitySelection(city);
+    setShippingCity(selectedCity);
+    setShippingRegion(selectedCity ? DEFAULT_SHIPPING_REGION : '');
+    setShippingEstimate(null);
+    setShippingEstimateReason(null);
+    setIsShippingEstimateLoading(Boolean(selectedCity));
   };
 
   const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
@@ -137,8 +147,9 @@ const Payment: React.FC = () => {
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    setShippingRegion(addr.region || (addr.city ? DEFAULT_SHIPPING_REGION : ''));
-    setShippingCity(addr.city || '');
+    const selectedCity = normalizeCitySelection(addr.city);
+    setShippingRegion(addr.region || (selectedCity ? DEFAULT_SHIPPING_REGION : ''));
+    setShippingCity(selectedCity);
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
     setCheckoutData((prev) => prev
@@ -429,8 +440,9 @@ const Payment: React.FC = () => {
           setShippingAddressLine(data.shipping_address_line || '');
           setShippingBarangay(data.shipping_barangay || '');
           setShippingPostalCode(data.shipping_postal_code || '');
-          setShippingCity(data.shipping_city || '');
-          setShippingRegion(data.shipping_region || (data.shipping_city ? DEFAULT_SHIPPING_REGION : ''));
+          const savedCity = normalizeCitySelection(data.shipping_city);
+          setShippingCity(savedCity);
+          setShippingRegion(data.shipping_region || (savedCity ? DEFAULT_SHIPPING_REGION : ''));
           return;
         } catch (e) {
           console.error('Failed to parse checkout data:', e);
@@ -700,7 +712,7 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const city = shippingCity.trim();
+    const city = normalizeCitySelection(shippingCity);
     const region = shippingRegion.trim();
 
     if (!city || !region) {
@@ -721,10 +733,12 @@ const Payment: React.FC = () => {
       return;
     }
 
+    setShippingEstimate(null);
+    setShippingEstimateReason(null);
+    setIsShippingEstimateLoading(true);
+
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      setIsShippingEstimateLoading(true);
-
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         const response = await fetch('/api/shipping/estimate', {
@@ -814,7 +828,7 @@ const Payment: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (shippingCity.trim() && !shippingRegion.trim()) {
+    if (normalizeCitySelection(shippingCity) && !shippingRegion.trim()) {
       setShippingRegion(DEFAULT_SHIPPING_REGION);
     }
   }, [shippingCity, shippingRegion]);
@@ -1098,7 +1112,8 @@ const Payment: React.FC = () => {
 
   const rawSubtotal = Number(checkoutData.total_amount ?? 0);
   const checkoutShipping = Number(checkoutData.shipping_fee);
-  const hasSelectedCity = shippingCity.trim().length > 0;
+  const selectedCity = normalizeCitySelection(shippingCity);
+  const hasSelectedCity = Boolean(selectedCity);
   const shipping = !isPremiumPayment && !isRepairPayment
     ? (hasSelectedCity
       ? (Number.isFinite(checkoutShipping)
@@ -1136,6 +1151,7 @@ const Payment: React.FC = () => {
   const shippingSummaryValue = hasSelectedCity
     ? (hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
     : 'Select a city';
+  const isShippingCalculating = hasSelectedCity && isShippingEstimateLoading;
   const shippingCarrierNote = hasShippingEstimate
     ? ''
     : (hasSelectedCity
@@ -1253,12 +1269,17 @@ const Payment: React.FC = () => {
               <div className="mt-4 rounded-xl bg-gray-100 px-4 py-3 flex items-center justify-between">
                 <span className="text-sm text-gray-700">Shipping fee</span>
                 <div className="text-sm">
-                  <span className="font-semibold text-black">
-                    {isShippingEstimateLoading
-                      ? 'Calculating...'
-                      : hasShippingEstimate
-                        ? `₱${shipping.toLocaleString()}`
-                        : 'Unavailable'}
+                  <span className="font-semibold text-black inline-flex items-center gap-2">
+                    {isShippingCalculating && (
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-gray-400 border-t-transparent animate-spin" aria-hidden="true" />
+                    )}
+                    <span>
+                      {isShippingCalculating
+                        ? 'Calculating...'
+                        : hasShippingEstimate
+                          ? `₱${shipping.toLocaleString()}`
+                          : 'Unavailable'}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -1280,7 +1301,12 @@ const Payment: React.FC = () => {
                 <div className="pt-2">
                   <div className="flex items-start justify-between gap-3">
                     <span className="text-gray-700">Shipping</span>
-                    <span className="text-black text-right max-w-[70%] wrap-break-word">{shippingSummaryValue}</span>
+                    <span className="text-black text-right max-w-[70%] wrap-break-word inline-flex items-center gap-2">
+                      {isShippingCalculating && (
+                        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-gray-500 border-t-transparent animate-spin" aria-hidden="true" />
+                      )}
+                      <span>{shippingSummaryValue}</span>
+                    </span>
                   </div>
                   {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                   {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}

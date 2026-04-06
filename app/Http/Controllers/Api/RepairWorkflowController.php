@@ -1742,23 +1742,13 @@ class RepairWorkflowController extends Controller
                     ->where('status', 'in_progress')
                     ->firstOrFail();
 
-                $materialUsageExists = $repairRequest->materialUsages()->exists();
-                if (!$materialUsageExists) {
-                    if ($this->repairHasConfiguredMaterialTemplates($repairRequest)) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'This repair has configured material templates. Log the material usage before marking it as completed.',
-                            'requires_material_logging' => true,
-                        ], 422);
-                    }
-
-                    if (!$noMaterialsUsedConfirmed) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
-                            'requires_material_confirmation' => true,
-                        ], 422);
-                    }
+                $materialGateResponse = $this->validateMaterialLoggingGateForTransition(
+                    $repairRequest,
+                    $noMaterialsUsedConfirmed,
+                    'completed'
+                );
+                if ($materialGateResponse) {
+                    return $materialGateResponse;
                 }
 
                 // Shop owner can mark any repair for their shop as completed
@@ -1790,31 +1780,19 @@ class RepairWorkflowController extends Controller
                     'message' => 'Unauthenticated'
                 ], 401);
             }
-
-            DB::beginTransaction();
             
             $repairRequest = RepairRequest::where('id', $id)
                 ->where('assigned_repairer_id', $user->id)
                 ->where('status', 'in_progress')
                 ->firstOrFail();
 
-            $materialUsageExists = $repairRequest->materialUsages()->exists();
-            if (!$materialUsageExists) {
-                if ($this->repairHasConfiguredMaterialTemplates($repairRequest)) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'This repair has configured material templates. Log the material usage before marking it as completed.',
-                        'requires_material_logging' => true,
-                    ], 422);
-                }
-
-                if (!$noMaterialsUsedConfirmed) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No materials usage was logged for this repair. Confirm "No Materials Used" to continue or log at least one material usage entry.',
-                        'requires_material_confirmation' => true,
-                    ], 422);
-                }
+            $materialGateResponse = $this->validateMaterialLoggingGateForTransition(
+                $repairRequest,
+                $noMaterialsUsedConfirmed,
+                'completed'
+            );
+            if ($materialGateResponse) {
+                return $materialGateResponse;
             }
 
             DB::beginTransaction();
@@ -1850,21 +1828,35 @@ class RepairWorkflowController extends Controller
     public function markReadyForPickup(Request $request, $id)
     {
         $request->validate([
-            'pickup_instructions' => 'nullable|string|max:500'
+            'pickup_instructions' => 'nullable|string|max:500',
+            'no_materials_used_confirmed' => 'nullable|boolean',
         ]);
+
+        $noMaterialsUsedConfirmed = $request->boolean('no_materials_used_confirmed');
 
         try {
             // Check if authenticated as shop owner first
             $shopOwner = Auth::guard('shop_owner')->user();
             
             if ($shopOwner) {
-                // Shop owner can mark any repair for their shop as ready
-                DB::beginTransaction();
-                
                 $repairRequest = RepairRequest::where('id', $id)
                     ->where('shop_owner_id', $shopOwner->id)
                     ->whereIn('status', ['completed', 'in_progress'])
                     ->firstOrFail();
+
+                if ((string) $repairRequest->status === 'in_progress') {
+                    $materialGateResponse = $this->validateMaterialLoggingGateForTransition(
+                        $repairRequest,
+                        $noMaterialsUsedConfirmed,
+                        'ready for pickup'
+                    );
+                    if ($materialGateResponse) {
+                        return $materialGateResponse;
+                    }
+                }
+
+                // Shop owner can mark any repair for their shop as ready
+                DB::beginTransaction();
                 
                 $repairRequest->update([
                     'status' => 'ready_for_pickup',
@@ -1892,13 +1884,24 @@ class RepairWorkflowController extends Controller
                     'message' => 'Unauthenticated'
                 ], 401);
             }
-
-            DB::beginTransaction();
             
             $repairRequest = RepairRequest::where('id', $id)
                 ->where('assigned_repairer_id', $user->id)
                 ->whereIn('status', ['completed', 'in_progress'])
                 ->firstOrFail();
+
+            if ((string) $repairRequest->status === 'in_progress') {
+                $materialGateResponse = $this->validateMaterialLoggingGateForTransition(
+                    $repairRequest,
+                    $noMaterialsUsedConfirmed,
+                    'ready for pickup'
+                );
+                if ($materialGateResponse) {
+                    return $materialGateResponse;
+                }
+            }
+
+            DB::beginTransaction();
             
             $repairRequest->update([
                 'status' => 'ready_for_pickup',
@@ -4233,6 +4236,41 @@ class RepairWorkflowController extends Controller
         );
 
         return ($packageTemplateCount + $serviceTemplateCount) > 0;
+    }
+
+    private function validateMaterialLoggingGateForTransition(
+        RepairRequest $repairRequest,
+        bool $noMaterialsUsedConfirmed,
+        string $transitionLabel
+    ) {
+        $materialUsageExists = $repairRequest->materialUsages()->exists();
+        if ($materialUsageExists) {
+            return null;
+        }
+
+        if ($this->repairHasConfiguredMaterialTemplates($repairRequest)) {
+            return response()->json([
+                'success' => false,
+                'message' => sprintf(
+                    'This repair has configured material templates. Log the material usage before marking it as %s.',
+                    $transitionLabel
+                ),
+                'requires_material_logging' => true,
+            ], 422);
+        }
+
+        if (!$noMaterialsUsedConfirmed) {
+            return response()->json([
+                'success' => false,
+                'message' => sprintf(
+                    'No materials usage was logged for this repair. Confirm "No Materials Used" to continue marking it as %s, or log at least one material usage entry.',
+                    $transitionLabel
+                ),
+                'requires_material_confirmation' => true,
+            ], 422);
+        }
+
+        return null;
     }
 
     private function generateStockRequestNumber(): string

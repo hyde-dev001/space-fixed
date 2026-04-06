@@ -225,4 +225,90 @@ class RepairMaterialUsageApiTest extends TestCase
             ->assertJsonPath('data.plan_items.0.inventory_item_id', (int) $material->id)
             ->assertJsonPath('data.plan_items.0.planned_quantity', 2);
     }
+
+    #[Test]
+    public function shop_owner_cannot_mark_ready_without_material_logs_when_templates_exist(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $service = \App\Models\RepairService::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Template-Backed Service',
+            'category' => 'Cleaning',
+            'price' => 750,
+            'duration' => '40 min',
+            'status' => 'Active',
+        ]);
+
+        $package = \App\Models\RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Template Package',
+            'description' => 'Package used for mark-ready gate test',
+            'package_price' => 750,
+            'status' => 'active',
+        ]);
+        $package->services()->sync([$service->id]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Template Gate Material',
+            'sku' => 'MAT-TPL-GATE-01',
+            'available_quantity' => 10,
+            'reserved_quantity' => 0,
+            'reorder_level' => 2,
+            'is_active' => true,
+        ]);
+
+        $package->materialTemplateItems()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $material->id,
+            'template_type' => 'repair_package',
+            'template_id' => $package->id,
+            'default_quantity' => 1,
+            'is_critical' => true,
+            'tolerance_percent' => 20,
+            'created_by' => null,
+        ]);
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-SHOP-MAT-GATE-0001',
+            'customer_name' => 'Template Gate Customer',
+            'email' => 'template-gate@example.test',
+            'phone' => '09170000999',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Should block ready transition without material logs',
+            'shop_owner_id' => $shopOwner->id,
+            'repair_package_id' => $package->id,
+            'assigned_repairer_id' => null,
+            'status' => 'in_progress',
+            'images' => [],
+            'total' => 750,
+            'final_total' => 750,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+            'delivery_method' => 'walk_in',
+        ]);
+
+        $repair->services()->sync([$service->id]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repair->id}/mark-ready", [
+                'pickup_instructions' => 'Try ready without material logs',
+                'no_materials_used_confirmed' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('requires_material_logging', true);
+
+        $this->assertSame('in_progress', (string) $repair->fresh()->status);
+    }
 }

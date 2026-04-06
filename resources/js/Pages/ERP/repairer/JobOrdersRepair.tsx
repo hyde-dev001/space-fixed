@@ -1588,10 +1588,15 @@ export default function JobOrdersRepair() {
       }
     }
 
-    try {
-      const response = await axios.post(`/api/repairer/repairs/${order.database_id}/mark-ready`, { 
-        pickup_instructions: '' 
+    const markReadyRepair = (noMaterialsUsedConfirmed: boolean = false) => {
+      return axios.post(`/api/repairer/repairs/${order.database_id}/mark-ready`, {
+        pickup_instructions: '',
+        no_materials_used_confirmed: noMaterialsUsedConfirmed,
       });
+    };
+
+    try {
+      const response = await markReadyRepair(false);
       
       if (response.data.success) {
         await Swal.fire({
@@ -1603,6 +1608,41 @@ export default function JobOrdersRepair() {
         fetchOrders();
       }
     } catch (error: any) {
+      if (error?.response?.status === 422 && error?.response?.data?.requires_material_confirmation) {
+        const confirmNoMaterials = await Swal.fire({
+          title: 'No Materials Logged',
+          text: error?.response?.data?.message || 'No materials usage is logged for this repair. Confirm if no materials were used.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Confirm No Materials Used',
+          cancelButtonText: 'Back',
+          confirmButtonColor: '#10b981',
+        });
+
+        if (!confirmNoMaterials.isConfirmed) return;
+
+        try {
+          const retryResponse = await markReadyRepair(true);
+          if (retryResponse.data.success) {
+            await Swal.fire({
+              title: 'Ready for Pickup!',
+              text: 'Customer will be notified to pick up their item.',
+              icon: 'success',
+              confirmButtonColor: '#2563eb',
+            });
+            fetchOrders();
+          }
+        } catch (retryError: any) {
+          await Swal.fire({
+            title: 'Error',
+            text: retryError.response?.data?.message || 'Failed to mark as ready',
+            icon: 'error',
+          });
+        }
+
+        return;
+      }
+
       await Swal.fire({
         title: 'Error',
         text: error.response?.data?.message || 'Failed to mark as ready',
