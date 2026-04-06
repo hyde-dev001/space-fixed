@@ -444,6 +444,12 @@ Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
 });
 
 // Shop Owner Protected Routes
+Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->get('/point-of-sale', function (\Illuminate\Http\Request $request) {
+    $query = $request->getQueryString();
+
+    return redirect('/shop-owner/point-of-sale' . ($query ? ('?' . $query) : ''));
+})->name('shop-owner.point-of-sale.legacy');
+
 Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')->group(function () {
     // Dashboard - Available to ALL shop owners
     Route::get('/dashboard', function () {

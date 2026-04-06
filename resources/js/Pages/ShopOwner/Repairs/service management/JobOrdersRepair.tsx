@@ -1342,7 +1342,7 @@ export default function JobOrdersRepair() {
       due_type: dueType,
     });
 
-    window.location.href = `/point-of-sale?${query.toString()}`;
+    window.location.href = `/shop-owner/point-of-sale?${query.toString()}`;
   };
 
   const handleCompleteWork = async (order: RepairOrder) => {
