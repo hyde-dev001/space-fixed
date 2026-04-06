@@ -7,4 +7,5 @@ namespace App\Models;
  */
 class RepairPromo extends RepairPackage
 {
+        
 }

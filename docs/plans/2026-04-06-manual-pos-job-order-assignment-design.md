@@ -17,7 +17,7 @@ Operational impact:
 
 1. Manual walk-in repairs should become Job Order-owned records.
 2. If POS actor is a repairer, assign to that same repairer.
-3. If POS actor is not a repairer (shop owner/cashier via RBAC), assign to least-loaded eligible repairer in the same shop.
+3. If POS actor is not a repairer (Business type shop owner/cashier via RBAC), assign to least-loaded eligible repairer in the same shop.
 4. If all repairers are over workload limit, still assign to least-loaded repairer (no POS checkout block).
 5. Assigned manual POS records should appear in Job Orders.
 6. Assigned manual POS records should not stay in POS Manual Queue.

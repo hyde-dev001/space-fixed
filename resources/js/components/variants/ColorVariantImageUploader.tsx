@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 
 export type ColorVariantImage = {
   id: string;
@@ -47,7 +48,12 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
     const validFiles = files.filter(isAllowedImageFile);
 
     if (validFiles.length !== files.length) {
-      alert('Only image files are allowed (JPG, JPEG, PNG, GIF, WEBP).');
+      void Swal.fire({
+        icon: 'warning',
+        title: 'Invalid file type',
+        text: 'Only image files are allowed (JPG, JPEG, PNG, GIF, WEBP).',
+        confirmButtonColor: '#2563eb',
+      });
     }
 
     if (validFiles.length === 0) {
@@ -56,7 +62,12 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
     }
 
     if (images.length + validFiles.length > maxImages) {
-      alert(`Maximum ${maxImages} images allowed per color`);
+      void Swal.fire({
+        icon: 'warning',
+        title: 'Image limit reached',
+        text: `Maximum ${maxImages} images allowed per color`,
+        confirmButtonColor: '#2563eb',
+      });
       e.target.value = '';
       return;
     }

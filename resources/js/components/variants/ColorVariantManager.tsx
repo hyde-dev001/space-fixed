@@ -197,7 +197,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     setCombinedQuickColors([]);
   };
 
-  const toggleCombinedQuickColor = (colorName: string) => {
+  const handleQuickColorSelection = (colorName: string) => {
     setCombinedQuickColors((prev) =>
       prev.includes(colorName)
         ? prev.filter((name) => name !== colorName)
@@ -205,15 +205,39 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     );
   };
 
-  const addCombinedQuickVariant = () => {
-    if (combinedQuickColors.length < 2) {
-      alert('Select at least two quick colors to create a combined color.');
+  const addSelectedQuickVariant = () => {
+    if (combinedQuickColors.length === 0) {
+      void Swal.fire({
+        icon: 'warning',
+        title: 'No color selected',
+        text: 'Select at least one quick color.',
+      });
       return;
     }
 
     const combinedName = buildCombinedColorName(combinedQuickColors);
     const firstColorCode = getPresetColorCode(combinedQuickColors[0]) ?? customColorCode;
     addColorVariant(combinedName, firstColorCode);
+  };
+
+  const handleAddFromPicker = () => {
+    // Priority: if quick-select has chosen colors, add those directly (single or combined).
+    if (combinedQuickColors.length > 0) {
+      addSelectedQuickVariant();
+      return;
+    }
+
+    // Otherwise, add from custom name + color code.
+    if (!customColorName.trim()) {
+      void Swal.fire({
+        icon: 'warning',
+        title: 'Missing color name',
+        text: 'Please enter a color name',
+      });
+      return;
+    }
+
+    addColorVariant(customColorName.trim(), customColorCode);
   };
 
   const removeColorVariant = async (id: string) => {
@@ -416,7 +440,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
               </button>
             </div>
 
-            {/* Predefined Colors */}
+            {/* Quick Select */}
             <div className="mb-6">
               <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 Quick Select
@@ -426,9 +450,18 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   <button
                     key={color.name}
                     type="button"
-                    onClick={() => addColorVariant(color.name, color.code)}
-                    className="group flex flex-col items-center gap-2 p-3 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 transition-all hover:shadow-md"
+                    onClick={() => handleQuickColorSelection(color.name)}
+                    className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all hover:shadow-md ${
+                      combinedQuickColors.includes(color.name)
+                        ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400'
+                    }`}
                   >
+                    {combinedQuickColors.includes(color.name) && (
+                      <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                        ✓
+                      </span>
+                    )}
                     <div
                       className="w-12 h-12 rounded-full border-2 border-gray-300 dark:border-gray-600 group-hover:scale-110 transition-transform"
                       style={{ backgroundColor: color.code }}
@@ -439,38 +472,23 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   </button>
                 ))}
               </div>
-
-              <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                  Combine Quick Colors (additive): choose multiple then add as one variant.
-                </p>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {PREDEFINED_COLORS.map((color) => {
-                    const isSelected = combinedQuickColors.includes(color.name);
-                    return (
-                      <button
-                        key={`combined-${color.name}`}
-                        type="button"
-                        onClick={() => toggleCombinedQuickColor(color.name)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs transition-colors ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-500'
-                            : 'border-gray-300 text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:text-gray-300 dark:hover:border-blue-500'
-                        }`}
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color.code }} />
-                        {color.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={addCombinedQuickVariant}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Add Combined ({combinedQuickColors.length})
-                </button>
+              <div className="mt-4 min-h-6 flex items-center gap-2">
+                {combinedQuickColors.length > 0 && (
+                  <>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                      {combinedQuickColors.length > 1
+                        ? `${combinedQuickColors.length} colors selected (will add as combined when you click Add)`
+                        : `${combinedQuickColors[0]} selected (click Add to use this color)`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCombinedQuickColors([])}
+                      className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -496,13 +514,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!customColorName.trim()) {
-                      alert('Please enter a color name');
-                      return;
-                    }
-                    addColorVariant(customColorName.trim(), customColorCode);
-                  }}
+                  onClick={handleAddFromPicker}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                 >
                   Add
