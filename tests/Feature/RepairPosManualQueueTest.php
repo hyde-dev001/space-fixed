@@ -100,6 +100,29 @@ class RepairPosManualQueueTest extends TestCase
     }
 
     #[Test]
+    public function manual_queue_excludes_assigned_rep_pos_records(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $user */
+        $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $repairer = User::factory()->create(['shop_owner_id' => $shopOwner->id, 'status' => 'active']);
+
+        $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'request_id' => 'REP-POS-20260406-0099',
+            'manual_pos_queue_enabled' => true,
+            'assigned_repairer_id' => $repairer->id,
+            'status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($user, 'user')->getJson('/api/repair-pos/manual-queue');
+
+        $response->assertOk();
+        $response->assertJsonPath('success', true);
+        $this->assertCount(0, $response->json('data'));
+    }
+
+    #[Test]
     public function manual_queue_status_transition_is_restricted(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

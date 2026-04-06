@@ -179,4 +179,46 @@ class ManualPosJobOrderAssignmentTest extends TestCase
         $this->assertContains((int) $repair->assigned_repairer_id, [(int) $repairerA->id, (int) $repairerB->id]);
         $this->assertSame('assigned_to_repairer', (string) $repair->status);
     }
+
+    #[Test]
+    public function shop_owner_workload_includes_assigned_rep_pos_records(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+
+        $this->seedRepairerRole();
+        $repairer->assignRole('Repairer');
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-POS-20260406-0100',
+            'customer_name' => 'Workload Inclusion Test',
+            'email' => 'workload@example.test',
+            'phone' => '09170001000',
+            'shoe_type' => 'Walk-in',
+            'description' => 'workload inclusion',
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => $repairer->id,
+            'manual_pos_queue_enabled' => true,
+            'status' => 'assigned_to_repairer',
+            'images' => [],
+            'total' => 500,
+            'final_total' => 500,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->getJson('/api/shop-owner/repairs');
+
+        $response->assertOk();
+        $ids = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        $this->assertContains((int) $repair->id, $ids);
+    }
 }
