@@ -10,9 +10,17 @@ export type RepairPosRefundRequestPayload = {
 };
 
 export const repairPosHistoryApi = {
-  listTransactions(repairRequestId?: number) {
+  listTransactions(repairRequestId?: number, perPage = 200) {
+    const params: Record<string, number> = {
+      per_page: perPage,
+    };
+
+    if (repairRequestId && repairRequestId > 0) {
+      params.repair_request_id = repairRequestId;
+    }
+
     return axios.get("/api/repair-pos/transactions", {
-      params: repairRequestId ? { repair_request_id: repairRequestId } : undefined,
+      params,
       withCredentials: true,
     });
   },

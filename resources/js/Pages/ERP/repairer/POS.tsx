@@ -508,7 +508,7 @@ const PointOfSalePage = () => {
 			setIsLoadingHistory(true);
 			try {
 				const scopedRepairId = selectedRepairOrder ? Number(selectedRepairOrder.id) : undefined;
-				const response = await repairPosHistoryApi.listTransactions(scopedRepairId);
+				const response = await repairPosHistoryApi.listTransactions(scopedRepairId, 200);
 				const rows = Array.isArray((response.data as any)?.data?.data)
 					? (response.data as any).data.data
 					: [];

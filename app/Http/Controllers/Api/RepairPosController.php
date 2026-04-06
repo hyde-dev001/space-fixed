@@ -341,6 +341,7 @@ class RepairPosController extends Controller
     public function listTransactions(Request $request)
     {
         $repairRequestId = (int) $request->query('repair_request_id');
+        $perPage = max(1, min((int) $request->query('per_page', 100), 500));
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
 
         $rows = PosTransaction::query()
@@ -353,7 +354,7 @@ class RepairPosController extends Controller
                 'refunds' => fn ($query) => $query->orderByDesc('id'),
             ])
             ->orderByDesc('id')
-            ->paginate(20);
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,

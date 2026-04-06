@@ -16,6 +16,58 @@ class RepairPosHistoryApiTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function repairer_can_request_larger_history_page_size(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $repairer = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $customer = User::factory()->create();
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-TDD-HIST-PAGE-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09175555555',
+            'shoe_type' => 'Sneakers',
+            'description' => 'History page size test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'ready_for_pickup',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'paid',
+        ]);
+
+        foreach (range(1, 25) as $index) {
+            PosTransaction::create([
+                'transaction_no' => sprintf('POS-TDD-HIST-PAGE-%03d', $index),
+                'shop_owner_id' => $shopOwner->id,
+                'module_type' => 'repair',
+                'module_reference_id' => $repair->id,
+                'customer_type' => 'registered',
+                'customer_id' => $customer->id,
+                'due_type' => 'deposit',
+                'subtotal' => 500,
+                'tax_amount' => 60,
+                'discount_amount' => 0,
+                'total_amount' => 560,
+                'paid_amount' => 560,
+                'status' => 'paid',
+                'paid_at' => now(),
+            ]);
+        }
+
+        $this->actingAs($repairer, 'user')
+            ->getJson('/api/repair-pos/transactions?per_page=25')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.per_page', 25)
+            ->assertJsonCount(25, 'data.data');
+    }
+
+    #[Test]
     public function repairer_can_view_repair_pos_history_but_cannot_execute_refund(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

@@ -23,7 +23,7 @@ describe("repairPosHistoryApi", () => {
     await repairPosHistoryApi.listTransactions(123);
 
     expect(getMock).toHaveBeenCalledWith("/api/repair-pos/transactions", {
-      params: { repair_request_id: 123 },
+      params: { repair_request_id: 123, per_page: 200 },
       withCredentials: true,
     });
   });
