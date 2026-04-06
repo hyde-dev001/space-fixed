@@ -333,6 +333,64 @@ class RepairPosRefundFlowTest extends TestCase
     }
 
     #[Test]
+    public function individual_shop_owner_walk_in_refund_is_auto_processed_without_waiting_for_approval_queue(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $repair = $this->createRepairRequest($shopOwner, null, [
+            'shop_owner_id' => $shopOwner->id,
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status_derived' => 'paid',
+            'total_paid_amount' => 500,
+            'final_total' => 500,
+        ]);
+
+        $source = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-IND-AUTO-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Customer',
+            'walk_in_phone' => '09170000999',
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/refunds', [
+            'source_transaction_id' => $source->id,
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'individual_direct_refund',
+            'receipt_no' => $source->transaction_no,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('auto_processed', true)
+            ->assertJsonPath('data.status', 'succeeded');
+
+        $refundId = (int) $response->json('refund_id');
+        $refund = \App\Models\PosRefund::findOrFail($refundId);
+
+        $this->assertSame('succeeded', (string) $refund->status);
+        $this->assertSame('approved', (string) $refund->finance_status);
+        $this->assertContains((string) $refund->shop_owner_status, ['approved', 'skipped']);
+
+        $source->refresh();
+        $this->assertSame('refunded', (string) $source->status);
+    }
+
+    #[Test]
     public function partial_refund_transitions_to_partially_refunded_and_keeps_remaining_balance(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

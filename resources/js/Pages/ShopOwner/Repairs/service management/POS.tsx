@@ -1123,19 +1123,24 @@ const PointOfSalePage = () => {
 				source_transaction_id: transactionId,
 				request_type: "full",
 				requested_amount: receipt.totalDue,
-				reason_code: "repairer_requested_refund",
+				reason_code: "shop_owner_requested_refund",
 				reason_notes: "Requested from Shop Owner POS receipt history.",
 				receipt_no: receipt.receiptNo,
 			});
 
 			const createdRefundId = Number((response.data as any)?.refund_id ?? 0);
+			const apiRefundStatus = String((response.data as any)?.data?.status ?? "").toLowerCase();
+			const wasAutoProcessed = Boolean((response.data as any)?.auto_processed);
+			const nextStatus = apiRefundStatus !== ""
+				? apiRefundStatus
+				: (wasAutoProcessed ? "succeeded" : "requested");
 			setReceiptHistory((prev) => prev.map((entry) => (
 				entry.receiptNo === receipt.receiptNo
 					? {
 						...entry,
 						latestRefund: {
 							id: createdRefundId > 0 ? createdRefundId : Number(entry.latestRefund?.id ?? 0),
-							status: "requested",
+							status: nextStatus,
 						},
 					}
 					: entry
@@ -1143,8 +1148,10 @@ const PointOfSalePage = () => {
 
 			await Swal.fire({
 				icon: "success",
-				title: "Refund Requested",
-				text: "Refund request submitted for approval workflow.",
+				title: wasAutoProcessed ? "Refund Completed" : "Refund Requested",
+				text: wasAutoProcessed
+					? "Refund was processed immediately for this individual shop."
+					: "Refund request submitted for approval workflow.",
 				confirmButtonColor: "#10b981",
 			});
 		} catch (error: any) {
@@ -1912,7 +1919,7 @@ const PointOfSalePage = () => {
 																onClick={() => handleRequestRefund(receipt)}
 																className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
 															>
-																Request Refund
+																Refund Now
 															</button>
 														)}
 														<button

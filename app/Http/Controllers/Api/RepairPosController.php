@@ -267,10 +267,48 @@ class RepairPosController extends Controller
         }
 
         $refund = $service->requestRefund($source, $validated, $this->resolveActorAuditUserId());
+        $autoProcessed = false;
+
+        if ($this->shouldAutoProcessIndividualShopOwnerRefund($source, $actorShopOwnerId)) {
+            $approved = $service->approve(
+                refund: $refund,
+                actorId: $this->resolveActorAuditUserId(),
+                approvedAmount: null,
+                approvalNote: 'Auto-approved for individual shop owner POS refund.',
+                stage: 'finance',
+            );
+
+            if ((string) ($approved->status ?? '') !== 'approved'
+                && (string) ($approved->finance_status ?? 'pending') === 'approved_initial'
+                && (string) ($approved->shop_owner_status ?? 'pending') === 'pending') {
+                $approved = $service->approve(
+                    refund: $approved,
+                    actorId: $this->resolveActorAuditUserId(),
+                    approvedAmount: null,
+                    approvalNote: 'Auto-final-approved for individual shop owner POS refund.',
+                    stage: 'shop_owner',
+                );
+            }
+
+            if ((string) ($approved->status ?? '') === 'approved') {
+                $refund = $service->execute(
+                    refund: $approved,
+                    actorId: $this->resolveActorAuditUserId(),
+                    executionMode: 'manual',
+                    executionNote: 'Auto-executed for individual shop owner POS refund.',
+                );
+
+                $autoProcessed = (string) ($refund->status ?? '') === 'succeeded';
+            } else {
+                $refund = $approved;
+            }
+        }
 
         return response()->json([
             'success' => true,
             'refund_id' => $refund->id,
+            'auto_processed' => $autoProcessed,
+            'data' => $refund,
         ]);
     }
 
@@ -722,6 +760,24 @@ class RepairPosController extends Controller
         }
 
         return false;
+    }
+
+    private function shouldAutoProcessIndividualShopOwnerRefund(PosTransaction $source, int $actorShopOwnerId): bool
+    {
+        if (!Auth::guard('shop_owner')->check()) {
+            return false;
+        }
+
+        if (!($actorShopOwnerId > 0 && $actorShopOwnerId === (int) $source->shop_owner_id)) {
+            return false;
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner && method_exists($shopOwner, 'isIndividual')) {
+            return (bool) $shopOwner->isIndividual();
+        }
+
+        return (string) (ShopOwner::query()->whereKey($actorShopOwnerId)->value('registration_type') ?? '') === 'individual';
     }
 
     private function resolveActor(): ?object
