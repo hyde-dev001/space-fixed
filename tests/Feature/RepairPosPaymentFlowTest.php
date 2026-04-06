@@ -42,6 +42,41 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function manual_pos_walk_in_repair_cannot_activate_payment(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $checkoutResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Activation Guard',
+            'walk_in_phone' => '09179991111',
+            'idempotency_key' => 'shop-owner-walkin-activate-guard-001',
+            'manual_repair_subtotal' => 900,
+            'manual_service_summary' => 'Walk-in activation guard regression',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 450],
+            ],
+        ]);
+
+        $checkoutResponse->assertOk()->assertJsonPath('success', true);
+
+        $transactionId = (int) $checkoutResponse->json('transaction_id');
+        $this->assertGreaterThan(0, $transactionId);
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
+        $repairId = (int) $transaction->module_reference_id;
+
+        $activationResponse = $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repairId}/activate-payment");
+
+        $activationResponse->assertStatus(409)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'POS_WALKIN_ACTIVATION_NOT_REQUIRED');
+    }
+
+    #[Test]
     public function walk_in_checkout_without_repair_request_creates_manual_repair_reference_and_receipt(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

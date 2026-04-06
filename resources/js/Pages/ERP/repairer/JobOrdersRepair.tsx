@@ -1126,6 +1126,10 @@ export default function JobOrdersRepair() {
     return order.serviceType === 'walkin';
   };
 
+  const isPosManualWalkIn = (order: Pick<RepairOrder, 'id' | 'serviceType'>) => {
+    return isWalkInIntake(order) && String(order.id || '').toUpperCase().startsWith('REP-POS-');
+  };
+
   const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
     const isDepositSettled = status === 'paid' || status === 'partially_paid';
@@ -1706,6 +1710,21 @@ export default function JobOrdersRepair() {
   };
 
   const handleActivatePayment = async (orderId: string) => {
+    const targetOrder =
+      (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null)
+      || orders.find((order) => String(order.database_id) === orderId)
+      || null;
+
+    if (targetOrder && isPosManualWalkIn(targetOrder)) {
+      await Swal.fire({
+        title: 'Not Required',
+        text: 'POS walk-in repairs do not need payment activation. Use Proceed to POS when a payment phase is due.',
+        icon: 'info',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
+
     const result = await Swal.fire({
       title: 'Activate Payment?',
       text: 'This will allow the customer to pay for this specific repair.',
@@ -2556,7 +2575,7 @@ export default function JobOrdersRepair() {
                               >
                                 <PackageIcon className="size-5" />
                               </button>
-                              {!order.payment_enabled && (
+                              {!order.payment_enabled && !isPosManualWalkIn(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
@@ -2590,7 +2609,7 @@ export default function JobOrdersRepair() {
 
                           {order.status === "received" && (
                             <>
-                              {!order.payment_enabled && (
+                              {!order.payment_enabled && !isPosManualWalkIn(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"

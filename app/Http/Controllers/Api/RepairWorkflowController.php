@@ -2715,11 +2715,25 @@ class RepairWorkflowController extends Controller
             // Standard: before/while work starts.
             // Special case: deposit_50 remaining balance at ready_for_pickup for non-walk-in returns.
             $validStatuses = ['repairer_accepted', 'received', 'pending', 'in_progress'];
+            $requestId = strtoupper((string) ($repairRequest->request_id ?? ''));
+            $pricingMode = strtolower((string) data_get($repairRequest->pricing_breakdown, 'mode', ''));
+            $isManualPosRepair = str_starts_with($requestId, 'REP-POS-') || $pricingMode === 'manual_pos';
+            $effectiveIntakeMethod = $repairRequest->intake_delivery_method
+                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_delivery');
+            $isWalkInIntake = $effectiveIntakeMethod === 'walk_in';
             $effectiveReturnMethod = $repairRequest->return_delivery_method
                 ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
             $isWalkInReturn = $effectiveReturnMethod === 'walk_in';
             $paymentPolicy = (string) ($repairRequest->payment_policy ?? 'deposit_50');
             $paymentStatus = strtolower((string) ($repairRequest->payment_status ?? 'pending'));
+
+            if ($isManualPosRepair && $isWalkInIntake) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'POS_WALKIN_ACTIVATION_NOT_REQUIRED',
+                    'message' => 'Manual POS walk-in repairs do not require payment activation. Use Proceed to POS when payment is due.',
+                ], 409);
+            }
 
             $isRemainingBalanceActivation =
                 !$isWalkInReturn
