@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
 
 type MaterialItem = {
@@ -354,16 +355,20 @@ export default function UploadStockMaterial() {
                           <button
                             type="button"
                             onClick={() => openEditModal(item)}
-                            className="rounded-md border border-blue-200 px-3 py-1.5 text-blue-600 transition hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-900/20"
+                            aria-label={`Edit ${item.name}`}
+                            title="Edit"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-blue-200 text-blue-600 transition hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-900/20"
                           >
-                            Edit
+                            <PencilIcon className="h-4 w-4" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(item)}
-                            className="rounded-md border border-red-200 px-3 py-1.5 text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20"
+                            aria-label={`Delete ${item.name}`}
+                            title="Delete"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20"
                           >
-                            Delete
+                            <TrashIcon className="h-4 w-4" />
                           </button>
                         </div>
                       </td>

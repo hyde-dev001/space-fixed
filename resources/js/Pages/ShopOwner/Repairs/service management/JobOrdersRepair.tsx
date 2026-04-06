@@ -521,6 +521,21 @@ export default function JobOrdersRepair() {
       if (response.data.success) {
         // Map the API response to match the RepairOrder type
         const mappedOrders = response.data.data.map((repair: any) => {
+          const mappedServices = (repair.services ?? [])
+            .map((s: any) => s?.name)
+            .filter((name: unknown) => typeof name === 'string' && name.trim() !== '')
+            .join(', ');
+          const posServiceSummary = String(
+            repair.manual_service_summary
+              ?? repair.pricing_breakdown?.service_summary
+              ?? repair.description
+              ?? ''
+          ).trim();
+          const packageServiceName = String(
+            repair.pricing_breakdown?.package_name
+              ?? repair.repair_package?.name
+              ?? ''
+          ).trim();
           const finalTotalAmount =
             toNumber(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total) ?? 0;
           const rawVatRate = Number(repair.vat_rate);
@@ -542,7 +557,7 @@ export default function JobOrdersRepair() {
           email: repair.email || repair.user?.email || 'N/A',
           phone: repair.phone || 'N/A',
           item: repair.shoe_type || 'N/A',
-          service: repair.services?.map((s: any) => s.name).join(', ') || 'N/A',
+          service: mappedServices || posServiceSummary || packageServiceName || 'N/A',
           total: formatPesoAmount(finalTotalAmount) || '₱0.00',
           repairPackageId: repair.repair_package_id ?? null,
           packageName: repair.pricing_breakdown?.package_name || repair.repair_package?.name || null,
@@ -565,8 +580,8 @@ export default function JobOrdersRepair() {
           }),
           startedAt: repair.started_at ? new Date(repair.started_at).toLocaleString() : undefined,
           completedAt: repair.completed_at ? new Date(repair.completed_at).toLocaleString() : undefined,
-          notes: repair.description || '',
-          description: repair.description,
+          notes: repair.description || posServiceSummary || '',
+          description: repair.description || posServiceSummary || undefined,
           shoeType: repair.shoe_type,
           brand: repair.brand,
           intakeDeliveryMethod: repair.intake_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
