@@ -16,6 +16,33 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    private function repairRevenueExpression(): string
+    {
+        return "
+            CASE
+                WHEN (COALESCE(total_paid_amount, 0) > 0 OR COALESCE(total_refunded_amount, 0) > 0)
+                    THEN CASE
+                        WHEN (COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) < 0 THEN 0
+                        ELSE (COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0))
+                    END
+                WHEN payment_status = 'completed'
+                    THEN COALESCE(final_total, total, 0)
+                WHEN payment_status = 'paid'
+                    THEN CASE
+                        WHEN COALESCE(payment_policy_snapshot, payment_policy, 'deposit_50') = 'deposit_50'
+                            THEN COALESCE(final_total, total, 0) * 0.5
+                        ELSE COALESCE(final_total, total, 0)
+                    END
+                ELSE 0
+            END
+        ";
+    }
+
+    private function computeRepairRevenue($query): float
+    {
+        return (float) $query->sum(DB::raw($this->repairRevenueExpression()));
+    }
+
     /**
      * Get dashboard statistics for shop owner
      * 
@@ -46,10 +73,9 @@ class DashboardController extends Controller
             })
             ->sum('total_amount');
         
-        $repairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
-            ->where('payment_status', 'completed')
-            ->sum('total');
+        $repairRevenue = $this->computeRepairRevenue(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        );
         
         $totalRevenue = $retailRevenue + $repairRevenue;
 
@@ -64,12 +90,11 @@ class DashboardController extends Controller
             ->whereYear('created_at', Carbon::now()->year)
             ->sum('total_amount');
         
-        $thisMonthRepairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
-            ->where('payment_status', 'completed')
-            ->whereMonth('created_at', Carbon::now()->month)
-            ->whereYear('created_at', Carbon::now()->year)
-            ->sum('total');
+        $thisMonthRepairRevenue = $this->computeRepairRevenue(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereMonth('created_at', Carbon::now()->month)
+                ->whereYear('created_at', Carbon::now()->year)
+        );
         
         $thisMonthRevenue = $thisMonthRetailRevenue + $thisMonthRepairRevenue;
 
@@ -84,12 +109,11 @@ class DashboardController extends Controller
             ->whereYear('created_at', Carbon::now()->subMonth()->year)
             ->sum('total_amount');
         
-        $lastMonthRepairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
-            ->where('payment_status', 'completed')
-            ->whereMonth('created_at', Carbon::now()->subMonth()->month)
-            ->whereYear('created_at', Carbon::now()->subMonth()->year)
-            ->sum('total');
+        $lastMonthRepairRevenue = $this->computeRepairRevenue(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+                ->whereMonth('created_at', Carbon::now()->subMonth()->month)
+                ->whereYear('created_at', Carbon::now()->subMonth()->year)
+        );
         
         $lastMonthRevenue = $lastMonthRetailRevenue + $lastMonthRepairRevenue;
 
@@ -260,11 +284,10 @@ class DashboardController extends Controller
                 ->whereDate('created_at', $date)
                 ->sum('total_amount');
             
-            $repairRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', ['completed', 'ready_for_pickup', 'picked_up'])
-                ->where('payment_status', 'completed')
-                ->whereDate('created_at', $date)
-                ->sum('total');
+            $repairRevenue = $this->computeRepairRevenue(
+                RepairRequest::where('shop_owner_id', $shopOwnerId)
+                    ->whereDate('created_at', $date)
+            );
             
             $revenueTrend[] = [
                 'date' => $date->format('M d'),

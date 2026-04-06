@@ -474,6 +474,21 @@ class RepairPosController extends Controller
             ], 422);
         }
 
+        if ($targetStatus === 'picked_up') {
+            $total = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
+            $paid = round((float) ($repair->total_paid_amount ?? 0), 2);
+            $refunded = round((float) ($repair->total_refunded_amount ?? 0), 2);
+            $remaining = max(0, round($total - $paid + $refunded, 2));
+
+            if ($remaining > 0) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'BALANCE_PAYMENT_REQUIRED',
+                    'message' => 'Remaining balance must be fully paid before marking this repair as picked up.',
+                ], 422);
+            }
+        }
+
         $updates = ['status' => $targetStatus];
         if ($targetStatus === 'received') {
             $updates['received_at'] = now();

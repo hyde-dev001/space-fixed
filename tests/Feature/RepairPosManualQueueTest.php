@@ -132,6 +132,65 @@ class RepairPosManualQueueTest extends TestCase
         $this->assertNotNull($repair->received_at);
     }
 
+    #[Test]
+    public function manual_queue_cannot_mark_picked_up_when_balance_is_unpaid(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $user */
+        $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'request_id' => 'REP-POS-20260406-0005',
+            'manual_pos_queue_enabled' => true,
+            'status' => 'ready_for_pickup',
+            'final_total' => 500,
+            'total_paid_amount' => 250,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'paid',
+            'payment_status_derived' => 'paid',
+        ]);
+
+        $response = $this->actingAs($user, 'user')->patchJson("/api/repair-pos/manual-queue/{$repair->id}/status", [
+            'status' => 'picked_up',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'BALANCE_PAYMENT_REQUIRED');
+
+        $this->assertSame('ready_for_pickup', (string) $repair->fresh()->status);
+    }
+
+    #[Test]
+    public function manual_queue_can_mark_picked_up_when_fully_paid(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $user */
+        $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'request_id' => 'REP-POS-20260406-0006',
+            'manual_pos_queue_enabled' => true,
+            'status' => 'ready_for_pickup',
+            'final_total' => 500,
+            'total_paid_amount' => 500,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'completed',
+            'payment_status_derived' => 'completed',
+        ]);
+
+        $response = $this->actingAs($user, 'user')->patchJson("/api/repair-pos/manual-queue/{$repair->id}/status", [
+            'status' => 'picked_up',
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertSame('picked_up', (string) $repair->fresh()->status);
+    }
+
     private function createRepairRequest(array $overrides = []): RepairRequest
     {
         $defaults = [

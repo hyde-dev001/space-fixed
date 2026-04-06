@@ -570,7 +570,27 @@ const PointOfSalePage = () => {
 				});
 
 				if (isMounted) {
-					setReceiptHistory(mappedHistory);
+					setReceiptHistory((prev) => {
+						if (mappedHistory.length === 0) {
+							return prev;
+						}
+
+						const combined = [...mappedHistory, ...prev];
+						const seen = new Set<string>();
+
+						return combined.filter((entry) => {
+							const key = entry.transactionId && entry.transactionId > 0
+								? `tx:${entry.transactionId}`
+								: `rcpt:${entry.receiptNo}`;
+
+							if (seen.has(key)) {
+								return false;
+							}
+
+							seen.add(key);
+							return true;
+						});
+					});
 				}
 			} catch {
 				if (isMounted) {
@@ -1054,6 +1074,8 @@ const PointOfSalePage = () => {
 			const receiptTotals = receiptPayload?.print_payload?.totals || {};
 
 			const snapshot: ReceiptSnapshot = {
+				transactionId: transactionId > 0 ? transactionId : undefined,
+				customerType: customerType,
 				receiptNo,
 				createdAtISO: issuedAt,
 				dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
