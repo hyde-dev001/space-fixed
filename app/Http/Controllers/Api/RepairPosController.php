@@ -138,7 +138,7 @@ class RepairPosController extends Controller
         $manualPolicy = (string) ($payload['manual_payment_policy'] ?? $shopPolicy);
         $resolvedPolicy = $manualPolicy === 'deposit_50' ? 'deposit_50' : 'full_upfront';
 
-        return RepairRequest::create([
+        $repair = RepairRequest::create([
             'request_id' => $requestId,
             'customer_name' => $walkInName,
             'email' => $walkInEmail !== '' ? $walkInEmail : sprintf('walkin-pos-%s@local.invalid', strtolower(now()->format('YmdHis'))),
@@ -184,6 +184,10 @@ class RepairPosController extends Controller
             'return_delivery_method' => 'walk_in',
             'status' => 'pending',
         ]);
+
+        $this->assignManualPosRepairOwner($repair, $actor, $shopOwnerId);
+
+        return $repair->fresh();
     }
 
     public function showTransaction(PosTransaction $transaction)
@@ -778,6 +782,83 @@ class RepairPosController extends Controller
         }
 
         return (string) (ShopOwner::query()->whereKey($actorShopOwnerId)->value('registration_type') ?? '') === 'individual';
+    }
+
+    private function assignManualPosRepairOwner(RepairRequest $repair, object $actor, int $shopOwnerId): void
+    {
+        $actorUserId = (int) (Auth::guard('user')->id() ?? 0);
+
+        if ($actorUserId > 0) {
+            $actorUser = User::query()->find($actorUserId);
+            if ($actorUser && method_exists($actorUser, 'hasRole') && $actorUser->hasRole('Repairer')) {
+                $repair->forceFill([
+                    'assigned_repairer_id' => $actorUserId,
+                    'assigned_at' => now(),
+                    'assignment_method' => 'pos_self_assign',
+                    'assigned_by' => $actorUserId,
+                    'status' => 'assigned_to_repairer',
+                ])->save();
+
+                return;
+            }
+        }
+
+        $candidate = $this->resolveLeastLoadedRepairer($shopOwnerId, false)
+            ?? $this->resolveLeastLoadedRepairer($shopOwnerId, true);
+
+        if (!$candidate) {
+            return;
+        }
+
+        $repair->forceFill([
+            'assigned_repairer_id' => (int) $candidate->id,
+            'assigned_at' => now(),
+            'assignment_method' => 'pos_auto_assign',
+            'assigned_by' => (int) ($actorUserId > 0 ? $actorUserId : $this->resolveActorAuditUserId()),
+            'status' => 'assigned_to_repairer',
+        ])->save();
+    }
+
+    private function resolveLeastLoadedRepairer(int $shopOwnerId, bool $ignoreLimit): ?User
+    {
+        $activeStatuses = [
+            'assigned_to_repairer',
+            'repairer_accepted',
+            'pending',
+            'received',
+            'in_progress',
+            'awaiting_parts',
+            'ready_for_pickup',
+            'waiting_customer_confirmation',
+            'confirmed',
+            'owner_approval_pending',
+            'owner_approved',
+            'manager_reviewing',
+            'manager_approved',
+        ];
+
+        $workloadLimit = (int) (ShopOwner::query()->whereKey($shopOwnerId)->value('repair_workload_limit') ?? 20);
+
+        $query = User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', 'active')
+            ->whereHas('roles', function ($builder) {
+                $builder->where('name', 'Repairer');
+            })
+            ->withCount([
+                'assignedRepairs as active_repairs_count' => function ($builder) use ($activeStatuses) {
+                    $builder->whereIn('status', $activeStatuses);
+                }
+            ]);
+
+        if (!$ignoreLimit) {
+            $query->having('active_repairs_count', '<', $workloadLimit);
+        }
+
+        return $query
+            ->orderBy('active_repairs_count')
+            ->orderBy('id')
+            ->first();
     }
 
     private function resolveActor(): ?object
