@@ -851,14 +851,16 @@ class RepairPosController extends Controller
                 }
             ]);
 
+        $query->orderBy('active_repairs_count')
+            ->orderBy('id');
+
         if (!$ignoreLimit) {
-            $query->having('active_repairs_count', '<', $workloadLimit);
+            return $query->get()->first(function (User $user) use ($workloadLimit) {
+                return (int) ($user->active_repairs_count ?? 0) < $workloadLimit;
+            });
         }
 
-        return $query
-            ->orderBy('active_repairs_count')
-            ->orderBy('id')
-            ->first();
+        return $query->first();
     }
 
     private function resolveActor(): ?object
