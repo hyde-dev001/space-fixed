@@ -234,7 +234,10 @@ class RepairWorkflowController extends Controller
                         ->orWhere('request_id', 'not like', 'REP-POS-%')
                         ->orWhere(function ($manualPos) {
                             $manualPos->where('request_id', 'like', 'REP-POS-%')
-                                ->whereNotNull('assigned_repairer_id');
+                                ->where(function ($repPosVisibility) {
+                                    $repPosVisibility->whereNotNull('assigned_repairer_id')
+                                        ->orWhere('manual_pos_queue_enabled', false);
+                                });
                         });
                 });
             };

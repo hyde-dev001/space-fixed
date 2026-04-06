@@ -18,7 +18,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function repair_request_defaults_manual_pos_queue_to_false(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
 
         $repair = $this->createRepairRequest([
             'shop_owner_id' => $shopOwner->id,
@@ -31,7 +34,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_pos_checkout_marks_repair_request_as_queue_enabled(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
@@ -61,7 +67,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_queue_list_returns_only_queue_enabled_records(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
@@ -84,7 +93,10 @@ class RepairPosManualQueueTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $otherShopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $otherShopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         $this->createRepairRequest([
             'shop_owner_id' => $otherShopOwner->id,
             'request_id' => 'REP-POS-20260406-0003',
@@ -103,7 +115,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_queue_excludes_assigned_rep_pos_records(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
         $repairer = User::factory()->create(['shop_owner_id' => $shopOwner->id, 'status' => 'active']);
@@ -126,7 +141,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_queue_backfills_unassigned_rep_pos_when_repairer_available(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id, 'status' => 'active']);
         $repairer = User::factory()->create(['shop_owner_id' => $shopOwner->id, 'status' => 'active']);
@@ -155,7 +173,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_queue_status_transition_is_restricted(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
@@ -188,7 +209,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_queue_cannot_mark_picked_up_when_balance_is_unpaid(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
@@ -219,7 +243,10 @@ class RepairPosManualQueueTest extends TestCase
     #[Test]
     public function manual_queue_can_mark_picked_up_when_fully_paid(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
@@ -253,7 +280,7 @@ class RepairPosManualQueueTest extends TestCase
             'phone' => '09170000000',
             'shoe_type' => 'Sneakers',
             'description' => 'Manual queue test fixture',
-            'shop_owner_id' => ShopOwner::factory()->approved()->create(['business_type' => 'repair'])->id,
+            'shop_owner_id' => ShopOwner::factory()->approved()->create(['business_type' => 'repair', 'registration_type' => 'company'])->id,
             'images' => json_encode([]),
             'total' => 500,
             'final_total' => 500,

@@ -137,6 +137,7 @@ class RepairPosController extends Controller
         $shopPolicy = (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('repair_payment_policy') ?? 'deposit_50');
         $manualPolicy = (string) ($payload['manual_payment_policy'] ?? $shopPolicy);
         $resolvedPolicy = $manualPolicy === 'deposit_50' ? 'deposit_50' : 'full_upfront';
+        $isIndividualShop = $this->isIndividualShopOwner($shopOwnerId);
 
         $repair = RepairRequest::create([
             'request_id' => $requestId,
@@ -178,14 +179,16 @@ class RepairPosController extends Controller
             'payment_status_derived' => 'unpaid',
             'total_paid_amount' => 0,
             'total_refunded_amount' => 0,
-            'manual_pos_queue_enabled' => true,
+            'manual_pos_queue_enabled' => !$isIndividualShop,
             'delivery_method' => 'walk_in',
             'intake_delivery_method' => 'walk_in',
             'return_delivery_method' => 'walk_in',
             'status' => 'pending',
         ]);
 
-        $this->assignManualPosRepairOwner($repair, $actor, $shopOwnerId);
+        if (!$isIndividualShop) {
+            $this->assignManualPosRepairOwner($repair, $actor, $shopOwnerId);
+        }
 
         return $repair->fresh();
     }
@@ -487,6 +490,16 @@ class RepairPosController extends Controller
 
     private function backfillManualPosAssignments(int $shopOwnerId): void
     {
+        if ($this->isIndividualShopOwner($shopOwnerId)) {
+            RepairRequest::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('manual_pos_queue_enabled', true)
+                ->where('request_id', 'like', 'REP-POS-%')
+                ->update(['manual_pos_queue_enabled' => false]);
+
+            return;
+        }
+
         $candidates = RepairRequest::query()
             ->where('shop_owner_id', $shopOwnerId)
             ->where('manual_pos_queue_enabled', true)
@@ -504,6 +517,7 @@ class RepairPosController extends Controller
         $assignedBy = $this->resolveActorAuditUserId();
 
         foreach ($candidates as $repair) {
+            /** @var RepairRequest $repair */
             $candidate = $this->resolveLeastLoadedRepairer($shopOwnerId, false)
                 ?? $this->resolveLeastLoadedRepairer($shopOwnerId, true);
 
@@ -514,8 +528,9 @@ class RepairPosController extends Controller
             $repair->forceFill([
                 'assigned_repairer_id' => (int) $candidate->id,
                 'assigned_at' => now(),
-                'assignment_method' => 'pos_backfill_assign',
+                'assignment_method' => 'auto',
                 'assigned_by' => $assignedBy > 0 ? $assignedBy : null,
+                'assignment_notes' => 'Backfilled from manual POS queue assignment',
             ])->save();
         }
     }
@@ -834,8 +849,9 @@ class RepairPosController extends Controller
                 $repair->forceFill([
                     'assigned_repairer_id' => $actorUserId,
                     'assigned_at' => now(),
-                    'assignment_method' => 'pos_self_assign',
+                    'assignment_method' => 'manual',
                     'assigned_by' => $actorUserId,
+                    'assignment_notes' => 'Assigned from manual POS checkout by repairer actor',
                     'status' => 'assigned_to_repairer',
                 ])->save();
 
@@ -853,10 +869,16 @@ class RepairPosController extends Controller
         $repair->forceFill([
             'assigned_repairer_id' => (int) $candidate->id,
             'assigned_at' => now(),
-            'assignment_method' => 'pos_auto_assign',
+            'assignment_method' => 'auto',
             'assigned_by' => (int) ($actorUserId > 0 ? $actorUserId : $this->resolveActorAuditUserId()),
+            'assignment_notes' => 'Auto-assigned from manual POS checkout',
             'status' => 'assigned_to_repairer',
         ])->save();
+    }
+
+    private function isIndividualShopOwner(int $shopOwnerId): bool
+    {
+        return (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('registration_type') ?? '') === 'individual';
     }
 
     private function resolveLeastLoadedRepairer(int $shopOwnerId, bool $ignoreLimit): ?User

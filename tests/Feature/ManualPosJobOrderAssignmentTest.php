@@ -47,7 +47,11 @@ class ManualPosJobOrderAssignmentTest extends TestCase
     #[Test]
     public function repairer_actor_self_assigns_manual_pos_checkout(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+        /** @var User $repairer */
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
@@ -83,8 +87,12 @@ class ManualPosJobOrderAssignmentTest extends TestCase
     #[Test]
     public function non_repairer_actor_assigns_to_least_loaded_repairer(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
 
+        /** @var User $cashier */
         $cashier = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
@@ -133,9 +141,11 @@ class ManualPosJobOrderAssignmentTest extends TestCase
     {
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'repair',
+            'registration_type' => 'company',
             'repair_workload_limit' => 1,
         ]);
 
+        /** @var User $cashier */
         $cashier = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
@@ -183,7 +193,10 @@ class ManualPosJobOrderAssignmentTest extends TestCase
     #[Test]
     public function shop_owner_workload_includes_assigned_rep_pos_records(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
@@ -225,7 +238,10 @@ class ManualPosJobOrderAssignmentTest extends TestCase
     #[Test]
     public function shop_owner_actor_auto_assigns_manual_pos_checkout_to_repairer(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
@@ -256,5 +272,47 @@ class ManualPosJobOrderAssignmentTest extends TestCase
 
         $this->assertSame((int) $repairer->id, (int) $repair->assigned_repairer_id);
         $this->assertSame('assigned_to_repairer', (string) $repair->status);
+    }
+
+    #[Test]
+    public function individual_shop_owner_without_repairer_goes_directly_to_job_orders(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'idempotency_key' => 'manual-pos-individual-owner-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Individual Owner Test',
+            'walk_in_phone' => '09170000055',
+            'manual_repair_subtotal' => 750,
+            'manual_service_summary' => 'Manual POS individual owner flow',
+            'manual_payment_policy' => 'deposit_50',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 375],
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $tx = PosTransaction::findOrFail((int) $response->json('transaction_id'));
+        $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
+
+        $this->assertNull($repair->assigned_repairer_id);
+        $this->assertFalse((bool) $repair->manual_pos_queue_enabled);
+
+        $workloadResponse = $this->actingAs($shopOwner, 'shop_owner')->getJson('/api/shop-owner/repairs');
+        $workloadResponse->assertOk();
+        $ids = collect($workloadResponse->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $this->assertContains((int) $repair->id, $ids);
+
+        $queueResponse = $this->actingAs($shopOwner, 'shop_owner')->getJson('/api/repair-pos/manual-queue');
+        $queueResponse->assertOk();
+        $queueIds = collect($queueResponse->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $this->assertNotContains((int) $repair->id, $queueIds);
     }
 }
