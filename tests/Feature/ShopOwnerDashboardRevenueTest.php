@@ -91,9 +91,11 @@ class ShopOwnerDashboardRevenueTest extends TestCase
 
         $payload = $response->json();
 
-        // 100 (retail) + 500 + 800 + (1000-200) = 2200
-        $this->assertEqualsWithDelta(2200.0, (float) ($payload['revenue']['total'] ?? 0), 0.01);
-        $this->assertEqualsWithDelta(2200.0, (float) ($payload['revenue']['this_month'] ?? 0), 0.01);
+        // Retail revenue already excludes VAT via total_amount.
+        // Repair revenue now excludes VAT by converting gross paid totals to net.
+        // 100 (retail net) + ((500 + 800 + (1000 - 200)) / 1.12) = 1975
+        $this->assertEqualsWithDelta(1975.0, (float) ($payload['revenue']['total'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(1975.0, (float) ($payload['revenue']['this_month'] ?? 0), 0.01);
     }
 
     private function createOrder(int $shopOwnerId, array $overrides = []): Order

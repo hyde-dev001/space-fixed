@@ -446,6 +446,24 @@ const Invoice: React.FC = () => {
     setSelectedInvoices([]);
   }, [showArchived]);
 
+  const resolveInvoiceRevenueAmount = (invoice: Invoice): number => {
+    const metaSubtotal = parseAmount(invoice.meta?.subtotal_amount);
+    if (metaSubtotal > 0) {
+      return metaSubtotal;
+    }
+
+    const jobSubtotal = parseAmount(invoice.job_order?.total_amount ?? invoice.job_order?.total);
+    if (jobSubtotal > 0) {
+      return jobSubtotal;
+    }
+
+    const grossTotal = parseAmount(invoice.total);
+    const vatAmount = parseAmount(invoice.meta?.vat_amount ?? invoice.tax_amount ?? invoice.job_order?.vat_amount);
+    const fallbackNet = grossTotal - vatAmount;
+
+    return fallbackNet > 0 ? fallbackNet : grossTotal;
+  };
+
   // Calculate statistics from invoice data
   const stats = useMemo(() => {
     const total = invoices.length;
@@ -456,14 +474,14 @@ const Invoice: React.FC = () => {
     
     const totalRevenue = invoices
       .filter((inv) => getEffectiveInvoiceStatus(inv) === "paid")
-      .reduce((sum, inv) => sum + (typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total), 0);
+      .reduce((sum, inv) => sum + resolveInvoiceRevenueAmount(inv), 0);
       
     const pendingRevenue = invoices
       .filter((inv) => {
         const effectiveStatus = getEffectiveInvoiceStatus(inv);
         return effectiveStatus === "sent" || effectiveStatus === "overdue";
       })
-      .reduce((sum, inv) => sum + (typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total), 0);
+      .reduce((sum, inv) => sum + resolveInvoiceRevenueAmount(inv), 0);
 
     return {
       total,
@@ -890,11 +908,11 @@ const Invoice: React.FC = () => {
           description="Awaiting payment"
         />
         <MetricCard
-          title="Total Revenue"
+          title="Net Revenue (Excl. VAT)"
           value={`₱${stats.totalRevenue.toLocaleString()}`}
           icon={CurrencyDollarIcon}
           color="success"
-          description="From paid invoices"
+          description="From paid invoices before VAT"
         />
       </div>
 

@@ -1465,7 +1465,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             ->with(['jobOrder' => function ($query) {
                 $query->select(['id', 'payment_status']);
             }])
-            ->select(['id', 'reference', 'status', 'total', 'date', 'job_order_id'])
+            ->select(['id', 'reference', 'status', 'total', 'tax_amount', 'meta', 'date', 'job_order_id'])
             ->orderBy('date', 'desc')
             ->get();
 
@@ -1481,6 +1481,8 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
                 'status' => $invoice->status,
                 'effective_status' => $effectiveStatus,
                 'total' => $invoice->total,
+                'tax_amount' => $invoice->tax_amount,
+                'meta' => $invoice->meta,
                 'date' => optional($invoice->date)->toDateString(),
             ];
         })->values();

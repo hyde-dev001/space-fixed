@@ -739,7 +739,7 @@ export default function JobOrdersRepair() {
     const cancelled = orders.filter(o => o.status === "cancelled").length;
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status))
-      .reduce((sum, o) => sum + parseFloat(o.total.replace(/[^0-9.]/g, "")), 0);
+      .reduce((sum, o) => sum + (toNumber(o.finalPrice ?? o.total) ?? 0), 0);
     return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
   }, [orders]);
 
@@ -1814,13 +1814,13 @@ export default function JobOrdersRepair() {
             description="Completed services"
           />
           <MetricCard
-            title="Service Revenue"
+            title="Service Revenue (Excl. VAT)"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
             change={18}
             changeType="increase"
             icon={CurrencyDollarIcon}
             color="success"
-            description="From repair services"
+            description="From repair services before VAT"
           />
         </div>
 

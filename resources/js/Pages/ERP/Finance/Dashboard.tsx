@@ -12,6 +12,24 @@ interface FinanceDashboardStats {
     netProfit: number;
 }
 
+const parseAmount = (value: unknown): number => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+const resolveInvoiceNetRevenue = (invoice: any): number => {
+    const metaSubtotal = parseAmount(invoice?.meta?.subtotal_amount);
+    if (metaSubtotal > 0) {
+        return metaSubtotal;
+    }
+
+    const grossTotal = parseAmount(invoice?.total);
+    const vatAmount = parseAmount(invoice?.meta?.vat_amount ?? invoice?.tax_amount);
+    const fallbackNet = grossTotal - vatAmount;
+
+    return fallbackNet > 0 ? fallbackNet : grossTotal;
+};
+
 type MetricColor = 'success' | 'error' | 'warning' | 'info';
 type ChangeType = 'increase' | 'decrease';
 
@@ -125,7 +143,7 @@ export default function FinanceDashboard() {
         return String(invoice.effective_status || invoice.status || '').toLowerCase();
     };
 
-    // Calculate stats from real data - only count PAID invoices for revenue
+    // Calculate stats from real data - only count PAID invoices for net revenue.
     const refundedRevenue = typeof refundedRevenueProp === 'number'
         ? refundedRevenueProp
         : refunds.reduce((sum: number, refund: any) => {
@@ -136,10 +154,7 @@ export default function FinanceDashboard() {
     const stats: FinanceDashboardStats = {
         totalRevenue: invoices
             .filter((inv: any) => getInvoiceStatus(inv) === 'paid')
-            .reduce((sum: number, inv: any) => {
-                const total = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total;
-                return sum + (isNaN(total) ? 0 : total);
-            }, 0),
+            .reduce((sum: number, inv: any) => sum + resolveInvoiceNetRevenue(inv), 0),
         refundedRevenue,
         totalExpenses: expenses.reduce((sum: number, exp: any) => {
             const amount = typeof exp.amount === 'string' ? parseFloat(exp.amount) : exp.amount;
@@ -156,13 +171,13 @@ export default function FinanceDashboard() {
 
     const metrics: MetricCardProps[] = [
         {
-            title: 'Gross Revenue',
+            title: 'Net Revenue (Excl. VAT)',
             value: `₱${stats.totalRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
             change: 15,
             changeType: 'increase',
             icon: DollarIconSvg,
             color: 'success',
-            description: `From ${invoices.filter((inv: any) => getInvoiceStatus(inv) === 'paid').length} paid invoices`,
+            description: `From ${invoices.filter((inv: any) => getInvoiceStatus(inv) === 'paid').length} paid invoices before VAT`,
         },
         {
             title: 'Refunded Revenue',
@@ -202,7 +217,7 @@ export default function FinanceDashboard() {
         },
     ];
 
-    // Chart data — last 6 calendar months, revenue derived from real paid invoices
+    // Chart data — last 6 calendar months, revenue derived from paid invoices before VAT.
     const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const now = new Date();
     const chartMonths: string[] = [];
@@ -218,7 +233,7 @@ export default function FinanceDashboard() {
                     invDate.getFullYear() === d.getFullYear() &&
                     invDate.getMonth() === d.getMonth();
             })
-            .reduce((sum: number, inv: any) => sum + (parseFloat(String(inv.total)) || 0), 0);
+            .reduce((sum: number, inv: any) => sum + resolveInvoiceNetRevenue(inv), 0);
         chartRevenue.push(monthTotal);
 
         const monthRefundTotal = refunds
@@ -267,7 +282,7 @@ export default function FinanceDashboard() {
 
     const revenueChartSeries = [
         {
-            name: 'Gross Revenue',
+            name: 'Net Revenue (Excl. VAT)',
             data: chartRevenue,
         },
         {

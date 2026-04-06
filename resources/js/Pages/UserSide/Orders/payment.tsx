@@ -1166,7 +1166,7 @@ const Payment: React.FC = () => {
     return <div>Loading...</div>;
   }
 
-  const subtotal = Number(checkoutData.total_amount ?? 0);
+  const rawSubtotal = Number(checkoutData.total_amount ?? 0);
   const checkoutShipping = Number(checkoutData.shipping_fee);
   const shipping = !isPremiumPayment && !isRepairPayment
     ? (Number.isFinite(checkoutShipping)
@@ -1177,12 +1177,24 @@ const Payment: React.FC = () => {
   const vatRatePercent = Number.isFinite(parsedVatRate) && parsedVatRate >= 0 ? parsedVatRate : 12;
   const hasStoredVat = checkoutData.vat_amount !== undefined && checkoutData.vat_amount !== null;
   const parsedVatAmount = Number(checkoutData.vat_amount);
-  const computedVatAmount = subtotal * (vatRatePercent / 100);
-  const vatAmount = !isPremiumPayment && !isRepairPayment
-    ? (hasStoredVat && Number.isFinite(parsedVatAmount) && parsedVatAmount >= 0 ? parsedVatAmount : computedVatAmount)
+  const normalizedRawSubtotal = Number.isFinite(rawSubtotal) ? Math.max(0, rawSubtotal) : 0;
+  const safeVatRatePercent = Math.max(0, vatRatePercent);
+  const derivedInclusiveVatAmount = safeVatRatePercent > 0
+    ? (normalizedRawSubtotal * (safeVatRatePercent / (100 + safeVatRatePercent)))
     : 0;
+  const vatAmount = !isPremiumPayment && !isRepairPayment
+    ? (hasStoredVat && Number.isFinite(parsedVatAmount) && parsedVatAmount >= 0
+      ? parsedVatAmount
+      : derivedInclusiveVatAmount)
+    : 0;
+  const subtotal = !isPremiumPayment && !isRepairPayment
+    ? (hasStoredVat ? normalizedRawSubtotal : Math.max(0, normalizedRawSubtotal - vatAmount))
+    : normalizedRawSubtotal;
+  const productTotalInclusive = !isPremiumPayment && !isRepairPayment
+    ? (hasStoredVat ? subtotal + vatAmount : normalizedRawSubtotal)
+    : subtotal;
   const total = !isPremiumPayment && !isRepairPayment
-    ? subtotal + shipping + vatAmount
+    ? productTotalInclusive + shipping
     : subtotal + shipping;
   const vatLabel = `VAT (${vatRatePercent}%)`;
   const vatDisplay = `₱${vatAmount.toLocaleString()}`;
@@ -1318,12 +1330,12 @@ const Payment: React.FC = () => {
 
               <div className="space-y-2.5 text-sm md:text-base">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-black">Product subtotal</span>
+                  <span className="font-semibold text-black">Product subtotal (Before VAT)</span>
                   <span className="font-semibold text-black">₱{subtotal.toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between pl-3 text-xs md:text-sm">
-                  <span className="text-gray-600">Product total</span>
-                  <span className="text-gray-600">₱{subtotal.toLocaleString()}</span>
+                  <span className="text-gray-600">Product total (VAT-inclusive)</span>
+                  <span className="text-gray-600">₱{productTotalInclusive.toLocaleString()}</span>
                 </div>
 
                 <div className="pt-2">
@@ -1913,7 +1925,7 @@ const Payment: React.FC = () => {
                 {/* Summary */}
                 <div className="space-y-3 mb-4">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal</span>
+                    <span className="text-gray-600">Subtotal (Before VAT)</span>
                     <span className="text-black font-medium">₱{subtotal.toLocaleString()}</span>
                   </div>
                   <div className="text-sm">

@@ -18,6 +18,7 @@ use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
+use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -739,12 +740,15 @@ class CheckoutController extends Controller
                         }
                     }
 
-                    // Update order totals. Keep legacy `total` in sync as grand total fallback.
-                    $orderVatAmount = round($orderTotal * ($vatRatePercent / 100), 2);
-                    $orderGrandTotal = $orderTotal + $shippingFeeForOrder + $orderVatAmount;
+                    // Product pricing is VAT-inclusive: extract net + VAT from item total.
+                    $itemInclusiveTotal = round(max(0.0, (float) $orderTotal), 2);
+                    $vatBreakdown = VatInclusiveCalculator::extract($itemInclusiveTotal, $vatRatePercent);
+                    $orderNetSubtotal = (float) $vatBreakdown['net'];
+                    $orderVatAmount = (float) $vatBreakdown['vat'];
+                    $orderGrandTotal = round(((float) $vatBreakdown['total']) + $shippingFeeForOrder, 2);
 
                     $order->update($this->filterOrderColumns([
-                        'total_amount' => $orderTotal,
+                        'total_amount' => $orderNetSubtotal,
                         'vat_amount' => $orderVatAmount,
                         'vat_rate' => $vatRatePercent,
                         'total' => $orderGrandTotal,
@@ -763,7 +767,8 @@ class CheckoutController extends Controller
                         'shop_owner_id' => $shopOwnerId,
                         'customer_id' => $customerId,
                         'total' => $orderGrandTotal,
-                        'item_subtotal' => $orderTotal,
+                        'item_subtotal' => $orderNetSubtotal,
+                        'item_total_inclusive' => $itemInclusiveTotal,
                         'shipping_fee' => $shippingFeeForOrder,
                         'vat_amount' => $orderVatAmount,
                         'vat_rate' => $vatRatePercent,

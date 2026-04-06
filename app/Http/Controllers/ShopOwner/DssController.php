@@ -48,6 +48,12 @@ class DssController extends Controller
 
     private const RETAIL_COMPLETED_STATUSES = ['completed', 'delivered'];
     private const RETAIL_ACTIVE_STATUSES    = ['pending', 'processing', 'shipped'];
+    private const VAT_DIVISOR = 1.12;
+
+    private function repairNetRevenueExpression(string $amountExpression = 'COALESCE(final_total, total, 0)'): string
+    {
+        return sprintf('(%s / %.2f)', $amountExpression, self::VAT_DIVISOR);
+    }
 
     private function applyRetailRevenueEligibility($query)
     {
@@ -278,7 +284,7 @@ class DssController extends Controller
                 'rs.name',
                 DB::raw('COALESCE(rs.price, 0) as list_price'),
                 DB::raw('COUNT(DISTINCT rr.id) as request_count'),
-                DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as total_revenue')
+                DB::raw('SUM(' . $this->repairNetRevenueExpression('COALESCE(rr.final_total, rr.total, 0)') . ') as total_revenue')
             )
             ->groupBy('rs.id', 'rs.name', 'rs.price')
             ->orderByDesc('total_revenue')
@@ -341,7 +347,7 @@ class DssController extends Controller
                 Carbon::now()->startOfMonth(),
                 Carbon::now()->endOfMonth(),
             ])
-            ->sum(DB::raw('COALESCE(final_total, total)'));
+            ->sum(DB::raw($this->repairNetRevenueExpression()));
 
         $lastMonthRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', self::COMPLETED_STATUSES)
@@ -350,7 +356,7 @@ class DssController extends Controller
                 Carbon::now()->subMonth()->startOfMonth(),
                 Carbon::now()->subMonth()->endOfMonth(),
             ])
-            ->sum(DB::raw('COALESCE(final_total, total)'));
+            ->sum(DB::raw($this->repairNetRevenueExpression()));
 
         $revMomChange = $lastMonthRevenue > 0
             ? round((($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100, 1)
@@ -381,7 +387,7 @@ class DssController extends Controller
                 'rr.repair_package_id',
                 DB::raw("COALESCE(rp.name, CONCAT('Package #', rr.repair_package_id)) as package_name"),
                 DB::raw('COUNT(rr.id) as bookings'),
-                DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as revenue')
+                DB::raw('SUM(' . $this->repairNetRevenueExpression('COALESCE(rr.final_total, rr.total, 0)') . ') as revenue')
             )
             ->groupBy('rr.repair_package_id', 'rp.name')
             ->orderByDesc('revenue')
@@ -394,7 +400,7 @@ class DssController extends Controller
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->where('completed_at', '>=', $since)
-            ->sum(DB::raw('COALESCE(final_total, total)'));
+            ->sum(DB::raw($this->repairNetRevenueExpression()));
 
         $allRepairBookings = (int) RepairRequest::where('shop_owner_id', $shopOwnerId)
             ->whereIn('status', self::COMPLETED_STATUSES)
@@ -407,14 +413,14 @@ class DssController extends Controller
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->whereBetween('completed_at', [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth()])
-            ->sum(DB::raw('COALESCE(final_total, total)'));
+            ->sum(DB::raw($this->repairNetRevenueExpression()));
 
         $lastMonthRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
             ->whereNotNull('repair_package_id')
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->whereBetween('completed_at', [Carbon::now()->subMonth()->startOfMonth(), Carbon::now()->subMonth()->endOfMonth()])
-            ->sum(DB::raw('COALESCE(final_total, total)'));
+            ->sum(DB::raw($this->repairNetRevenueExpression()));
 
         $revMomChange = $lastMonthRevenue > 0
             ? round((($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100, 1)
@@ -466,7 +472,7 @@ class DssController extends Controller
                 ->whereIn('status', self::COMPLETED_STATUSES)
                 ->where('payment_status', 'completed')
                 ->whereBetween('completed_at', [$start, $end])
-                ->sum(DB::raw('COALESCE(final_total, total)'));
+                ->sum(DB::raw($this->repairNetRevenueExpression()));
 
             $months[] = [
                 'month'     => $month->format('M Y'),
@@ -853,7 +859,7 @@ class DssController extends Controller
                     'rs.name',
                     DB::raw('COALESCE(rs.price, 0) as list_price'),
                     DB::raw('COUNT(DISTINCT rr.id) as cnt'),
-                    DB::raw('SUM(COALESCE(rr.final_total, rr.total)) as rev')
+                    DB::raw('SUM(' . $this->repairNetRevenueExpression('COALESCE(rr.final_total, rr.total, 0)') . ') as rev')
                 )
                 ->groupBy('rs.id', 'rs.name', 'rs.price')
                 ->having('cnt', '>=', 3)

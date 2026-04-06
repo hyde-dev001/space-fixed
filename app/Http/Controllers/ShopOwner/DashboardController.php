@@ -16,22 +16,27 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    private const VAT_RATE_PERCENT = 12.0;
+    private const VAT_DIVISOR = 1.12;
+
     private function repairRevenueExpression(): string
     {
+        $vatDivisor = self::VAT_DIVISOR;
+
         return "
             CASE
                 WHEN (COALESCE(total_paid_amount, 0) > 0 OR COALESCE(total_refunded_amount, 0) > 0)
                     THEN CASE
                         WHEN (COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) < 0 THEN 0
-                        ELSE (COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0))
+                        ELSE ((COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) / {$vatDivisor})
                     END
                 WHEN payment_status = 'completed'
-                    THEN COALESCE(final_total, total, 0)
+                    THEN (COALESCE(final_total, total, 0) / {$vatDivisor})
                 WHEN payment_status = 'paid'
                     THEN CASE
                         WHEN COALESCE(payment_policy_snapshot, payment_policy, 'deposit_50') = 'deposit_50'
-                            THEN COALESCE(final_total, total, 0) * 0.5
-                        ELSE COALESCE(final_total, total, 0)
+                            THEN ((COALESCE(final_total, total, 0) * 0.5) / {$vatDivisor})
+                        ELSE (COALESCE(final_total, total, 0) / {$vatDivisor})
                     END
                 ELSE 0
             END

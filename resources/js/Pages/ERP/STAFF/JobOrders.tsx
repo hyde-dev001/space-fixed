@@ -477,7 +477,7 @@ export default function JobOrdersPage() {
     // Exclude cancelled and refunded orders from recognized revenue.
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled" && o.status !== "refund" && String(o.paymentStatus || '').toLowerCase() !== 'refunded')
-      .reduce((sum, o) => sum + o.grand_total, 0);
+      .reduce((sum, o) => sum + o.total_amount, 0);
     return { total, pending, processing, shipped, delivered, refund, totalRevenue };
   }, [orders]);
 
@@ -1403,11 +1403,11 @@ export default function JobOrdersPage() {
             description="Out for delivery"
           />
           <MetricCard
-            title="Total Revenue"
+            title="Net Revenue (Excl. VAT)"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
             icon={CurrencyDollarIcon}
             color="success"
-            description="From all orders"
+            description="From all orders before VAT"
           />
         </div>
 
