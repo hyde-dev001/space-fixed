@@ -19,6 +19,7 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Events\LowStockAlert;
 use App\Services\RepairMaterialPlanningService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
@@ -3321,9 +3322,13 @@ class RepairWorkflowController extends Controller
     public function getRepairMaterialUsage($id)
     {
         try {
-            $user = Auth::guard('user')->user();
+            $actorContext = $this->resolveRepairMaterialActorContext();
+            $shopOwnerId = (int) $actorContext['shop_owner_id'];
+            $actorUserId = (int) $actorContext['actor_user_id'];
+            $enforceAssignment = (bool) $actorContext['enforce_assignment'];
+            $canManage = (bool) $actorContext['can_manage'];
 
-            if (!$user) {
+            if ($shopOwnerId <= 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthenticated'
@@ -3332,7 +3337,7 @@ class RepairWorkflowController extends Controller
 
             $repairRequest = RepairRequest::query()
                 ->where('id', $id)
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->with([
                     'materialUsages' => function ($usageQuery) {
                         $usageQuery->with(['inventoryItem', 'user'])
@@ -3343,7 +3348,7 @@ class RepairWorkflowController extends Controller
 
             $this->ensureRepairMaterialPlanItems($repairRequest);
 
-            if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id && !$user->hasRole('Manager')) {
+            if ($enforceAssignment && (int) $repairRequest->assigned_repairer_id !== $actorUserId && !$canManage) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This repair is not assigned to you.'
@@ -3351,7 +3356,7 @@ class RepairWorkflowController extends Controller
             }
 
             $materials = InventoryItem::query()
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->where('is_active', true)
                 ->where('category', 'repair_materials')
                 ->orderBy('name')
@@ -3406,6 +3411,11 @@ class RepairWorkflowController extends Controller
                     'summary' => $pricingTotals,
                 ],
             ]);
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found.',
+            ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -3426,9 +3436,12 @@ class RepairWorkflowController extends Controller
         ]);
 
         try {
-            $user = Auth::guard('user')->user();
+            $actorContext = $this->resolveRepairMaterialActorContext();
+            $shopOwnerId = (int) $actorContext['shop_owner_id'];
+            $actorUserId = (int) $actorContext['actor_user_id'];
+            $enforceAssignment = (bool) $actorContext['enforce_assignment'];
 
-            if (!$user) {
+            if ($shopOwnerId <= 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthenticated'
@@ -3437,12 +3450,12 @@ class RepairWorkflowController extends Controller
 
             $repairRequest = RepairRequest::query()
                 ->where('id', $id)
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->firstOrFail();
 
             $this->ensureRepairMaterialPlanItems($repairRequest);
 
-            if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id) {
+            if ($enforceAssignment && (int) $repairRequest->assigned_repairer_id !== $actorUserId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This repair is not assigned to you.'
@@ -3458,7 +3471,7 @@ class RepairWorkflowController extends Controller
 
             $inventoryItem = InventoryItem::query()
                 ->where('id', $validated['inventory_item_id'])
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->where('is_active', true)
                 ->first();
 
@@ -3518,13 +3531,14 @@ class RepairWorkflowController extends Controller
                 $quantityUsed,
                 $validated,
                 $repairRequest,
-                $user
+                $shopOwnerId,
+                $actorUserId
             ) {
                 $movement = $inventoryItem->decrementStock(
                     $quantityUsed,
                     'repair_usage',
                     $validated['notes'] ?? "Material used for repair {$repairRequest->request_id}",
-                    $user->id
+                    $actorUserId > 0 ? $actorUserId : null
                 );
 
                 $movement->update([
@@ -3537,7 +3551,7 @@ class RepairWorkflowController extends Controller
                     'inventory_item_id' => $inventoryItem->id,
                     'quantity_used' => $quantityUsed,
                     'notes' => $validated['notes'] ?? null,
-                    'used_by' => $user->id,
+                    'used_by' => $actorUserId > 0 ? $actorUserId : null,
                     'used_at' => now(),
                     'stock_movement_id' => $movement->id,
                 ]);
@@ -3568,7 +3582,7 @@ class RepairWorkflowController extends Controller
 
                 if ($reorderLevel > 0 && $remainingQuantity <= $reorderLevel) {
                     $existingPendingRepairRequest = StockRequestApproval::query()
-                        ->where('shop_owner_id', $user->shop_owner_id)
+                        ->where('shop_owner_id', $shopOwnerId)
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('request_source', 'repair')
                         ->whereIn('status', ['pending', 'needs_details'])
@@ -3584,45 +3598,57 @@ class RepairWorkflowController extends Controller
                         $autoQuantity = max(1, (int) ($inventoryItem->reorder_quantity ?: $inventoryItem->reorder_level ?: 1));
                         $autoPriority = $remainingQuantity <= 0 ? 'high' : 'medium';
 
-                        $autoRequest = StockRequestApproval::create([
-                            'request_number' => $this->generateStockRequestNumber(),
-                            'shop_owner_id' => $user->shop_owner_id,
-                            'inventory_item_id' => $inventoryItem->id,
-                            'repair_request_id' => $repairRequest->id,
-                            'product_name' => $inventoryItem->name,
-                            'sku_code' => $inventoryItem->sku ?? '',
-                            'quantity_needed' => $autoQuantity,
-                            'requested_size' => null,
-                            'priority' => $autoPriority,
-                            'request_source' => 'repair',
-                            'status' => 'pending',
-                            'requested_by' => $user->id,
-                            'requested_date' => now(),
-                            'notes' => "[AUTO-REORDER] Triggered after repair usage for {$repairRequest->request_id}. Remaining stock: {$remainingQuantity}. Reorder level: {$reorderLevel}.",
-                        ]);
+                        $requesterId = $actorUserId > 0
+                            ? $actorUserId
+                            : $this->resolveRepairMaterialFallbackRequesterId($shopOwnerId);
 
-                        $autoReorderMeta = [
-                            'triggered' => true,
-                            'request_id' => (int) $autoRequest->id,
-                            'request_number' => $autoRequest->request_number,
-                            'quantity_needed' => (int) $autoRequest->quantity_needed,
-                        ];
+                        if ($requesterId <= 0) {
+                            $autoReorderMeta = [
+                                'triggered' => false,
+                                'skipped_reason' => 'missing_requester',
+                            ];
+                            $warnings[] = 'Auto-reorder was skipped because no active staff requester is available.';
+                        } else {
+                            $autoRequest = StockRequestApproval::create([
+                                'request_number' => $this->generateStockRequestNumber(),
+                                'shop_owner_id' => $shopOwnerId,
+                                'inventory_item_id' => $inventoryItem->id,
+                                'repair_request_id' => $repairRequest->id,
+                                'product_name' => $inventoryItem->name,
+                                'sku_code' => $inventoryItem->sku ?? '',
+                                'quantity_needed' => $autoQuantity,
+                                'requested_size' => null,
+                                'priority' => $autoPriority,
+                                'request_source' => 'repair',
+                                'status' => 'pending',
+                                'requested_by' => $requesterId,
+                                'requested_date' => now(),
+                                'notes' => "[AUTO-REORDER] Triggered after repair usage for {$repairRequest->request_id}. Remaining stock: {$remainingQuantity}. Reorder level: {$reorderLevel}.",
+                            ]);
 
-                        $autoReorderNotificationPayload = [
-                            'request_id' => (int) $autoRequest->id,
-                            'request_number' => $autoRequest->request_number,
-                            'product_name' => $inventoryItem->name,
-                            'sku_code' => $inventoryItem->sku ?? '',
-                            'quantity_needed' => (int) $autoRequest->quantity_needed,
-                            'remaining_quantity' => (int) $remainingQuantity,
-                            'reorder_level' => (int) $reorderLevel,
-                            'priority' => $autoPriority,
-                            'repair_request_id' => (int) $repairRequest->id,
-                            'repair_request_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                            'triggered_by_user_id' => (int) $user->id,
-                        ];
+                            $autoReorderMeta = [
+                                'triggered' => true,
+                                'request_id' => (int) $autoRequest->id,
+                                'request_number' => $autoRequest->request_number,
+                                'quantity_needed' => (int) $autoRequest->quantity_needed,
+                            ];
 
-                        $warnings[] = "Auto-reorder request {$autoRequest->request_number} was created.";
+                            $autoReorderNotificationPayload = [
+                                'request_id' => (int) $autoRequest->id,
+                                'request_number' => $autoRequest->request_number,
+                                'product_name' => $inventoryItem->name,
+                                'sku_code' => $inventoryItem->sku ?? '',
+                                'quantity_needed' => (int) $autoRequest->quantity_needed,
+                                'remaining_quantity' => (int) $remainingQuantity,
+                                'reorder_level' => (int) $reorderLevel,
+                                'priority' => $autoPriority,
+                                'repair_request_id' => (int) $repairRequest->id,
+                                'repair_request_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
+                                'triggered_by_user_id' => $requesterId,
+                            ];
+
+                            $warnings[] = "Auto-reorder request {$autoRequest->request_number} was created.";
+                        }
                     }
                 }
 
@@ -3648,7 +3674,7 @@ class RepairWorkflowController extends Controller
             if (is_array($autoReorderNotificationPayload)) {
                 try {
                     $this->notificationService->notifyProcurementAutoReorderTriggered(
-                        (int) $user->shop_owner_id,
+                        $shopOwnerId,
                         $autoReorderNotificationPayload
                     );
                 } catch (\Throwable $notificationError) {
@@ -3681,6 +3707,11 @@ class RepairWorkflowController extends Controller
                     'pricing' => $pricingTotals,
                 ],
             ], 201);
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request not found.',
+            ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -3695,9 +3726,13 @@ class RepairWorkflowController extends Controller
     public function removeRepairMaterialUsage($id, $usageId)
     {
         try {
-            $user = Auth::guard('user')->user();
+            $actorContext = $this->resolveRepairMaterialActorContext();
+            $shopOwnerId = (int) $actorContext['shop_owner_id'];
+            $actorUserId = (int) $actorContext['actor_user_id'];
+            $enforceAssignment = (bool) $actorContext['enforce_assignment'];
+            $canManage = (bool) $actorContext['can_manage'];
 
-            if (!$user) {
+            if ($shopOwnerId <= 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthenticated'
@@ -3706,10 +3741,10 @@ class RepairWorkflowController extends Controller
 
             $repairRequest = RepairRequest::query()
                 ->where('id', $id)
-                ->where('shop_owner_id', $user->shop_owner_id)
+                ->where('shop_owner_id', $shopOwnerId)
                 ->firstOrFail();
 
-            if ((int) $repairRequest->assigned_repairer_id !== (int) $user->id && !$user->hasRole('Manager')) {
+            if ($enforceAssignment && (int) $repairRequest->assigned_repairer_id !== $actorUserId && !$canManage) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You are not allowed to remove material usage for this repair.'
@@ -3724,13 +3759,13 @@ class RepairWorkflowController extends Controller
 
             $pricingTotals = null;
 
-            DB::transaction(function () use ($usage, $repairRequest, $user, &$pricingTotals) {
+            DB::transaction(function () use ($usage, $repairRequest, $actorUserId, &$pricingTotals) {
                 if ($usage->inventoryItem) {
                     $restoreMovement = $usage->inventoryItem->incrementStock(
                         (int) $usage->quantity_used,
                         'return',
                         "Material usage reversal for repair {$repairRequest->request_id}",
-                        $user->id
+                        $actorUserId > 0 ? $actorUserId : null
                     );
 
                     $restoreMovement->update([
@@ -3762,12 +3797,62 @@ class RepairWorkflowController extends Controller
                     'pricing' => $pricingTotals,
                 ],
             ]);
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair request or material usage not found.',
+            ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to remove material usage: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function resolveRepairMaterialActorContext(): array
+    {
+        $user = Auth::guard('user')->user();
+        if ($user) {
+            $isManager = method_exists($user, 'hasRole') ? (bool) $user->hasRole('Manager') : false;
+
+            return [
+                'shop_owner_id' => (int) ($user->shop_owner_id ?? 0),
+                'actor_user_id' => (int) ($user->id ?? 0),
+                'enforce_assignment' => true,
+                'can_manage' => $isManager,
+            ];
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return [
+                'shop_owner_id' => (int) ($shopOwner->id ?? 0),
+                'actor_user_id' => 0,
+                'enforce_assignment' => false,
+                'can_manage' => true,
+            ];
+        }
+
+        return [
+            'shop_owner_id' => 0,
+            'actor_user_id' => 0,
+            'enforce_assignment' => false,
+            'can_manage' => false,
+        ];
+    }
+
+    private function resolveRepairMaterialFallbackRequesterId(int $shopOwnerId): int
+    {
+        if ($shopOwnerId <= 0) {
+            return 0;
+        }
+
+        return (int) (User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', 'active')
+            ->orderBy('id')
+            ->value('id') ?? 0);
     }
 
     private function computeRepairPricingTotals(RepairRequest $repairRequest): array

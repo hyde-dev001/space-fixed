@@ -5,6 +5,7 @@ import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import ErrorModal from "../../../../components/common/ErrorModal";
 import axios from "axios";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../../utils/repairPricing";
+import type { RepairMaterialUsage, RepairMaterialInventoryItem, RepairMaterialPlanItem } from "../../../../services/repairMaterialsApi";
 
 type RepairOrder = {
   id: string;
@@ -438,6 +439,15 @@ export default function JobOrdersRepair() {
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
+  const [materialUsages, setMaterialUsages] = useState<RepairMaterialUsage[]>([]);
+  const [materialPlanItems, setMaterialPlanItems] = useState<RepairMaterialPlanItem[]>([]);
+  const [availableMaterials, setAvailableMaterials] = useState<RepairMaterialInventoryItem[]>([]);
+  const [isMaterialsLoading, setIsMaterialsLoading] = useState(false);
+  const [materialForm, setMaterialForm] = useState({
+    inventory_item_id: "",
+    quantity_used: "",
+    notes: "",
+  });
   const isFetchingOrdersRef = useRef(false);
   const pendingFetchOrdersRef = useRef(false);
   const pollingDelayRef = useRef(POLL_INTERVAL_MS);
@@ -701,6 +711,181 @@ export default function JobOrdersRepair() {
       document.body.style.overflow = previousOverflow;
     };
   }, [isViewModalOpen]);
+
+  const canTrackMaterials = (status: RepairOrder["status"] | undefined) => {
+    return status === "in-progress" || status === "awaiting_parts";
+  };
+
+  const fetchRepairMaterials = async (repairId: number) => {
+    try {
+      setIsMaterialsLoading(true);
+      const response = await axios.get(`/api/shop-owner/repairs/${repairId}/materials`);
+      if (response.data?.success) {
+        setMaterialUsages(response.data.data?.usages ?? []);
+        setMaterialPlanItems(response.data.data?.plan_items ?? []);
+        setAvailableMaterials(response.data.data?.materials ?? []);
+      }
+    } catch (err) {
+      console.error("Failed to load repair materials", err);
+      setMaterialUsages([]);
+      setMaterialPlanItems([]);
+      setAvailableMaterials([]);
+    } finally {
+      setIsMaterialsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isViewModalOpen && viewOrder?.database_id) {
+      void fetchRepairMaterials(viewOrder.database_id);
+      return;
+    }
+
+    setMaterialUsages([]);
+    setMaterialPlanItems([]);
+    setAvailableMaterials([]);
+    setMaterialForm({
+      inventory_item_id: "",
+      quantity_used: "",
+      notes: "",
+    });
+  }, [isViewModalOpen, viewOrder?.database_id]);
+
+  useEffect(() => {
+    if (!isViewModalOpen || !viewOrder) return;
+    if (materialForm.inventory_item_id) return;
+    if (materialPlanItems.length === 0) return;
+
+    const suggestedPlan = materialPlanItems.find((item) => item.remaining_quantity > 0) ?? materialPlanItems[0];
+    const suggestedQuantity = Math.max(
+      1,
+      Math.ceil(suggestedPlan.remaining_quantity > 0 ? suggestedPlan.remaining_quantity : suggestedPlan.planned_quantity),
+    );
+
+    setMaterialForm((prev) => ({
+      ...prev,
+      inventory_item_id: String(suggestedPlan.inventory_item_id),
+      quantity_used: prev.quantity_used || String(suggestedQuantity),
+    }));
+  }, [isViewModalOpen, materialForm.inventory_item_id, materialPlanItems, viewOrder]);
+
+  const parsePositiveWholeQuantity = (rawValue: string): number | null => {
+    const trimmed = String(rawValue ?? "").trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 1 || !Number.isInteger(parsed)) {
+      return null;
+    }
+
+    return parsed;
+  };
+
+  const handleLogMaterialUsage = async () => {
+    if (!viewOrder) return;
+
+    const workflowStatus = String(viewOrder.status ?? "").toLowerCase();
+    const canLogByStatus = ["in-progress", "in_progress", "awaiting_parts"].includes(workflowStatus);
+    if (!canLogByStatus) {
+      await Swal.fire({
+        title: "Cannot log materials yet",
+        text: "Move this repair to In Progress (or Awaiting Parts) first before logging material usage.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    const quantityUsed = parsePositiveWholeQuantity(materialForm.quantity_used);
+    if (!materialForm.inventory_item_id || quantityUsed === null) {
+      await Swal.fire({
+        title: "Missing details",
+        text: "Please select a material and enter a whole-number quantity (1, 2, 3...).",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    try {
+      const response = await axios.post(`/api/shop-owner/repairs/${viewOrder.database_id}/materials`, {
+        inventory_item_id: Number(materialForm.inventory_item_id),
+        quantity_used: quantityUsed,
+        notes: materialForm.notes || undefined,
+      });
+
+      if (response.data?.success) {
+        const meta = response.data?.meta ?? {};
+        const stockStatus = meta.stock_status ?? "ok";
+        const footerDetails: string[] = [];
+
+        if (typeof meta.remaining_quantity === "number") {
+          footerDetails.push(`Remaining stock: ${meta.remaining_quantity}`);
+        }
+
+        if (meta.auto_reorder?.triggered && meta.auto_reorder?.request_number) {
+          footerDetails.push(`Auto-reorder: ${meta.auto_reorder.request_number}`);
+        } else if (meta.auto_reorder?.existing_request_number) {
+          footerDetails.push(`Pending request: ${meta.auto_reorder.existing_request_number}`);
+        }
+
+        setMaterialForm((prev) => ({ ...prev, quantity_used: "", notes: "" }));
+        await fetchRepairMaterials(viewOrder.database_id);
+        await Swal.fire({
+          title: "Usage logged",
+          text: response.data?.message || "Material usage logged successfully.",
+          icon: stockStatus === "ok" ? "success" : "warning",
+          footer: footerDetails.length > 0 ? footerDetails.join(" • ") : undefined,
+          confirmButtonColor: "#2563eb",
+        });
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: "Failed to log usage",
+        text: error?.response?.data?.message || "Please try again.",
+        icon: "error",
+        confirmButtonColor: "#2563eb",
+      });
+    }
+  };
+
+  const handleRemoveMaterialUsage = async (usageId: number) => {
+    if (!viewOrder) return;
+
+    const result = await Swal.fire({
+      title: "Remove material usage?",
+      text: "This will restore the stock quantity.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Remove",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.delete(`/api/shop-owner/repairs/${viewOrder.database_id}/materials/${usageId}`);
+      if (response.data?.success) {
+        await fetchRepairMaterials(viewOrder.database_id);
+        await Swal.fire({
+          title: "Removed",
+          text: response.data?.message || "Material usage removed successfully.",
+          icon: "success",
+          confirmButtonColor: "#2563eb",
+        });
+      }
+    } catch (error: any) {
+      await Swal.fire({
+        title: "Failed to remove",
+        text: error?.response?.data?.message || "Please try again.",
+        icon: "error",
+        confirmButtonColor: "#2563eb",
+      });
+    }
+  };
 
   // Filter orders based on tab and search
   const filteredOrders = useMemo(() => {
@@ -2519,6 +2704,154 @@ export default function JobOrdersRepair() {
                       </ul>
                     </div>
                   </div>
+                )}
+
+                {canTrackMaterials(viewOrder.status) && (
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Materials Used</p>
+                  </div>
+
+                  <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-3">
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-2">
+                        Planned From Templates
+                      </p>
+
+                      {isMaterialsLoading ? (
+                        <p className="text-xs text-blue-700 dark:text-blue-300">Loading material plan...</p>
+                      ) : materialPlanItems.length > 0 ? (
+                        <div className="space-y-2">
+                          {materialPlanItems.map((planItem) => {
+                            const remaining = Number(planItem.remaining_quantity ?? 0);
+                            const suggestedQty = Math.max(
+                              1,
+                              Math.ceil(remaining > 0 ? remaining : Number(planItem.planned_quantity ?? 1)),
+                            );
+
+                            return (
+                              <div
+                                key={planItem.id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-100 bg-white px-2 py-2 dark:border-blue-900 dark:bg-gray-900"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {planItem.inventory_item?.name || `Material #${planItem.inventory_item_id}`}
+                                    {planItem.is_critical ? " (Critical)" : ""}
+                                  </p>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                                    Planned: {planItem.planned_quantity} • Logged: {planItem.actual_quantity} • Remaining: {planItem.remaining_quantity}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setMaterialForm((prev) => ({
+                                      ...prev,
+                                      inventory_item_id: String(planItem.inventory_item_id),
+                                      quantity_used: String(suggestedQty),
+                                    }))
+                                  }
+                                  className="rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                                >
+                                  Use Plan
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          No template plan found for this repair yet. Add material templates to the selected package/services, then reopen this modal.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                      <select
+                        title="Select material"
+                        aria-label="Select material"
+                        value={materialForm.inventory_item_id}
+                        onChange={(event) => setMaterialForm((prev) => ({ ...prev, inventory_item_id: event.target.value }))}
+                        className="md:col-span-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"
+                      >
+                        <option value="">Select material</option>
+                        {availableMaterials.map((material) => (
+                          <option key={material.id} value={material.id}>
+                            {material.name} ({material.sku || 'N/A'}) — Available: {material.available_quantity}
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder="Qty"
+                        value={materialForm.quantity_used}
+                        onChange={(event) => setMaterialForm((prev) => ({ ...prev, quantity_used: event.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Notes"
+                        value={materialForm.notes}
+                        onChange={(event) => setMaterialForm((prev) => ({ ...prev, notes: event.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleLogMaterialUsage}
+                        disabled={!canTrackMaterials(viewOrder.status)}
+                        className={`px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                          canTrackMaterials(viewOrder.status)
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Log Usage
+                      </button>
+                    </div>
+
+                    {isMaterialsLoading ? (
+                      <p className="text-sm text-gray-500">Loading material usage...</p>
+                    ) : materialUsages.length === 0 ? (
+                      <p className="text-sm text-gray-500">No material usage logged yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {materialUsages.map((usage) => (
+                          <div
+                            key={usage.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                {usage.inventory_item?.name || `Material #${usage.inventory_item_id}`}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Qty: {usage.quantity_used} • {new Date(usage.used_at).toLocaleString()}
+                                {usage.notes ? ` • ${usage.notes}` : ''}
+                              </p>
+                            </div>
+                            {canTrackMaterials(viewOrder.status) && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMaterialUsage(usage.id)}
+                                className="text-xs px-2 py-1 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 )}
 
                 {/* Pickup Address */}

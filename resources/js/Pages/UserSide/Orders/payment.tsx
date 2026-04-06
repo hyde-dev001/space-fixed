@@ -63,89 +63,16 @@ interface ShippingEstimateData {
 
 type PaymentMethod = 'paymongo';
 
-const PH_REGION_OPTIONS = [
-  'Abra',
-  'Agusan del Norte',
-  'Agusan del Sur',
-  'Aklan',
-  'Albay',
-  'Antique',
-  'Apayao',
-  'Aurora',
-  'Basilan',
-  'Bataan',
-  'Batanes',
-  'Batangas',
-  'Benguet',
-  'Biliran',
-  'Bohol',
-  'Bukidnon',
-  'Bulacan',
-  'Cagayan',
-  'Camarines Norte',
-  'Camarines Sur',
-  'Camiguin',
-  'Capiz',
-  'Catanduanes',
-  'Cavite',
-  'Cebu',
-  'Cotabato',
-  'Compostela Valley',
-  'Davao del Norte',
-  'Davao del Sur',
-  'Davao Occidental',
-  'Davao Oriental',
-  'Dinagat Islands',
-  'Eastern Samar',
-  'Guimaras',
-  'Ifugao',
-  'Ilocos Norte',
-  'Ilocos Sur',
-  'Iloilo',
-  'Isabela',
-  'Kalinga',
-  'La Union',
-  'Laguna',
-  'Lanao del Norte',
-  'Lanao del Sur',
-  'Leyte',
-  'Maguindanao',
-  'Marinduque',
-  'Masbate',
-  'Metro Manila',
-  'Misamis Occidental',
-  'Misamis Oriental',
-  'Mountain Province',
-  'Negros Occidental',
-  'Negros Oriental',
-  'Northern Samar',
-  'Nueva Ecija',
-  'Nueva Vizcaya',
-  'Occidental Mindoro',
-  'Oriental Mindoro',
-  'Palawan',
-  'Pampanga',
-  'Pangasinan',
-  'Quezon',
-  'Quirino',
-  'Rizal',
-  'Romblon',
-  'Samar',
-  'Sarangani',
-  'Siquijor',
-  'Sorsogon',
-  'South Cotabato',
-  'Southern Leyte',
-  'Sultan Kudarat',
-  'Sulu',
-  'Surigao del Norte',
-  'Surigao del Sur',
-  'Tarlac',
-  'Tawi-Tawi',
-  'Zambales',
-  'Zamboanga del Norte',
-  'Zamboanga del Sur',
-  'Zamboanga Sibugay',
+const DEFAULT_SHIPPING_REGION = 'Cavite';
+
+const PH_CITY_OPTIONS = [
+  'Bacoor',
+  'Imus',
+  'Dasmariñas',
+  'General Trias',
+  'Trece Martires',
+  'Tagaytay',
+  'City of Cavite',
 ];
 
 const Payment: React.FC = () => {
@@ -185,8 +112,6 @@ const Payment: React.FC = () => {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
   const [addressSheetMode, setAddressSheetMode] = useState<'list' | 'form'>('list');
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
-  const [isRegionPickerOpen, setIsRegionPickerOpen] = useState(false);
-  const [regionSearch, setRegionSearch] = useState('');
   const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
@@ -197,7 +122,10 @@ const Payment: React.FC = () => {
   } | null>(null);
   const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
 
-  const filteredRegions = PH_REGION_OPTIONS.filter((region) => region.toLowerCase().includes(regionSearch.trim().toLowerCase()));
+  const handleCityChange = (city: string) => {
+    setShippingCity(city);
+    setShippingRegion(city ? DEFAULT_SHIPPING_REGION : '');
+  };
 
   const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
     if (!addr) return '';
@@ -209,7 +137,7 @@ const Payment: React.FC = () => {
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    setShippingRegion(addr.region || '');
+    setShippingRegion(addr.region || (addr.city ? DEFAULT_SHIPPING_REGION : ''));
     setShippingCity(addr.city || '');
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
@@ -230,8 +158,6 @@ const Payment: React.FC = () => {
   const openAddressSheet = async () => {
     setAddressSheetMode('list');
     setEditingAddressId(null);
-    setIsRegionPickerOpen(false);
-    setRegionSearch('');
 
     if (!user) {
       setIsAddressSheetOpen(true);
@@ -337,13 +263,11 @@ const Payment: React.FC = () => {
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    setShippingRegion(addr.region || '');
+    setShippingRegion(addr.region || (addr.city ? DEFAULT_SHIPPING_REGION : ''));
     setShippingCity(addr.city || '');
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
     setAddressSheetMode('form');
-    setIsRegionPickerOpen(false);
-    setRegionSearch('');
   };
 
   const handleDeleteAddressFromForm = async () => {
@@ -506,7 +430,7 @@ const Payment: React.FC = () => {
           setShippingBarangay(data.shipping_barangay || '');
           setShippingPostalCode(data.shipping_postal_code || '');
           setShippingCity(data.shipping_city || '');
-          setShippingRegion(data.shipping_region || '');
+          setShippingRegion(data.shipping_region || (data.shipping_city ? DEFAULT_SHIPPING_REGION : ''));
           return;
         } catch (e) {
           console.error('Failed to parse checkout data:', e);
@@ -889,6 +813,12 @@ const Payment: React.FC = () => {
     shippingPostalCode,
   ]);
 
+  useEffect(() => {
+    if (shippingCity.trim() && !shippingRegion.trim()) {
+      setShippingRegion(DEFAULT_SHIPPING_REGION);
+    }
+  }, [shippingCity, shippingRegion]);
+
   // Validate postal code - only integers, no "e" or special characters
   const handlePostalCodeChange = (value: string, setter: (val: string) => void) => {
     const cleaned = value.replace(/[^\d]/g, '');
@@ -906,8 +836,8 @@ const Payment: React.FC = () => {
         name: customerName,
         phone: customerPhone,
         address_line: shippingAddressLine,
-        region: shippingRegion,
-        province: shippingRegion, // Use region as province
+        region: shippingRegion || DEFAULT_SHIPPING_REGION,
+        province: shippingRegion || DEFAULT_SHIPPING_REGION, // Use region as province
         city: shippingCity,
         barangay: shippingBarangay,
         postal_code: shippingPostalCode,
@@ -1201,12 +1131,8 @@ const Payment: React.FC = () => {
   const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);
   const hasShippingEstimate = Boolean(shippingEstimate);
   const shippingSummaryValue = hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable');
-  const shippingCarrierNote = hasShippingEstimate
-    ? ''
-    : (shippingEstimateReason || 'Complete your delivery address to calculate shipping.');
-  const shippingPayLaterNotice = hasShippingEstimate
-    ? ''
-    : 'Shipping fee must be calculated before you can continue to payment.';
+  const shippingCarrierNote = '';
+  const shippingPayLaterNotice = '';
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');
@@ -1422,13 +1348,9 @@ const Payment: React.FC = () => {
                     onClick={() => {
                       if (addressSheetMode === 'form') {
                         setEditingAddressId(null);
-                        setIsRegionPickerOpen(false);
-                        setRegionSearch('');
                         setAddressSheetMode('list');
                         return;
                       }
-                      setIsRegionPickerOpen(false);
-                      setRegionSearch('');
                       setIsAddressSheetOpen(false);
                     }}
                     className="text-black text-2xl leading-none"
@@ -1541,24 +1463,19 @@ const Payment: React.FC = () => {
                         onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                       />
-                      <input
-                        type="text"
-                        placeholder="City"
+                      <select
                         value={shippingCity}
-                        onChange={e => setShippingCity(e.target.value)}
+                        onChange={(e) => handleCityChange(e.target.value)}
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                      />
+                        title="City"
+                        aria-label="City"
+                      >
+                        <option value="">Select City</option>
+                        {PH_CITY_OPTIONS.map((city) => (
+                          <option key={city} value={city}>{city}</option>
+                        ))}
+                      </select>
                     </div>
-                    <button
-                      type="button"
-                      className="w-full px-4 py-3 border border-gray-300 rounded text-left text-black bg-white flex items-center justify-between"
-                      title="Region"
-                      aria-label="Region"
-                      onClick={() => setIsRegionPickerOpen(true)}
-                    >
-                      <span className={shippingRegion ? 'text-black' : 'text-gray-500'}>{shippingRegion || 'Select Region'}</span>
-                      <span className="text-gray-500 text-base leading-none">&#9662;</span>
-                    </button>
                     <input
                       type="tel"
                       placeholder="Phone"
@@ -1587,70 +1504,6 @@ const Payment: React.FC = () => {
                   </div>
                 )}
 
-                {isRegionPickerOpen && addressSheetMode === 'form' && (
-                  <div
-                    className="fixed inset-0 z-50 bg-black/40 flex items-end"
-                    onClick={() => {
-                      setIsRegionPickerOpen(false);
-                      setRegionSearch('');
-                    }}
-                  >
-                    <div
-                      className="w-full max-h-[82vh] bg-white rounded-t-2xl shadow-xl"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="px-4 pt-4 pb-3 border-b border-gray-200 flex items-center justify-between gap-3">
-                        <h3 className="text-lg font-semibold text-black">Select Region</h3>
-                        <button
-                          type="button"
-                          className="text-sm font-medium text-gray-600"
-                          onClick={() => {
-                            setIsRegionPickerOpen(false);
-                            setRegionSearch('');
-                          }}
-                        >
-                          Close
-                        </button>
-                      </div>
-
-                      <div className="p-4 border-b border-gray-100">
-                        <input
-                          type="text"
-                          placeholder="Search region"
-                          title="Search region"
-                          aria-label="Search region"
-                          value={regionSearch}
-                          onChange={(e) => setRegionSearch(e.target.value)}
-                          className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                        />
-                      </div>
-
-                      <div className="max-h-[56vh] overflow-y-auto py-1">
-                        {filteredRegions.length === 0 ? (
-                          <p className="px-4 py-6 text-sm text-gray-600">No regions found.</p>
-                        ) : (
-                          filteredRegions.map((region) => {
-                            const isSelected = shippingRegion === region;
-                            return (
-                              <button
-                                key={region}
-                                type="button"
-                                onClick={() => {
-                                  setShippingRegion(region);
-                                  setIsRegionPickerOpen(false);
-                                  setRegionSearch('');
-                                }}
-                                className={`w-full px-4 py-3 text-left text-sm border-b border-gray-100 ${isSelected ? 'bg-gray-100 font-medium text-black' : 'bg-white text-gray-800'}`}
-                              >
-                                {region}
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1749,24 +1602,19 @@ const Payment: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2.5">City</label>
-                          <input
-                            type="text"
-                            placeholder="City"
+                          <select
                             value={shippingCity}
-                            onChange={e => setShippingCity(e.target.value)}
+                            onChange={(e) => handleCityChange(e.target.value)}
                             className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
-                          />
+                            title="City"
+                            aria-label="City"
+                          >
+                            <option value="">Select City</option>
+                            {PH_CITY_OPTIONS.map((city) => (
+                              <option key={city} value={city}>{city}</option>
+                            ))}
+                          </select>
                         </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm text-black mb-2.5">Region</label>
-                        <select className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base" title="Region" aria-label="Region" value={shippingRegion || ''} onChange={e => setShippingRegion(e.target.value)}>
-                          <option value="">Select Region</option>
-                          {PH_REGION_OPTIONS.map((region) => (
-                            <option key={region} value={region}>{region}</option>
-                          ))}
-                        </select>
                       </div>
                     </>
                   )}
