@@ -453,7 +453,13 @@ export default function JobOrdersRepair() {
   const pollingDelayRef = useRef(POLL_INTERVAL_MS);
   const pollingTimeoutRef = useRef<number | null>(null);
   // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
-  const { repair_workload_limit: propLimit } = usePage().props as any;
+  const pageProps = usePage().props as any;
+  const { repair_workload_limit: propLimit } = pageProps;
+  const isIndividualRepairShop = String(
+    pageProps?.auth?.shop_owner?.registration_type
+    ?? pageProps?.auth?.user?.shop_owner?.registration_type
+    ?? ""
+  ).toLowerCase() === "individual";
   const initialLimit = typeof propLimit === 'number' && propLimit >= 1 ? propLimit : readRepairRequestLimit();
   const [repairRequestLimit, setRepairRequestLimit] = useState<number>(initialLimit);
   // Sync the DB value into localStorage once on mount so other pages/tabs read a fresh value
@@ -559,12 +565,21 @@ export default function JobOrdersRepair() {
             vatRate,
             taxMode,
           });
+          const primaryEmail = String(repair.email ?? '').trim();
+          const accountEmail = String(repair.user?.email ?? '').trim();
+          const hasPrimaryEmail = primaryEmail !== '' && !primaryEmail.toLowerCase().endsWith('@local.invalid');
+          const normalizedEmail = hasPrimaryEmail
+            ? primaryEmail
+            : (accountEmail !== '' ? accountEmail : primaryEmail);
+          const displayEmail = normalizedEmail === '' || normalizedEmail.toLowerCase().endsWith('@local.invalid')
+            ? 'N/A'
+            : normalizedEmail;
 
           return {
           id: repair.request_id || `REP-${repair.id}`,
           database_id: repair.id,
           customer: repair.customer_name || repair.user?.first_name + ' ' + repair.user?.last_name || 'N/A',
-          email: repair.email || repair.user?.email || 'N/A',
+          email: displayEmail,
           phone: repair.phone || 'N/A',
           item: repair.shoe_type || 'N/A',
           service: mappedServices || posServiceSummary || packageServiceName || 'N/A',
@@ -640,7 +655,9 @@ export default function JobOrdersRepair() {
           payment_enabled: repair.payment_enabled || false,
           payment_status: repair.payment_status || 'pending',
           paymongo_payment_id: repair.paymongo_payment_id || null,
-          payment_policy: repair.payment_policy || 'deposit_50'
+          payment_policy: repair.payment_policy || 'deposit_50',
+          pickup_enabled: repair.pickup_enabled || false,
+          pickup_enabled_at: repair.pickup_enabled_at || null,
         };
       });
         setOrders(mappedOrders);
@@ -1036,6 +1053,7 @@ export default function JobOrdersRepair() {
 
   const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
+    const isDepositSettled = status === 'paid' || status === 'partially_paid';
     const policy = order.payment_policy ?? 'deposit_50';
     const returnMethod = order.returnDeliveryMethod;
 
@@ -1054,13 +1072,13 @@ export default function JobOrdersRepair() {
     }
 
     if (['pending', 'failed', 'expired', ''].includes(status)) return true;
-    if (status === 'paid') return order.status === 'ready-for-pickup';
+    if (isDepositSettled) return order.status === 'ready-for-pickup';
     return false;
   };
 
   const getMarkPaidInShopLabel = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
-    if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && status === 'paid') {
+    if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && (status === 'paid' || status === 'partially_paid')) {
       return 'Proceed to POS (Collect Remaining Balance)';
     }
     return 'Proceed to POS (Collect Payment)';
@@ -1071,7 +1089,7 @@ export default function JobOrdersRepair() {
     const status = (order.payment_status ?? '').toLowerCase();
 
     if (policy === 'full_upfront') return 'full';
-    if (status === 'paid') return 'balance';
+    if (status === 'paid' || status === 'partially_paid') return 'balance';
     return 'deposit';
   };
 
@@ -1082,14 +1100,14 @@ export default function JobOrdersRepair() {
 
     return !isWalkInReturn(order)
       && paymentPolicy === 'deposit_50'
-      && paymentStatus === 'paid'
+      && (paymentStatus === 'paid' || paymentStatus === 'partially_paid')
       && (orderStatus === 'ready-for-pickup' || orderStatus === 'ready_for_pickup')
       && !Boolean(order.payment_enabled);
   };
 
   const isInShopPaymentRecorded = (order: Pick<RepairOrder, 'payment_status' | 'paymongo_payment_id'>) => {
     const status = (order.payment_status ?? '').toLowerCase();
-    if (!['paid', 'completed'].includes(status)) return false;
+    if (!['paid', 'partially_paid', 'completed'].includes(status)) return false;
 
     const paymentId = (order.paymongo_payment_id ?? '').toLowerCase();
     return paymentId.startsWith('in_shop');
@@ -2213,7 +2231,7 @@ export default function JobOrdersRepair() {
             ) : (
               <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-800">
               <colgroup>
-                <col className="w-[9%]" />
+                {!isIndividualRepairShop && <col className="w-[9%]" />}
                 <col className="w-[13%]" />
                 <col className="w-[8%]" />
                 <col className="w-[14%]" />
@@ -2226,9 +2244,11 @@ export default function JobOrdersRepair() {
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Repair ID
-                  </th>
+                  {!isIndividualRepairShop && (
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Repair ID
+                    </th>
+                  )}
                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Customer
                   </th>
@@ -2262,9 +2282,11 @@ export default function JobOrdersRepair() {
                 {paginatedOrders.length > 0 ? (
                   paginatedOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-4">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{order.id}</span>
-                      </td>
+                      {!isIndividualRepairShop && (
+                        <td className="px-4 py-4">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{order.id}</span>
+                        </td>
+                      )}
                       <td className="px-4 py-4">
                         <div className="text-sm">
                           <div className="font-medium text-gray-900 dark:text-white">{order.customer}</div>

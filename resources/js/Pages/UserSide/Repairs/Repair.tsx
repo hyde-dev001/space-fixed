@@ -3,6 +3,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
 import NotificationBell from '../../../Components/common/NotificationBell';
+import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 
 interface Shop {
   id: number;
@@ -43,6 +44,13 @@ const Repair: React.FC<Props> = ({ shops }) => {
   const page = usePage();
   const { cartCount, isLoading: cartLoading } = useCart();
   const isAuthenticated = Boolean((page.props as any)?.auth?.user);
+  const initialChatIconCount = Number((page.props as any)?.chatIconCount ?? 0);
+  const liveBadgeCounts = useBadgeCounts(isAuthenticated, {
+    chatIconCount: initialChatIconCount,
+  });
+  const chatIconCount = isAuthenticated
+    ? liveBadgeCounts.chatIconCount
+    : initialChatIconCount;
   const cartBadgeCount = Number((page.props as any)?.cartIconCount ?? (cartLoading ? 0 : cartCount) ?? 0);
   const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
   const [sortBy, setSortBy] = useState('near_me');
@@ -206,7 +214,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
           <Navigation />
         </div>
 
-        <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-2 bg-white px-2 py-2 shadow-sm xl:hidden">
+        <div className="fixed top-0 left-0 right-0 z-50 flex h-16 items-center gap-2 bg-white px-3 shadow-sm xl:hidden">
           <Link
             href="/"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
@@ -236,7 +244,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
               <NotificationBell
                 basePath="/api/notifications"
                 iconSize={20}
-                className="text-gray-700 hover:text-[#16233b] transition-colors"
+                className="h-9 w-9 rounded-full text-gray-700 hover:bg-gray-100 hover:text-[#16233b] transition-colors"
+                badgeClassName="absolute right-0 top-0 inline-flex h-5 min-w-5 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white ring-2 ring-white"
               />
             )}
             <div className="relative" ref={accountMenuRef}>
@@ -306,14 +315,14 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 </>
               )}
             </div>
-            <Link href="/checkout" className="relative flex h-9 w-9 shrink-0 items-center justify-center text-gray-700 hover:text-[#16233b] transition-colors" aria-label="Shopping cart">
+            <Link href="/checkout" className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 hover:text-[#16233b] transition-colors" aria-label="Shopping cart">
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
                 <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
                 <circle cx="17" cy="19" r="1.5" strokeWidth={2} />
               </svg>
               {cartBadgeCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+                <span className="absolute right-0 top-0 inline-flex h-5 min-w-5 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white ring-2 ring-white">
                   {cartBadgeCount > 99 ? '99+' : cartBadgeCount}
                 </span>
               )}
@@ -461,7 +470,14 @@ const Repair: React.FC<Props> = ({ shops }) => {
             </Link>
             <Link href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
               <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-              <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+              <div className="relative">
+                <svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+                {chatIconCount > 0 && (
+                  <span className="absolute -right-2 -top-1.5 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+                    {chatIconCount > 99 ? '99+' : chatIconCount}
+                  </span>
+                )}
+              </div>
               <span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
             </Link>
             <Link href={meHref} className={mobileNavItemClasses(activeMobileTab === 'me')}>

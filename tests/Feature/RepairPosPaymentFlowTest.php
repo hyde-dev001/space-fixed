@@ -77,6 +77,41 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_can_activate_remaining_balance_when_payment_status_is_partially_paid(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-REM-PARTIAL-001',
+            'customer_name' => 'Remaining Balance Customer',
+            'email' => 'remaining-balance@example.test',
+            'phone' => '09178889999',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Remaining balance activation regression',
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'ready_for_pickup',
+            'delivery_method' => 'pickup',
+            'return_delivery_method' => 'customer_pickup',
+            'total' => 1000,
+            'final_total' => 1000,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'partially_paid',
+            'payment_enabled' => false,
+            'images' => [],
+        ]);
+
+        $activationResponse = $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repair->id}/activate-payment");
+
+        $activationResponse->assertOk()
+            ->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertTrue((bool) $repair->payment_enabled);
+    }
+
+    #[Test]
     public function walk_in_checkout_without_repair_request_creates_manual_repair_reference_and_receipt(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
@@ -111,6 +146,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
         $this->assertSame((int) $shopOwner->id, (int) $repair->shop_owner_id);
         $this->assertSame('Manual Walk-in Customer', (string) $repair->customer_name);
+        $this->assertSame('N/A', (string) $repair->email);
         $this->assertSame('deposit_50', (string) $repair->payment_policy_snapshot);
         $this->assertSame('paid', (string) $repair->payment_status_derived);
 

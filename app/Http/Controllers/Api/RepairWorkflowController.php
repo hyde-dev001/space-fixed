@@ -2140,9 +2140,10 @@ class RepairWorkflowController extends Controller
                 if ($repairRequest->pickup_enabled) {
                     DB::rollBack();
                     return response()->json([
-                        'success' => false,
-                        'message' => 'Pickup confirmation is already activated'
-                    ], 400);
+                        'success' => true,
+                        'message' => 'Pickup confirmation is already activated',
+                        'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                    ]);
                 }
 
                 if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
@@ -2247,9 +2248,10 @@ class RepairWorkflowController extends Controller
             if ($repairRequest->pickup_enabled) {
                 DB::rollBack();
                 return response()->json([
-                    'success' => false,
-                    'message' => 'Pickup confirmation is already activated'
-                ], 400);
+                    'success' => true,
+                    'message' => 'Pickup confirmation is already activated',
+                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
+                ]);
             }
 
             if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
@@ -2739,7 +2741,7 @@ class RepairWorkflowController extends Controller
                 !$isWalkInReturn
                 && in_array((string) $repairRequest->status, ['ready_for_pickup', 'ready-for-pickup'], true)
                 && $paymentPolicy === 'deposit_50'
-                && $paymentStatus === 'paid';
+                && in_array($paymentStatus, ['paid', 'partially_paid'], true);
 
             if (!in_array((string) $repairRequest->status, $validStatuses, true) && !$isRemainingBalanceActivation) {
                 return response()->json([

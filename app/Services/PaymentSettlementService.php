@@ -345,7 +345,7 @@ class PaymentSettlementService
             return true;
         }
 
-        if ($paymentStatus === 'paid') {
+        if (in_array($paymentStatus, ['paid', 'partially_paid'], true)) {
             return $this->isRepairRemainingBalancePhase($repair);
         }
 

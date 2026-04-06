@@ -219,7 +219,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   return (
     <div
       ref={dropdownRef}
-      className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 max-h-150 flex flex-col dark:bg-gray-900 dark:border-gray-700"
+      className="fixed left-2 right-2 top-16 z-70 flex max-h-[calc(100vh-5rem)] flex-col rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-150 dark:bg-gray-900 dark:border-gray-700"
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">

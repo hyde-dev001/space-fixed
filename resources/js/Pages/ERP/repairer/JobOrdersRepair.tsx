@@ -633,12 +633,21 @@ export default function JobOrdersRepair() {
             vatRate,
             taxMode,
           });
+          const primaryEmail = String(repair.email ?? '').trim();
+          const accountEmail = String(repair.user?.email ?? '').trim();
+          const hasPrimaryEmail = primaryEmail !== '' && !primaryEmail.toLowerCase().endsWith('@local.invalid');
+          const normalizedEmail = hasPrimaryEmail
+            ? primaryEmail
+            : (accountEmail !== '' ? accountEmail : primaryEmail);
+          const displayEmail = normalizedEmail === '' || normalizedEmail.toLowerCase().endsWith('@local.invalid')
+            ? 'N/A'
+            : normalizedEmail;
 
           return {
           id: repair.request_id || `REP-${repair.id}`,
           database_id: repair.id,
           customer: repair.customer_name || repair.user?.first_name + ' ' + repair.user?.last_name || 'N/A',
-          email: repair.email || repair.user?.email || 'N/A',
+          email: displayEmail,
           phone: repair.phone || 'N/A',
           item: repair.shoe_type || 'N/A',
           service: mappedServices || posServiceSummary || packageServiceName || 'N/A',

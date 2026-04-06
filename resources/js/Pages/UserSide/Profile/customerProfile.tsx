@@ -383,7 +383,7 @@ const CustomerProfile: React.FC = () => {
 										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" />
 									</svg>
 									{chatIconCount > 0 && (
-										<span className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+										<span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white ring-2 ring-[#16233b]">
 											{chatIconCount > 99 ? '99+' : chatIconCount}
 										</span>
 									)}
@@ -391,12 +391,22 @@ const CustomerProfile: React.FC = () => {
 							</div>
 						</div>
 						<div className="mt-4 flex items-center gap-3.5 md:gap-4">
-							<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/12 text-lg font-semibold uppercase text-white md:h-16 md:w-16 md:text-xl">
-								{photoPreview ? (
-									<img src={photoPreview} alt="Profile" className="h-full w-full rounded-full object-cover" />
-								) : (
-									profileInitial
-								)}
+							<div className="relative">
+								<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/12 text-lg font-semibold uppercase text-white md:h-16 md:w-16 md:text-xl">
+									{photoPreview ? (
+										<img src={photoPreview} alt="Profile" className="h-full w-full rounded-full object-cover" />
+									) : (
+										profileInitial
+									)}
+								</div>
+								<label className="absolute -bottom-1 -right-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/50 bg-white/20 text-white backdrop-blur-sm transition hover:bg-white/30 md:h-8 md:w-8 disabled:cursor-not-allowed disabled:opacity-60">
+									<span className="sr-only">Upload profile picture</span>
+									<svg className="h-3.5 w-3.5 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7a2 2 0 012-2h2l1.1-1.5A2 2 0 0110.7 3h2.6a2 2 0 011.6.5L16 5h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V7z" />
+										<circle cx="12" cy="12" r="3" strokeWidth={2} />
+									</svg>
+									<input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" disabled={isSubmitting} />
+								</label>
 							</div>
 							<div className="min-w-0">
 								<h1 className="truncate text-[1.15rem] font-semibold leading-tight text-white md:text-[1.45rem]">{displayName}</h1>
@@ -404,6 +414,9 @@ const CustomerProfile: React.FC = () => {
 								<div className="mt-2 inline-flex rounded-full bg-white/14 px-3 py-1 text-[10px] font-medium text-white/92 md:text-[11px]">
 									SoleSpace Member
 								</div>
+								<p className="mt-2 text-[10px] text-white/85 md:text-xs">
+									{isSubmitting ? 'Uploading photo...' : 'Tap camera icon to change profile photo'}
+								</p>
 							</div>
 						</div>
 					</div>
@@ -626,12 +639,14 @@ const CustomerProfile: React.FC = () => {
 					</a>
 					<a href="/messages" className={mobileNavItemClasses(activeMobileTab === 'inbox')}>
 						<span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'inbox' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
-						{chatIconCount > 0 && (
-							<span className="absolute -right-0.5 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
-								{chatIconCount > 99 ? '99+' : chatIconCount}
-							</span>
-						)}
-						<svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+						<div className="relative">
+							<svg className={mobileNavIconClasses(activeMobileTab === 'inbox')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-8 7l3.5-2H19a3 3 0 003-3V7a3 3 0 00-3-3H5a3 3 0 00-3 3v7a3 3 0 003 3h1l1 2z" /></svg>
+							{chatIconCount > 0 && (
+								<span className="absolute -right-2 -top-1.5 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+									{chatIconCount > 99 ? '99+' : chatIconCount}
+								</span>
+							)}
+						</div>
 						<span className={mobileNavLabelClasses(activeMobileTab === 'inbox')}>Inbox</span>
 					</a>
 					<a href="/customer-profile" className={mobileNavItemClasses(activeMobileTab === 'me')}>

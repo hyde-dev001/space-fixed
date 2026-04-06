@@ -325,6 +325,7 @@ const PointOfSalePage = () => {
 	const [serviceSearch, setServiceSearch] = useState<string>("");
 	const [customerName, setCustomerName] = useState<string>("");
 	const [customerPhone, setCustomerPhone] = useState<string>("");
+	const [customerEmail, setCustomerEmail] = useState<string>("");
 	const [servicePage, setServicePage] = useState<number>(1);
 
 	const [items, setItems] = useState<POSItem[]>([]);
@@ -766,6 +767,7 @@ const PointOfSalePage = () => {
 		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
 		setSelectedRepairOrder(targetOrder);
 		setCustomerName(targetOrder.customer);
+		setCustomerEmail("");
 		setItems([
 			{
 				id: `order-${targetOrder.id}-${resolvedDueType}`,
@@ -886,6 +888,7 @@ const PointOfSalePage = () => {
 		setNotes("");
 		setCustomerName("");
 		setCustomerPhone("");
+		setCustomerEmail("");
 		setSelectedRepairOrder(null);
 	};
 
@@ -903,6 +906,7 @@ const PointOfSalePage = () => {
 		]);
 		setSelectedRepairOrder(order);
 		setCustomerName(order.customer);
+		setCustomerEmail("");
 		setOrderSearch("");
 		setIsOrderModalOpen(false);
 	};
@@ -1097,7 +1101,7 @@ const PointOfSalePage = () => {
 					customer_id: hasRepairReference ? (selectedRepairOrder?.customerId ?? null) : null,
 					walk_in_name: customerName.trim() || null,
 					walk_in_phone: customerPhone.trim() || null,
-					walk_in_email: null,
+					walk_in_email: hasRepairReference ? null : (customerEmail.trim() || null),
 					manual_repair_subtotal: hasRepairReference ? null : Number(subtotal.toFixed(2)),
 					manual_service_summary: hasRepairReference ? null : (manualServiceSummary || "Walk-in POS service"),
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
@@ -1269,6 +1273,7 @@ const PointOfSalePage = () => {
 
 		setCustomerName(row.customer_name || "Walk-in Customer");
 		setCustomerPhone(row.phone || "");
+		setCustomerEmail("");
 		setItems([
 			{
 				id: `manual-queue-${row.id}-${row.next_due_type}`,
@@ -1355,8 +1360,8 @@ const PointOfSalePage = () => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card.</p>
-								<div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card. Email is optional.</p>
+								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Customer name"
 										value={customerName}
@@ -1375,6 +1380,15 @@ const PointOfSalePage = () => {
 										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
 										placeholder="Phone number"
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+									<input
+										title="Customer email (optional)"
+										type="email"
+										value={customerEmail}
+										onChange={(event) => setCustomerEmail(event.target.value)}
+										disabled={!!selectedRepairOrder}
+										placeholder="Email (optional)"
+										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 								</div>
 								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (

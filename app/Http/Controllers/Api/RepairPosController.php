@@ -206,7 +206,7 @@ class RepairPosController extends Controller
         $repair = RepairRequest::create([
             'request_id' => $requestId,
             'customer_name' => $walkInName,
-            'email' => $walkInEmail !== '' ? $walkInEmail : sprintf('walkin-pos-%s@local.invalid', strtolower(now()->format('YmdHis'))),
+            'email' => $walkInEmail !== '' ? $walkInEmail : 'N/A',
             'phone' => $walkInPhone !== '' ? $walkInPhone : 'N/A',
             'shoe_type' => 'Walk-in',
             'brand' => null,

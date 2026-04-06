@@ -29,6 +29,7 @@ interface ShoeViewSet {
 	brand?: string;
 	stock: number;
 	frames: string[];
+	previewFrames: string[];
 }
 
 interface ShoePickupAnimation {
@@ -63,6 +64,24 @@ const buildProductFrames = (product: Product): string[] => {
 		product.hover_image,
 		...(product.gallery_images ?? []),
 	]);
+};
+
+const buildPreviewFrames = (frames: string[], maxPreviewFrames: number): string[] => {
+	if (frames.length <= maxPreviewFrames) {
+		return frames;
+	}
+
+	const sampledFrames: string[] = [];
+	const step = frames.length / maxPreviewFrames;
+	for (let index = 0; index < maxPreviewFrames; index += 1) {
+		const sampledIndex = Math.min(frames.length - 1, Math.floor(index * step));
+		const frameSrc = frames[sampledIndex];
+		if (frameSrc && sampledFrames[sampledFrames.length - 1] !== frameSrc) {
+			sampledFrames.push(frameSrc);
+		}
+	}
+
+	return getUniqueFrames(sampledFrames);
 };
 
 const MAX_SHOWROOM_SLOTS = 84;
@@ -139,7 +158,15 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [showFocusedHint, setShowFocusedHint] = useState(true);
 	const [focusedFrameSrc, setFocusedFrameSrc] = useState<string | null>(null);
 	const [isFocusedImageVisible, setIsFocusedImageVisible] = useState(false);
-	const [isTouchScreenDevice, setIsTouchScreenDevice] = useState(false);
+	const [isTouchScreenDevice, setIsTouchScreenDevice] = useState(() => {
+		if (typeof window === 'undefined') {
+			return false;
+		}
+
+		const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+		const coarsePointerMatches = window.matchMedia('(pointer: coarse)').matches;
+		return hasTouchPoints || coarsePointerMatches || window.innerWidth <= 1024;
+	});
 	const [showLandscapeTip, setShowLandscapeTip] = useState(false);
 	const [joystickUiVector, setJoystickUiVector] = useState({ x: 0, y: 0 });
 	const lightsOn = isNightMode;
@@ -160,17 +187,23 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		: 60;
 
 	const shoes = useMemo<ShoeViewSet[]>(() => {
+		const useReducedPreview = isTouchScreenDevice;
+		const maxPreviewFrames = 10;
 		return products
-			.map((product) => ({
-				id: product.id,
-				name: product.name,
-				slug: product.slug,
-				brand: product.brand,
-				stock: product.stock_quantity,
-				frames: buildProductFrames(product),
-			}))
+			.map((product) => {
+				const frames = buildProductFrames(product);
+				return {
+					id: product.id,
+					name: product.name,
+					slug: product.slug,
+					brand: product.brand,
+					stock: product.stock_quantity,
+					frames,
+					previewFrames: useReducedPreview ? buildPreviewFrames(frames, maxPreviewFrames) : frames,
+				};
+			})
 			.filter((shoe) => shoe.frames.length > 0);
-	}, [products]);
+	}, [products, isTouchScreenDevice]);
 
 	useEffect(() => {
 		if (shoes.length === 0) return;
@@ -636,6 +669,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		if (!container) return;
 		setIsSceneLoading(true);
 		let isDisposed = false;
+		const lowPowerMode = isTouchScreenDevice;
 		const sceneColor = isNightMode ? '#0b1020' : '#e2e8f0';
 		const fogFar = isNightMode ? 45 : 70;
 		const wallMainColor = '#e7e3da';
@@ -688,7 +722,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const maxWalkZ = roomFrontZ - movementPadding;
 
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPowerMode ? 1.35 : 3));
 		renderer.setSize(container.clientWidth, container.clientHeight);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1056,7 +1090,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		createPoster(new THREE.Vector3(0, compactRoom ? 7.6 : (premiumRoom ? 9.2 : 8.9), roomBackZ + 0.3), 0, posterPanelMaterialBack);
 
 		const decorScale = compactRoom ? 0.86 : (premiumRoom ? 1.2 : 1);
-		const decorDensity = compactRoom ? 1 : (premiumRoom ? 3 : 2);
+		const decorDensity = lowPowerMode ? 1 : (compactRoom ? 1 : (premiumRoom ? 3 : 2));
 
 		const sofaFabricMaterial = new THREE.MeshStandardMaterial({
 			color: isNightMode ? '#d6d2c8' : '#e7e1d6',
@@ -1486,7 +1520,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const loader = new THREE.TextureLoader();
 		const textureCache = new Map<string, THREE.Texture>();
 		const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-		const allFrameUrls = Array.from(new Set(shoes.flatMap((shoe) => shoe.frames).filter(Boolean)));
+		const allFrameUrls = Array.from(new Set(
+			shoes.flatMap((shoe) => (lowPowerMode ? shoe.previewFrames : shoe.frames)).filter(Boolean),
+		));
 		const pendingFrameUrls = new Set(allFrameUrls);
 		const readyFrameUrls = new Set<string>();
 
@@ -1524,7 +1560,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			texture.colorSpace = THREE.SRGBColorSpace;
 			texture.minFilter = THREE.LinearMipmapLinearFilter;
 			texture.magFilter = THREE.LinearFilter;
-			texture.anisotropy = Math.min(maxAnisotropy, 16);
+			texture.anisotropy = Math.min(maxAnisotropy, lowPowerMode ? 4 : 16);
 			texture.generateMipmaps = true;
 			textureCache.set(url, texture);
 			return texture;
@@ -1613,7 +1649,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			}
 		}
 
-		const renderableSlotCount = Math.min(shoes.length, showroomDisplayCapacity, slotDefinitions.length);
+		const renderableSlotCount = Math.min(shoes.length, lowPowerMode ? Math.min(showroomDisplayCapacity, 36) : showroomDisplayCapacity, slotDefinitions.length);
 
 		slotDefinitions.slice(0, renderableSlotCount).forEach((slot, shoeIdx) => {
 			const frameIdx = 0;
@@ -1691,6 +1727,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 		const clock = new THREE.Clock();
 		let rafId = 0;
+		let previewFrameTick = 0;
 
 		const animate = () => {
 			const delta = Math.min(clock.getDelta(), 0.05);
@@ -1886,7 +1923,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				card.scale.z += (baseScaleZ - card.scale.z) * 0.18;
 			});
 
-			animatedShelfCards.forEach((entry) => {
+			const shouldAnimateShelfPreview = !lowPowerMode || (previewFrameTick++ % 2 === 0);
+			if (shouldAnimateShelfPreview) {
+				animatedShelfCards.forEach((entry) => {
 				if (activePickupShoeIdx !== null && entry.shoeIdx === activePickupShoeIdx) return;
 
 				const frames = shoes[entry.shoeIdx]?.frames;
@@ -1898,7 +1937,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				entry.lastFrameIdx = nextFrameIdx;
 				entry.material.map = getTexture(frames[nextFrameIdx]);
 				entry.material.needsUpdate = true;
-			});
+				});
+			}
 
 			swipeGuideGroup.visible = showSwipeHintRef.current;
 			if (swipeGuideGroup.visible) {
