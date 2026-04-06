@@ -13,6 +13,18 @@ use Illuminate\Support\Facades\Log;
 
 class ShippingEstimateController extends Controller
 {
+    private const CITY_COORDINATE_FALLBACKS = [
+        'bacoor' => ['lat' => 14.4598, 'lng' => 120.9290],
+        'imus' => ['lat' => 14.4297, 'lng' => 120.9367],
+        'dasmariñas' => ['lat' => 14.3294, 'lng' => 120.9367],
+        'dasmarinas' => ['lat' => 14.3294, 'lng' => 120.9367],
+        'general trias' => ['lat' => 14.3830, 'lng' => 120.8845],
+        'trece martires' => ['lat' => 14.2854, 'lng' => 120.8671],
+        'tagaytay' => ['lat' => 14.1153, 'lng' => 120.9629],
+        'city of cavite' => ['lat' => 14.4830, 'lng' => 120.8980],
+        'cavite city' => ['lat' => 14.4830, 'lng' => 120.8980],
+    ];
+
     public function __construct(private readonly ShippingEstimateService $shippingEstimateService)
     {
     }
@@ -163,7 +175,35 @@ class ShippingEstimateController extends Controller
             }
         }
 
+        if ($city !== '') {
+            $fallbackCoordinates = $this->resolveCityFallbackCoordinates($city);
+            if ($fallbackCoordinates) {
+                return $fallbackCoordinates;
+            }
+        }
+
         return null;
+    }
+
+    private function resolveCityFallbackCoordinates(string $city): ?array
+    {
+        $normalizedCity = $this->normalizeLocationKey($city);
+
+        return self::CITY_COORDINATE_FALLBACKS[$normalizedCity] ?? null;
+    }
+
+    private function normalizeLocationKey(string $value): string
+    {
+        $normalized = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+
+        if ($normalized === false || $normalized === null) {
+            $normalized = $value;
+        }
+
+        $normalized = strtolower(trim($normalized));
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+
+        return $normalized;
     }
 
     private function resolveShopCoordinates(ShopOwner $shopOwner): ?array

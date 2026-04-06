@@ -140,4 +140,89 @@ class RepairMaterialUsageApiTest extends TestCase
             ->getJson("/api/shop-owner/repairs/{$repairOfB->id}/materials")
             ->assertStatus(404);
     }
+
+    #[Test]
+    public function manual_pos_checkout_with_package_and_services_generates_template_plan_items(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+            'repair_payment_policy' => 'deposit_50',
+        ]);
+
+        $service = \App\Models\RepairService::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Deep Sole Clean',
+            'category' => 'Cleaning',
+            'price' => 900,
+            'duration' => '45 min',
+            'status' => 'Active',
+        ]);
+
+        $package = \App\Models\RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Premium Deep Clean Package',
+            'description' => 'Package with template-linked materials',
+            'package_price' => 900,
+            'status' => 'active',
+        ]);
+        $package->services()->sync([$service->id]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Premium Cleaning Solution',
+            'sku' => 'MAT-PREM-CLEAN-01',
+            'available_quantity' => 12,
+            'reserved_quantity' => 0,
+            'reorder_level' => 2,
+            'is_active' => true,
+        ]);
+
+        $package->materialTemplateItems()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $material->id,
+            'template_type' => 'repair_package',
+            'template_id' => $package->id,
+            'default_quantity' => 2,
+            'is_critical' => true,
+            'tolerance_percent' => 15,
+            'created_by' => null,
+        ]);
+
+        $checkoutResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Template Plan Walk-in',
+            'walk_in_phone' => '09171112222',
+            'idempotency_key' => 'manual-pos-template-plan-001',
+            'manual_repair_subtotal' => 900,
+            'manual_service_summary' => 'Premium Deep Clean Package',
+            'manual_payment_policy' => 'deposit_50',
+            'manual_repair_package_id' => $package->id,
+            'manual_service_ids' => [$service->id],
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 450],
+            ],
+        ]);
+
+        $checkoutResponse->assertOk()->assertJsonPath('success', true);
+
+        $transactionId = (int) $checkoutResponse->json('transaction_id');
+        $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
+        $repair = RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+
+        $this->assertSame((int) $package->id, (int) $repair->repair_package_id);
+        $this->assertSame([$service->id], $repair->services()->pluck('repair_services.id')->all());
+
+        $materialsResponse = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson("/api/shop-owner/repairs/{$repair->id}/materials");
+
+        $materialsResponse->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(1, 'data.plan_items')
+            ->assertJsonPath('data.plan_items.0.inventory_item_id', (int) $material->id)
+            ->assertJsonPath('data.plan_items.0.planned_quantity', 2);
+    }
 }

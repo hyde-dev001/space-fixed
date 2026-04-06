@@ -38,6 +38,7 @@ type ServicePackageOption = {
 	name: string;
 	description: string;
 	includedServices: string[];
+	serviceIds: number[];
 	price: number;
 	saveText: string;
 };
@@ -52,6 +53,8 @@ type POSItem = {
 	qty: number;
 	unitPrice: number;
 	source: "manual" | "repair-order" | "service-catalog" | "package";
+	manualRepairPackageId?: number | null;
+	manualServiceIds?: number[];
 };
 
 type ReceiptSnapshot = {
@@ -471,6 +474,11 @@ const PointOfSalePage = () => {
 					const mappedPackages: ServicePackageOption[] = rawPackages
 						.map((entry: any, index: number) => {
 							const packagePrice = Number(entry?.effective_package_price ?? entry?.package_price ?? entry?.price ?? 0);
+							const serviceIds = Array.isArray(entry?.services)
+								? entry.services
+									.map((service: any) => Number(service?.id ?? 0))
+									.filter((id: number) => Number.isInteger(id) && id > 0)
+								: [];
 							const serviceNames = Array.isArray(entry?.services)
 								? entry.services
 									.map((service: any) => String(service?.name ?? "").trim())
@@ -484,6 +492,7 @@ const PointOfSalePage = () => {
 								name: String(entry?.name ?? "Repair Package"),
 								description: String(entry?.description ?? ""),
 								includedServices: serviceNames,
+								serviceIds,
 								price: Number.isFinite(packagePrice) ? packagePrice : 0,
 								saveText: savings > 0 ? `Save P${savings.toFixed(2)}` : "",
 							};
@@ -822,6 +831,10 @@ const PointOfSalePage = () => {
 				qty: 1,
 				unitPrice: service.price,
 				source: "service-catalog",
+				manualServiceIds: (() => {
+					const serviceId = Number(service.id);
+					return Number.isInteger(serviceId) && serviceId > 0 ? [serviceId] : [];
+				})(),
 			},
 		]);
 	};
@@ -838,6 +851,11 @@ const PointOfSalePage = () => {
 				qty: 1,
 				unitPrice: pkg.price,
 				source: "package",
+				manualRepairPackageId: (() => {
+					const packageId = Number(pkg.id);
+					return Number.isInteger(packageId) && packageId > 0 ? packageId : null;
+				})(),
+				manualServiceIds: pkg.serviceIds,
 			},
 		]);
 	};
@@ -966,6 +984,19 @@ const PointOfSalePage = () => {
 			? `repair-${repairRequestId}-${dueTypeForCheckout}-${Date.now()}`
 			: `repair-manual-${Date.now()}`;
 		const manualServiceSummary = items.map((item) => item.label).join(", ").slice(0, 1800);
+		const manualRepairPackageId = hasRepairReference
+			? null
+			: (items.find((item) => item.source === "package" && Number.isInteger(item.manualRepairPackageId as number) && Number(item.manualRepairPackageId) > 0)?.manualRepairPackageId ?? null);
+		const manualServiceIds = hasRepairReference
+			? []
+			: Array.from(
+				new Set(
+					items
+						.flatMap((item) => item.manualServiceIds ?? [])
+						.map((id) => Number(id))
+						.filter((id) => Number.isInteger(id) && id > 0),
+				),
+			);
 
 		setIsProcessingPayment(true);
 		try {
@@ -983,6 +1014,8 @@ const PointOfSalePage = () => {
 					manual_repair_subtotal: hasRepairReference ? null : Number(subtotal.toFixed(2)),
 					manual_service_summary: hasRepairReference ? null : (manualServiceSummary || "Walk-in POS service"),
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
+					manual_repair_package_id: hasRepairReference ? null : manualRepairPackageId,
+					manual_service_ids: hasRepairReference ? [] : manualServiceIds,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),

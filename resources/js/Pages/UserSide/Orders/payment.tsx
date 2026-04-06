@@ -1098,10 +1098,13 @@ const Payment: React.FC = () => {
 
   const rawSubtotal = Number(checkoutData.total_amount ?? 0);
   const checkoutShipping = Number(checkoutData.shipping_fee);
+  const hasSelectedCity = shippingCity.trim().length > 0;
   const shipping = !isPremiumPayment && !isRepairPayment
-    ? (Number.isFinite(checkoutShipping)
-      ? Math.max(0, checkoutShipping)
-      : Math.max(0, Number(shippingEstimate?.max_fee ?? 0)))
+    ? (hasSelectedCity
+      ? (Number.isFinite(checkoutShipping)
+        ? Math.max(0, checkoutShipping)
+        : Math.max(0, Number(shippingEstimate?.max_fee ?? 0)))
+      : 0)
     : 0;
   const parsedVatRate = Number(checkoutData.vat_rate);
   const vatRatePercent = Number.isFinite(parsedVatRate) && parsedVatRate >= 0 ? parsedVatRate : 12;
@@ -1129,10 +1132,20 @@ const Payment: React.FC = () => {
   const vatLabel = `VAT (${vatRatePercent}%)`;
   const vatDisplay = `₱${vatAmount.toLocaleString()}`;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);
-  const hasShippingEstimate = Boolean(shippingEstimate);
-  const shippingSummaryValue = hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable');
-  const shippingCarrierNote = '';
-  const shippingPayLaterNotice = '';
+  const hasShippingEstimate = Boolean(shippingEstimate) && hasSelectedCity;
+  const shippingSummaryValue = hasSelectedCity
+    ? (hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
+    : 'Select a city';
+  const shippingCarrierNote = hasShippingEstimate
+    ? ''
+    : (hasSelectedCity
+      ? (shippingEstimateReason || 'Complete your delivery address to calculate shipping.')
+      : 'Select a city to calculate shipping.');
+  const shippingPayLaterNotice = hasShippingEstimate
+    ? ''
+    : (hasSelectedCity
+      ? 'Shipping fee must be calculated before you can continue to payment.'
+      : 'Shipping fee will appear after you select a city.');
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');

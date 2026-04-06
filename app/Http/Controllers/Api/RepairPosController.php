@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\PosPaymentLine;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
+use App\Models\RepairPackage;
 use App\Models\RepairRequest;
+use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\RepairPosPaymentService;
@@ -31,6 +33,9 @@ class RepairPosController extends Controller
             'manual_repair_subtotal' => ['nullable', 'numeric', 'min:0.01'],
             'manual_service_summary' => ['nullable', 'string', 'max:2000'],
             'manual_payment_policy' => ['nullable', 'string', 'in:deposit_50,full_upfront'],
+            'manual_repair_package_id' => ['nullable', 'integer', 'exists:repair_packages,id'],
+            'manual_service_ids' => ['nullable', 'array'],
+            'manual_service_ids.*' => ['integer', 'exists:repair_services,id'],
             'payment_lines' => ['required', 'array', 'min:1'],
             'payment_lines.*.tender_type' => ['required', 'string', 'in:cash,paymongo_card,paymongo_wallet'],
             'payment_lines.*.amount' => ['required', 'numeric', 'min:0.01'],
@@ -139,6 +144,65 @@ class RepairPosController extends Controller
         $resolvedPolicy = $manualPolicy === 'deposit_50' ? 'deposit_50' : 'full_upfront';
         $isIndividualShop = $this->isIndividualShopOwner($shopOwnerId);
 
+        $resolvedPackage = null;
+        $requestedPackageId = (int) ($payload['manual_repair_package_id'] ?? 0);
+        if ($requestedPackageId > 0) {
+            $resolvedPackage = RepairPackage::withTrashed()
+                ->where('id', $requestedPackageId)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->first();
+        }
+
+        $requestedServiceIds = collect((array) ($payload['manual_service_ids'] ?? []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($requestedServiceIds->isEmpty() && $resolvedPackage) {
+            $requestedServiceIds = $resolvedPackage->services()->pluck('repair_services.id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values();
+        }
+
+        $resolvedServices = collect();
+        if ($requestedServiceIds->isNotEmpty()) {
+            $resolvedServices = RepairService::withTrashed()
+                ->whereIn('id', $requestedServiceIds)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->get(['id', 'name', 'category', 'price', 'duration']);
+        }
+
+        $serviceSnapshots = $resolvedServices->map(function (RepairService $service) {
+            return [
+                'id' => (int) $service->id,
+                'name' => (string) $service->name,
+                'category' => (string) ($service->category ?? 'General'),
+                'price' => (float) ($service->price ?? 0),
+                'duration' => $service->duration,
+            ];
+        })->values()->all();
+
+        $includedServicesSnapshot = !empty($serviceSnapshots)
+            ? $serviceSnapshots
+            : [[
+                'id' => null,
+                'name' => $snapshotServiceName,
+                'category' => 'Walk-in POS',
+                'price' => $subtotal,
+                'duration' => null,
+            ]];
+
+        $resolvedServiceIds = $resolvedServices->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        $resolvedPackageName = $resolvedPackage ? (string) ($resolvedPackage->name ?? '') : null;
+        $resolvedPackagePrice = $resolvedPackage ? (float) ($resolvedPackage->package_price ?? 0) : null;
+
         $repair = RepairRequest::create([
             'request_id' => $requestId,
             'customer_name' => $walkInName,
@@ -152,22 +216,17 @@ class RepairPosController extends Controller
             'images' => [],
             'total' => $subtotal,
             'final_total' => $subtotal,
-            'package_price' => null,
+            'repair_package_id' => $resolvedPackage ? (int) $resolvedPackage->id : null,
+            'package_price' => $resolvedPackagePrice,
             'add_ons_total' => 0,
-            'included_services_snapshot' => [[
-                'id' => null,
-                'name' => $snapshotServiceName,
-                'category' => 'Walk-in POS',
-                'price' => $subtotal,
-                'duration' => null,
-            ]],
+            'included_services_snapshot' => $includedServicesSnapshot,
             'add_on_services_snapshot' => null,
             'pricing_breakdown' => [
                 'mode' => 'manual_pos',
-                'package_id' => null,
-                'package_name' => null,
+                'package_id' => $resolvedPackage ? (int) $resolvedPackage->id : null,
+                'package_name' => $resolvedPackageName,
                 'included_services_total' => $subtotal,
-                'package_price' => null,
+                'package_price' => $resolvedPackagePrice,
                 'add_ons_total' => 0,
                 'base_total' => $subtotal,
                 'materials_total' => 0,
@@ -185,6 +244,10 @@ class RepairPosController extends Controller
             'return_delivery_method' => 'walk_in',
             'status' => 'pending',
         ]);
+
+        if ($resolvedServiceIds->isNotEmpty()) {
+            $repair->services()->sync($resolvedServiceIds->all());
+        }
 
         if (!$isIndividualShop) {
             $this->assignManualPosRepairOwner($repair, $actor, $shopOwnerId);
