@@ -177,3 +177,18 @@ Regression:
 2. Staff can collect remaining 50% when record reaches `ready_for_pickup`.
 3. No old manual records appear in new queue.
 4. Manual walk-in records stay out of generic Job Orders page.
+
+## 12. Verification Log
+
+Date: 2026-04-06
+
+Automated checks completed:
+
+1. `php artisan test tests/Feature/RepairPosManualQueueTest.php` - PASS (4 tests, 13 assertions)
+2. `php artisan test --filter=RepairPosPaymentFlowTest` - PASS (21 tests, 98 assertions)
+3. `php artisan test --filter=RepairMaterialCompletionVarianceTest` - PASS (2 tests, 6 assertions)
+
+Manual UI checklist status:
+
+1. Manual end-to-end browser verification not executed in this run.
+2. Recommended before release: create walk-in, advance statuses to `ready_for_pickup`, collect balance via queue, advance to `picked_up`, verify queue removal and no job-order contamination.

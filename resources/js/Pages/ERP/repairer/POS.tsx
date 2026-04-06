@@ -80,6 +80,22 @@ type ReceiptSnapshot = {
 	items: POSItem[];
 };
 
+type ManualQueueStatus = "pending" | "received" | "in_progress" | "ready_for_pickup" | "picked_up";
+
+type ManualQueueRow = {
+	id: number;
+	request_id: string;
+	customer_name: string;
+	phone: string;
+	status: ManualQueueStatus;
+	payment_policy: "deposit_50" | "full_upfront";
+	total: number;
+	paid: number;
+	remaining_balance: number;
+	next_due_type: PosDueType | null;
+	receipt_no?: string | null;
+};
+
 const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 	const status = String(receipt.latestRefund?.status || "").toLowerCase();
 	return ["requested", "approved", "processing", "succeeded"].includes(status);
@@ -183,6 +199,14 @@ const formatPeso = (value: number): string => {
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number.isFinite(value) ? value : 0);
+};
+
+const MANUAL_QUEUE_NEXT_STATUS: Record<ManualQueueStatus, ManualQueueStatus | null> = {
+	pending: "received",
+	received: "in_progress",
+	in_progress: "ready_for_pickup",
+	ready_for_pickup: "picked_up",
+	picked_up: null,
 };
 
 const toSafeNumber = (value: string): number => {
@@ -292,6 +316,10 @@ const PointOfSalePage = () => {
 	const [serviceCatalog, setServiceCatalog] = useState<RepairServiceOption[]>([]);
 	const [servicePackages, setServicePackages] = useState<ServicePackageOption[]>([]);
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+	const [manualQueue, setManualQueue] = useState<ManualQueueRow[]>([]);
+	const [manualQueueSearch, setManualQueueSearch] = useState<string>("");
+	const [manualQueueLoading, setManualQueueLoading] = useState<boolean>(false);
+	const [manualQueueActionLoadingId, setManualQueueActionLoadingId] = useState<number | null>(null);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -448,6 +476,27 @@ const PointOfSalePage = () => {
 		return () => {
 			isMounted = false;
 		};
+	}, []);
+
+	const fetchManualQueue = async (searchValue = "") => {
+		setManualQueueLoading(true);
+		try {
+			const query = searchValue.trim();
+			const response = await axios.get('/api/repair-pos/manual-queue', {
+				params: query.length > 0 ? { q: query } : {},
+				withCredentials: true,
+			});
+			const data = Array.isArray(response?.data?.data) ? response.data.data : [];
+			setManualQueue(data);
+		} catch {
+			setManualQueue([]);
+		} finally {
+			setManualQueueLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		fetchManualQueue();
 	}, []);
 
 	useEffect(() => {
@@ -1034,6 +1083,7 @@ const PointOfSalePage = () => {
 			setReceiptSnapshot(snapshot);
 			setReceiptHistory((prev) => [snapshot, ...prev]);
 			setRepairOrders((prev) => prev.filter((entry) => entry.id !== String(repairRequestId)));
+			await fetchManualQueue(manualQueueSearch);
 			resetOrderInputs();
 
 			await Swal.fire({
@@ -1075,6 +1125,72 @@ const PointOfSalePage = () => {
 		setTimeout(() => {
 			window.print();
 		}, 80);
+	};
+
+	const advanceManualQueueStatus = async (row: ManualQueueRow) => {
+		const nextStatus = MANUAL_QUEUE_NEXT_STATUS[row.status];
+		if (!nextStatus) return;
+
+		setManualQueueActionLoadingId(row.id);
+		try {
+			await axios.patch(`/api/repair-pos/manual-queue/${row.id}/status`, { status: nextStatus }, { withCredentials: true });
+			await fetchManualQueue(manualQueueSearch);
+			await Swal.fire({
+				icon: 'success',
+				title: 'Status updated',
+				timer: 1200,
+				showConfirmButton: false,
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: 'error',
+				title: 'Status update failed',
+				text: error?.response?.data?.message || 'Please try again.',
+				confirmButtonColor: '#dc2626',
+			});
+		} finally {
+			setManualQueueActionLoadingId(null);
+		}
+	};
+
+	const continueManualQueuePayment = (row: ManualQueueRow) => {
+		if (!row.next_due_type) return;
+
+		const dueAmount = row.next_due_type === "deposit"
+			? Math.round((Number(row.total) * 0.5) * 100) / 100
+			: row.next_due_type === "balance"
+				? Number(row.remaining_balance)
+				: Number(row.remaining_balance > 0 ? row.remaining_balance : row.total);
+
+		if (!(dueAmount > 0)) {
+			return;
+		}
+
+		setSelectedRepairOrder({
+			id: String(row.id),
+			customer: row.customer_name,
+			customerId: null,
+			paymentPolicy: row.payment_policy,
+			paymentStatus: row.remaining_balance <= 0 ? "completed" : (row.paid > 0 ? "paid" : "unpaid"),
+			status: row.status,
+			returnDeliveryMethod: "walk_in",
+			dueTypeToCollect: row.next_due_type,
+			service: row.request_id,
+			amount: Number(row.total),
+			requestedServices: [row.request_id],
+		});
+
+		setCustomerName(row.customer_name || "Walk-in Customer");
+		setCustomerPhone(row.phone || "");
+		setItems([
+			{
+				id: `manual-queue-${row.id}-${row.next_due_type}`,
+				label: `${row.request_id} (${row.next_due_type})`,
+				qty: 1,
+				unitPrice: dueAmount,
+				source: "repair-order",
+			},
+		]);
 	};
 
 	return (
@@ -1180,6 +1296,72 @@ const PointOfSalePage = () => {
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
 								{selectedRepairOrder && (
 									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+								)}
+							</div>
+
+							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+								<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+									<div>
+										<h2 className="text-base font-semibold text-slate-900">Manual Walk-in Queue</h2>
+										<p className="text-xs text-slate-500">Search by receipt, customer name, or phone and continue status/payment flow.</p>
+									</div>
+									<div className="flex items-center gap-2">
+										<input
+											title="Search manual queue"
+											value={manualQueueSearch}
+											onChange={(event) => setManualQueueSearch(event.target.value)}
+											placeholder="Receipt / name / phone"
+											className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+										/>
+										<button
+											type="button"
+											onClick={() => fetchManualQueue(manualQueueSearch)}
+											className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-700"
+										>
+											Search
+										</button>
+									</div>
+								</div>
+
+								{manualQueueLoading ? (
+									<div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">Loading manual queue...</div>
+								) : manualQueue.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">No manual walk-in records ready for queue.</div>
+								) : (
+									<div className="space-y-2">
+										{manualQueue.map((row) => {
+											const nextStatus = MANUAL_QUEUE_NEXT_STATUS[row.status];
+											return (
+												<div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+													<div>
+														<p className="text-sm font-semibold text-slate-900">{row.request_id}</p>
+														<p className="text-xs text-slate-600">{row.customer_name} • {row.phone || "No phone"}</p>
+														{row.receipt_no && <p className="text-xs text-slate-600">Receipt: {row.receipt_no}</p>}
+														<p className="text-xs text-slate-600">Status: {row.status}</p>
+														<p className="text-xs text-slate-700">Remaining: {formatPeso(Number(row.remaining_balance || 0))}</p>
+													</div>
+													<div className="flex items-center gap-2">
+														<button
+															type="button"
+															onClick={() => advanceManualQueueStatus(row)}
+															disabled={!nextStatus || manualQueueActionLoadingId === row.id}
+															className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+														>
+															{manualQueueActionLoadingId === row.id ? "Updating..." : (nextStatus ? `Mark ${nextStatus}` : "Done")}
+														</button>
+														<button
+															type="button"
+															onClick={() => continueManualQueuePayment(row)}
+															disabled={!row.next_due_type}
+															className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+														>
+															Continue Payment
+														</button>
+													</div>
+												</div>
+											);
+										})}
+									</div>
 								)}
 							</div>
 						</div>

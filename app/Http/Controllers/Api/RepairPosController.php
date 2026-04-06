@@ -178,6 +178,7 @@ class RepairPosController extends Controller
             'payment_status_derived' => 'unpaid',
             'total_paid_amount' => 0,
             'total_refunded_amount' => 0,
+            'manual_pos_queue_enabled' => true,
             'delivery_method' => 'walk_in',
             'intake_delivery_method' => 'walk_in',
             'return_delivery_method' => 'walk_in',
@@ -357,6 +358,141 @@ class RepairPosController extends Controller
         return response()->json([
             'success' => true,
             'data' => $rows,
+        ]);
+    }
+
+    public function listManualQueue(Request $request)
+    {
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
+        if ($shopOwnerId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 401);
+        }
+
+        $q = trim((string) $request->query('q', ''));
+
+        $rows = RepairRequest::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('manual_pos_queue_enabled', true)
+            ->where('request_id', 'like', 'REP-POS-%')
+            ->whereIn('status', ['pending', 'received', 'in_progress', 'ready_for_pickup'])
+            ->with(['latestPosTransaction.receipt'])
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($inner) use ($q) {
+                    $inner->where('request_id', 'like', "%{$q}%")
+                        ->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('phone', 'like', "%{$q}%")
+                        ->orWhereHas('latestPosTransaction.receipt', function ($receiptQuery) use ($q) {
+                            $receiptQuery->where('receipt_no', 'like', "%{$q}%");
+                        });
+                });
+            })
+            ->orderByDesc('id')
+            ->get();
+
+        $data = $rows->map(function (RepairRequest $repair) {
+            $total = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
+            $paid = round((float) ($repair->total_paid_amount ?? 0), 2);
+            $refunded = round((float) ($repair->total_refunded_amount ?? 0), 2);
+            $remaining = max(0, round($total - $paid + $refunded, 2));
+
+            $policy = (string) ($repair->payment_policy_snapshot ?? $repair->payment_policy ?? 'deposit_50');
+            $normalizedPolicy = $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
+            $status = (string) $repair->status;
+            $nextDueType = null;
+
+            if ($remaining > 0) {
+                if ($normalizedPolicy === 'deposit_50') {
+                    if ($paid <= 0.0) {
+                        $nextDueType = 'deposit';
+                    } elseif ($status === 'ready_for_pickup') {
+                        $nextDueType = 'balance';
+                    }
+                } else {
+                    $nextDueType = 'full';
+                }
+            }
+
+            return [
+                'id' => (int) $repair->id,
+                'request_id' => (string) $repair->request_id,
+                'customer_name' => (string) $repair->customer_name,
+                'phone' => (string) ($repair->phone ?? ''),
+                'status' => $status,
+                'payment_policy' => $normalizedPolicy,
+                'total' => $total,
+                'paid' => $paid,
+                'refunded' => $refunded,
+                'remaining_balance' => $remaining,
+                'next_due_type' => $nextDueType,
+                'receipt_no' => $repair->latestPosTransaction?->receipt?->receipt_no,
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+        ]);
+    }
+
+    public function updateManualQueueStatus(Request $request, int $repairId)
+    {
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
+        if ($shopOwnerId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 401);
+        }
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:received,in_progress,ready_for_pickup,picked_up'],
+        ]);
+
+        $repair = RepairRequest::query()
+            ->where('id', $repairId)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('manual_pos_queue_enabled', true)
+            ->firstOrFail();
+
+        $allowedTransitions = [
+            'pending' => 'received',
+            'received' => 'in_progress',
+            'in_progress' => 'ready_for_pickup',
+            'ready_for_pickup' => 'picked_up',
+        ];
+
+        $currentStatus = (string) $repair->status;
+        $targetStatus = (string) $validated['status'];
+
+        if (!isset($allowedTransitions[$currentStatus]) || $allowedTransitions[$currentStatus] !== $targetStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => "Invalid transition from {$currentStatus} to {$targetStatus}.",
+            ], 422);
+        }
+
+        $updates = ['status' => $targetStatus];
+        if ($targetStatus === 'received') {
+            $updates['received_at'] = now();
+        }
+        if ($targetStatus === 'in_progress') {
+            $updates['started_at'] = now();
+        }
+        if ($targetStatus === 'ready_for_pickup') {
+            $updates['completed_at'] = now();
+        }
+        if ($targetStatus === 'picked_up') {
+            $updates['picked_up_at'] = now();
+        }
+
+        $repair->update($updates);
+
+        return response()->json([
+            'success' => true,
+            'data' => $repair->fresh(),
         ]);
     }
 

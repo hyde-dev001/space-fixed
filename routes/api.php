@@ -228,6 +228,8 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
 
 Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(function () {
     Route::post('/checkout', [\App\Http\Controllers\Api\RepairPosController::class, 'checkout']);
+    Route::get('/manual-queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listManualQueue']);
+    Route::patch('/manual-queue/{repairId}/status', [\App\Http\Controllers\Api\RepairPosController::class, 'updateManualQueueStatus']);
     Route::get('/transactions', [\App\Http\Controllers\Api\RepairPosController::class, 'listTransactions']);
     Route::post('/payment-lines/{line}/verify', [\App\Http\Controllers\Api\RepairPosController::class, 'verifyPaymentLine']);
     Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund']);
