@@ -797,6 +797,10 @@ class RepairRequestController extends Controller
             'evidence' => ['required', 'array', 'min:1'],
             'evidence.*.type' => ['required', 'in:photo,video'],
             'evidence.*.url' => ['required', 'url'],
+            'preferred_return_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
+            'preferred_return_account_name' => ['nullable', 'string', 'max:120'],
+            'preferred_return_account_ref' => ['nullable', 'string', 'max:120'],
+            'customer_payout_consent' => ['nullable', 'boolean'],
         ]);
 
         $sourceTransaction = PosTransaction::query()
@@ -813,12 +817,16 @@ class RepairRequestController extends Controller
         }
 
         $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user) {
-            $refund = $refundService->requestRefund($sourceTransaction, [
+            $refund = $refundService->createRefundWithSplitLegs($sourceTransaction, [
                 'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
                 'requested_amount' => (float) $validated['requested_amount'],
                 'reason_code' => $validated['reason_code'],
                 'reason_notes' => $validated['reason_notes'] ?? null,
+                'preferred_return_channel' => $validated['preferred_return_channel'] ?? null,
+                'preferred_return_account_name' => $validated['preferred_return_account_name'] ?? null,
+                'preferred_return_account_ref' => $validated['preferred_return_account_ref'] ?? null,
+                'customer_payout_consent' => (bool) ($validated['customer_payout_consent'] ?? false),
             ], (int) $user->id);
 
             $refund->update([

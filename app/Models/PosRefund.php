@@ -32,7 +32,15 @@ class PosRefund extends Model
         'repairer_reviewed_by',
         'repairer_reviewed_at',
         'evidence_snapshot',
+        'preferred_return_channel',
+        'preferred_return_account_name',
+        'preferred_return_account_ref',
+        'customer_payout_consent',
         'execution_mode',
+        'execution_channel',
+        'execution_reference',
+        'execution_amount',
+        'execution_proof_urls',
         'execution_notes',
         'paymongo_payment_id',
         'paymongo_refund_id',
@@ -55,6 +63,9 @@ class PosRefund extends Model
         'failed_at' => 'datetime',
         'repairer_reviewed_at' => 'datetime',
         'evidence_snapshot' => 'array',
+        'customer_payout_consent' => 'boolean',
+        'execution_amount' => 'decimal:2',
+        'execution_proof_urls' => 'array',
     ];
 
     public function sourceTransaction(): BelongsTo
@@ -65,6 +76,11 @@ class PosRefund extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(PosRefundLine::class);
+    }
+
+    public function legs(): HasMany
+    {
+        return $this->hasMany(PosRefundLeg::class, 'pos_refund_id');
     }
 
     public function repairRequest(): BelongsTo

@@ -5,10 +5,12 @@ import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { refundStageLabel } from './refundWorkflow';
 import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
+import { buildRepairRefundPayload, type PreferredReturnChannel, type RefundEvidenceItem } from './refundPayloadBuilder';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
 const REPAIR_VAT_RATE_PERCENT = 12;
+
 
 type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
 type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected';
@@ -384,7 +386,10 @@ const MyRepairs: React.FC = () => {
   const [refundStep, setRefundStep] = useState<number>(1);
   const [refundReason, setRefundReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
-  const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
+  const [refundMethod, setRefundMethod] = useState<string>('gcash');
+  const [refundAccountName, setRefundAccountName] = useState<string>('');
+  const [refundAccountRef, setRefundAccountRef] = useState<string>('');
+  const [refundPayoutConsent, setRefundPayoutConsent] = useState<boolean>(false);
   const [refundNote, setRefundNote] = useState<string>('');
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
   const [latestRefundByRepairId, setLatestRefundByRepairId] = useState<Record<number, RepairRefundStatus>>({});
@@ -1073,7 +1078,7 @@ const MyRepairs: React.FC = () => {
       return;
     }
     
-    if (refundMedia.length === 0) {
+    if (!isMediaRequirementMet()) {
       Swal.fire({ icon: 'warning', title: 'Please upload at least one photo or video', confirmButtonColor: '#000000' });
       return;
     }
@@ -1101,10 +1106,31 @@ const MyRepairs: React.FC = () => {
         : '';
       const reasonNotes = [refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
 
-      const evidence = refundMedia.map((file) => ({
-        type: file.type.startsWith('video/') ? 'video' : 'photo',
+      const evidence: RefundEvidenceItem[] = refundMedia.map((file) => ({
+        type: (file.type.startsWith('video/') ? 'video' : 'photo') as RefundEvidenceItem['type'],
         url: `https://evidence.local/${encodeURIComponent(file.name)}`,
       }));
+
+      const preferredReturnChannel: PreferredReturnChannel =
+        refundMethod === 'card'
+          ? 'card'
+          : refundMethod === 'bank_transfer'
+            ? 'bank_transfer'
+            : refundMethod === 'manual_cash'
+              ? 'manual_cash'
+              : 'gcash';
+
+      const payload = buildRepairRefundPayload({
+        sourceTransactionId: targetOrder.latest_pos_transaction_id,
+        requestedAmount: refundableAmount,
+        reasonCode: reasonCode,
+        reasonNotes: reasonNotes,
+        preferredReturnChannel,
+        preferredReturnAccountName: refundAccountName.trim(),
+        preferredReturnAccountRef: refundAccountRef.trim(),
+        customerPayoutConsent: refundPayoutConsent,
+        evidence,
+      });
 
       const response = await fetch(`/api/customer/repairs/${targetOrder.id}/refunds`, {
         method: 'POST',
@@ -1114,14 +1140,7 @@ const MyRepairs: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
-        body: JSON.stringify({
-          source_transaction_id: targetOrder.latest_pos_transaction_id,
-          request_type: 'full',
-          requested_amount: refundableAmount,
-          reason_code: reasonCode,
-          reason_notes: reasonNotes,
-          evidence,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const raw = await response.text();
@@ -1150,6 +1169,10 @@ const MyRepairs: React.FC = () => {
       setRefundStep(1);
       setRefundReason('');
       setRefundMedia([]);
+      setRefundMethod('gcash');
+      setRefundAccountName('');
+      setRefundAccountRef('');
+      setRefundPayoutConsent(false);
       setRefundNote('');
 
       Swal.fire({
@@ -1176,23 +1199,9 @@ const MyRepairs: React.FC = () => {
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
-      const currentVideos = refundMedia.filter(file => isVideoFile(file));
-      const currentImages = refundMedia.filter(file => !isVideoFile(file));
       
       const newVideos = filesArray.filter(file => file.type.startsWith('video/'));
       const newImages = filesArray.filter(file => !file.type.startsWith('video/'));
-      
-      // Check video limit (max 1)
-      if (currentVideos.length + newVideos.length > 1) {
-        Swal.fire({
-          icon: 'warning',
-          title: 'Video Limit Exceeded',
-          text: 'You can only upload 1 video. Please remove the existing video before uploading a new one.',
-          confirmButtonColor: '#000000',
-        });
-        e.target.value = '';
-        return;
-      }
 
       const oversizedVideo = newVideos.find(file => file.size > MAX_REFUND_VIDEO_SIZE_BYTES);
       if (oversizedVideo) {
@@ -1217,13 +1226,12 @@ const MyRepairs: React.FC = () => {
         e.target.value = '';
         return;
       }
-      
-      // Check image limit (max 5)
-      if (currentImages.length + newImages.length > 5) {
+
+      if (refundMedia.length + filesArray.length > 10) {
         Swal.fire({
           icon: 'warning',
-          title: 'Image Limit Exceeded',
-          text: `You can only upload 5 images. You have ${5 - currentImages.length} slot(s) remaining.`,
+          title: 'Media Limit Exceeded',
+          text: 'You can upload up to 10 media files per refund request.',
           confirmButtonColor: '#000000',
         });
         e.target.value = '';
@@ -1247,9 +1255,7 @@ const MyRepairs: React.FC = () => {
   };
 
   const isMediaRequirementMet = () => {
-    const videos = refundMedia.filter(file => isVideoFile(file));
-    const images = refundMedia.filter(file => !isVideoFile(file));
-    return images.length === 5 && videos.length === 1;
+    return refundMedia.length >= 1;
   };
 
   // Phase 10D - Review functions
@@ -2596,7 +2602,10 @@ const MyRepairs: React.FC = () => {
                               setRefundStep(1);
                               setRefundReason('');
                               setRefundMedia([]);
-                              setRefundMethod('');
+                              setRefundMethod('gcash');
+                              setRefundAccountName('');
+                              setRefundAccountRef('');
+                              setRefundPayoutConsent(false);
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
@@ -2751,12 +2760,12 @@ const MyRepairs: React.FC = () => {
                         Upload Photos/Videos <span className="text-red-500">*</span>
                         {refundMedia.length > 0 && (
                           <span className="ml-2 text-xs text-gray-500">
-                            ({refundMedia.filter(f => !isVideoFile(f)).length}/5 images, {refundMedia.filter(f => isVideoFile(f)).length}/1 video)
+                            ({refundMedia.length}/10 files)
                           </span>
                         )}
                       </label>
                       <p className="text-xs text-gray-600 mb-3">
-                        <strong>Note:</strong> You must upload 5 images and 1 video. Images must be 20MB or smaller; video must be 256MB or smaller.
+                        <strong>Note:</strong> Upload at least one clear photo or video. Images must be 20MB or smaller; video must be 256MB or smaller.
                       </p>
                       
                       <div className="grid grid-cols-6 gap-3">
@@ -2787,7 +2796,7 @@ const MyRepairs: React.FC = () => {
                         ))}
                         
                         {/* Add more button */}
-                        {refundMedia.length < 6 && (
+                        {refundMedia.length < 10 && (
                           <div className="relative aspect-square">
                             <input
                               type="file"
@@ -2852,10 +2861,10 @@ const MyRepairs: React.FC = () => {
 
                       <div className="grid grid-cols-2 gap-3 mt-4">
                         {[
-                          { value: 'original_payment', label: 'Original Payment Method' },
-                          { value: 'bank_transfer', label: 'Bank Transfer' },
                           { value: 'gcash', label: 'GCash' },
-                          { value: 'paymongo', label: 'PayMongo Wallet' },
+                          { value: 'card', label: 'Card' },
+                          { value: 'bank_transfer', label: 'Bank Transfer' },
+                          { value: 'manual_cash', label: 'Manual Cash' },
                         ].map((method) => (
                           <label
                             key={method.value}
@@ -2878,6 +2887,41 @@ const MyRepairs: React.FC = () => {
                         ))}
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Account Name</label>
+                        <input
+                          type="text"
+                          value={refundAccountName}
+                          onChange={(e) => setRefundAccountName(e.target.value)}
+                          className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                          placeholder="Name on destination account"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Account Number / Reference</label>
+                        <input
+                          type="text"
+                          value={refundAccountRef}
+                          onChange={(e) => setRefundAccountRef(e.target.value)}
+                          className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                          placeholder="e.g. mobile number or account ref"
+                        />
+                      </div>
+                    </div>
+
+                    <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={refundPayoutConsent}
+                        onChange={(e) => setRefundPayoutConsent(e.target.checked)}
+                        className="mt-1 h-4 w-4"
+                      />
+                      <span className="text-sm text-gray-700">
+                        I confirm that the payout destination details above are correct.
+                      </span>
+                    </label>
 
                     {/* Additional Note */}
                     <div>
@@ -2915,6 +2959,10 @@ const MyRepairs: React.FC = () => {
                         setRefundStep(1);
                         setRefundReason('');
                         setRefundMedia([]);
+                        setRefundMethod('gcash');
+                        setRefundAccountName('');
+                        setRefundAccountRef('');
+                        setRefundPayoutConsent(false);
                         setRefundNote('');
                       }}
                       className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
@@ -2930,12 +2978,10 @@ const MyRepairs: React.FC = () => {
                           return;
                         }
                         if (!isMediaRequirementMet()) {
-                          const videos = refundMedia.filter(file => isVideoFile(file));
-                          const images = refundMedia.filter(file => !isVideoFile(file));
                           Swal.fire({ 
                             icon: 'warning', 
                             title: 'Invalid Media Upload', 
-                            text: `You must upload exactly 5 images and 1 video. Currently uploaded: ${images.length} image(s) and ${videos.length} video(s).`,
+                            text: 'Please upload at least one photo or video before continuing.',
                             confirmButtonColor: '#000000' 
                           });
                           return;

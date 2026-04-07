@@ -66,6 +66,18 @@ type RepairOrder = {
   } | null;
 };
 
+type RepairRefundQueueItem = {
+  id: number;
+  refund_no: string;
+  module_reference_id: number;
+  request_type: "full" | "partial";
+  requested_amount: number | string;
+  reason_code: string;
+  reason_notes: string | null;
+  requested_at: string | null;
+  repairer_status: string;
+};
+
 type MetricCardProps = {
   title: string;
   value: number | string;
@@ -310,6 +322,27 @@ const formatPesoAmount = (value: unknown): string | null => {
   return parsed === null ? null : `₱${parsed.toFixed(2)}`;
 };
 
+const humanizeReasonCode = (value: string | null | undefined): string => {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return "Unspecified";
+  }
+
+  return normalized
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+};
+
+const escapeHtml = (value: unknown): string => {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 // Icons
 const WrenchIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -382,6 +415,13 @@ const PackageIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MotorcycleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 18a2 2 0 100-4 2 2 0 000 4zm14 0a2 2 0 100-4 2 2 0 000 4zM7 16h6l3-5h3M11 16l-2-5h4" />
+  </svg>
+);
+
+const RefundIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16v10H4V7zm3 4h6m-3-3v6" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 15l3-3-3-3" />
   </svg>
 );
 
@@ -464,6 +504,7 @@ export default function JobOrdersRepair() {
   const [viewOrder, setViewOrder] = useState<RepairOrder | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [orders, setOrders] = useState<RepairOrder[]>(useStaticData ? staticOrders : []);
+  const [repairerRefundQueue, setRepairerRefundQueue] = useState<RepairRefundQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
@@ -588,6 +629,7 @@ export default function JobOrdersRepair() {
   // Fetch repair requests from backend
   useEffect(() => {
     fetchOrders();
+    fetchRepairerRefundQueue();
   }, []);
 
   const fetchOrders = async () => {
@@ -741,11 +783,55 @@ export default function JobOrdersRepair() {
     }
   };
 
+  const fetchRepairerRefundQueue = async () => {
+    if (useStaticData) {
+      setRepairerRefundQueue([]);
+      return;
+    }
+
+    try {
+      const response = await axios.get('/api/repairer/refunds');
+      if (!response.data?.success) {
+        return;
+      }
+
+      const rawQueue = Array.isArray(response.data.data) ? response.data.data : [];
+      const mappedQueue = rawQueue
+        .map((refund: any): RepairRefundQueueItem | null => {
+          const refundId = Number(refund?.id);
+          const repairId = Number(refund?.module_reference_id);
+          if (!Number.isFinite(refundId) || refundId <= 0 || !Number.isFinite(repairId) || repairId <= 0) {
+            return null;
+          }
+
+          return {
+            id: refundId,
+            refund_no: String(refund?.refund_no ?? ''),
+            module_reference_id: repairId,
+            request_type: String(refund?.request_type ?? 'full') === 'partial' ? 'partial' : 'full',
+            requested_amount: refund?.requested_amount ?? 0,
+            reason_code: String(refund?.reason_code ?? ''),
+            reason_notes: refund?.reason_notes ? String(refund.reason_notes) : null,
+            requested_at: refund?.requested_at ? String(refund.requested_at) : null,
+            repairer_status: String(refund?.repairer_status ?? ''),
+          };
+        })
+        .filter((refund: RepairRefundQueueItem | null): refund is RepairRefundQueueItem => {
+          return refund !== null && refund.repairer_status === 'pending';
+        });
+
+      setRepairerRefundQueue(mappedQueue);
+    } catch (queueError) {
+      console.error('Failed to fetch repair refund queue:', queueError);
+    }
+  };
+
   useEffect(() => {
     if (useStaticData) return;
 
     const intervalId = window.setInterval(() => {
       fetchOrders();
+      fetchRepairerRefundQueue();
     }, 10000);
 
     return () => {
@@ -1022,6 +1108,16 @@ export default function JobOrdersRepair() {
       return matchesTab && matchesSearch;
     });
   }, [orders, selectedTab, searchTerm]);
+
+  const pendingRefundByRepairId = useMemo(() => {
+    const byRepair = new Map<number, RepairRefundQueueItem>();
+    for (const refund of repairerRefundQueue) {
+      if (!byRepair.has(refund.module_reference_id)) {
+        byRepair.set(refund.module_reference_id, refund);
+      }
+    }
+    return byRepair;
+  }, [repairerRefundQueue]);
 
   // Pagination
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
@@ -2241,6 +2337,157 @@ export default function JobOrdersRepair() {
     });
   };
 
+  const rejectRefundForRepairer = async (refundId: number, assessmentNote: string, reason: string) => {
+    return axios.post(`/api/repairer/refunds/${refundId}/reject`, {
+      assessment_note: assessmentNote,
+      reason,
+    });
+  };
+
+  const handleRefundReview = async (order: RepairOrder, refund: RepairRefundQueueItem) => {
+    const requestedAmount = toNumber(refund.requested_amount) ?? 0;
+    const refundLabel = escapeHtml(refund.refund_no || `Refund #${refund.id}`);
+    const repairLabel = escapeHtml(order.id);
+    const amountLabel = escapeHtml(formatPesoAmount(requestedAmount) ?? '₱0.00');
+    const reasonLabel = escapeHtml(humanizeReasonCode(refund.reason_code));
+    const actionPrompt = await Swal.fire({
+      title: 'Review refund request',
+      html: `
+        <div class="text-left space-y-2">
+          <p><strong>${refundLabel}</strong></p>
+          <p>Repair: ${repairLabel}</p>
+          <p>Requested amount: ${amountLabel}</p>
+          <p>Reason: ${reasonLabel}</p>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      showDenyButton: true,
+      confirmButtonText: 'Approve',
+      denyButtonText: 'Reject',
+      cancelButtonText: 'Close',
+      confirmButtonColor: '#059669',
+      denyButtonColor: '#dc2626',
+    });
+
+    if (actionPrompt.isConfirmed) {
+      const approvalForm = await Swal.fire({
+        title: 'Approve and endorse to finance',
+        html: `
+          <input id="swal-refund-amount" type="number" min="0.01" step="0.01" class="swal2-input" placeholder="Approved amount" value="${requestedAmount.toFixed(2)}" />
+          <textarea id="swal-refund-note" class="swal2-textarea" placeholder="Assessment note (required)"></textarea>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Submit endorsement',
+        confirmButtonColor: '#059669',
+        focusConfirm: false,
+        preConfirm: () => {
+          const popup = Swal.getPopup();
+          const amountValue = popup?.querySelector<HTMLInputElement>('#swal-refund-amount')?.value ?? '';
+          const noteValue = popup?.querySelector<HTMLTextAreaElement>('#swal-refund-note')?.value ?? '';
+          const approvedAmount = Number(amountValue);
+
+          if (!Number.isFinite(approvedAmount) || approvedAmount <= 0) {
+            Swal.showValidationMessage('Enter a valid approved amount.');
+            return null;
+          }
+
+          if (!noteValue.trim()) {
+            Swal.showValidationMessage('Assessment note is required.');
+            return null;
+          }
+
+          return {
+            approvedAmount,
+            assessmentNote: noteValue.trim(),
+          };
+        },
+      });
+
+      if (!approvalForm.isConfirmed || !approvalForm.value) {
+        return;
+      }
+
+      try {
+        await endorseRefundForFinance(refund.id, approvalForm.value.assessmentNote, approvalForm.value.approvedAmount);
+        await Promise.all([fetchOrders(), fetchRepairerRefundQueue()]);
+        await Swal.fire({
+          title: 'Refund endorsed',
+          text: 'Finance can now continue with review and execution.',
+          icon: 'success',
+          confirmButtonColor: '#2563eb',
+        });
+      } catch (reviewError: any) {
+        await Swal.fire({
+          title: 'Unable to endorse refund',
+          text: reviewError?.response?.data?.message || 'Please try again.',
+          icon: 'error',
+          confirmButtonColor: '#2563eb',
+        });
+      }
+
+      return;
+    }
+
+    if (!actionPrompt.isDenied) {
+      return;
+    }
+
+    const rejectionForm = await Swal.fire({
+      title: 'Reject refund request',
+      html: `
+        <textarea id="swal-refund-reason" class="swal2-textarea" placeholder="Rejection reason (required)"></textarea>
+        <textarea id="swal-refund-reject-note" class="swal2-textarea" placeholder="Assessment note (required)"></textarea>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Reject request',
+      confirmButtonColor: '#dc2626',
+      focusConfirm: false,
+      preConfirm: () => {
+        const popup = Swal.getPopup();
+        const reasonValue = popup?.querySelector<HTMLTextAreaElement>('#swal-refund-reason')?.value ?? '';
+        const noteValue = popup?.querySelector<HTMLTextAreaElement>('#swal-refund-reject-note')?.value ?? '';
+
+        if (!reasonValue.trim()) {
+          Swal.showValidationMessage('Rejection reason is required.');
+          return null;
+        }
+
+        if (!noteValue.trim()) {
+          Swal.showValidationMessage('Assessment note is required.');
+          return null;
+        }
+
+        return {
+          reason: reasonValue.trim(),
+          assessmentNote: noteValue.trim(),
+        };
+      },
+    });
+
+    if (!rejectionForm.isConfirmed || !rejectionForm.value) {
+      return;
+    }
+
+    try {
+      await rejectRefundForRepairer(refund.id, rejectionForm.value.assessmentNote, rejectionForm.value.reason);
+      await Promise.all([fetchOrders(), fetchRepairerRefundQueue()]);
+      await Swal.fire({
+        title: 'Refund request rejected',
+        text: 'The customer will see that this refund request was declined.',
+        icon: 'success',
+        confirmButtonColor: '#2563eb',
+      });
+    } catch (reviewError: any) {
+      await Swal.fire({
+        title: 'Unable to reject refund',
+        text: reviewError?.response?.data?.message || 'Please try again.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
+      });
+    }
+  };
+
   return (
     <AppLayoutERP>
       <Head title="Repair Services - Solespace ERP" />
@@ -2256,6 +2503,9 @@ export default function JobOrdersRepair() {
           <div className="flex flex-col items-end gap-2">
             <p className="text-xs text-gray-600 dark:text-gray-400">
               Active workload: <span className={`font-semibold ${activeRepairCount > repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Pending refund reviews: <span className={`font-semibold ${repairerRefundQueue.length > 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{repairerRefundQueue.length}</span>
             </p>
           </div>
         </div>
@@ -2476,6 +2726,7 @@ export default function JobOrdersRepair() {
                 {paginatedOrders.length > 0 ? (
                   paginatedOrders.map((order) => (
                     (() => {
+                      const pendingRefund = pendingRefundByRepairId.get(order.database_id) ?? null;
                       const isHighlighted =
                         Boolean(highlightRepairToken) &&
                         (
@@ -2526,6 +2777,11 @@ export default function JobOrdersRepair() {
                               In-Shop Payment
                             </span>
                           )}
+                          {pendingRefund && (
+                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                              Refund Review Pending
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
@@ -2564,6 +2820,17 @@ export default function JobOrdersRepair() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
+
+                          {pendingRefund && (
+                            <button
+                              onClick={() => handleRefundReview(order, pendingRefund)}
+                              className="inline-flex items-center justify-center p-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
+                              title={`Review refund (${pendingRefund.refund_no || `#${pendingRefund.id}`})`}
+                              aria-label="Review Refund Request"
+                            >
+                              <RefundIcon className="size-5" />
+                            </button>
+                          )}
 
                           {(order.status === "owner_approved" || order.status === "repairer_accepted" || order.status === "waiting_customer_confirmation" || order.status === "pending") && (
                             <>

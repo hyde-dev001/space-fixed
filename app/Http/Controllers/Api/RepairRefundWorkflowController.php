@@ -141,16 +141,39 @@ class RepairRefundWorkflowController extends Controller
             abort(403, 'Not authorized to execute this refund.');
         }
 
-        $validated = $request->validate([
+        $executionMode = (string) $request->input('execution_mode', 'manual');
+        $hasPosManualLeg = $refund->legs()->where('leg_type', 'pos_manual')->exists();
+
+        $rules = [
             'execution_mode' => ['nullable', 'in:manual,gateway'],
             'execution_note' => ['nullable', 'string', 'max:1000'],
-        ]);
+            'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
+            'execution_reference' => ['nullable', 'string', 'max:150'],
+            'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'execution_proof_urls' => ['nullable', 'array', 'min:1'],
+            'execution_proof_urls.*' => ['url'],
+        ];
+
+        if ($executionMode === 'manual' && $hasPosManualLeg) {
+            $rules['execution_channel'] = ['required', 'in:gcash,card,bank_transfer,manual_cash'];
+            $rules['execution_reference'] = ['required', 'string', 'max:150'];
+            $rules['execution_amount'] = ['required', 'numeric', 'min:0.01'];
+            $rules['execution_proof_urls'] = ['required', 'array', 'min:1'];
+        }
+
+        $validated = $request->validate($rules);
 
         $updated = $service->execute(
             refund: $refund,
             actorId: (int) $actor->id,
             executionMode: (string) ($validated['execution_mode'] ?? 'manual'),
             executionNote: $validated['execution_note'] ?? null,
+            executionContext: [
+                'execution_channel' => $validated['execution_channel'] ?? null,
+                'execution_reference' => $validated['execution_reference'] ?? null,
+                'execution_amount' => isset($validated['execution_amount']) ? (float) $validated['execution_amount'] : null,
+                'execution_proof_urls' => $validated['execution_proof_urls'] ?? [],
+            ],
         );
 
         return response()->json(['success' => true, 'data' => $updated]);
@@ -321,6 +344,12 @@ class RepairRefundWorkflowController extends Controller
             'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
             'rejectionReason' => (string) ($refund->failure_reason ?? ''),
             'media' => array_values(array_filter($evidenceMedia, fn ($item) => is_string($item) && trim($item) !== '')),
+            'financeExecution' => [
+                'execution_channel' => (string) ($refund->execution_channel ?? ''),
+                'execution_reference' => (string) ($refund->execution_reference ?? ''),
+                'execution_amount' => (float) ($refund->execution_amount ?? 0),
+                'execution_proof_urls' => is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [],
+            ],
         ];
     }
 

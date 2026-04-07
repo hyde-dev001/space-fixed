@@ -440,9 +440,37 @@ class RepairPosController extends Controller
             ->orderByDesc('id')
             ->get();
 
+        $data = $refunds->map(function (PosRefund $refund) {
+            $maskedReference = null;
+            $rawReference = trim((string) ($refund->execution_reference ?? ''));
+
+            if ($rawReference !== '') {
+                $prefix = substr($rawReference, 0, 4);
+                $suffix = substr($rawReference, -4);
+                $maskedReference = $prefix . '-******' . $suffix;
+            }
+
+            return [
+                'id' => (int) $refund->id,
+                'module_reference_id' => (int) $refund->module_reference_id,
+                'status' => (string) $refund->status,
+                'repairer_status' => $refund->repairer_status,
+                'finance_status' => $refund->finance_status,
+                'owner_status' => $refund->owner_status,
+                'shop_owner_status' => $refund->shop_owner_status,
+                'requested_amount' => (float) $refund->requested_amount,
+                'approved_amount' => $refund->approved_amount === null ? null : (float) $refund->approved_amount,
+                'requested_at' => optional($refund->requested_at)->toDateTimeString(),
+                'failure_reason' => $refund->failure_reason,
+                'execution_channel' => $refund->execution_channel,
+                'execution_reference_masked' => $maskedReference,
+                'executed_at' => optional($refund->executed_at)->toDateTimeString(),
+            ];
+        })->values();
+
         return response()->json([
             'success' => true,
-            'data' => $refunds,
+            'data' => $data,
         ]);
     }
 

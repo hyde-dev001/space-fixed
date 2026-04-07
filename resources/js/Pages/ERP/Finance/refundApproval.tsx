@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { hasPermission } from "../../../utils/permissions";
+import { buildRepairRefundExecutionPayload, type RepairExecutionChannel } from "./repairRefundExecutionPayload";
 
 const initialRefundRequests = [
 	{
@@ -286,6 +287,12 @@ interface RefundRequest {
 	refundedAt?: string | null;
 	rejectionReason?: string;
 	media?: string[];
+	financeExecution?: {
+		execution_channel?: string;
+		execution_reference?: string;
+		execution_amount?: number;
+		execution_proof_urls?: string[];
+	};
 }
 
 const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean => {
@@ -294,6 +301,11 @@ const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean
 
 const getFinanceActionBase = (request: RefundRequest): string => {
 	return request.refundType === "repair" ? "/api/finance/repair-refunds" : "/api/finance/refunds";
+};
+
+const parseCurrencyToNumber = (value: string): number => {
+	const parsed = Number(String(value || "").replace(/[^0-9.-]/g, ""));
+	return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const refundReasonOptions = [
@@ -710,26 +722,114 @@ export default function RefundApproval() {
 		setSelectedRequest(null);
 		setActiveImage(null);
 
-		const result = await Swal.fire({
-			title: "Execute Refund Payout?",
-			html: `
-				<div style="text-align: left; margin-top: 1rem;">
-					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
-				</div>
-			`,
-			icon: "question",
-			showCancelButton: true,
-			confirmButtonColor: "#10b981",
-			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Execute",
-			cancelButtonText: "Cancel",
-		});
+		let payload: Record<string, unknown> = {};
 
-		if (!result.isConfirmed) {
-			return;
+		if (request.refundType === "repair") {
+			const defaultAmount = request.financeExecution?.execution_amount ?? parseCurrencyToNumber(request.refundAmount);
+			const proofDefaults = Array.isArray(request.financeExecution?.execution_proof_urls)
+				? request.financeExecution?.execution_proof_urls ?? []
+				: [];
+
+			const executeInput = await Swal.fire({
+				title: "Execute Repair Refund Payout",
+				html: `
+					<div style="text-align: left; margin-top: 1rem; display: grid; gap: 0.75rem;">
+						<p style="margin: 0;"><strong>Order:</strong> ${request.orderNumber}</p>
+						<p style="margin: 0;"><strong>Customer:</strong> ${request.customerName}</p>
+						<p style="margin: 0;"><strong>Amount:</strong> ${request.refundAmount}</p>
+						<label style="display: grid; gap: 0.25rem;">
+							<span style="font-weight: 600;">Execution Channel</span>
+							<select id="repair-execution-channel" class="swal2-input" style="margin: 0; width: 100%;">
+								<option value="gcash">GCash</option>
+								<option value="card">Card</option>
+								<option value="bank_transfer">Bank Transfer</option>
+								<option value="manual_cash">Manual Cash</option>
+							</select>
+						</label>
+						<label style="display: grid; gap: 0.25rem;">
+							<span style="font-weight: 600;">Execution Reference</span>
+							<input id="repair-execution-reference" class="swal2-input" style="margin: 0; width: 100%;" placeholder="Reference / auth code" value="${request.financeExecution?.execution_reference ?? ""}" />
+						</label>
+						<label style="display: grid; gap: 0.25rem;">
+							<span style="font-weight: 600;">Execution Amount</span>
+							<input id="repair-execution-amount" type="number" min="0.01" step="0.01" class="swal2-input" style="margin: 0; width: 100%;" value="${defaultAmount > 0 ? defaultAmount : ""}" />
+						</label>
+						<label style="display: grid; gap: 0.25rem;">
+							<span style="font-weight: 600;">Proof URLs (one per line)</span>
+							<textarea id="repair-execution-proof-urls" class="swal2-textarea" style="margin: 0; width: 100%; min-height: 96px;" placeholder="https://...">${proofDefaults.join("\n")}</textarea>
+						</label>
+					</div>
+				`,
+				icon: "question",
+				showCancelButton: true,
+				confirmButtonColor: "#10b981",
+				cancelButtonColor: "#6b7280",
+				confirmButtonText: "Execute",
+				cancelButtonText: "Cancel",
+				preConfirm: () => {
+					const channel = (document.getElementById("repair-execution-channel") as HTMLSelectElement | null)?.value as RepairExecutionChannel | undefined;
+					const reference = (document.getElementById("repair-execution-reference") as HTMLInputElement | null)?.value?.trim() ?? "";
+					const amountRaw = (document.getElementById("repair-execution-amount") as HTMLInputElement | null)?.value ?? "";
+					const proofRaw = (document.getElementById("repair-execution-proof-urls") as HTMLTextAreaElement | null)?.value ?? "";
+
+					if (!reference) {
+						Swal.showValidationMessage("Execution reference is required for manual POS refund execution");
+						return;
+					}
+
+					const executionAmount = Number(amountRaw);
+					if (!Number.isFinite(executionAmount) || executionAmount <= 0) {
+						Swal.showValidationMessage("Execution amount must be greater than zero");
+						return;
+					}
+
+					const executionProofUrls = proofRaw
+						.split(/\r?\n|,/)
+						.map((item) => item.trim())
+						.filter(Boolean);
+
+					if (executionProofUrls.length === 0) {
+						Swal.showValidationMessage("At least one execution proof is required for manual POS refund execution");
+						return;
+					}
+
+					return {
+						executionMode: "manual" as const,
+						executionChannel: channel,
+						executionReference: reference,
+						executionAmount,
+						executionProofUrls,
+					};
+				},
+			});
+
+			if (!executeInput.isConfirmed || !executeInput.value) {
+				return;
+			}
+
+			payload = buildRepairRefundExecutionPayload(executeInput.value);
+		} else {
+			const result = await Swal.fire({
+				title: "Execute Refund Payout?",
+				html: `
+					<div style="text-align: left; margin-top: 1rem;">
+						<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
+						<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
+						<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+						<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
+					</div>
+				`,
+				icon: "question",
+				showCancelButton: true,
+				confirmButtonColor: "#10b981",
+				cancelButtonColor: "#6b7280",
+				confirmButtonText: "Execute",
+				cancelButtonText: "Cancel",
+			});
+
+			if (!result.isConfirmed) {
+				return;
+			}
 		}
 
 		setIsActionProcessing(true);
@@ -746,7 +846,7 @@ export default function RefundApproval() {
 					Accept: "application/json",
 					"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 				},
-				body: JSON.stringify(request.refundType === "repair" ? { execution_mode: "manual" } : {}),
+				body: JSON.stringify(payload),
 			},
 			);
 

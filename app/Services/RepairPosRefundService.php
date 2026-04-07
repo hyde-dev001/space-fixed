@@ -84,6 +84,68 @@ class RepairPosRefundService
         ]);
     }
 
+    public function createRefundWithSplitLegs(PosTransaction $source, array $payload, int $actorId): PosRefund
+    {
+        $refund = $this->requestRefund($source, $payload, $actorId);
+
+        $refund->update([
+            'preferred_return_channel' => $payload['preferred_return_channel'] ?? null,
+            'preferred_return_account_name' => $payload['preferred_return_account_name'] ?? null,
+            'preferred_return_account_ref' => $payload['preferred_return_account_ref'] ?? null,
+            'customer_payout_consent' => (bool) ($payload['customer_payout_consent'] ?? false),
+        ]);
+
+        if (!config('orders.repair_split_refund_enabled', true)) {
+            return $refund->fresh();
+        }
+
+        $requestedAmount = round((float) ($payload['requested_amount'] ?? 0), 2);
+        if ($requestedAmount <= 0) {
+            return $refund->fresh();
+        }
+
+        $gatewayAmount = array_key_exists('gateway_amount', $payload)
+            ? round((float) $payload['gateway_amount'], 2)
+            : $this->inferGatewayAmount($source, $requestedAmount);
+
+        $gatewayAmount = max(0.0, min($requestedAmount, $gatewayAmount));
+        $posAmount = max(0.0, round($requestedAmount - $gatewayAmount, 2));
+
+        $sourceReceiptNo = (string) ($source->receipt?->receipt_no ?? $source->transaction_no);
+
+        if ($gatewayAmount > 0) {
+            $refund->legs()->create([
+                'leg_type' => 'gateway',
+                'requested_amount' => $gatewayAmount,
+                'status' => 'requested',
+                'source_transaction_id' => $source->id,
+                'source_receipt_no' => $sourceReceiptNo,
+            ]);
+        }
+
+        if ($posAmount > 0) {
+            $refund->legs()->create([
+                'leg_type' => 'pos_manual',
+                'requested_amount' => $posAmount,
+                'status' => 'requested',
+                'source_transaction_id' => $source->id,
+                'source_receipt_no' => $sourceReceiptNo,
+            ]);
+        }
+
+        return $refund->fresh('legs');
+    }
+
+    private function inferGatewayAmount(PosTransaction $source, float $requestedAmount): float
+    {
+        $gatewayPaid = (float) $source->paymentLines()
+            ->whereIn('tender_type', ['paymongo_card', 'paymongo_wallet'])
+            ->where('status', 'paid')
+            ->sum('amount');
+
+        return max(0.0, min($requestedAmount, round($gatewayPaid, 2)));
+    }
+
     public function approve(
         PosRefund $refund,
         int $actorId,
@@ -232,7 +294,13 @@ class RepairPosRefundService
         return $refund->fresh();
     }
 
-    public function execute(PosRefund $refund, int $actorId, string $executionMode = 'manual', ?string $executionNote = null): PosRefund
+    public function execute(
+        PosRefund $refund,
+        int $actorId,
+        string $executionMode = 'manual',
+        ?string $executionNote = null,
+        array $executionContext = []
+    ): PosRefund
     {
         if (in_array((string) $refund->status, ['succeeded', 'processing'], true)) {
             return $refund->fresh();
@@ -280,7 +348,37 @@ class RepairPosRefundService
             return $this->executeViaGateway($refund, $source, $actorId, $approvedAmount, $executionNote);
         }
 
-        return $this->markRefundSucceeded($refund, $source, $actorId, $approvedAmount, 'manual', $executionNote, null, null);
+        $hasPosManualLeg = $refund->legs()->where('leg_type', 'pos_manual')->exists();
+        if ($executionMode === 'manual' && $hasPosManualLeg) {
+            if (empty($executionContext['execution_channel'])) {
+                throw ValidationException::withMessages([
+                    'execution_channel' => ['Execution channel is required for POS manual refund execution.'],
+                ]);
+            }
+
+            if (empty($executionContext['execution_reference'])) {
+                throw ValidationException::withMessages([
+                    'execution_reference' => ['Execution reference is required for POS manual refund execution.'],
+                ]);
+            }
+
+            if (empty($executionContext['execution_proof_urls']) || !is_array($executionContext['execution_proof_urls'])) {
+                throw ValidationException::withMessages([
+                    'execution_proof_urls' => ['At least one execution proof URL is required for POS manual refund execution.'],
+                ]);
+            }
+        }
+
+        $refund->update([
+            'execution_channel' => $executionContext['execution_channel'] ?? null,
+            'execution_reference' => $executionContext['execution_reference'] ?? null,
+            'execution_amount' => isset($executionContext['execution_amount'])
+                ? round((float) $executionContext['execution_amount'], 2)
+                : null,
+            'execution_proof_urls' => $executionContext['execution_proof_urls'] ?? null,
+        ]);
+
+        return $this->markRefundSucceeded($refund->fresh(), $source, $actorId, $approvedAmount, 'manual', $executionNote, null, null);
     }
 
     private function executeViaGateway(PosRefund $refund, PosTransaction $source, int $actorId, float $approvedAmount, ?string $executionNote): PosRefund
