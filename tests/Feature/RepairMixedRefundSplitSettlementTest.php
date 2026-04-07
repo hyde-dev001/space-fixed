@@ -1231,6 +1231,87 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function customer_refund_list_reconcile_accepts_refunded_status_with_flexible_refund_id_prefix(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'paymongo_secret_key' => 'sk_test_repair_refund_status_alias',
+        ]);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 550,
+            'final_total' => 550,
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 550,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-RECON-MINE-ALIAS-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 550,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 550,
+            'paid_amount' => 550,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-RECON-MINE-ALIAS-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'request_type' => 'full',
+            'requested_amount' => 550,
+            'approved_amount' => 550,
+            'reason_code' => 'pure_online_refund',
+            'status' => 'processing',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'execution_mode' => 'gateway',
+            'paymongo_payment_id' => 'pay_recon_alias_001',
+            'paymongo_refund_id' => 'rfnd_recon_alias_001',
+            'requested_at' => now()->subMinutes(5),
+            'approved_at' => now()->subMinutes(4),
+            'executed_at' => now()->subMinutes(3),
+        ]);
+
+        app()->instance(PaymongoRefundService::class, new class extends PaymongoRefundService {
+            public function getRefundStatus(string $secretKey, string $refundId): array
+            {
+                return [
+                    'success' => true,
+                    'message' => 'ok',
+                    'status' => 'refunded',
+                    'refund_id' => $refundId,
+                    'raw' => [],
+                ];
+            }
+        });
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/repair-pos/refunds/mine')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $refund->id)
+            ->assertJsonPath('data.0.status', 'succeeded');
+
+        $this->assertSame('succeeded', (string) $refund->fresh()->status);
+        $this->assertSame('refunded', (string) $source->fresh()->status);
+    }
+
+    #[Test]
     public function split_leg_creation_applies_only_when_feature_flag_enabled(): void
     {
         config()->set('orders.repair_split_refund_enabled', false);

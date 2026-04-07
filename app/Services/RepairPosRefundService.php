@@ -503,7 +503,7 @@ class RepairPosRefundService
         }
 
         $hasFailure = collect($statuses)
-            ->contains(fn ($status) => in_array($status, ['failed', 'canceled', 'cancelled'], true));
+            ->contains(fn ($status) => $this->isGatewayRefundFailureStatus($status));
 
         if ($hasFailure) {
             return $this->markRefundFailed(
@@ -515,7 +515,7 @@ class RepairPosRefundService
         }
 
         $allSucceeded = !empty($statuses) && collect($statuses)
-            ->every(fn ($status) => in_array($status, ['succeeded', 'completed', 'paid'], true));
+            ->every(fn ($status) => $this->isGatewayRefundSuccessStatus($status));
 
         if ($allSucceeded) {
             $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
@@ -914,10 +914,34 @@ class RepairPosRefundService
     {
         return collect($references)
             ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => str_starts_with(strtolower($value), 're_'))
+            ->filter(fn ($value) => $this->looksLikeGatewayRefundReference($value))
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function looksLikeGatewayRefundReference(?string $reference): bool
+    {
+        $value = strtolower(trim((string) ($reference ?? '')));
+        if ($value === '') {
+            return false;
+        }
+
+        if (str_starts_with($value, 're_') || str_starts_with($value, 'rfnd_') || str_starts_with($value, 'ref_')) {
+            return true;
+        }
+
+        return preg_match('/^[a-z0-9][a-z0-9_-]{5,}$/i', $value) === 1;
+    }
+
+    private function isGatewayRefundSuccessStatus(string $status): bool
+    {
+        return in_array(strtolower(trim($status)), ['succeeded', 'completed', 'paid', 'refunded'], true);
+    }
+
+    private function isGatewayRefundFailureStatus(string $status): bool
+    {
+        return in_array(strtolower(trim($status)), ['failed', 'canceled', 'cancelled'], true);
     }
 
     private function resolveGatewayPaymentReferences(PosRefund $refund, PosTransaction $source): array
