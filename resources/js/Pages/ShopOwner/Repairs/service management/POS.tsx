@@ -1126,11 +1126,9 @@ const PointOfSalePage = () => {
 	};
 
 	const printReceipt = () => {
-		if (!canPrint || !receiptSnapshot) return;
+		if (!receiptSnapshot) return;
 		setIsReceiptModalOpen(true);
-		setTimeout(() => {
-			window.print();
-		}, 80);
+		window.print();
 	};
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
@@ -1996,13 +1994,30 @@ const PointOfSalePage = () => {
 						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
-								<button
-									type="button"
-									onClick={() => setIsReceiptModalOpen(false)}
-									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
-								>
-									Close
-								</button>
+								<div className="flex items-center gap-2">
+									<button
+										type="button"
+										onClick={printReceipt}
+										title="Print receipt"
+										aria-label="Print receipt"
+										className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+									>
+										<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+											<path d="M6 9V4h12v5" />
+											<path d="M6 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-1" />
+											<path d="M6 14h12v6H6z" />
+											<path d="M8 14v-3h8v3" />
+										</svg>
+										<span>Print</span>
+									</button>
+									<button
+										type="button"
+										onClick={() => setIsReceiptModalOpen(false)}
+										className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+									>
+										Close
+									</button>
+								</div>
 							</div>
 
 							<div className="max-h-[75vh] overflow-y-auto p-5">
