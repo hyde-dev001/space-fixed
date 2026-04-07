@@ -785,6 +785,10 @@ class RepairPosRefundService
             return true;
         }
 
+        if ($workflowSource === 'shop_pos_repair') {
+            return true;
+        }
+
         return $reasonCode === 'customer_cancelled_repair';
     }
 

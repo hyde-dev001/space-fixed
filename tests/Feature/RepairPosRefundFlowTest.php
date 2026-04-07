@@ -74,6 +74,82 @@ class RepairPosRefundFlowTest extends TestCase
         ]);
     }
 
+    #[Test]
+    public function shop_pos_full_refund_uses_repair_wide_remaining_not_selected_receipt_amount(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = $this->createRepairRequest($shopOwner, null, [
+            'shop_owner_id' => $shopOwner->id,
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status_derived' => 'completed',
+            'total_paid_amount' => 950,
+            'total_refunded_amount' => 0,
+            'final_total' => 950,
+        ]);
+
+        \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-SHOP-RFD-DEP-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Customer',
+            'walk_in_phone' => '09170000888',
+            'due_type' => 'deposit',
+            'subtotal' => 423.21,
+            'tax_amount' => 51.79,
+            'discount_amount' => 0,
+            'total_amount' => 475,
+            'paid_amount' => 475,
+            'status' => 'paid',
+            'paid_at' => now()->subMinutes(10),
+        ]);
+
+        $balance = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-SHOP-RFD-BAL-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Customer',
+            'walk_in_phone' => '09170000888',
+            'due_type' => 'balance',
+            'subtotal' => 423.21,
+            'tax_amount' => 51.79,
+            'discount_amount' => 0,
+            'total_amount' => 475,
+            'paid_amount' => 475,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/refunds', [
+            'source_transaction_id' => $balance->id,
+            'request_type' => 'full',
+            // POS receipt amount is 475, but full repair remaining should be 950.
+            'requested_amount' => 475,
+            'reason_code' => 'shop_owner_requested_refund',
+            'receipt_no' => $balance->transaction_no,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.workflow_source', 'shop_pos_repair');
+
+        $this->assertEqualsWithDelta(950.0, (float) $response->json('data.requested_amount'), 0.01);
+
+        $this->assertDatabaseHas('pos_refunds', [
+            'source_transaction_id' => $balance->id,
+            'module_reference_id' => $repair->id,
+            'workflow_source' => 'shop_pos_repair',
+            'request_type' => 'full',
+            'status' => 'requested',
+        ]);
+    }
+
     private function createRepairRequest(
         \App\Models\ShopOwner $shopOwner,
         ?\App\Models\User $customer = null,

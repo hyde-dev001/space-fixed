@@ -57,10 +57,18 @@ type POSItem = {
 	manualServiceIds?: number[];
 };
 
+type ReceiptRefundEntry = {
+	status: string;
+	approvedAmount: number;
+};
+
 type ReceiptSnapshot = {
 	transactionId?: number;
+	repairRequestId?: number;
 	customerType?: "registered" | "walk_in";
 	dueType?: PosDueType | null;
+	paidAmount: number;
+	refundEntries: ReceiptRefundEntry[];
 	latestRefund?: {
 		id: number;
 		status: string;
@@ -590,8 +598,16 @@ const PointOfSalePage = () => {
 
 					return {
 						transactionId: Number(row?.id || 0),
+						repairRequestId: Number(row?.module_reference_id || 0),
 						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
 						dueType: parseDueType(row?.due_type ?? receiptPayload?.due_type),
+						paidAmount: Number(row?.paid_amount ?? 0),
+						refundEntries: Array.isArray(row?.refunds)
+							? row.refunds.map((entry: any) => ({
+								status: String(entry?.status || ""),
+								approvedAmount: Number(entry?.approved_amount ?? 0),
+							}))
+							: [],
 						latestRefund: latestRefund ? {
 							id: Number(latestRefund?.id || 0),
 							status: String(latestRefund?.status || "requested"),
@@ -926,6 +942,79 @@ const PointOfSalePage = () => {
 		});
 	}, [historyDate, historySearch, receiptHistory]);
 
+	const repairRefundStateById = useMemo(() => {
+		const state = new Map<number, { paidAmount: number; refundedAmount: number; hasOpenRequest: boolean }>();
+
+		receiptHistory.forEach((receipt) => {
+			const repairId = Number(receipt.repairRequestId ?? 0);
+			if (repairId <= 0) {
+				return;
+			}
+
+			const current = state.get(repairId) ?? {
+				paidAmount: 0,
+				refundedAmount: 0,
+				hasOpenRequest: false,
+			};
+
+			current.paidAmount += Number(receipt.paidAmount ?? 0);
+
+			receipt.refundEntries.forEach((entry) => {
+				const status = String(entry.status || "").toLowerCase();
+
+				if (["requested", "approved", "processing"].includes(status)) {
+					current.hasOpenRequest = true;
+				}
+
+				if (status === "succeeded") {
+					current.refundedAmount += Number(entry.approvedAmount ?? 0);
+				}
+			});
+
+			state.set(repairId, current);
+		});
+
+		return state;
+	}, [receiptHistory]);
+
+	const canRequestRepairRefund = (receipt: ReceiptSnapshot): boolean => {
+		if (hasOpenOrCompletedRefund(receipt)) {
+			return false;
+		}
+
+		const repairId = Number(receipt.repairRequestId ?? 0);
+		if (repairId <= 0) {
+			return true;
+		}
+
+		const state = repairRefundStateById.get(repairId);
+		if (!state) {
+			return true;
+		}
+
+		if (state.hasOpenRequest) {
+			return false;
+		}
+
+		const remaining = Math.max(0, Number((state.paidAmount - state.refundedAmount).toFixed(2)));
+		return remaining > 0;
+	};
+
+	const resolveRefundRequestAmount = (receipt: ReceiptSnapshot): number => {
+		const repairId = Number(receipt.repairRequestId ?? 0);
+		if (repairId <= 0) {
+			return Number(receipt.totalDue || 0);
+		}
+
+		const state = repairRefundStateById.get(repairId);
+		if (!state) {
+			return Number(receipt.totalDue || 0);
+		}
+
+		const remaining = Math.max(0, Number((state.paidAmount - state.refundedAmount).toFixed(2)));
+		return remaining > 0 ? remaining : Number(receipt.totalDue || 0);
+	};
+
 	const combinedCatalogCards = useMemo<CatalogCardItem[]>(() => {
 		const packageCards: CatalogCardItem[] = visiblePackages.map((pkg) => ({ kind: "package", key: `package-${pkg.id}`, pkg }));
 		const serviceCards: CatalogCardItem[] = filteredServiceCatalog.map((service) => ({ kind: "service", key: `service-${service.id}`, service }));
@@ -1056,8 +1145,11 @@ const PointOfSalePage = () => {
 
 			const snapshot: ReceiptSnapshot = {
 				transactionId: transactionId > 0 ? transactionId : undefined,
+				repairRequestId: hasRepairReference && repairRequestId ? Number(repairRequestId) : undefined,
 				customerType,
 				dueType: dueTypeForCheckout,
+				paidAmount: Number(receiptTotals?.paid ?? totalDue),
+				refundEntries: [],
 				receiptNo,
 				createdAtISO: issuedAt,
 				dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
@@ -1132,11 +1224,11 @@ const PointOfSalePage = () => {
 	};
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
-		if (hasOpenOrCompletedRefund(receipt)) {
+		if (!canRequestRepairRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
 				title: "Refund Already Exists",
-				text: "This receipt already has a refund flow in progress or completed.",
+				text: "A refund is already in progress/completed for this receipt or its repair request.",
 				confirmButtonColor: "#2563eb",
 			});
 			return;
@@ -1154,16 +1246,19 @@ const PointOfSalePage = () => {
 		}
 
 		try {
+			const requestedAmount = resolveRefundRequestAmount(receipt);
 			const response = await repairPosHistoryApi.requestRefund({
 				source_transaction_id: transactionId,
 				request_type: "full",
-				requested_amount: receipt.totalDue,
+				requested_amount: requestedAmount,
 				reason_code: "shop_owner_requested_refund",
 				reason_notes: "Requested from Shop Owner POS receipt history.",
 				receipt_no: receipt.receiptNo,
 			});
 
 			const createdRefundId = Number((response.data as any)?.refund_id ?? 0);
+			const responseRequestedAmount = Number((response.data as any)?.data?.requested_amount ?? requestedAmount);
+			const responseApprovedAmount = Number((response.data as any)?.data?.approved_amount ?? responseRequestedAmount);
 			const apiRefundStatus = String((response.data as any)?.data?.status ?? "").toLowerCase();
 			const wasAutoProcessed = Boolean((response.data as any)?.auto_processed);
 			const nextStatus = apiRefundStatus !== ""
@@ -1173,6 +1268,13 @@ const PointOfSalePage = () => {
 				entry.receiptNo === receipt.receiptNo
 					? {
 						...entry,
+						refundEntries: [
+							{
+								status: nextStatus,
+								approvedAmount: nextStatus === "succeeded" ? responseApprovedAmount : 0,
+							},
+							...entry.refundEntries,
+						],
 						latestRefund: {
 							id: createdRefundId > 0 ? createdRefundId : Number(entry.latestRefund?.id ?? 0),
 							status: nextStatus,
@@ -1958,7 +2060,7 @@ const PointOfSalePage = () => {
 																{receipt.latestRefund.status}
 															</span>
 														)}
-														{!hasOpenOrCompletedRefund(receipt) && (
+														{canRequestRepairRefund(receipt) && (
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}

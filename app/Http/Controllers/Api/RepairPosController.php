@@ -336,6 +336,23 @@ class RepairPosController extends Controller
             }
         }
 
+        if ($isShopActor && (string) $source->module_type === 'repair') {
+            $validated['workflow_source'] = 'shop_pos_repair';
+
+            if ((string) ($validated['request_type'] ?? '') === 'full') {
+                $repairWideRefundable = round($service->computeRepairRefundableAmount((int) $source->module_reference_id), 2);
+
+                if ($repairWideRefundable <= 0) {
+                    throw ValidationException::withMessages([
+                        'requested_amount' => ['No refundable balance is available for this repair request.'],
+                    ]);
+                }
+
+                // POS History full refund should always use the current repair-wide refundable balance.
+                $validated['requested_amount'] = $repairWideRefundable;
+            }
+        }
+
         $refund = $service->requestRefund($source, $validated, $this->resolveActorAuditUserId());
         $autoProcessed = false;
 
