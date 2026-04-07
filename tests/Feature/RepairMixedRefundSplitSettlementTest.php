@@ -112,6 +112,70 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepair_submit_accepts_string_customer_payout_consent_in_form_request(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total_paid_amount' => 1000,
+            'total_refunded_amount' => 0,
+            'latest_pos_transaction_id' => null,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-001-FORM',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 400,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 400,
+            'paid_amount' => 400,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pmw_123_form',
+            'amount' => 150,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'cash',
+            'amount' => 250,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->post("/api/customer/repairs/{$repair->id}/refunds", [
+            'source_transaction_id' => $source->id,
+            'request_type' => 'full',
+            'requested_amount' => 400,
+            'reason_code' => 'mixed_payment_refund',
+            'reason_notes' => 'Customer requested mixed payment refund (form submit).',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/a-form.jpg']],
+            'preferred_return_channel' => 'gcash',
+            'preferred_return_account_name' => 'Juan Dela Cruz',
+            'preferred_return_account_ref' => '09171234567',
+            'customer_payout_consent' => 'true',
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('success', true);
+    }
+
+    #[Test]
     public function myrepair_submit_allows_repair_wide_refund_when_online_payment_not_in_pos_ledger(): void
     {
         /** @var User $customer */

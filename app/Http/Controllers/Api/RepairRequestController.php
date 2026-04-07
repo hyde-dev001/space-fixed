@@ -813,6 +813,17 @@ class RepairRequestController extends Controller
             ], 404);
         }
 
+        if ($request->has('customer_payout_consent')) {
+            $rawConsent = $request->input('customer_payout_consent');
+
+            if (is_string($rawConsent)) {
+                $normalizedConsent = filter_var($rawConsent, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($normalizedConsent !== null) {
+                    $request->merge(['customer_payout_consent' => $normalizedConsent]);
+                }
+            }
+        }
+
         $validated = $request->validate([
             'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
             'request_type' => ['required', 'in:full,partial'],

@@ -1190,7 +1190,7 @@ const MyRepairs: React.FC = () => {
         payload.append('preferred_return_channel', preferredReturnChannel);
         payload.append('preferred_return_account_name', requiresPayoutDestination ? refundAccountName.trim() : '');
         payload.append('preferred_return_account_ref', requiresPayoutDestination ? refundAccountRef.trim() : '');
-        payload.append('customer_payout_consent', requiresPayoutDestination ? String(refundPayoutConsent) : 'false');
+        payload.append('customer_payout_consent', requiresPayoutDestination ? (refundPayoutConsent ? '1' : '0') : '0');
 
         refundMedia.forEach((file, index) => {
           payload.append(`media[${index}]`, file);
