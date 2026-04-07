@@ -755,10 +755,15 @@ class RepairPosRefundService
                 ->where('status', 'succeeded')
                 ->sum('approved_amount');
 
+            $repairPaidAmount = $this->resolveRepairPaidAmount((int) $repair->id);
+            $repairRefundStatus = $totalRefundedForRepair > 0
+                ? ($repairPaidAmount > 0 && $totalRefundedForRepair >= $repairPaidAmount ? 'refunded' : 'partially_refunded')
+                : (string) ($repair->payment_status_derived ?? $repair->payment_status ?? 'unpaid');
+
             $repair->update([
                 'total_refunded_amount' => $totalRefundedForRepair,
-                'payment_status' => $sourceStatus === 'refunded' ? 'refunded' : 'partially_refunded',
-                'payment_status_derived' => $sourceStatus === 'refunded' ? 'refunded' : 'partially_refunded',
+                'payment_status' => $repairRefundStatus,
+                'payment_status_derived' => $repairRefundStatus,
             ]);
         }
 
